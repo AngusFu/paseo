@@ -52,6 +52,7 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import Animated, {
   Easing,
   cancelAnimation,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -1292,9 +1293,14 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   spacer: {
     flex: 1,
   },
-  chevron: {
-    flexShrink: 0,
-    transform: [{ scale: 1.3 }],
+  iconLayer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
   },
   openFileButton: {
     marginLeft: theme.spacing[1],
@@ -1306,8 +1312,14 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     width: 14,
     height: 14,
   },
-  chevronExpanded: {
-    transform: [{ scale: 1.3 }, { rotate: "90deg" }],
+  detailClip: {
+    overflow: "hidden",
+  },
+  detailMeasure: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
   },
   detailWrapper: {
     borderBottomLeftRadius: theme.borderRadius.lg,
@@ -2604,21 +2616,138 @@ function renderExpandableBadgeIcon({
   return null;
 }
 
-function renderExpandableBadgeIconSlot({
+const ICON_SWAP_DURATION_MS = 140;
+const CHEVRON_ROTATE_DURATION_MS = 160;
+
+// Cross-fades the tool icon and the expand chevron inside the fixed 22×22
+// icon badge instead of swapping them on hover, which used to flash. Both
+// layers stay mounted (opacity-only), so the hover trigger's geometry never
+// changes — see docs/hover.md failure mode 2.
+const ExpandableBadgeIconSlot = memo(function ExpandableBadgeIconSlot({
   showChevron,
-  chevronStyle,
+  isExpanded,
   iconNode,
 }: {
   showChevron: boolean;
-  chevronStyle: StyleProp<ViewStyle>;
+  isExpanded: boolean;
   iconNode: ReactNode;
-}): ReactNode {
-  if (showChevron) {
-    return (
-      <ThemedChevronRightIcon size={12} style={chevronStyle} uniProps={foregroundColorMapping} />
-    );
+}) {
+  const chevronProgress = useSharedValue(showChevron ? 1 : 0);
+  const rotationProgress = useSharedValue(isExpanded ? 1 : 0);
+
+  useEffect(() => {
+    chevronProgress.value = withTiming(showChevron ? 1 : 0, {
+      duration: ICON_SWAP_DURATION_MS,
+      easing: Easing.out(Easing.quad),
+    });
+  }, [chevronProgress, showChevron]);
+
+  useEffect(() => {
+    rotationProgress.value = withTiming(isExpanded ? 1 : 0, {
+      duration: CHEVRON_ROTATE_DURATION_MS,
+      easing: Easing.out(Easing.quad),
+    });
+  }, [isExpanded, rotationProgress]);
+
+  const iconLayerStyle = useAnimatedStyle(() => ({
+    opacity: 1 - chevronProgress.value,
+  }));
+  const chevronLayerStyle = useAnimatedStyle(() => ({
+    opacity: chevronProgress.value,
+  }));
+  const chevronTransformStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1.3 }, { rotate: `${rotationProgress.value * 90}deg` }],
+  }));
+
+  const iconLayerCombined = useMemo(
+    () => [expandableBadgeStylesheet.iconLayer, iconLayerStyle],
+    [iconLayerStyle],
+  );
+  const chevronLayerCombined = useMemo(
+    () => [expandableBadgeStylesheet.iconLayer, chevronLayerStyle],
+    [chevronLayerStyle],
+  );
+  const chevronTransformCombined = useMemo(
+    () => [LUCIDE_CHEVRON_NUDGE_LEFT, chevronTransformStyle],
+    [chevronTransformStyle],
+  );
+
+  return (
+    <>
+      <Animated.View style={iconLayerCombined}>{iconNode}</Animated.View>
+      <Animated.View style={chevronLayerCombined}>
+        <Animated.View style={chevronTransformCombined}>
+          <ThemedChevronRightIcon size={12} uniProps={foregroundColorMapping} />
+        </Animated.View>
+      </Animated.View>
+    </>
+  );
+});
+
+const DETAIL_ACCORDION_DURATION_MS = 200;
+
+// Accordion clip for the tool-call detail panel: animates height (and
+// opacity) instead of mounting/unmounting instantly. The content renders at
+// its natural height in an absolutely positioned layer and reports it via
+// onLayout; the clip's height tracks contentHeight × progress. While fully
+// open, content growth (e.g. streaming shell output) tracks instantly.
+function ExpandableBadgeDetailAccordion({
+  isExpanded,
+  children,
+}: {
+  isExpanded: boolean;
+  children: () => ReactNode;
+}) {
+  const progress = useSharedValue(isExpanded ? 1 : 0);
+  const contentHeight = useSharedValue(0);
+  const [isMounted, setIsMounted] = useState(isExpanded);
+  if (isExpanded && !isMounted) {
+    // Render-phase state adjustment: mount the content in the same commit as
+    // the expand (so refs into it — e.g. the wheel-propagation blocker — are
+    // set before parent effects run). Unmount waits for the collapse
+    // animation to finish (see the withTiming callback below).
+    setIsMounted(true);
   }
-  return iconNode;
+
+  useEffect(() => {
+    progress.value = withTiming(
+      isExpanded ? 1 : 0,
+      { duration: DETAIL_ACCORDION_DURATION_MS, easing: Easing.inOut(Easing.quad) },
+      (finished) => {
+        if (finished && !isExpanded) {
+          runOnJS(setIsMounted)(false);
+        }
+      },
+    );
+  }, [isExpanded, progress]);
+
+  const clipStyle = useAnimatedStyle(() => ({
+    height: contentHeight.value * progress.value,
+    opacity: progress.value,
+  }));
+
+  const handleContentLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      contentHeight.value = event.nativeEvent.layout.height;
+    },
+    [contentHeight],
+  );
+
+  const clipCombined = useMemo(
+    () => [expandableBadgeStylesheet.detailClip, clipStyle],
+    [clipStyle],
+  );
+
+  if (!isMounted) {
+    return null;
+  }
+  return (
+    <Animated.View style={clipCombined}>
+      <View style={expandableBadgeStylesheet.detailMeasure} onLayout={handleContentLayout}>
+        {children()}
+      </View>
+    </Animated.View>
+  );
 }
 
 function computeShimmerMetrics(input: {
@@ -2743,7 +2872,6 @@ const ExpandableBadge = memo(function ExpandableBadge({
   const [isPressed, setIsPressed] = useState(false);
   const isInteractive = Boolean(onToggle);
   const hasDetailContent = Boolean(renderDetails);
-  const detailContent = hasDetailContent && isExpanded ? renderDetails?.() : null;
   const detailWrapperRef = useRef<View | null>(null);
 
   const handleHoverIn = useCallback(() => setIsHovered(true), []);
@@ -2952,22 +3080,8 @@ const ExpandableBadge = memo(function ExpandableBadge({
     [shimmerSecondaryStyle],
   );
 
-  const chevronStyle = useMemo(
-    () => [
-      expandableBadgeStylesheet.chevron,
-      isExpanded && expandableBadgeStylesheet.chevronExpanded,
-      LUCIDE_CHEVRON_NUDGE_LEFT,
-    ],
-    [isExpanded],
-  );
-
   const ThemedIcon = useMemo(() => (icon ? withUnistyles(icon) : null), [icon]);
   const iconNode = renderExpandableBadgeIcon({ isError, isActive, ThemedIcon });
-  const iconSlotNode = renderExpandableBadgeIconSlot({
-    showChevron: isInteractive && isHovered,
-    chevronStyle,
-    iconNode,
-  });
 
   const pressHandlers = isInteractive
     ? {
@@ -2992,7 +3106,13 @@ const ExpandableBadge = memo(function ExpandableBadge({
         style={pressableStyle}
       >
         <View style={expandableBadgeStylesheet.headerRow}>
-          <View style={expandableBadgeStylesheet.iconBadge}>{iconSlotNode}</View>
+          <View style={expandableBadgeStylesheet.iconBadge}>
+            <ExpandableBadgeIconSlot
+              showChevron={isInteractive && isHovered}
+              isExpanded={isExpanded}
+              iconNode={iconNode}
+            />
+          </View>
           <ExpandableBadgeLabelRow
             label={label}
             labelStyle={labelStyle}
@@ -3020,15 +3140,19 @@ const ExpandableBadge = memo(function ExpandableBadge({
           />
         </View>
       </Pressable>
-      {detailContent ? (
-        <Pressable
-          ref={detailWrapperRef}
-          style={expandableBadgeStylesheet.detailWrapper}
-          onHoverIn={handleDetailHoverIn}
-          onHoverOut={handleDetailHoverOut}
-        >
-          {detailContent}
-        </Pressable>
+      {hasDetailContent ? (
+        <ExpandableBadgeDetailAccordion isExpanded={isExpanded}>
+          {() => (
+            <Pressable
+              ref={detailWrapperRef}
+              style={expandableBadgeStylesheet.detailWrapper}
+              onHoverIn={handleDetailHoverIn}
+              onHoverOut={handleDetailHoverOut}
+            >
+              {renderDetails?.()}
+            </Pressable>
+          )}
+        </ExpandableBadgeDetailAccordion>
       ) : null}
     </View>
   );

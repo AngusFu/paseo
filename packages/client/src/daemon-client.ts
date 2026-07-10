@@ -4672,6 +4672,9 @@ export class DaemonClient {
             [CLIENT_CAPS.customModeIcons]: true,
             [CLIENT_CAPS.reasoningMergeEnum]: true,
             [CLIENT_CAPS.terminalReflowableSnapshot]: true,
+            // COMPAT(commandSchedules): parses the "command" schedule target, so the
+            // daemon may include command schedules in schedule RPC responses.
+            [CLIENT_CAPS.commandSchedules]: true,
             ...this.config.capabilities,
           },
           ...(this.config.appVersion ? { appVersion: this.config.appVersion } : {}),

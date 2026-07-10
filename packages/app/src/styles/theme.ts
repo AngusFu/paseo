@@ -109,15 +109,31 @@ export const baseColors = {
 
 export type ThemeName = "light" | "dark" | "zinc" | "midnight" | "claude" | "ghostty";
 
-// Diff stat colors — light uses muted tones, dark uses the brighter palette values
+// Diff stat colors — light uses muted tones, dark uses the brighter palette values.
+// Background tints are 8-digit hex (#RRGGBBAA) keyed to the same hue so add/del
+// rows read correctly in both light and dark. `*LineBg` tints the whole changed
+// line; `*WordBg` is the stronger intra-line (word-level) highlight layered on
+// top; `*BadgeBg` backs the New/Deleted file badges.
 const lightDiffColors = {
   diffAddition: "#15803d", // green-700 — readable on white without screaming
   diffDeletion: "#b91c1c", // red-700
+  diffAddedLineBg: "#15803d1f", // green-700 @ ~12%
+  diffRemovedLineBg: "#b91c1c1a", // red-700 @ ~10%
+  diffAddedWordBg: "#15803d45", // green-700 @ ~27% — word-level emphasis
+  diffRemovedWordBg: "#b91c1c40", // red-700 @ ~25%
+  diffAddedBadgeBg: "#15803d29", // green-700 @ ~16%
+  diffRemovedBadgeBg: "#b91c1c29", // red-700 @ ~16%
 };
 
 const darkDiffColors = {
   diffAddition: "#4ade80", // green-400
   diffDeletion: "#ef4444", // red-500
+  diffAddedLineBg: "#4ade8022", // green-400 @ ~13%
+  diffRemovedLineBg: "#ef444422", // red-500 @ ~13%
+  diffAddedWordBg: "#4ade8047", // green-400 @ ~28% — word-level emphasis
+  diffRemovedWordBg: "#ef444447", // red-500 @ ~28%
+  diffAddedBadgeBg: "#4ade8033", // green-400 @ ~20%
+  diffRemovedBadgeBg: "#ef444433", // red-500 @ ~20%
 };
 
 // Status colors — semantic signals for success/danger/warning/merged. Used by

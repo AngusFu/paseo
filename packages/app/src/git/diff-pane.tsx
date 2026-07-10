@@ -2700,7 +2700,7 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
   },
   newBadge: {
-    backgroundColor: "rgba(46, 160, 67, 0.2)",
+    backgroundColor: theme.colors.diffAddedBadgeBg,
     paddingHorizontal: theme.spacing[2],
     paddingVertical: theme.spacing[1],
     borderRadius: theme.borderRadius.md,
@@ -2712,7 +2712,7 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.diffAddition,
   },
   deletedBadge: {
-    backgroundColor: "rgba(248, 81, 73, 0.2)",
+    backgroundColor: theme.colors.diffRemovedBadgeBg,
     paddingHorizontal: theme.spacing[2],
     paddingVertical: theme.spacing[1],
     borderRadius: theme.borderRadius.md,
@@ -2845,13 +2845,13 @@ const styles = StyleSheet.create((theme) => ({
     userSelect: "text",
   },
   addLineContainer: {
-    backgroundColor: "rgba(46, 160, 67, 0.15)", // GitHub green
+    backgroundColor: theme.colors.diffAddedLineBg,
   },
   addLineText: {
     color: theme.colors.foreground,
   },
   removeLineContainer: {
-    backgroundColor: "rgba(248, 81, 73, 0.1)", // GitHub red
+    backgroundColor: theme.colors.diffRemovedLineBg,
   },
   removeLineText: {
     color: theme.colors.foreground,

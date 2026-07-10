@@ -614,27 +614,28 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
 
 const styles = StyleSheet.create((theme) => ({
   container: {
-    padding: theme.spacing[3],
-    borderRadius: theme.spacing[2],
+    maxWidth: 720,
+    padding: theme.spacing[2],
+    borderRadius: theme.spacing[1.5],
     borderWidth: 1,
-    gap: theme.spacing[3],
+    gap: theme.spacing[2],
   },
   questionBlock: {
-    gap: theme.spacing[2],
+    gap: theme.spacing[1.5],
   },
   questionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[2],
-    paddingHorizontal: theme.spacing[3],
+    gap: theme.spacing[1.5],
+    paddingHorizontal: theme.spacing[2],
     paddingBottom: theme.spacing[1],
     flex: 1,
   },
   questionText: {
     flex: 1,
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
-    lineHeight: 22,
+    lineHeight: 20,
   },
   optionsWrap: {
     gap: theme.spacing[1],
@@ -644,14 +645,14 @@ const styles = StyleSheet.create((theme) => ({
     flexWrap: "wrap",
     alignItems: "center",
     gap: theme.spacing[1],
-    paddingHorizontal: theme.spacing[3],
+    paddingHorizontal: theme.spacing[2],
   },
   questionNavButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
-    minHeight: 28,
-    paddingHorizontal: theme.spacing[2],
+    minHeight: 26,
+    paddingHorizontal: theme.spacing[1.5],
     paddingVertical: theme.spacing[1],
     borderRadius: theme.borderRadius.md,
     borderWidth: theme.borderWidth[1],
@@ -663,8 +664,8 @@ const styles = StyleSheet.create((theme) => ({
   optionItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[2],
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: theme.spacing[1.5],
     borderRadius: theme.borderRadius.md,
   },
   optionItemPressed: {
@@ -674,20 +675,20 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: theme.spacing[2],
+    gap: theme.spacing[1.5],
   },
   optionTextBlock: {
     flex: 1,
     gap: theme.spacing[1],
   },
   optionLabel: {
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.semibold,
-    lineHeight: 22,
+    lineHeight: 20,
   },
   optionDescription: {
-    fontSize: theme.fontSize.sm,
-    lineHeight: 20,
+    fontSize: theme.fontSize.xs,
+    lineHeight: 16,
   },
   selectionControl: {
     width: 18,
@@ -711,12 +712,12 @@ const styles = StyleSheet.create((theme) => ({
   otherInput: {
     borderWidth: 1,
     borderRadius: theme.borderRadius.lg,
-    paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[3],
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: theme.spacing[2],
     fontSize: theme.fontSize.sm,
   },
   actionsContainer: {
-    gap: theme.spacing[2],
+    gap: theme.spacing[1.5],
   },
   actionsContainerDesktop: {
     flexDirection: "row",
@@ -724,8 +725,9 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
   },
   actionButton: {
-    paddingVertical: theme.spacing[2],
-    paddingHorizontal: theme.spacing[3],
+    minHeight: 26,
+    paddingVertical: theme.spacing[1.5],
+    paddingHorizontal: theme.spacing[2],
     borderRadius: theme.borderRadius.md,
     alignItems: "center",
     borderWidth: theme.borderWidth[1],
@@ -733,7 +735,7 @@ const styles = StyleSheet.create((theme) => ({
   actionContent: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[2],
+    gap: theme.spacing[1.5],
   },
   actionText: {
     fontSize: theme.fontSize.sm,

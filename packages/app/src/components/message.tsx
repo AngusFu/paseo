@@ -60,6 +60,7 @@ import Animated, {
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from "react-native-svg";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { MarkdownRenderer, type MarkdownStyles } from "@/components/markdown/renderer";
+import { resolveInlineImageSize } from "@/components/markdown/inline-image-size";
 import type { TodoEntry, UserMessageImageAttachment } from "@/types/stream";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
@@ -87,6 +88,7 @@ import {
   parseImageDataUrl,
 } from "@/attachments/utils";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
+import { AskQuestionCard, parseAskQuestionArgs } from "./ask-question-card";
 import { PlanCard } from "./plan-card";
 import { useToolCallSheet } from "./tool-call-sheet";
 import { ToolCallDetailsContent } from "./tool-call-details";
@@ -345,18 +347,20 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     marginBottom: theme.spacing[4],
   },
   bubble: {
-    backgroundColor: theme.colors.surface3,
-    borderRadius: theme.borderRadius["2xl"],
-    borderTopRightRadius: theme.borderRadius.sm,
-    paddingHorizontal: theme.spacing[4],
-    paddingVertical: theme.spacing[4],
-    minWidth: 0,
+    backgroundColor: theme.colors.surface1,
+    borderWidth: theme.borderWidth[1],
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.xl,
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+    minWidth: 120,
     flexShrink: 1,
   },
   text: {
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.base,
-    ...(isWeb ? { lineHeight: 22, overflowWrap: "anywhere" as const } : {}),
+    // Between fontSize.sm (14) and fontSize.base (16) — no token for this size.
+    fontSize: 15,
+    ...(isWeb ? { lineHeight: 24, overflowWrap: "anywhere" as const } : {}),
   },
   imagePreviewContainer: {
     flexDirection: "row",
@@ -383,7 +387,7 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
-    marginTop: theme.spacing[2],
+    marginTop: theme.spacing[1.5],
   },
   trailingRowHidden: {
     opacity: 0,
@@ -393,7 +397,8 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
   },
   timestampText: {
     color: theme.colors.foregroundMuted,
-    fontSize: STREAM_METADATA_FONT_SIZE,
+    // Smaller than fontSize.xs (12) to stay quiet next to the trailing-row actions.
+    fontSize: 11,
   },
 }));
 
@@ -771,6 +776,8 @@ export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
 }));
 
 const ASSISTANT_IMAGE_MIN_HEIGHT = 160;
+const ASSISTANT_IMAGE_MAX_WIDTH = 480;
+const ASSISTANT_IMAGE_MAX_HEIGHT = 300;
 
 const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedImage({
   uri,
@@ -794,10 +801,14 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
   const [loadState, setLoadState] = useState<AssistantImageLoadState>(() =>
     getAssistantImageLoadStateFromMetadata(cachedMetadata),
   );
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(() =>
+    cachedMetadata ? { width: cachedMetadata.width, height: cachedMetadata.height } : null,
+  );
 
   useEffect(() => {
     if (cachedMetadata) {
       setLoadState(getAssistantImageLoadStateFromMetadata(cachedMetadata));
+      setNaturalSize({ width: cachedMetadata.width, height: cachedMetadata.height });
       return () => {};
     }
 
@@ -819,6 +830,7 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
             status: "ready",
             aspectRatio: metadata?.aspectRatio ?? width / height,
           });
+          setNaturalSize({ width, height });
         }
       },
       () => {
@@ -838,18 +850,34 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
     setLoadState({ status: "error" });
   }, []);
   const { t } = useTranslation();
+  const cappedSize = useMemo(
+    () =>
+      loadState.status === "ready" && naturalSize
+        ? resolveInlineImageSize({
+            explicit: {},
+            natural: naturalSize,
+            maxWidth: ASSISTANT_IMAGE_MAX_WIDTH,
+            maxHeight: ASSISTANT_IMAGE_MAX_HEIGHT,
+          })
+        : null,
+    [loadState, naturalSize],
+  );
   const surfaceStyle = useMemo<StyleProp<ViewStyle>>(
     () => [
       assistantMessageStylesheet.imageSurface,
-      loadState.status === "ready"
-        ? { aspectRatio: loadState.aspectRatio }
+      cappedSize
+        ? { width: cappedSize.width, height: cappedSize.height }
         : { height: ASSISTANT_IMAGE_MIN_HEIGHT },
     ],
-    [loadState],
+    [cappedSize],
   );
   const frameStyle = useMemo<StyleProp<ViewStyle>>(
-    () => [assistantMessageStylesheet.imageFrame, containerStyle],
-    [containerStyle],
+    () => [
+      assistantMessageStylesheet.imageFrame,
+      containerStyle,
+      cappedSize ? { width: cappedSize.width } : null,
+    ],
+    [containerStyle, cappedSize],
   );
   const stateSurfaceStyle = useMemo<StyleProp<ViewStyle>>(
     () => [surfaceStyle, assistantMessageStylesheet.imageState],
@@ -1234,7 +1262,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   },
   label: {
     color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
     flexShrink: 0,
   },
@@ -1249,7 +1277,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     flexShrink: 1,
     minWidth: 0,
     color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
     marginLeft: theme.spacing[2],
   },
@@ -1258,7 +1286,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   },
   shimmerText: {
     color: "transparent",
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
   },
   spacer: {
@@ -3065,6 +3093,10 @@ export const ToolCall = memo(function ToolCall({
   const isMobile = useIsCompactFormFactor();
   const shouldRenderInline = !isMobile || forceInline;
 
+  const normalizedToolName = toolName.toLowerCase();
+  const isAskQuestionTool =
+    normalizedToolName.includes("askuserquestion") || normalizedToolName.includes("askquestion");
+
   const effectiveDetail = useMemo<ToolCallDetail | undefined>(() => {
     if (detail) {
       return detail;
@@ -3078,6 +3110,20 @@ export const ToolCall = memo(function ToolCall({
     }
     return undefined;
   }, [detail, args, result]);
+
+  // Claude-sourced timeline items only carry `detail` (no `args`/`result` props
+  // are wired through), so fall back to `detail.input`/`detail.output` for the
+  // same shape.
+  const askQuestionQuestions = useMemo(() => {
+    if (!isAskQuestionTool) {
+      return null;
+    }
+    const detailInput = effectiveDetail?.type === "unknown" ? effectiveDetail.input : undefined;
+    return parseAskQuestionArgs(args) ?? parseAskQuestionArgs(detailInput);
+  }, [isAskQuestionTool, args, effectiveDetail]);
+
+  const askQuestionResult =
+    result ?? (effectiveDetail?.type === "unknown" ? effectiveDetail.output : undefined);
 
   const presentation = useMemo(
     () =>
@@ -3170,6 +3216,19 @@ export const ToolCall = memo(function ToolCall({
         text={effectiveDetail.text}
         testID="timeline-plan-card"
         disableOuterSpacing={disableOuterSpacing}
+      />
+    );
+  }
+
+  if (askQuestionQuestions) {
+    return (
+      <AskQuestionCard
+        questions={askQuestionQuestions}
+        result={askQuestionResult}
+        error={error}
+        status={status}
+        disableOuterSpacing={disableOuterSpacing}
+        testID="timeline-ask-question-card"
       />
     );
   }

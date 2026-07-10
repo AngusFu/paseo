@@ -841,13 +841,15 @@ const styles = StyleSheet.create((theme) => {
     plainTextSection: {
       gap: theme.spacing[2],
       padding: theme.spacing[3],
+      minWidth: 0,
+      flexShrink: 1,
     },
     plainText: {
       fontFamily: theme.fontFamily.ui,
-      fontSize: theme.fontSize.base,
-      color: theme.colors.foreground,
-      lineHeight: 22,
-      overflowWrap: "anywhere",
+      fontSize: theme.fontSize.xs,
+      color: theme.colors.foregroundMuted,
+      lineHeight: 19,
+      ...(isWeb ? { overflowWrap: "anywhere" as const } : {}),
     },
     sectionTitle: {
       color: theme.colors.foregroundMuted,

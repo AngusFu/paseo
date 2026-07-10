@@ -103,6 +103,23 @@ docker run -d --name paseo \
 
 Open `http://localhost:6767` after it starts. Extend the base image with the agent CLIs you use, then provide credentials through environment variables or the persistent `/home/paseo` volume. See the [Docker documentation](docs/docker.md) for full setup details.
 
+### Fork: run from source
+
+Running this checkout directly (no build/install step) requires Node 22. Start the daemon and the Expo web client together:
+
+```bash
+./scripts/dev-fork.sh
+```
+
+This uses an isolated data directory under `.dev/paseo-home` and listens on `127.0.0.1:6868`, so it won't collide with a packaged install (`6767`) or this repo's own `npm run dev` daemon (`6768`). Override with `PASEO_LISTEN` / `EXPO_PORT` env vars as needed.
+
+Equivalent to running the daemon and app separately in two terminals:
+
+```bash
+PASEO_LISTEN=127.0.0.1:6868 ./scripts/dev-daemon.sh
+PASEO_LISTEN=127.0.0.1:6868 EXPO_PORT=8081 ./scripts/dev-app.sh
+```
+
 ## CLI
 
 Everything you can do in the app, you can do from the terminal.

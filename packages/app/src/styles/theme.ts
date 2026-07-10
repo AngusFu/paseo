@@ -153,6 +153,7 @@ const lightSemanticColors = {
   // Text
   foreground: "#1a1a1e",
   foregroundMuted: "#71717a",
+  foregroundProse: "rgba(26, 26, 30, 0.72)",
 
   // Controls
   scrollbarHandle: "#3f3f46", // zinc-700
@@ -271,6 +272,7 @@ function buildDarkSemanticColors(tint: DarkThemeConfig) {
 
     foreground: "#fafafa",
     foregroundMuted: tint.foregroundMuted,
+    foregroundProse: "rgba(250, 250, 250, 0.78)",
 
     scrollbarHandle: tint.scrollbarHandle,
 
@@ -492,7 +494,7 @@ export const OPACITY = {
 export const DEFAULT_UI_FONT_STACK: string = Platform.select({
   ios: "system-ui",
   default: "normal",
-  web: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+  web: "-apple-system, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Segoe UI', 'Microsoft YaHei', Roboto, sans-serif",
 });
 
 export const DEFAULT_MONO_FONT_STACK: string = Platform.select({

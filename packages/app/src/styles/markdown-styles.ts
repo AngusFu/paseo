@@ -18,11 +18,11 @@ export function createMarkdownStyles(theme: Theme) {
 
     body: {
       ...webSelectableTextStyle,
-      color: theme.colors.foreground,
-      fontSize: theme.fontSize.base,
+      color: theme.colors.foregroundProse,
+      fontSize: theme.fontSize.sm,
       // Prose line-height scales with the UI ramp (≈22 at base 16), NOT the
       // code-size-coupled lineHeight.diff token used by code/diff surfaces.
-      lineHeight: Math.round(theme.fontSize.base * 1.4),
+      lineHeight: Math.round(theme.fontSize.sm * 1.65),
       flexShrink: 1,
       minWidth: 0,
       width: "100%" as const,
@@ -30,7 +30,7 @@ export function createMarkdownStyles(theme: Theme) {
 
     text: {
       ...webSelectableTextStyle,
-      color: theme.colors.foreground,
+      color: theme.colors.foregroundProse,
       flexShrink: 1,
       minWidth: 0,
       overflowWrap: "anywhere" as const,
@@ -54,12 +54,12 @@ export function createMarkdownStyles(theme: Theme) {
 
     heading1: {
       ...webSelectableTextStyle,
-      fontSize: theme.fontSize["3xl"],
+      fontSize: 20,
       fontWeight: theme.fontWeight.bold,
       color: theme.colors.foreground,
-      marginTop: theme.spacing[6],
-      marginBottom: theme.spacing[3],
-      lineHeight: 32,
+      marginTop: theme.spacing[4],
+      marginBottom: theme.spacing[2],
+      lineHeight: 28,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
       paddingBottom: theme.spacing[2],
@@ -67,12 +67,12 @@ export function createMarkdownStyles(theme: Theme) {
 
     heading2: {
       ...webSelectableTextStyle,
-      fontSize: theme.fontSize["2xl"],
+      fontSize: 18,
       fontWeight: theme.fontWeight.bold,
       color: theme.colors.foreground,
-      marginTop: theme.spacing[6],
-      marginBottom: theme.spacing[3],
-      lineHeight: 28,
+      marginTop: theme.spacing[4],
+      marginBottom: theme.spacing[2],
+      lineHeight: 26,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
       paddingBottom: theme.spacing[2],
@@ -80,22 +80,22 @@ export function createMarkdownStyles(theme: Theme) {
 
     heading3: {
       ...webSelectableTextStyle,
-      fontSize: theme.fontSize.xl,
-      fontWeight: theme.fontWeight.semibold,
-      color: theme.colors.foreground,
-      marginTop: theme.spacing[4],
-      marginBottom: theme.spacing[2],
-      lineHeight: 26,
-    },
-
-    heading4: {
-      ...webSelectableTextStyle,
-      fontSize: theme.fontSize.lg,
+      fontSize: 17,
       fontWeight: theme.fontWeight.semibold,
       color: theme.colors.foreground,
       marginTop: theme.spacing[4],
       marginBottom: theme.spacing[2],
       lineHeight: 24,
+    },
+
+    heading4: {
+      ...webSelectableTextStyle,
+      fontSize: 15,
+      fontWeight: theme.fontWeight.semibold,
+      color: theme.colors.foreground,
+      marginTop: theme.spacing[4],
+      marginBottom: theme.spacing[2],
+      lineHeight: 22,
     },
 
     heading5: {
@@ -127,6 +127,7 @@ export function createMarkdownStyles(theme: Theme) {
     strong: {
       ...webSelectableTextStyle,
       fontWeight: theme.fontWeight.medium,
+      color: theme.colors.foreground,
     },
 
     em: {
@@ -172,6 +173,7 @@ export function createMarkdownStyles(theme: Theme) {
       borderWidth: 0,
       fontFamily: theme.fontFamily.mono,
       fontSize: theme.fontSize.code,
+      fontWeight: theme.fontWeight.semibold,
       lineHeight: Math.round(theme.fontSize.code * 1.45),
     },
 

@@ -15,13 +15,13 @@ const INLINE_IMAGE_MAX_HEIGHT = 160;
 export function resolveInlineImageSize(input: {
   explicit: InlineImageExplicitDimensions;
   natural: InlineImageDimensions | null;
+  maxWidth?: number;
+  maxHeight?: number;
 }): InlineImageDimensions {
   const dimensions = resolveInlineImageDimensions(input);
-  const scale = Math.min(
-    1,
-    INLINE_IMAGE_MAX_WIDTH / dimensions.width,
-    INLINE_IMAGE_MAX_HEIGHT / dimensions.height,
-  );
+  const maxWidth = input.maxWidth ?? INLINE_IMAGE_MAX_WIDTH;
+  const maxHeight = input.maxHeight ?? INLINE_IMAGE_MAX_HEIGHT;
+  const scale = Math.min(1, maxWidth / dimensions.width, maxHeight / dimensions.height);
 
   return {
     width: Math.round(dimensions.width * scale),

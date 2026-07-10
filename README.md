@@ -105,20 +105,14 @@ Open `http://localhost:6767` after it starts. Extend the base image with the age
 
 ### Fork: run from source
 
-Running this checkout directly (no build/install step) requires Node 22. Start the daemon and the Expo web client together:
+Running this checkout directly (no build/install step) requires Node 22. Start the daemon and the Expo web client in two terminals:
 
 ```bash
-./scripts/dev-fork.sh
+npm run dev       # daemon on 127.0.0.1:6768
+npm run dev:app   # Expo web on http://localhost:8081
 ```
 
-This uses an isolated data directory under `.dev/paseo-home` and listens on `127.0.0.1:6868`, so it won't collide with a packaged install (`6767`) or this repo's own `npm run dev` daemon (`6768`). Override with `PASEO_LISTEN` / `EXPO_PORT` env vars as needed.
-
-Equivalent to running the daemon and app separately in two terminals:
-
-```bash
-PASEO_LISTEN=127.0.0.1:6868 ./scripts/dev-daemon.sh
-PASEO_LISTEN=127.0.0.1:6868 EXPO_PORT=8081 ./scripts/dev-app.sh
-```
+By default this uses an isolated data directory under `.dev/paseo-home`; set `PASEO_HOME` beforehand to point at existing data. See [docs/development.md](docs/development.md) for details.
 
 ## CLI
 

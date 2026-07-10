@@ -291,6 +291,10 @@ export const es: TranslationResources = {
       next: "Siguiente",
       answerPlaceholder: "Escribe tu respuesta...",
       otherPlaceholder: "Otro...",
+      waitingForAnswer: "Esperando respuesta (responde en el formulario de abajo)",
+      notAnswered: "Sin respuesta (omitida o interrumpida)",
+      callFailed: "Error en la llamada",
+      multiSelect: "selección múltiple",
     },
     todo: {
       title: "Tareas",

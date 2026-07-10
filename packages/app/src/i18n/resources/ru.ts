@@ -290,6 +290,10 @@ export const ru: TranslationResources = {
       next: "Далее",
       answerPlaceholder: "Введите ответ...",
       otherPlaceholder: "Другой...",
+      waitingForAnswer: "Ожидание ответа (ответьте в форме ниже)",
+      notAnswered: "Без ответа (пропущено или прервано)",
+      callFailed: "Ошибка вызова",
+      multiSelect: "множественный выбор",
     },
     todo: {
       title: "Задачи",

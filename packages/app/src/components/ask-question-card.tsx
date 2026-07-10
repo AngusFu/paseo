@@ -1,4 +1,5 @@
 import { memo, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { parseQuestionFormQuestions, type QuestionFormQuestion } from "./question-form-card-core";
@@ -101,13 +102,16 @@ export const AskQuestionCard = memo(function AskQuestionCard({
   disableOuterSpacing,
   testID,
 }: AskQuestionCardProps) {
+  const { t } = useTranslation();
   const containerStyle = useMemo(
     () => [styles.container, disableOuterSpacing && styles.containerCompact],
     [disableOuterSpacing],
   );
 
   if (status === "failed" || status === "canceled") {
-    const headerText = isDismissed(status, error) ? "⊘ 未回答（被跳过/打断）" : "⚠ 调用失败";
+    const headerText = isDismissed(status, error)
+      ? `⊘ ${t("message.question.notAnswered")}`
+      : `⚠ ${t("message.question.callFailed")}`;
     return (
       <View testID={testID} style={containerStyle}>
         <Text style={styles.headerTextDanger}>{headerText}</Text>
@@ -123,12 +127,14 @@ export const AskQuestionCard = memo(function AskQuestionCard({
   if (status === "running" || status === "executing") {
     return (
       <View testID={testID} style={containerStyle}>
-        <Text style={styles.headerTextWaiting}>⏳ 等待回答（在下方选项卡回复）</Text>
+        <Text
+          style={styles.headerTextWaiting}
+        >{`⏳ ${t("message.question.waitingForAnswer")}`}</Text>
         {questions.map((question) => (
           <View key={question.question} style={styles.questionBlock}>
             <Text style={styles.questionText}>
               {question.question}
-              {question.multiSelect ? " (多选)" : ""}
+              {question.multiSelect ? ` (${t("message.question.multiSelect")})` : ""}
             </Text>
             {question.options.map((option) => (
               <View key={option.label} style={styles.optionRow}>

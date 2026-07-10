@@ -287,6 +287,10 @@ export const en = {
       next: "Next",
       answerPlaceholder: "Type your answer...",
       otherPlaceholder: "Other...",
+      waitingForAnswer: "Waiting for answer (reply in the form below)",
+      notAnswered: "Not answered (skipped or interrupted)",
+      callFailed: "Call failed",
+      multiSelect: "multi-select",
     },
     todo: {
       title: "Tasks",

@@ -291,6 +291,10 @@ export const fr: TranslationResources = {
       next: "Suivant",
       answerPlaceholder: "Tapez votre réponse...",
       otherPlaceholder: "Autre...",
+      waitingForAnswer: "En attente de réponse (répondez dans le formulaire ci-dessous)",
+      notAnswered: "Sans réponse (ignorée ou interrompue)",
+      callFailed: "Échec de l'appel",
+      multiSelect: "choix multiple",
     },
     todo: {
       title: "Tâches",

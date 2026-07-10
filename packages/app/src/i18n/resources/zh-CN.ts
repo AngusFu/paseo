@@ -288,6 +288,10 @@ export const zhCN: TranslationResources = {
       next: "下一步",
       answerPlaceholder: "输入你的回答...",
       otherPlaceholder: "其他...",
+      waitingForAnswer: "等待回答（在下方选项卡回复）",
+      notAnswered: "未回答（被跳过/打断）",
+      callFailed: "调用失败",
+      multiSelect: "多选",
     },
     todo: {
       title: "任务",

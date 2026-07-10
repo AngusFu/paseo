@@ -3963,6 +3963,85 @@ describe("create_schedule MCP tool", () => {
 
     expect(createOrReplace).not.toHaveBeenCalled();
   });
+
+  it("creates a command target schedule", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const createOrReplace = vi.fn(async (input: CreateScheduleInput) =>
+      createStoredSchedule(input),
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      scheduleService: { createOrReplace } as unknown as ScheduleService,
+      logger,
+    });
+    const tool = registeredTool(server, "create_schedule");
+
+    await invokeToolWithParsedInput(tool, {
+      command: "echo hello",
+      cron: "*/5 * * * *",
+      cwd: "/tmp/work",
+      env: { FOO: "bar" },
+      timeoutMs: 60000,
+    });
+
+    expect(createOrReplace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "",
+        target: {
+          type: "command",
+          command: "echo hello",
+          cwd: "/tmp/work",
+          env: { FOO: "bar" },
+          timeoutMs: 60000,
+        },
+        cadence: { type: "cron", expression: "*/5 * * * *" },
+      }),
+    );
+  });
+
+  it("rejects create_schedule with both prompt and command", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const createOrReplace = vi.fn();
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      scheduleService: { createOrReplace } as unknown as ScheduleService,
+      logger,
+    });
+    const tool = registeredTool(server, "create_schedule");
+
+    await expect(
+      tool.handler({
+        prompt: "say hello",
+        command: "echo hello",
+        cron: "*/5 * * * *",
+      }),
+    ).rejects.toThrow("Specify either prompt or command, not both");
+    expect(createOrReplace).not.toHaveBeenCalled();
+  });
+
+  it("rejects create_schedule with neither prompt nor command", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const createOrReplace = vi.fn();
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      scheduleService: { createOrReplace } as unknown as ScheduleService,
+      logger,
+    });
+    const tool = registeredTool(server, "create_schedule");
+
+    await expect(
+      tool.handler({
+        cron: "*/5 * * * *",
+      }),
+    ).rejects.toThrow("Either prompt or command is required");
+    expect(createOrReplace).not.toHaveBeenCalled();
+  });
 });
 
 describe("create_heartbeat MCP tool", () => {
@@ -4366,6 +4445,63 @@ describe("update_schedule MCP tool", () => {
     ).rejects.toThrow("Specify at most one of expiresIn or clearExpires");
     expect(update).not.toHaveBeenCalled();
   });
+
+  it("routes command, cwd, env, and timeoutMs to commandConfig", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const stored = makeStoredSchedule();
+    const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      scheduleService: { update } as unknown as ScheduleService,
+      logger,
+    });
+    const tool = registeredTool(server, "update_schedule");
+
+    await invokeToolWithParsedInput(tool, {
+      id: "schedule-1",
+      command: "echo hi",
+      cwd: "/tmp/work",
+      env: { A: "1" },
+      timeoutMs: 5000,
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      id: "schedule-1",
+      commandConfig: {
+        command: "echo hi",
+        cwd: "/tmp/work",
+        env: { A: "1" },
+        timeoutMs: 5000,
+      },
+    });
+  });
+
+  it("clears command env and timeout with null", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const stored = makeStoredSchedule();
+    const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      scheduleService: { update } as unknown as ScheduleService,
+      logger,
+    });
+    const tool = registeredTool(server, "update_schedule");
+
+    await invokeToolWithParsedInput(tool, {
+      id: "schedule-1",
+      env: null,
+      timeoutMs: null,
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      id: "schedule-1",
+      commandConfig: { env: null, timeoutMs: null },
+    });
+  });
 });
 
 describe("schedule_logs MCP tool", () => {
@@ -4401,6 +4537,27 @@ describe("schedule_logs MCP tool", () => {
 
     expect(logs).toHaveBeenCalledWith("schedule-1");
     expect(result.structuredContent).toEqual({ runs });
+  });
+
+  it("passes command run exitCode through", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const runs = [{ ...makeRun({ id: "run-1", status: "failed" }), exitCode: 2 }];
+    const logs = vi.fn(async (_id: string) => runs);
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      scheduleService: { logs } as unknown as ScheduleService,
+      logger,
+    });
+    const tool = registeredTool(server, "schedule_logs");
+
+    const result = await tool.handler({ id: "schedule-1" });
+
+    expect(result.structuredContent).toEqual({ runs });
+    expect(
+      (result.structuredContent as { runs: Array<{ exitCode?: number }> }).runs[0].exitCode,
+    ).toBe(2);
   });
 
   it("throws when schedule service is not configured", async () => {

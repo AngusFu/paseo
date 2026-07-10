@@ -1,5 +1,7 @@
 import type { z } from "zod";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
+// COMPAT(commandSchedules): added in v0.1.106, drop the gate when floor >= v0.1.106.
+import type { UpdateScheduleCommandConfig } from "@getpaseo/protocol/schedule/types";
 import {
   AgentCreateFailedStatusPayloadSchema,
   AgentCreatedStatusPayloadSchema,
@@ -692,6 +694,14 @@ export interface CreateScheduleOptions {
           systemPrompt?: string;
           mcpServers?: AgentSessionConfig["mcpServers"];
         };
+      }
+    // COMPAT(commandSchedules): added in v0.1.106, drop the gate when floor >= v0.1.106.
+    | {
+        type: "command";
+        command: string;
+        cwd: string;
+        env?: Record<string, string>;
+        timeoutMs?: number;
       };
   maxRuns?: number;
   expiresAt?: string;
@@ -726,6 +736,8 @@ export interface UpdateScheduleOptions {
         timezone?: string;
       };
   newAgentConfig?: UpdateScheduleNewAgentConfig;
+  // COMPAT(commandSchedules): added in v0.1.106, drop the gate when floor >= v0.1.106.
+  commandConfig?: UpdateScheduleCommandConfig;
   maxRuns?: number | null;
   expiresAt?: string | null;
   requestId?: string;
@@ -4528,6 +4540,8 @@ export class DaemonClient {
         ...(options.prompt !== undefined ? { prompt: options.prompt } : {}),
         ...(options.cadence !== undefined ? { cadence: options.cadence } : {}),
         ...(options.newAgentConfig !== undefined ? { newAgentConfig: options.newAgentConfig } : {}),
+        // COMPAT(commandSchedules): added in v0.1.106, drop the gate when floor >= v0.1.106.
+        ...(options.commandConfig !== undefined ? { commandConfig: options.commandConfig } : {}),
         ...(options.maxRuns !== undefined ? { maxRuns: options.maxRuns } : {}),
         ...(options.expiresAt !== undefined ? { expiresAt: options.expiresAt } : {}),
       },

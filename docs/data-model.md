@@ -272,19 +272,21 @@ One file per schedule. ID is 8 hex characters.
 
 - `{ type: "agent", agentId: string }` — send to existing agent
 - `{ type: "new-agent", config: { provider, cwd, modeId?, model?, thinkingOptionId?, title?, approvalPolicy?, sandboxMode?, networkAccess?, webSearch?, extra?, systemPrompt?, mcpServers? } }` — create a new agent
+- `{ type: "command", command: string, cwd: string, env?: Record<string, string>, timeoutMs?: number }` — run a shell command string (classic crontab semantics: `spawn(command, { shell: true })`, daemon env merged with `env`). For command schedules `prompt` mirrors `command` for display; `target.command` is the source of truth. `env` values are stored as plaintext in the schedule JSON — don't put secrets in them that shouldn't live in `$PASEO_HOME`. Old clients can't parse this variant; the daemon hides command schedules from clients without the `command_schedules` capability (see `COMPAT(commandSchedules)`).
 
 ### Nested: ScheduleRun
 
-| Field          | Type                                   | Description             |
-| -------------- | -------------------------------------- | ----------------------- |
-| `id`           | `string`                               | Run ID                  |
-| `scheduledFor` | `string` (ISO 8601)                    | Intended execution time |
-| `startedAt`    | `string` (ISO 8601)                    |                         |
-| `endedAt`      | `string?` (ISO 8601)                   |                         |
-| `status`       | `"running" \| "succeeded" \| "failed"` |                         |
-| `agentId`      | `string?` (UUID)                       | Agent used for this run |
-| `output`       | `string?`                              | Agent output text       |
-| `error`        | `string?`                              | Error message if failed |
+| Field          | Type                                   | Description                                                               |
+| -------------- | -------------------------------------- | ------------------------------------------------------------------------- |
+| `id`           | `string`                               | Run ID                                                                    |
+| `scheduledFor` | `string` (ISO 8601)                    | Intended execution time                                                   |
+| `startedAt`    | `string` (ISO 8601)                    |                                                                           |
+| `endedAt`      | `string?` (ISO 8601)                   |                                                                           |
+| `status`       | `"running" \| "succeeded" \| "failed"` |                                                                           |
+| `agentId`      | `string?` (UUID)                       | Agent used for this run                                                   |
+| `output`       | `string?`                              | Agent output text; for command runs, the trailing 16 KiB of stdout+stderr |
+| `error`        | `string?`                              | Error message if failed                                                   |
+| `exitCode`     | `number?`                              | Command exit code (command runs only)                                     |
 
 ---
 

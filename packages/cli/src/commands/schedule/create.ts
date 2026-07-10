@@ -2,6 +2,7 @@ import type { Command } from "commander";
 import type { SingleResult } from "../../output/index.js";
 import { scheduleSchema } from "./schema.js";
 import {
+  assertCommandSchedulesSupported,
   connectScheduleClient,
   parseScheduleCreateInput,
   toScheduleCommandError,
@@ -22,10 +23,13 @@ export interface ScheduleCreateOptions extends ScheduleCommandOptions {
   maxRuns?: string;
   expiresIn?: string;
   runNow?: boolean;
+  command?: string;
+  env?: string[];
+  timeout?: string;
 }
 
 export async function runCreateCommand(
-  prompt: string,
+  prompt: string | undefined,
   options: ScheduleCreateOptions,
   command: Command,
 ): Promise<SingleResult<ScheduleRow>> {
@@ -45,9 +49,15 @@ export async function runCreateCommand(
     maxRuns: options.maxRuns,
     expiresIn: options.expiresIn,
     runNow,
+    command: options.command,
+    env: options.env,
+    timeout: options.timeout,
   });
   const { client } = await connectScheduleClient(options.host);
   try {
+    if (input.target.type === "command") {
+      assertCommandSchedulesSupported(client);
+    }
     const payload = await client.scheduleCreate(input);
     if (payload.error || !payload.schedule) {
       throw new Error(payload.error ?? "Schedule creation failed");

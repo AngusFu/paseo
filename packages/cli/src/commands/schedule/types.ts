@@ -34,6 +34,13 @@ export type ScheduleTarget =
         networkAccess?: boolean;
         webSearch?: boolean;
       };
+    }
+  | {
+      type: "command";
+      command: string;
+      cwd: string;
+      env?: Record<string, string>;
+      timeoutMs?: number;
     };
 
 export interface ScheduleRunRecord {
@@ -45,6 +52,8 @@ export interface ScheduleRunRecord {
   agentId: string | null;
   output: string | null;
   error: string | null;
+  // COMPAT(commandSchedules): added in v0.1.106, only populated for command runs.
+  exitCode?: number | null;
 }
 
 export interface ScheduleRecord {
@@ -144,12 +153,20 @@ export interface UpdateScheduleNewAgentConfig {
   cwd?: string;
 }
 
+export interface UpdateScheduleCommandConfig {
+  command?: string;
+  cwd?: string;
+  env?: Record<string, string> | null;
+  timeoutMs?: number | null;
+}
+
 export interface UpdateScheduleInput {
   id: string;
   name?: string | null;
   prompt?: string;
   cadence?: ScheduleCadence;
   newAgentConfig?: UpdateScheduleNewAgentConfig;
+  commandConfig?: UpdateScheduleCommandConfig;
   maxRuns?: number | null;
   expiresAt?: string | null;
 }
@@ -170,5 +187,8 @@ export interface ScheduleDaemonClient {
   scheduleDelete(input: { id: string }): Promise<ScheduleDeletePayload>;
   scheduleRunOnce(input: { id: string }): Promise<ScheduleRunOncePayload>;
   scheduleUpdate(input: UpdateScheduleInput): Promise<ScheduleUpdatePayload>;
+  getLastServerInfoMessage(): {
+    features?: { commandSchedules?: boolean } | null;
+  } | null;
   close(): Promise<void>;
 }

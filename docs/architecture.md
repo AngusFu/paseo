@@ -67,7 +67,7 @@ All paths are under `packages/server/src/`.
 | `server/agent/mcp-server.ts`    | Thin MCP adapter that registers the Paseo tool catalog with the MCP SDK      |
 | `server/agent/providers/`       | Provider adapters (see "Agent providers" below)                              |
 | `server/relay-transport.ts`     | Outbound relay connection with E2E encryption                                |
-| `server/schedule/`              | Cron-based scheduled agents                                                  |
+| `server/schedule/`              | Cron-based scheduled agents and shell commands                               |
 | `server/loop-service.ts`        | Looping agent runs that retry until an exit condition                        |
 | `server/chat/`                  | Chat rooms for agent-to-agent and human-to-agent messaging                   |
 
@@ -324,7 +324,7 @@ $PASEO_HOME/
 ├── projects/projects.json                      # Project registry
 ├── projects/workspaces.json                    # Workspace registry
 ├── chat/                                       # Chat rooms
-├── schedules/                                  # Scheduled-agent definitions and runs
+├── schedules/                                  # Schedule definitions and runs (agent + command targets)
 ├── loops/                                      # Loop runs and logs
 ├── config.json                                 # Daemon config (mutable)
 ├── daemon-keypair.json                         # Daemon identity for relay/E2EE

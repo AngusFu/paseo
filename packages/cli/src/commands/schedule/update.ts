@@ -6,6 +6,7 @@ import {
   type ScheduleInspectRow,
 } from "./schema.js";
 import {
+  assertCommandSchedulesSupported,
   connectScheduleClient,
   parseScheduleUpdateInput,
   toScheduleCommandError,
@@ -26,6 +27,10 @@ export interface ScheduleUpdateOptions extends ScheduleCommandOptions {
   noMaxRuns?: boolean;
   expiresIn?: string;
   noExpiresIn?: boolean;
+  command?: string;
+  env?: string[];
+  clearEnv?: boolean;
+  timeout?: string;
 }
 
 export async function runUpdateCommand(
@@ -48,9 +53,16 @@ export async function runUpdateCommand(
     expiresIn: options.expiresIn,
     clearMaxRuns: options.noMaxRuns,
     clearExpires: options.noExpiresIn,
+    command: options.command,
+    env: options.env,
+    clearEnv: options.clearEnv,
+    timeout: options.timeout,
   });
   const { client } = await connectScheduleClient(options.host);
   try {
+    if (input.commandConfig !== undefined) {
+      assertCommandSchedulesSupported(client);
+    }
     const payload = await client.scheduleUpdate(input);
     if (payload.error || !payload.schedule) {
       throw new Error(payload.error ?? `Failed to update schedule: ${id}`);

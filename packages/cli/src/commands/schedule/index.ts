@@ -11,6 +11,10 @@ import { runDeleteCommand } from "./delete.js";
 import { runRunOnceCommand } from "./run-once.js";
 import { runUpdateCommand } from "./update.js";
 
+function collectEnv(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
 export function createScheduleCommand(): Command {
   const schedule = new Command("schedule").description("Manage recurring schedules");
 
@@ -18,7 +22,7 @@ export function createScheduleCommand(): Command {
     schedule
       .command("create")
       .description("Create a schedule")
-      .argument("<prompt>", "Prompt to run on the schedule")
+      .argument("[prompt]", "Prompt to run on the schedule (omit when using --command)")
       .option("--every <duration>", "Fixed interval cadence (for example: 5m, 1h)")
       .option("--cron <expr>", "Cron cadence expression")
       .option("--timezone <iana>", "IANA time zone for cron cadence (default: UTC)")
@@ -32,6 +36,17 @@ export function createScheduleCommand(): Command {
         "--mode <mode>",
         "Provider-specific mode (e.g. claude bypassPermissions, opencode build)",
       )
+      .option(
+        "--command <cmd>",
+        "Run a shell command instead of an agent (mutually exclusive with --target/--provider/--mode)",
+      )
+      .option(
+        "--env <KEY=VALUE>",
+        "Environment variable for --command (repeatable)",
+        collectEnv,
+        [],
+      )
+      .option("--timeout <ms>", "Command timeout in milliseconds (only with --command)")
       .option("--cwd <path>", "Working directory (default: current; required with --host)")
       .option("--run-now", "Fire one immediate run on creation (only with --cron)")
       .option("--no-run-now", "Wait the full interval before the first run (only with --every)")
@@ -92,7 +107,16 @@ export function createScheduleCommand(): Command {
       )
       .option("--model <model>", "New agent model (only for new-agent target)")
       .option("--mode <mode>", "New agent provider mode (only for new-agent target)")
-      .option("--cwd <path>", "New working directory (only for new-agent target)")
+      .option("--cwd <path>", "New working directory (new-agent or command target)")
+      .option("--command <cmd>", "Replace the shell command (command target)")
+      .option(
+        "--env <KEY=VALUE>",
+        "Replace command environment variables (repeatable, command target)",
+        collectEnv,
+        [],
+      )
+      .option("--clear-env", "Clear all command environment variables (command target)")
+      .option("--timeout <ms>", "Set command timeout in milliseconds (command target)")
       .option("--max-runs <n>", "Set or change maximum number of runs")
       .option("--no-max-runs", "Clear the max-runs limit")
       .option("--expires-in <duration>", "Set or change time to live for the schedule")

@@ -37,6 +37,7 @@ export interface ScheduleLogRow {
   status: string;
   startedAt: string;
   agentId: string | null;
+  exitCode: string | null;
   output: string | null;
   error: string | null;
 }
@@ -48,6 +49,7 @@ export const scheduleLogSchema: OutputSchema<ScheduleLogRow> = {
     { header: "STATUS", field: "status", width: 12 },
     { header: "STARTED", field: "startedAt", width: 24 },
     { header: "AGENT", field: "agentId", width: 12 },
+    { header: "EXIT", field: "exitCode", width: 6 },
     { header: "OUTPUT", field: "output", width: 40 },
     { header: "ERROR", field: "error", width: 40 },
   ],
@@ -59,9 +61,29 @@ export function toScheduleLogRow(run: ScheduleRunRecord): ScheduleLogRow {
     status: run.status,
     startedAt: run.startedAt,
     agentId: run.agentId ? run.agentId.slice(0, 7) : null,
+    exitCode: run.exitCode == null ? null : `${run.exitCode}`,
     output: run.output,
     error: run.error,
   };
+}
+
+function createCommandTargetRows(target: ScheduleRecord["target"]): ScheduleInspectRow[] {
+  if (target.type !== "command") {
+    return [];
+  }
+  const rows: ScheduleInspectRow[] = [{ key: "Command", value: target.command }];
+  rows.push({ key: "CommandCwd", value: target.cwd });
+  const envKeys = target.env ? Object.keys(target.env) : [];
+  if (envKeys.length > 0) {
+    rows.push({
+      key: "CommandEnv",
+      value: envKeys.map((key) => `${key}=${target.env?.[key] ?? ""}`).join(" "),
+    });
+  }
+  if (target.timeoutMs != null) {
+    rows.push({ key: "CommandTimeout", value: `${target.timeoutMs}ms` });
+  }
+  return rows;
 }
 
 export function createScheduleInspectRows(schedule: ScheduleRecord): ScheduleInspectRow[] {
@@ -77,6 +99,7 @@ export function createScheduleInspectRows(schedule: ScheduleRecord): ScheduleIns
           : `every:${schedule.cadence.everyMs}ms`,
     },
     { key: "Target", value: formatTarget(schedule.target) },
+    ...createCommandTargetRows(schedule.target),
     { key: "Status", value: schedule.status },
     { key: "CreatedAt", value: schedule.createdAt },
     { key: "UpdatedAt", value: schedule.updatedAt },

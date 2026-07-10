@@ -129,6 +129,114 @@ describe("parseScheduleCreateInput first-run timing", () => {
   });
 });
 
+describe("parseScheduleCreateInput command target", () => {
+  beforeEach(() => {
+    vi.spyOn(process, "cwd").mockReturnValue("/local/project");
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("--command builds a command target with default cwd and prompt", () => {
+    const input = parseScheduleCreateInput({ every: "5m", command: "  npm test  " });
+    expect(input.target).toEqual({
+      type: "command",
+      command: "npm test",
+      cwd: "/local/project",
+    });
+    expect(input.prompt).toBe("npm test");
+  });
+
+  test("--command with --env and --timeout", () => {
+    const input = parseScheduleCreateInput({
+      every: "5m",
+      command: "npm test",
+      cwd: "/repo",
+      env: ["FOO=bar", "BAZ=qux=1"],
+      timeout: "5000",
+    });
+    expect(input.target).toEqual({
+      type: "command",
+      command: "npm test",
+      cwd: "/repo",
+      env: { FOO: "bar", BAZ: "qux=1" },
+      timeoutMs: 5000,
+    });
+  });
+
+  test("--command rejects combining with target flags", () => {
+    expect(() =>
+      parseScheduleCreateInput({ every: "5m", command: "npm test", provider: "claude" }),
+    ).toThrow(expect.objectContaining({ code: "CONFLICTING_TARGET" }));
+  });
+
+  test("empty --command is rejected", () => {
+    expect(() => parseScheduleCreateInput({ every: "5m", command: "   " })).toThrow(
+      expect.objectContaining({ code: "INVALID_COMMAND" }),
+    );
+  });
+
+  test("malformed --env entry is rejected", () => {
+    expect(() =>
+      parseScheduleCreateInput({ every: "5m", command: "npm test", env: ["NOEQUALS"] }),
+    ).toThrow(expect.objectContaining({ code: "INVALID_ENV" }));
+  });
+});
+
+describe("parseScheduleUpdateInput command target", () => {
+  test("--command/--env/--timeout/--cwd build a commandConfig", () => {
+    expect(
+      parseScheduleUpdateInput({
+        id: "abc",
+        command: "  npm run e2e  ",
+        env: ["FOO=bar"],
+        timeout: "1000",
+        cwd: "/repo",
+      }),
+    ).toEqual({
+      id: "abc",
+      commandConfig: {
+        command: "npm run e2e",
+        cwd: "/repo",
+        env: { FOO: "bar" },
+        timeoutMs: 1000,
+      },
+    });
+  });
+
+  test("--clear-env sets env to null", () => {
+    expect(parseScheduleUpdateInput({ id: "abc", clearEnv: true })).toEqual({
+      id: "abc",
+      commandConfig: { env: null },
+    });
+  });
+
+  test("--clear-env with --env is rejected", () => {
+    expect(() => parseScheduleUpdateInput({ id: "abc", clearEnv: true, env: ["FOO=bar"] })).toThrow(
+      expect.objectContaining({ code: "CONFLICTING_ENV" }),
+    );
+  });
+
+  test("mixing command flags with new-agent flags is rejected", () => {
+    expect(() =>
+      parseScheduleUpdateInput({ id: "abc", command: "npm test", provider: "claude" }),
+    ).toThrow(expect.objectContaining({ code: "CONFLICTING_TARGET" }));
+  });
+
+  test("--cwd alone still routes to newAgentConfig", () => {
+    expect(parseScheduleUpdateInput({ id: "abc", cwd: "/repo" })).toEqual({
+      id: "abc",
+      newAgentConfig: { cwd: "/repo" },
+    });
+  });
+
+  test("empty --command is rejected", () => {
+    expect(() => parseScheduleUpdateInput({ id: "abc", command: "   " })).toThrow(
+      expect.objectContaining({ code: "INVALID_COMMAND" }),
+    );
+  });
+});
+
 describe("parseScheduleUpdateInput", () => {
   test("rejects calls with no fields to update", () => {
     expect(() => parseScheduleUpdateInput({ id: "abc" })).toThrow(

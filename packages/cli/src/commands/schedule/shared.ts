@@ -7,6 +7,7 @@ import type {
   ScheduleListItem,
   ScheduleRecord,
   ScheduleTarget,
+  UpdateScheduleCommandConfig,
   UpdateScheduleInput,
   UpdateScheduleNewAgentConfig,
 } from "./types.js";
@@ -36,6 +37,16 @@ export async function connectScheduleClient(
   }
 }
 
+export function assertCommandSchedulesSupported(client: ScheduleDaemonClient): void {
+  const features = client.getLastServerInfoMessage()?.features;
+  if (!features?.commandSchedules) {
+    throw {
+      code: "UNSUPPORTED_COMMAND_SCHEDULES",
+      message: "daemon does not support command schedules; update the host",
+    } satisfies CommandError;
+  }
+}
+
 export function toScheduleCommandError(code: string, action: string, error: unknown): CommandError {
   if (error && typeof error === "object" && "code" in error) {
     return error as CommandError;
@@ -61,6 +72,9 @@ export function formatTarget(target: ScheduleTarget | ScheduleListItem["target"]
   }
   if (target.type === "agent") {
     return `agent:${target.agentId.slice(0, 7)}`;
+  }
+  if (target.type === "command") {
+    return `command:${target.command}`;
   }
   const modelSuffix = target.config.model ? `/${target.config.model}` : "";
   return `new-agent:${target.config.provider}${modelSuffix}`;
@@ -127,7 +141,7 @@ function resolveScheduleTarget(args: {
 }
 
 export function parseScheduleCreateInput(options: {
-  prompt: string;
+  prompt?: string;
   every?: string;
   cron?: string;
   timezone?: string;
@@ -140,15 +154,10 @@ export function parseScheduleCreateInput(options: {
   maxRuns?: string;
   expiresIn?: string;
   runNow?: boolean;
+  command?: string;
+  env?: string[];
+  timeout?: string;
 }): CreateScheduleInput {
-  const prompt = options.prompt.trim();
-  if (!prompt) {
-    throw {
-      code: "INVALID_PROMPT",
-      message: "Schedule prompt cannot be empty",
-    } satisfies CommandError;
-  }
-
   const cadence = parseCadenceFromFlags(options.every, options.cron, options.timezone);
   if (!cadence) {
     throw {
@@ -167,7 +176,94 @@ export function parseScheduleCreateInput(options: {
   }
 
   const runOnCreate = resolveRunOnCreate(options.runNow, cadence.type);
+  const maxRuns = parseCreateMaxRuns(options.maxRuns);
+  const expiresAt = parseCreateExpiresAt(options.expiresIn);
+  const name = options.name?.trim();
 
+  // Command target: the command string doubles as the prompt (the daemon derives
+  // the prompt from target.command). The <prompt> positional is unused here.
+  const target =
+    options.command !== undefined
+      ? buildCommandCreateTarget(options, cwdInput)
+      : buildAgentCreateTarget(options, cwdInput);
+  const prompt = target.type === "command" ? target.command : requireCreatePrompt(options.prompt);
+
+  return {
+    prompt,
+    cadence,
+    target,
+    runOnCreate,
+    ...(name ? { name } : {}),
+    ...(maxRuns !== undefined ? { maxRuns } : {}),
+    ...(expiresAt ? { expiresAt } : {}),
+  };
+}
+
+function parseCreateMaxRuns(value: string | undefined): number | undefined {
+  return value === undefined ? undefined : parsePositiveInt(value, "--max-runs");
+}
+
+function parseCreateExpiresAt(value: string | undefined): string | undefined {
+  return value === undefined
+    ? undefined
+    : new Date(Date.now() + parseDuration(value)).toISOString();
+}
+
+function requireCreatePrompt(prompt: string | undefined): string {
+  const trimmed = prompt?.trim() ?? "";
+  if (!trimmed) {
+    throw {
+      code: "INVALID_PROMPT",
+      message: "Schedule prompt cannot be empty",
+    } satisfies CommandError;
+  }
+  return trimmed;
+}
+
+function buildCommandCreateTarget(
+  options: {
+    command?: string;
+    target?: string;
+    provider?: string;
+    mode?: string;
+    env?: string[];
+    timeout?: string;
+  },
+  cwdInput: string | undefined,
+): ScheduleTarget {
+  if (
+    options.target !== undefined ||
+    options.provider !== undefined ||
+    options.mode !== undefined
+  ) {
+    throw {
+      code: "CONFLICTING_TARGET",
+      message: "--command cannot be combined with --target/--provider/--mode",
+    } satisfies CommandError;
+  }
+  const command = options.command?.trim() ?? "";
+  if (!command) {
+    throw {
+      code: "INVALID_COMMAND",
+      message: "--command cannot be empty",
+    } satisfies CommandError;
+  }
+  const env = parseEnvEntries(options.env);
+  const timeoutMs =
+    options.timeout === undefined ? undefined : parsePositiveInt(options.timeout, "--timeout");
+  return {
+    type: "command",
+    command,
+    cwd: cwdInput ?? process.cwd(),
+    ...(env ? { env } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+  };
+}
+
+function buildAgentCreateTarget(
+  options: { target?: string; provider?: string; mode?: string },
+  cwdInput: string | undefined,
+): ScheduleTarget {
   const targetValue = options.target?.trim();
   const modeId = options.mode?.trim();
   const hasExplicitNewAgentOption = options.provider !== undefined || options.mode !== undefined;
@@ -185,28 +281,11 @@ export function parseScheduleCreateInput(options: {
       },
     };
   };
-  const target = resolveScheduleTarget({
+  return resolveScheduleTarget({
     targetValue,
     hasExplicitNewAgentOption,
     createNewAgentTarget,
   });
-
-  const maxRuns =
-    options.maxRuns === undefined ? undefined : parsePositiveInt(options.maxRuns, "--max-runs");
-  const expiresAt =
-    options.expiresIn === undefined
-      ? undefined
-      : new Date(Date.now() + parseDuration(options.expiresIn)).toISOString();
-
-  return {
-    prompt,
-    cadence,
-    target,
-    runOnCreate,
-    ...(options.name?.trim() ? { name: options.name.trim() } : {}),
-    ...(maxRuns !== undefined ? { maxRuns } : {}),
-    ...(expiresAt ? { expiresAt } : {}),
-  };
 }
 
 function resolveRunOnCreate(
@@ -245,6 +324,10 @@ export interface ScheduleUpdateOptionsInput {
   expiresIn?: string;
   clearMaxRuns?: boolean;
   clearExpires?: boolean;
+  command?: string;
+  env?: string[];
+  clearEnv?: boolean;
+  timeout?: string;
 }
 
 export function parseScheduleUpdateInput(options: ScheduleUpdateOptionsInput): UpdateScheduleInput {
@@ -256,8 +339,8 @@ export function parseScheduleUpdateInput(options: ScheduleUpdateOptionsInput): U
     } satisfies CommandError;
   }
 
+  const { newAgentConfig, commandConfig } = resolveUpdateTargetPatches(options);
   const cadence = parseCadenceFromFlags(options.every, options.cron, options.timezone);
-  const newAgentConfig = buildNewAgentConfigPatch(options);
   const maxRuns = parseUpdateMaxRuns(options);
   const expiresAt = parseUpdateExpiresAt(options);
   const name = parseUpdateName(options);
@@ -268,6 +351,7 @@ export function parseScheduleUpdateInput(options: ScheduleUpdateOptionsInput): U
     prompt === undefined &&
     cadence === undefined &&
     newAgentConfig === undefined &&
+    commandConfig === undefined &&
     maxRuns === undefined &&
     expiresAt === undefined
   ) {
@@ -283,6 +367,7 @@ export function parseScheduleUpdateInput(options: ScheduleUpdateOptionsInput): U
     ...(prompt !== undefined ? { prompt } : {}),
     ...(cadence !== undefined ? { cadence } : {}),
     ...(newAgentConfig !== undefined ? { newAgentConfig } : {}),
+    ...(commandConfig !== undefined ? { commandConfig } : {}),
     ...(maxRuns !== undefined ? { maxRuns } : {}),
     ...(expiresAt !== undefined ? { expiresAt } : {}),
   };
@@ -416,6 +501,100 @@ function buildNewAgentConfigPatch(
     patch.cwd = trimmed;
   }
   return Object.keys(patch).length > 0 ? patch : undefined;
+}
+
+function resolveUpdateTargetPatches(options: ScheduleUpdateOptionsInput): {
+  newAgentConfig?: UpdateScheduleNewAgentConfig;
+  commandConfig?: UpdateScheduleCommandConfig;
+} {
+  const hasCommandFlags =
+    options.command !== undefined ||
+    (options.env !== undefined && options.env.length > 0) ||
+    options.clearEnv === true ||
+    options.timeout !== undefined;
+  const hasNewAgentFlags =
+    options.provider !== undefined || options.model !== undefined || options.mode !== undefined;
+  if (hasCommandFlags && hasNewAgentFlags) {
+    throw {
+      code: "CONFLICTING_TARGET",
+      message: "--command/--env/--timeout cannot be combined with --provider/--model/--mode",
+    } satisfies CommandError;
+  }
+  // --cwd routes to the command config when command flags are present, otherwise
+  // to the new-agent config (its existing meaning).
+  if (hasCommandFlags) {
+    return { commandConfig: buildCommandConfigPatch(options) };
+  }
+  return { newAgentConfig: buildNewAgentConfigPatch(options) };
+}
+
+function buildCommandConfigPatch(
+  options: ScheduleUpdateOptionsInput,
+): UpdateScheduleCommandConfig | undefined {
+  const patch: UpdateScheduleCommandConfig = {};
+  if (options.command !== undefined) {
+    const trimmed = options.command.trim();
+    if (!trimmed) {
+      throw {
+        code: "INVALID_COMMAND",
+        message: "--command cannot be empty",
+      } satisfies CommandError;
+    }
+    patch.command = trimmed;
+  }
+  if (options.cwd !== undefined) {
+    const trimmed = options.cwd.trim();
+    if (!trimmed) {
+      throw {
+        code: "INVALID_CWD",
+        message: "--cwd cannot be empty",
+      } satisfies CommandError;
+    }
+    patch.cwd = trimmed;
+  }
+  if (options.clearEnv) {
+    if (options.env !== undefined && options.env.length > 0) {
+      throw {
+        code: "CONFLICTING_ENV",
+        message: "Use either --env KEY=VALUE or --clear-env, not both",
+      } satisfies CommandError;
+    }
+    patch.env = null;
+  } else {
+    const env = parseEnvEntries(options.env);
+    if (env !== undefined) {
+      patch.env = env;
+    }
+  }
+  if (options.timeout !== undefined) {
+    patch.timeoutMs = parsePositiveInt(options.timeout, "--timeout");
+  }
+  return Object.keys(patch).length > 0 ? patch : undefined;
+}
+
+function parseEnvEntries(entries: string[] | undefined): Record<string, string> | undefined {
+  if (!entries || entries.length === 0) {
+    return undefined;
+  }
+  const env: Record<string, string> = {};
+  for (const entry of entries) {
+    const eq = entry.indexOf("=");
+    if (eq <= 0) {
+      throw {
+        code: "INVALID_ENV",
+        message: `--env must be KEY=VALUE (got "${entry}")`,
+      } satisfies CommandError;
+    }
+    const key = entry.slice(0, eq).trim();
+    if (!key) {
+      throw {
+        code: "INVALID_ENV",
+        message: `--env key cannot be empty (got "${entry}")`,
+      } satisfies CommandError;
+    }
+    env[key] = entry.slice(eq + 1);
+  }
+  return env;
 }
 
 function parsePositiveInt(value: string, flag: string): number {

@@ -274,6 +274,9 @@ interface ScheduleUpdateToolInput {
   model?: string | null;
   mode?: string | null;
   cwd?: string;
+  command?: string;
+  env?: Record<string, string> | null;
+  timeoutMs?: number | null;
   expiresIn?: string;
   clearExpires?: boolean;
 }
@@ -339,11 +342,22 @@ function buildScheduleUpdateInput(input: ScheduleUpdateToolInput): UpdateSchedul
     provider: input.provider,
     model: input.model,
   });
+  // `cwd` routes to whichever target the other fields indicate. Command-specific
+  // fields (command/env/timeoutMs) mark a command target; otherwise cwd applies to
+  // the new-agent config, preserving legacy behavior.
+  const hasCommandFields =
+    input.command !== undefined || input.env !== undefined || input.timeoutMs !== undefined;
   const newAgentConfig = {
     ...(providerModelPatch.provider !== undefined ? { provider: providerModelPatch.provider } : {}),
     ...(providerModelPatch.model !== undefined ? { model: providerModelPatch.model } : {}),
     ...(input.mode !== undefined ? { modeId: input.mode } : {}),
-    ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+    ...(input.cwd !== undefined && !hasCommandFields ? { cwd: input.cwd } : {}),
+  };
+  const commandConfig = {
+    ...(input.command !== undefined ? { command: input.command } : {}),
+    ...(input.cwd !== undefined && hasCommandFields ? { cwd: input.cwd } : {}),
+    ...(input.env !== undefined ? { env: input.env } : {}),
+    ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
   };
 
   return {
@@ -354,6 +368,7 @@ function buildScheduleUpdateInput(input: ScheduleUpdateToolInput): UpdateSchedul
     ...(input.maxRuns !== undefined ? { maxRuns: input.maxRuns } : {}),
     ...(expiresAt !== undefined ? { expiresAt } : {}),
     ...(Object.keys(newAgentConfig).length > 0 ? { newAgentConfig } : {}),
+    ...(Object.keys(commandConfig).length > 0 ? { commandConfig } : {}),
   };
 }
 
@@ -1984,9 +1999,21 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     "create_schedule",
     {
       title: "Create schedule",
-      description: "Create a recurring schedule that starts a new agent on a cron cadence.",
+      description:
+        "Create a recurring schedule on a cron cadence. Provide `prompt` to start a new agent, or `command` to run a shell command. Exactly one of the two is required.",
       inputSchema: {
-        prompt: z.string().trim().min(1, "prompt is required"),
+        prompt: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("Prompt for a new-agent target. Provide this or `command`, not both."),
+        command: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("Shell command for a command target. Provide this or `prompt`, not both."),
         cron: z.string().trim().min(1, "cron is required"),
         timezone: z
           .string()
@@ -1996,31 +2023,83 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           .describe("IANA time zone for the cron cadence. For example: America/New_York."),
         name: z.string().optional(),
         provider: AgentProviderEnum.optional().describe(
-          "Provider, or provider/model (for example: codex or codex/gpt-5.4).",
+          "Provider, or provider/model (for example: codex or codex/gpt-5.4). Only for new-agent (prompt) targets.",
         ),
-        cwd: z.string().optional(),
+        cwd: z
+          .string()
+          .optional()
+          .describe("Working directory. Required for command targets outside an agent session."),
+        env: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe("Environment variables for a command target."),
+        timeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Timeout in milliseconds for a command target."),
         maxRuns: z.number().int().positive().optional(),
         expiresIn: z.string().optional(),
       },
       outputSchema: ScheduleSummarySchema.shape,
     },
-    async ({ prompt, cron, timezone, name, provider, cwd, maxRuns, expiresIn }) => {
+    async ({
+      prompt,
+      command,
+      cron,
+      timezone,
+      name,
+      provider,
+      cwd,
+      env,
+      timeoutMs,
+      maxRuns,
+      expiresIn,
+    }) => {
       if (!scheduleService) {
         throw new Error("Schedule service is not configured");
       }
 
+      const trimmedPrompt = prompt?.trim();
+      const trimmedCommand = command?.trim();
+      if (trimmedPrompt && trimmedCommand) {
+        throw new Error("Specify either prompt or command, not both");
+      }
+      if (!trimmedPrompt && !trimmedCommand) {
+        throw new Error("Either prompt or command is required");
+      }
+
       const expiresAt = buildScheduleExpiry(expiresIn);
-      const schedule = await scheduleService.createOrReplace({
-        prompt: prompt.trim(),
+      const commonInput = {
         cadence: buildCronScheduleCadence({
           cron,
           ...(timezone !== undefined ? { timezone } : {}),
         }),
-        target: resolveNewAgentScheduleTarget({ provider, cwd }),
         ...(name?.trim() ? { name: name.trim() } : {}),
         ...(maxRuns === undefined ? {} : { maxRuns }),
         ...(expiresAt === undefined ? {} : { expiresAt }),
-      });
+      };
+
+      const schedule = trimmedCommand
+        ? await scheduleService.createOrReplace({
+            // Command targets have no agent prompt; the service derives the stored
+            // prompt from target.command.
+            prompt: "",
+            target: {
+              type: "command",
+              command: trimmedCommand,
+              cwd: resolveScopedCwd(cwd, { required: true }),
+              ...(env !== undefined ? { env } : {}),
+              ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+            },
+            ...commonInput,
+          })
+        : await scheduleService.createOrReplace({
+            prompt: trimmedPrompt!,
+            target: resolveNewAgentScheduleTarget({ provider, cwd }),
+            ...commonInput,
+          });
 
       return {
         content: [],
@@ -2248,7 +2327,25 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           .nullable()
           .optional()
           .describe("New mode for new-agent target (null to clear)."),
-        cwd: z.string().trim().min(1).optional().describe("New cwd for new-agent target."),
+        cwd: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("New cwd for new-agent or command target."),
+        command: z.string().trim().min(1).optional().describe("New command for command target."),
+        env: z
+          .record(z.string(), z.string())
+          .nullable()
+          .optional()
+          .describe("New environment variables for command target (null to clear)."),
+        timeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .nullable()
+          .optional()
+          .describe("New timeout in milliseconds for command target (null to clear)."),
         expiresIn: z
           .string()
           .optional()

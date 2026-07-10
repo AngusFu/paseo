@@ -288,6 +288,10 @@ export const ar: TranslationResources = {
       next: "التالي",
       answerPlaceholder: "اكتب إجابتك...",
       otherPlaceholder: "آخر...",
+      waitingForAnswer: "في انتظار الإجابة (أجب في النموذج أدناه)",
+      notAnswered: "بدون إجابة (تم التخطي أو المقاطعة)",
+      callFailed: "فشل الاستدعاء",
+      multiSelect: "اختيار متعدد",
     },
     todo: {
       title: "المهام",

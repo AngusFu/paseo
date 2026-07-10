@@ -291,6 +291,10 @@ export const ptBR: TranslationResources = {
       next: "Próximo",
       answerPlaceholder: "Digite sua resposta...",
       otherPlaceholder: "Outro...",
+      waitingForAnswer: "Aguardando resposta (responda no formulário abaixo)",
+      notAnswered: "Sem resposta (ignorada ou interrompida)",
+      callFailed: "Falha na chamada",
+      multiSelect: "seleção múltipla",
     },
     todo: {
       title: "Tarefas",

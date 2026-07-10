@@ -291,6 +291,10 @@ export const ja: TranslationResources = {
       next: "次へ",
       answerPlaceholder: "回答を入力...",
       otherPlaceholder: "その他...",
+      waitingForAnswer: "回答待ち（下のフォームで回答してください）",
+      notAnswered: "未回答（スキップまたは中断されました）",
+      callFailed: "呼び出しに失敗しました",
+      multiSelect: "複数選択",
     },
     todo: {
       title: "タスク",

@@ -2367,6 +2367,8 @@ export const ServerInfoStatusPayloadSchema = z
         daemonSelfUpdate: z.boolean().optional(),
         // COMPAT(agentForkContext): added in v0.1.102, remove gate after 2026-12-28.
         agentForkContext: z.boolean().optional(),
+        // COMPAT(commandSchedules): added in v0.1.106, drop the gate when floor >= v0.1.106.
+        commandSchedules: z.boolean().optional(),
       })
       .optional(),
   })
@@ -4680,6 +4682,7 @@ export const WSHelloMessageSchema = z.object({
       [CLIENT_CAPS.customModeIcons]: z.boolean().optional(),
       [CLIENT_CAPS.terminalReflowableSnapshot]: z.boolean().optional(),
       [CLIENT_CAPS.browserHost]: BrowserAutomationHostCapabilitySchema.optional(),
+      [CLIENT_CAPS.commandSchedules]: z.boolean().optional(),
     })
     .passthrough()
     .optional(),

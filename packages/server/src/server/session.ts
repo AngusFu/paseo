@@ -728,6 +728,7 @@ export class Session {
     this.chatScheduleLoopSession = new ChatScheduleLoopSession({
       host: {
         emit: (msg) => this.emit(msg),
+        supportsCommandSchedules: () => this.supports(CLIENT_CAPS.commandSchedules),
         listStoredAgents: () => this.agentStorage.list(),
         listLiveAgents: () => this.agentManager.listAgents(),
         resolveAgentIdentifier: (identifier) => this.resolveAgentIdentifier(identifier),

@@ -19,6 +19,11 @@ import type { ScheduleService } from "../../schedule/service.js";
  */
 export interface ChatScheduleLoopSessionHost {
   emit(msg: SessionOutboundMessage): void;
+  // COMPAT(commandSchedules): added in v0.1.106. Old clients parse schedule targets
+  // as a closed discriminated union and reject responses containing the "command"
+  // variant, so command schedules are hidden from clients without the capability.
+  // Drop the gate when floor >= v0.1.106.
+  supportsCommandSchedules(): boolean;
   listStoredAgents(): Promise<StoredAgentRecord[]>;
   listLiveAgents(): ManagedAgent[];
   resolveAgentIdentifier(
@@ -252,6 +257,13 @@ export class ChatScheduleLoopSession {
     }
   }
 
+  // COMPAT(commandSchedules): see ChatScheduleLoopSessionHost.supportsCommandSchedules.
+  private assertCommandSchedulesSupported(target: { type: string }): void {
+    if (target.type === "command" && !this.host.supportsCommandSchedules()) {
+      throw new Error("Command schedules require a newer client. Update the client to use this.");
+    }
+  }
+
   private toScheduleSummary(
     schedule: Awaited<ReturnType<ScheduleService["inspect"]>>,
   ): Extract<
@@ -301,6 +313,7 @@ export class ChatScheduleLoopSession {
         request.target.type === "self"
           ? { type: "agent" as const, agentId: request.target.agentId }
           : request.target;
+      this.assertCommandSchedulesSupported(target);
       const schedule = await this.scheduleService.create({
         prompt: request.prompt,
         name: request.name,
@@ -328,11 +341,16 @@ export class ChatScheduleLoopSession {
   ): Promise<void> {
     try {
       const schedules = await this.scheduleService.list();
+      // COMPAT(commandSchedules): hide command schedules from clients that
+      // cannot parse the "command" target variant.
+      const visibleSchedules = this.host.supportsCommandSchedules()
+        ? schedules
+        : schedules.filter((schedule) => schedule.target.type !== "command");
       this.host.emit({
         type: "schedule/list/response",
         payload: {
           requestId: request.requestId,
-          schedules: schedules.map((schedule) => this.toScheduleSummary(schedule)),
+          schedules: visibleSchedules.map((schedule) => this.toScheduleSummary(schedule)),
           error: null,
         },
       });
@@ -346,6 +364,7 @@ export class ChatScheduleLoopSession {
   ): Promise<void> {
     try {
       const schedule = await this.scheduleService.inspect(request.scheduleId);
+      this.assertCommandSchedulesSupported(schedule.target);
       this.host.emit({
         type: "schedule/inspect/response",
         payload: {
@@ -363,6 +382,8 @@ export class ChatScheduleLoopSession {
     request: Extract<SessionInboundMessage, { type: "schedule/logs" }>,
   ): Promise<void> {
     try {
+      const inspected = await this.scheduleService.inspect(request.scheduleId);
+      this.assertCommandSchedulesSupported(inspected.target);
       const runs = await this.scheduleService.logs(request.scheduleId);
       this.host.emit({
         type: "schedule/logs/response",
@@ -381,6 +402,9 @@ export class ChatScheduleLoopSession {
     request: Extract<SessionInboundMessage, { type: "schedule/pause" }>,
   ): Promise<void> {
     try {
+      this.assertCommandSchedulesSupported(
+        (await this.scheduleService.inspect(request.scheduleId)).target,
+      );
       const schedule = await this.scheduleService.pause(request.scheduleId);
       this.host.emit({
         type: "schedule/pause/response",
@@ -399,6 +423,9 @@ export class ChatScheduleLoopSession {
     request: Extract<SessionInboundMessage, { type: "schedule/resume" }>,
   ): Promise<void> {
     try {
+      this.assertCommandSchedulesSupported(
+        (await this.scheduleService.inspect(request.scheduleId)).target,
+      );
       const schedule = await this.scheduleService.resume(request.scheduleId);
       this.host.emit({
         type: "schedule/resume/response",
@@ -417,6 +444,9 @@ export class ChatScheduleLoopSession {
     request: Extract<SessionInboundMessage, { type: "schedule/delete" }>,
   ): Promise<void> {
     try {
+      this.assertCommandSchedulesSupported(
+        (await this.scheduleService.inspect(request.scheduleId)).target,
+      );
       await this.scheduleService.delete(request.scheduleId);
       this.host.emit({
         type: "schedule/delete/response",
@@ -435,6 +465,9 @@ export class ChatScheduleLoopSession {
     request: Extract<SessionInboundMessage, { type: "schedule/run-once" }>,
   ): Promise<void> {
     try {
+      this.assertCommandSchedulesSupported(
+        (await this.scheduleService.inspect(request.scheduleId)).target,
+      );
       const schedule = await this.scheduleService.runOnce(request.scheduleId);
       this.host.emit({
         type: "schedule/run-once/response",
@@ -453,12 +486,16 @@ export class ChatScheduleLoopSession {
     request: Extract<SessionInboundMessage, { type: "schedule/update" }>,
   ): Promise<void> {
     try {
+      this.assertCommandSchedulesSupported(
+        (await this.scheduleService.inspect(request.scheduleId)).target,
+      );
       const schedule = await this.scheduleService.update({
         id: request.scheduleId,
         ...(request.name !== undefined ? { name: request.name } : {}),
         ...(request.prompt !== undefined ? { prompt: request.prompt } : {}),
         ...(request.cadence !== undefined ? { cadence: request.cadence } : {}),
         ...(request.newAgentConfig !== undefined ? { newAgentConfig: request.newAgentConfig } : {}),
+        ...(request.commandConfig !== undefined ? { commandConfig: request.commandConfig } : {}),
         ...(request.maxRuns !== undefined ? { maxRuns: request.maxRuns } : {}),
         ...(request.expiresAt !== undefined ? { expiresAt: request.expiresAt } : {}),
       });

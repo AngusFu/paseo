@@ -49,6 +49,16 @@ export const ScheduleTargetSchema = z.discriminatedUnion("type", [
       mcpServers: z.record(z.string(), z.unknown()).optional(),
     }),
   }),
+  // COMPAT(commandSchedules): added in v0.1.106. Old clients reject responses
+  // containing this variant; the daemon filters command schedules for clients
+  // without the "command_schedules" capability. Drop the gate when floor >= v0.1.106.
+  z.object({
+    type: z.literal("command"),
+    command: z.string().trim().min(1),
+    cwd: z.string().trim().min(1),
+    env: z.record(z.string(), z.string()).optional(),
+    timeoutMs: z.number().int().positive().optional(),
+  }),
 ]);
 export type ScheduleTarget = z.infer<typeof ScheduleTargetSchema>;
 
@@ -62,6 +72,8 @@ export const ScheduleRunSchema = z.object({
   workspaceId: z.string().nullable().optional(),
   output: z.string().nullable(),
   error: z.string().nullable(),
+  // COMPAT(commandSchedules): added in v0.1.106, optional field is safe for old clients.
+  exitCode: z.number().int().nullable().optional(),
 });
 export type ScheduleRun = z.infer<typeof ScheduleRunSchema>;
 
@@ -108,12 +120,20 @@ export interface UpdateScheduleNewAgentConfig {
   cwd?: string;
 }
 
+export interface UpdateScheduleCommandConfig {
+  command?: string;
+  cwd?: string;
+  env?: Record<string, string> | null;
+  timeoutMs?: number | null;
+}
+
 export interface UpdateScheduleInput {
   id: string;
   name?: string | null;
   prompt?: string;
   cadence?: ScheduleCadence;
   newAgentConfig?: UpdateScheduleNewAgentConfig;
+  commandConfig?: UpdateScheduleCommandConfig;
   maxRuns?: number | null;
   expiresAt?: string | null;
 }
@@ -121,4 +141,5 @@ export interface UpdateScheduleInput {
 export interface ScheduleExecutionResult {
   agentId: string | null;
   output: string | null;
+  exitCode?: number | null;
 }

@@ -340,6 +340,99 @@ describe("ScheduleService", () => {
     expect(inspected.nextRunAt).toBe("2026-01-01T00:02:00.000Z");
   });
 
+  test("executes command schedules and records exit code and output", async () => {
+    const service = createScheduleService({
+      paseoHome: tempDir,
+      logger: createTestLogger(),
+      agentManager: new AgentManager({ logger: createTestLogger() }),
+      agentStorage,
+      providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
+      now: () => now,
+    });
+
+    const created = await service.create({
+      prompt: "",
+      cadence: { type: "every", everyMs: 60_000 },
+      target: {
+        type: "command",
+        command: 'echo "hello-$FOO"',
+        cwd: tempDir,
+        env: { FOO: "bar" },
+      },
+    });
+    expect(created.prompt).toBe('echo "hello-$FOO"');
+
+    await service.runOnce(created.id);
+
+    const inspected = await service.inspect(created.id);
+    expect(inspected.runs).toHaveLength(1);
+    expect(inspected.runs[0]).toMatchObject({
+      status: "succeeded",
+      agentId: null,
+      exitCode: 0,
+    });
+    expect(inspected.runs[0].output).toContain("hello-bar");
+  });
+
+  test("records failed command runs with their exit code and output tail", async () => {
+    const service = createScheduleService({
+      paseoHome: tempDir,
+      logger: createTestLogger(),
+      agentManager: new AgentManager({ logger: createTestLogger() }),
+      agentStorage,
+      providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
+      now: () => now,
+    });
+
+    const created = await service.create({
+      prompt: "",
+      cadence: { type: "every", everyMs: 60_000 },
+      target: {
+        type: "command",
+        command: 'echo "boom" >&2; exit 3',
+        cwd: tempDir,
+      },
+    });
+
+    await service.runOnce(created.id);
+
+    const inspected = await service.inspect(created.id);
+    expect(inspected.runs[0]).toMatchObject({
+      status: "failed",
+      exitCode: 3,
+    });
+    expect(inspected.runs[0].error).toContain("exited with code 3");
+    expect(inspected.runs[0].output).toContain("boom");
+  });
+
+  test("updates command config and keeps the display prompt in sync", async () => {
+    const service = createScheduleService({
+      paseoHome: tempDir,
+      logger: createTestLogger(),
+      agentManager: new AgentManager({ logger: createTestLogger() }),
+      agentStorage,
+      providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
+      now: () => now,
+    });
+
+    const created = await service.create({
+      prompt: "",
+      cadence: { type: "every", everyMs: 60_000 },
+      target: { type: "command", command: "echo one", cwd: tempDir, env: { A: "1" } },
+    });
+
+    const updated = await service.update({
+      id: created.id,
+      commandConfig: { command: "echo two", env: null },
+    });
+    expect(updated.prompt).toBe("echo two");
+    expect(updated.target).toEqual({ type: "command", command: "echo two", cwd: tempDir });
+
+    await expect(service.update({ id: created.id, prompt: "nope" })).rejects.toThrow(
+      /not valid for command target/,
+    );
+  });
+
   test("pause and resume update persisted schedule state", async () => {
     const service = createScheduleService({
       paseoHome: tempDir,

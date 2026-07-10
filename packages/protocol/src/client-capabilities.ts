@@ -12,6 +12,11 @@ export const CLIENT_CAPS = {
   // Drop the gate (always send the flags) when floor >= v0.1.88.
   terminalReflowableSnapshot: "terminal_reflowable_snapshot",
   browserHost: "browser_host",
+  // COMPAT(commandSchedules): added in v0.1.106. Old clients parse ScheduleTargetSchema
+  // as a closed discriminated union and reject responses containing the "command"
+  // variant; the daemon filters command schedules out of schedule RPC responses when
+  // this cap is absent. Drop the gate when floor >= v0.1.106.
+  commandSchedules: "command_schedules",
 } as const;
 
 export type ClientCapability = (typeof CLIENT_CAPS)[keyof typeof CLIENT_CAPS];

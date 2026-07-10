@@ -26,6 +26,7 @@ function makeSubsystem(options: MakeOptions = {}) {
   let onSend: (() => void) | null = null;
   const host: ChatScheduleLoopSessionHost = {
     emit: (msg) => emitted.push(msg),
+    supportsCommandSchedules: () => true,
     listStoredAgents: async () => [],
     listLiveAgents: () => [],
     resolveAgentIdentifier: async (identifier) => ({ ok: true, agentId: identifier }),
@@ -209,6 +210,73 @@ describe("ChatScheduleLoopSession", () => {
 
     expect(received?.target).toEqual({ type: "agent", agentId: "agent-9" });
     expect(findByType(emitted, "schedule/create/response")?.payload.error).toBeNull();
+  });
+
+  it("schedule/list hides command schedules from clients without the capability", async () => {
+    const base = {
+      name: null,
+      prompt: "echo hi",
+      cadence: { type: "every" as const, everyMs: 1000 },
+      status: "active" as const,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      nextRunAt: null,
+      lastRunAt: null,
+      pausedAt: null,
+      expiresAt: null,
+      maxRuns: null,
+      runs: [],
+    };
+    const schedules = [
+      {
+        ...base,
+        id: "cmd-1",
+        target: { type: "command" as const, command: "echo hi", cwd: "/tmp" },
+      },
+      { ...base, id: "agent-1", target: { type: "agent" as const, agentId: "a" } },
+    ];
+    const { subsystem, emitted } = makeSubsystem({
+      schedule: { list: async () => schedules },
+      host: { supportsCommandSchedules: () => false },
+    });
+
+    await subsystem.handleScheduleListRequest({ type: "schedule/list", requestId: "sl1" });
+
+    const res = findByType(emitted, "schedule/list/response");
+    expect(res?.payload.schedules.map((s: { id: string }) => s.id)).toEqual(["agent-1"]);
+  });
+
+  it("schedule/inspect rejects command schedules for clients without the capability", async () => {
+    const stored = {
+      id: "cmd-1",
+      name: null,
+      prompt: "echo hi",
+      cadence: { type: "every" as const, everyMs: 1000 },
+      target: { type: "command" as const, command: "echo hi", cwd: "/tmp" },
+      status: "active" as const,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      nextRunAt: null,
+      lastRunAt: null,
+      pausedAt: null,
+      expiresAt: null,
+      maxRuns: null,
+      runs: [],
+    };
+    const { subsystem, emitted } = makeSubsystem({
+      schedule: { inspect: async () => stored },
+      host: { supportsCommandSchedules: () => false },
+    });
+
+    await subsystem.handleScheduleInspectRequest({
+      type: "schedule/inspect",
+      requestId: "si1",
+      scheduleId: "cmd-1",
+    });
+
+    const err = findByType(emitted, "rpc_error");
+    expect(err?.payload.requestId).toBe("si1");
+    expect(err?.payload.error).toContain("newer client");
   });
 
   it("loop/run emits the loop summary from the loop service", async () => {

@@ -58,6 +58,16 @@ function targetIdentity(target: ScheduleTarget): unknown {
     };
   }
 
+  if (target.type === "command") {
+    return {
+      type: target.type,
+      command: target.command,
+      cwd: target.cwd,
+      env: target.env,
+      timeoutMs: target.timeoutMs,
+    };
+  }
+
   return {
     type: target.type,
     config: target.config,

@@ -22,6 +22,15 @@ const ScheduleCreateTargetSchema = z.discriminatedUnion("type", [
     type: z.literal("new-agent"),
     config: ScheduleCreateNewAgentConfigSchema,
   }),
+  // COMPAT(commandSchedules): added in v0.1.106. Requires the daemon to advertise
+  // server_info.features.commandSchedules; old daemons reject this variant.
+  z.object({
+    type: z.literal("command"),
+    command: z.string().trim().min(1),
+    cwd: z.string().trim().min(1),
+    env: z.record(z.string(), z.string()).optional(),
+    timeoutMs: z.number().int().positive().optional(),
+  }),
 ]);
 
 export const ScheduleCreateRequestSchema = z.object({
@@ -87,6 +96,15 @@ const ScheduleUpdateNewAgentConfigSchema = z.object({
   cwd: z.string().trim().min(1).optional(),
 });
 
+// COMPAT(commandSchedules): added in v0.1.106. Requires the daemon to advertise
+// server_info.features.commandSchedules; old daemons ignore unknown fields.
+const ScheduleUpdateCommandConfigSchema = z.object({
+  command: z.string().trim().min(1).optional(),
+  cwd: z.string().trim().min(1).optional(),
+  env: z.record(z.string(), z.string()).nullable().optional(),
+  timeoutMs: z.number().int().positive().nullable().optional(),
+});
+
 export const ScheduleUpdateRequestSchema = z.object({
   type: z.literal("schedule/update"),
   requestId: z.string(),
@@ -95,6 +113,7 @@ export const ScheduleUpdateRequestSchema = z.object({
   prompt: z.string().min(1).optional(),
   cadence: ScheduleCadenceSchema.optional(),
   newAgentConfig: ScheduleUpdateNewAgentConfigSchema.optional(),
+  commandConfig: ScheduleUpdateCommandConfigSchema.optional(),
   maxRuns: z.number().int().positive().nullable().optional(),
   expiresAt: z.string().nullable().optional(),
 });

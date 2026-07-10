@@ -14,12 +14,14 @@ import type { PersistedWorkspaceRecord } from "../workspace-registry.js";
 import type { CreatePaseoWorktreeWorkflowResult } from "../worktree-session.js";
 import { ScheduleStore } from "./store.js";
 import { computeNextRunAt, validateScheduleCadence } from "./cron.js";
+import { runScheduleCommand } from "./command-runner.js";
 import type {
   CreateScheduleInput,
   ScheduleExecutionResult,
   ScheduleRun,
   ScheduleTarget,
   StoredSchedule,
+  UpdateScheduleCommandConfig,
   UpdateScheduleInput,
   UpdateScheduleNewAgentConfig,
 } from "@getpaseo/protocol/schedule/types";
@@ -34,6 +36,19 @@ export class ScheduleTargetGoneError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ScheduleTargetGoneError";
+  }
+}
+
+// A command run that produced a non-zero exit code (or timed out). Carries the
+// captured output tail and exit code so the failed run record keeps them.
+export class ScheduleCommandFailedError extends Error {
+  constructor(
+    message: string,
+    readonly exitCode: number | null,
+    readonly output: string | null,
+  ) {
+    super(message);
+    this.name = "ScheduleCommandFailedError";
   }
 }
 
@@ -58,6 +73,50 @@ function normalizePrompt(prompt: string): string {
     throw new Error("Schedule prompt is required");
   }
   return trimmed;
+}
+
+// Command schedules have no agent prompt. The stored prompt mirrors the command
+// string for display: source of truth is target.command, kept in sync on update.
+function resolveSchedulePrompt(prompt: string, target: ScheduleTarget): string {
+  return target.type === "command" ? target.command : normalizePrompt(prompt);
+}
+
+function applyCommandConfig(
+  target: Extract<ScheduleTarget, { type: "command" }>,
+  patch: UpdateScheduleCommandConfig,
+): Extract<ScheduleTarget, { type: "command" }> {
+  const next = { ...target };
+  if (patch.command !== undefined) {
+    const trimmed = patch.command.trim();
+    if (!trimmed) {
+      throw new Error("command cannot be empty");
+    }
+    next.command = trimmed;
+  }
+  if (patch.cwd !== undefined) {
+    const trimmed = patch.cwd.trim();
+    if (!trimmed) {
+      throw new Error("cwd cannot be empty");
+    }
+    next.cwd = trimmed;
+  }
+  if (patch.env !== undefined) {
+    if (patch.env === null) {
+      delete next.env;
+    } else {
+      next.env = patch.env;
+    }
+  }
+  if (patch.timeoutMs !== undefined) {
+    if (patch.timeoutMs === null) {
+      delete next.timeoutMs;
+    } else if (!Number.isInteger(patch.timeoutMs) || patch.timeoutMs <= 0) {
+      throw new Error("timeoutMs must be a positive integer");
+    } else {
+      next.timeoutMs = patch.timeoutMs;
+    }
+  }
+  return next;
 }
 
 function applyNewAgentConfig(
@@ -286,7 +345,7 @@ export class ScheduleService {
   }
 
   async create(input: CreateScheduleInput): Promise<StoredSchedule> {
-    const prompt = normalizePrompt(input.prompt);
+    const prompt = resolveSchedulePrompt(input.prompt, input.target);
     validateScheduleCadence(input.cadence);
     return this.createScheduleRecord(input, {
       name: trimOptionalName(input.name),
@@ -331,7 +390,7 @@ export class ScheduleService {
   // existing non-completed schedule in place instead of minting a duplicate.
   async createOrReplace(input: CreateScheduleInput): Promise<StoredSchedule> {
     const name = trimOptionalName(input.name);
-    const prompt = normalizePrompt(input.prompt);
+    const prompt = resolveSchedulePrompt(input.prompt, input.target);
     validateScheduleCadence(input.cadence);
     if (name === null) {
       return this.createScheduleRecord(input, { name, prompt, target: input.target });
@@ -427,6 +486,11 @@ export class ScheduleService {
       let updated: StoredSchedule = schedule;
 
       if (input.prompt !== undefined) {
+        if (updated.target.type === "command") {
+          throw new Error(
+            "prompt updates are not valid for command target schedules; update the command instead",
+          );
+        }
         updated = { ...updated, prompt: normalizePrompt(input.prompt) };
       }
 
@@ -450,6 +514,18 @@ export class ScheduleService {
         updated = {
           ...updated,
           target: patchedTarget,
+        };
+      }
+
+      if (input.commandConfig !== undefined) {
+        if (updated.target.type !== "command") {
+          throw new Error("command config updates are only valid for command target schedules");
+        }
+        const patchedTarget = applyCommandConfig(updated.target, input.commandConfig);
+        updated = {
+          ...updated,
+          target: patchedTarget,
+          prompt: patchedTarget.command,
         };
       }
 
@@ -705,17 +781,20 @@ export class ScheduleService {
         agentId: result.agentId,
         output: result.output,
         error: null,
+        exitCode: result.exitCode,
         targetGone: false,
         manual,
       });
     } catch (error) {
+      const commandFailure = error instanceof ScheduleCommandFailedError ? error : null;
       await this.finishRun({
         scheduleId: schedule.id,
         runId,
         status: "failed",
         agentId: null,
-        output: null,
+        output: commandFailure?.output ?? null,
         error: error instanceof Error ? error.message : String(error),
+        exitCode: commandFailure?.exitCode,
         targetGone: error instanceof ScheduleTargetGoneError,
         manual,
       });
@@ -743,6 +822,7 @@ export class ScheduleService {
     agentId: string | null;
     output: string | null;
     error: string | null;
+    exitCode?: number | null;
     targetGone: boolean;
     manual: boolean;
   }): Promise<void> {
@@ -757,6 +837,7 @@ export class ScheduleService {
               agentId: params.agentId ?? run.agentId,
               output: params.output,
               error: params.error,
+              ...(params.exitCode !== undefined ? { exitCode: params.exitCode } : {}),
             }
           : run,
       );
@@ -826,6 +907,25 @@ export class ScheduleService {
     schedule: StoredSchedule,
     runId: string,
   ): Promise<ScheduleExecutionResult> {
+    if (schedule.target.type === "command") {
+      const result = await runScheduleCommand(schedule.target);
+      if (result.timedOut) {
+        throw new ScheduleCommandFailedError(
+          `Command timed out after ${schedule.target.timeoutMs}ms`,
+          result.exitCode,
+          result.output,
+        );
+      }
+      if (result.exitCode !== 0) {
+        throw new ScheduleCommandFailedError(
+          `Command exited with code ${result.exitCode}`,
+          result.exitCode,
+          result.output,
+        );
+      }
+      return { agentId: null, output: result.output, exitCode: result.exitCode };
+    }
+
     if (schedule.target.type === "agent") {
       const wrappedPrompt = formatSystemNotificationPrompt(buildScheduleFireBody(schedule, runId));
       const record = await this.agentStorage.get(schedule.target.agentId);

@@ -45,7 +45,7 @@ export function getGapBetweenStreamItems(
     return SPACING[1];
   }
   if (isToolSequenceItem(item) && isToolSequenceItem(belowItem)) {
-    return 0;
+    return SPACING[1];
   }
   if (item.kind === "user_message" && isToolSequenceItem(belowItem)) {
     return SPACING[4];

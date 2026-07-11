@@ -43,7 +43,6 @@ interface DetailStyles {
   scrollAreaFillStyle: StyleProp<ViewStyle>;
   scrollAreaStyle: StyleProp<ViewStyle>;
   jsonScrollCombined: StyleProp<ViewStyle>;
-  jsonScrollErrorCombined: StyleProp<ViewStyle>;
   fullBleedContainerStyle: StyleProp<ViewStyle>;
   loadingContainerStyle: StyleProp<ViewStyle>;
   webScrollbarStyle: StyleProp<ViewStyle>;
@@ -113,10 +112,6 @@ function useDetailStyles(
     () => [styles.jsonScroll, webScrollbarStyle],
     [webScrollbarStyle],
   );
-  const jsonScrollErrorCombined = useMemo(
-    () => [styles.jsonScroll, styles.jsonScrollError, webScrollbarStyle],
-    [webScrollbarStyle],
-  );
   const fullBleedContainerStyle = useMemo(
     () => [
       isFullBleed ? styles.fullBleedContainer : styles.paddedContainer,
@@ -136,7 +131,6 @@ function useDetailStyles(
     scrollAreaFillStyle,
     scrollAreaStyle,
     jsonScrollCombined,
-    jsonScrollErrorCombined,
     fullBleedContainerStyle,
     loadingContainerStyle,
     webScrollbarStyle,
@@ -737,22 +731,18 @@ function buildDetailSections(
   return [];
 }
 
-function ErrorSection({ errorText, ds }: { errorText: string; ds: DetailStyles }) {
+function ErrorSection({ errorText }: { errorText: string }) {
   const { t } = useTranslation();
   return (
-    <View style={styles.section}>
+    <View style={ERROR_SECTION_STYLE}>
       <Text style={SECTION_TITLE_ERROR_STYLE}>{t("toolCallDetails.error")}</Text>
-      <ScrollView
-        horizontal
-        nestedScrollEnabled
-        style={ds.jsonScrollErrorCombined}
-        contentContainerStyle={styles.jsonContent}
-        showsHorizontalScrollIndicator={true}
-      >
-        <Text selectable style={SCROLL_TEXT_ERROR_STYLE} dataSet={CODE_SURFACE_DATASET}>
-          {errorText}
-        </Text>
-      </ScrollView>
+      <View style={styles.errorBox} dataSet={CODE_SURFACE_DATASET}>
+        <View style={styles.errorContent}>
+          <Text selectable style={SCROLL_TEXT_ERROR_STYLE}>
+            {errorText}
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -790,7 +780,7 @@ function ToolCallDetailsContentInner({
   const sections: ReactNode[] = buildDetailSections(detail, diffLines, ds, t);
 
   if (errorText) {
-    sections.push(<ErrorSection key="error" errorText={errorText} ds={ds} />);
+    sections.push(<ErrorSection key="error" errorText={errorText} />);
   }
 
   if (sections.length === 0) {
@@ -833,6 +823,12 @@ const styles = StyleSheet.create((theme) => {
     },
     section: {
       gap: theme.spacing[2],
+    },
+    // The error box is a bordered alert, not full-bleed code output. Inset it
+    // horizontally so it does not jut out to the card edge the way the shell/
+    // diff sections (which intentionally bleed to fill width) do.
+    errorSection: {
+      paddingHorizontal: theme.spacing[3],
     },
     fillHeight: {
       flex: 1,
@@ -946,11 +942,33 @@ const styles = StyleSheet.create((theme) => {
       borderRadius: theme.borderRadius.base,
       backgroundColor: theme.colors.surface2,
     },
-    jsonScrollError: {
-      borderColor: theme.colors.destructive,
-    },
     jsonContent: {
       padding: insets.padding,
+    },
+    // Error box: a rounded red-bordered block. The error message is prose (e.g.
+    // "The user rejected this tool use"), so it wraps to the box width instead of
+    // scrolling horizontally — no inner scroll view, no clipped scrollbar.
+    errorBox: {
+      borderWidth: theme.borderWidth[1],
+      borderColor: theme.colors.destructive,
+      borderRadius: theme.borderRadius.base,
+      backgroundColor: theme.colors.surface2,
+      overflow: "hidden",
+    },
+    errorContent: {
+      padding: insets.padding,
+    },
+    errorMessageText: {
+      fontFamily: theme.fontFamily.mono,
+      fontSize: theme.fontSize.code,
+      color: theme.colors.destructive,
+      lineHeight: 18,
+      ...(isWeb
+        ? {
+            whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere",
+          }
+        : null),
     },
     errorText: {
       color: theme.colors.destructive,
@@ -986,4 +1004,5 @@ const styles = StyleSheet.create((theme) => {
 });
 
 const SECTION_TITLE_ERROR_STYLE = [styles.sectionTitle, styles.errorText];
-const SCROLL_TEXT_ERROR_STYLE = [styles.scrollText, styles.errorText];
+const ERROR_SECTION_STYLE = [styles.section, styles.errorSection];
+const SCROLL_TEXT_ERROR_STYLE = styles.errorMessageText;

@@ -2,6 +2,7 @@ import {
   View,
   Text,
   Image,
+  Linking,
   Pressable,
   ActivityIndicator,
   type GestureResponderEvent,
@@ -63,6 +64,7 @@ import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { MarkdownRenderer, type MarkdownStyles } from "@/components/markdown/renderer";
 import { resolveInlineImageSize } from "@/components/markdown/inline-image-size";
 import type { TodoEntry, UserMessageImageAttachment } from "@/types/stream";
+import { segmentUserMessage } from "@/utils/user-message-segments";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
 import { buildToolCallPresentation } from "@/tool-calls/presentation";
@@ -363,6 +365,16 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     fontSize: 15,
     ...(isWeb ? { lineHeight: 24, overflowWrap: "anywhere" as const } : {}),
   },
+  // Leading slash-command, e.g. "/bug-ticket-fix".
+  commandText: {
+    color: theme.colors.statusWarning,
+    fontWeight: theme.fontWeight.medium,
+  },
+  // Inline URL — same link color as assistant markdown links.
+  linkText: {
+    color: theme.colors.accentBright,
+    ...(isWeb ? { cursor: "pointer" as const } : {}),
+  },
   imagePreviewContainer: {
     flexDirection: "row",
     gap: theme.spacing[2],
@@ -417,6 +429,47 @@ function UserMessageImagePill({ image, onOpen, accessibilityLabel }: UserMessage
     <AttachmentFrame onPress={handlePress} accessibilityLabel={accessibilityLabel}>
       <AttachmentThumbnail metadata={image} />
     </AttachmentFrame>
+  );
+}
+
+function UserUrlSegment({ href, text }: { href: string; text: string }) {
+  const handlePress = useCallback(() => {
+    void Linking.openURL(href);
+  }, [href]);
+  return (
+    <Text style={userMessageStylesheet.linkText} onPress={handlePress}>
+      {text}
+    </Text>
+  );
+}
+
+// Renders a user's message body with a highlighted leading slash-command and
+// clickable URLs (see utils/user-message-segments).
+function UserMessageText({ message }: { message: string }) {
+  const segments = useMemo(() => {
+    let offset = 0;
+    return segmentUserMessage(message).map((segment) => {
+      const key = `${offset}-${segment.kind}`;
+      offset += segment.text.length;
+      return { key, segment };
+    });
+  }, [message]);
+  return (
+    <Text selectable style={userMessageStylesheet.text}>
+      {segments.map(({ key, segment }) => {
+        if (segment.kind === "command") {
+          return (
+            <Text key={key} style={userMessageStylesheet.commandText}>
+              {segment.text}
+            </Text>
+          );
+        }
+        if (segment.kind === "url" && segment.href) {
+          return <UserUrlSegment key={key} href={segment.href} text={segment.text} />;
+        }
+        return <Text key={key}>{segment.text}</Text>;
+      })}
+    </Text>
   );
 }
 
@@ -533,11 +586,7 @@ export const UserMessage = memo(function UserMessage({
               })}
             </View>
           ) : null}
-          {hasText ? (
-            <Text selectable style={userMessageStylesheet.text}>
-              {message}
-            </Text>
-          ) : null}
+          {hasText ? <UserMessageText message={message} /> : null}
         </View>
         {hasText ? (
           <View style={trailingRowStyle} pointerEvents={showTrailingRow ? "auto" : "none"}>

@@ -1,4 +1,12 @@
-import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode, Ref } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -6,7 +14,7 @@ import { Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "r
 import type { TextInputProps } from "react-native";
 import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { getOverlayRoot, OVERLAY_Z } from "../lib/overlay-root";
+import { getOverlayRoot, OVERLAY_Z, raiseOverlayRoot } from "../lib/overlay-root";
 import {
   BottomSheetBackdrop,
   BottomSheetScrollView,
@@ -580,6 +588,16 @@ export function AdaptiveModalSheet({
     if (!isWeb || isMobile || !visible) return;
     return pushEscHandler(onClose);
   }, [visible, isMobile, onClose]);
+
+  // When this sheet opens on desktop web, lift the shared overlay root above any
+  // react-native-web <Modal> pickers (combobox / model picker) that were opened
+  // earlier. Those append their own body-level fixed container on open, so an
+  // otherwise statically-positioned overlay root would render the sheet beneath
+  // an already-open picker. See raiseOverlayRoot.
+  useLayoutEffect(() => {
+    if (!isWeb || isMobile || !visible || typeof document === "undefined") return;
+    raiseOverlayRoot();
+  }, [visible, isMobile]);
 
   useEffect(() => {
     if (visible) {

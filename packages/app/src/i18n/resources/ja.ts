@@ -1946,6 +1946,12 @@ export const ja: TranslationResources = {
         "接続されているホストのどれにもこのプロジェクトの編集可能なコピーがありません。",
       backToProjects: "プロジェクトに戻る",
       switchHost: "ホストを切り替え",
+      target: {
+        shared: "共有",
+        local: "ローカル上書き",
+        sharedHint: "paseo.json — コミット対象で全員に適用。",
+        localHint: "paseo.local.json — git 管理外の個人用。共有設定を上書きします。",
+      },
       rename: {
         renamedToast: "プロジェクト名を変更しました",
         errorFallback: "プロジェクト名を変更できませんでした",

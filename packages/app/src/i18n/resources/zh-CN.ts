@@ -1900,6 +1900,12 @@ export const zhCN: TranslationResources = {
       noEditableTarget: "任何已连接 Host 上都没有这个 Project 的可编辑副本。",
       backToProjects: "返回 Projects",
       switchHost: "切换 Host",
+      target: {
+        shared: "共享",
+        local: "本地覆盖",
+        sharedHint: "paseo.json — 已提交,对所有人生效。",
+        localHint: "paseo.local.json — 被 git 忽略、仅本人;覆盖共享配置。",
+      },
       rename: {
         renamedToast: "Project 已重命名",
         errorFallback: "无法重命名 Project",

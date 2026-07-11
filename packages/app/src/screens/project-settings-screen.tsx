@@ -12,6 +12,7 @@ import type {
   PaseoConfigRaw,
   PaseoConfigRevision,
   ProjectConfigRpcError,
+  ProjectConfigTarget,
 } from "@getpaseo/protocol/messages";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ import { Alert } from "@/components/ui/alert";
 import { ExternalLink } from "@/components/ui/external-link";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Switch } from "@/components/ui/switch";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { SettingsTextAreaCard } from "@/components/settings-textarea";
 import { SettingsGroup } from "@/screens/settings/settings-group";
@@ -194,16 +196,26 @@ function ProjectSettingsBody({
   client,
   isHostGone,
 }: ProjectSettingsBodyProps) {
+  const { t } = useTranslation();
+  const [target, setTarget] = useState<ProjectConfigTarget>("base");
   const queryKey = useMemo(
-    () => ["project-config", selectedHost.serverId, selectedHost.repoRoot] as const,
-    [selectedHost.serverId, selectedHost.repoRoot],
+    () => ["project-config", selectedHost.serverId, selectedHost.repoRoot, target] as const,
+    [selectedHost.serverId, selectedHost.repoRoot, target],
   );
 
   const readQuery = useQuery({
     queryKey,
-    queryFn: () => client.readProjectConfig(selectedHost.repoRoot),
+    queryFn: () => client.readProjectConfig(selectedHost.repoRoot, undefined, target),
     retry: false,
   });
+
+  const targetOptions = useMemo(
+    () => [
+      { value: "base" as const, label: t("settings.project.target.shared") },
+      { value: "local" as const, label: t("settings.project.target.local") },
+    ],
+    [t],
+  );
 
   const data = readQuery.data;
   const projectIconTargets = useMemo(
@@ -246,6 +258,23 @@ function ProjectSettingsBody({
         <HostContext hosts={hosts} selectedHost={selectedHost} onSelectHost={onSelectHost} />
       </View>
 
+      <View style={styles.targetRow}>
+        <SegmentedControl
+          size="sm"
+          value={target}
+          onValueChange={setTarget}
+          options={targetOptions}
+          testID="project-config-target"
+        />
+        <Text style={styles.targetHint}>
+          {t(
+            target === "local"
+              ? "settings.project.target.localHint"
+              : "settings.project.target.sharedHint",
+          )}
+        </Text>
+      </View>
+
       {renderContent({
         readQuery,
         loadedConfig,
@@ -253,6 +282,7 @@ function ProjectSettingsBody({
         readError,
         selectedHost,
         queryKey,
+        target,
         client,
         onReload: handleReload,
         hasMultipleHosts,
@@ -268,7 +298,8 @@ interface RenderContentInput {
   loadedRevision: PaseoConfigRevision | null;
   readError: ProjectConfigRpcError | null;
   selectedHost: ProjectHostEntry;
-  queryKey: readonly [string, string, string];
+  queryKey: readonly [string, string, string, ProjectConfigTarget];
+  target: ProjectConfigTarget;
   client: DaemonClient;
   onReload: () => void;
   hasMultipleHosts: boolean;
@@ -282,6 +313,7 @@ function renderContent({
   readError,
   selectedHost,
   queryKey,
+  target,
   client,
   onReload,
   hasMultipleHosts,
@@ -329,7 +361,7 @@ function renderContent({
     );
   }
 
-  const formKey = `${selectedHost.serverId}::${selectedHost.repoRoot}::${revisionToKey(loadedRevision)}`;
+  const formKey = `${selectedHost.serverId}::${selectedHost.repoRoot}::${target}::${revisionToKey(loadedRevision)}`;
   return (
     <ProjectConfigForm
       key={formKey}
@@ -337,6 +369,7 @@ function renderContent({
       revision={loadedRevision}
       repoRoot={selectedHost.repoRoot}
       queryKey={queryKey}
+      target={target}
       client={client}
       onReload={onReload}
     />
@@ -421,7 +454,8 @@ interface ProjectConfigFormProps {
   baseConfig: PaseoConfigRaw;
   revision: PaseoConfigRevision | null;
   repoRoot: string;
-  queryKey: readonly [string, string, string];
+  queryKey: readonly [string, string, string, ProjectConfigTarget];
+  target: ProjectConfigTarget;
   client: DaemonClient;
   onReload: () => void;
 }
@@ -431,6 +465,7 @@ function ProjectConfigForm({
   revision,
   repoRoot,
   queryKey,
+  target,
   client,
   onReload,
 }: ProjectConfigFormProps) {
@@ -451,6 +486,7 @@ function ProjectConfigForm({
         repoRoot,
         config: input.config,
         expectedRevision: input.expectedRevision,
+        target,
       });
     },
     onSuccess: (result) => {
@@ -1259,6 +1295,15 @@ const styles = StyleSheet.create((theme) => ({
     marginTop: theme.spacing[2],
     marginBottom: theme.spacing[4],
     gap: theme.spacing[2],
+  },
+  targetRow: {
+    marginBottom: theme.spacing[4],
+    gap: theme.spacing[2],
+    alignItems: "flex-start",
+  },
+  targetHint: {
+    color: theme.colors.mutedForeground,
+    fontSize: theme.fontSize.sm,
   },
   titleRow: {
     flexDirection: "row",

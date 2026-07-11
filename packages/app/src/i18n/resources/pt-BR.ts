@@ -1954,6 +1954,13 @@ export const ptBR: TranslationResources = {
       noEditableTarget: "Não há uma cópia editável deste projeto em nenhum host conectado.",
       backToProjects: "Voltar para projetos",
       switchHost: "Trocar host",
+      target: {
+        shared: "Compartilhado",
+        local: "Substituição local",
+        sharedHint: "paseo.json — versionado, aplica-se a todos.",
+        localHint:
+          "paseo.local.json — ignorado pelo git e pessoal; substitui a config compartilhada.",
+      },
       rename: {
         renamedToast: "Projeto renomeado",
         errorFallback: "Não foi possível renomear projeto",

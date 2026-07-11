@@ -79,6 +79,11 @@ export const PaseoConfigRevisionSchema = z.object({
   size: z.number(),
 });
 
+// Which on-disk file an edit read/write targets: the shared, committed
+// paseo.json ("base") or the git-ignored personal override paseo.local.json
+// ("local"). Runtime consumption always merges both; only the editor picks one.
+export const ProjectConfigTargetSchema = z.enum(["base", "local"]);
+
 export const ProjectConfigRpcErrorSchema = z.discriminatedUnion("code", [
   z.object({ code: z.literal("project_not_found") }),
   z.object({ code: z.literal("invalid_project_config") }),
@@ -95,4 +100,5 @@ export type PaseoMetadataGeneration = z.infer<typeof PaseoMetadataGenerationSche
 export type PaseoConfigRaw = z.infer<typeof PaseoConfigRawSchema>;
 export type PaseoConfig = z.infer<typeof PaseoConfigSchema>;
 export type PaseoConfigRevision = z.infer<typeof PaseoConfigRevisionSchema>;
+export type ProjectConfigTarget = z.infer<typeof ProjectConfigTargetSchema>;
 export type ProjectConfigRpcError = z.infer<typeof ProjectConfigRpcErrorSchema>;

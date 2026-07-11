@@ -67,12 +67,14 @@ import {
   PaseoWorktreeConfigRawSchema,
   PaseoConfigRevisionSchema,
   ProjectConfigRpcErrorSchema,
+  ProjectConfigTargetSchema,
   type PaseoConfigRaw,
   type PaseoConfigRevision,
   type PaseoMetadataGeneration,
   type PaseoMetadataGenerationEntry,
   type PaseoScriptEntryRaw,
   type ProjectConfigRpcError,
+  type ProjectConfigTarget,
 } from "./paseo-config-schema.js";
 export {
   PaseoConfigRawSchema,
@@ -81,12 +83,14 @@ export {
   PaseoMetadataGenerationSchema,
   PaseoScriptEntryRawSchema,
   PaseoWorktreeConfigRawSchema,
+  ProjectConfigTargetSchema,
   type PaseoConfigRaw,
   type PaseoConfigRevision,
   type PaseoMetadataGeneration,
   type PaseoMetadataGenerationEntry,
   type PaseoScriptEntryRaw,
   type ProjectConfigRpcError,
+  type ProjectConfigTarget,
 };
 // ---------------------------------------------------------------------------
 // Mutable daemon config schemas (shared between server store and client)
@@ -1101,6 +1105,8 @@ export const ReadProjectConfigRequestMessageSchema = z.object({
   type: z.literal("read_project_config_request"),
   requestId: z.string(),
   repoRoot: z.string(),
+  // Omitted = "base" (paseo.json). Set to "local" to edit paseo.local.json.
+  target: ProjectConfigTargetSchema.optional(),
 });
 
 export const WriteProjectConfigRequestMessageSchema = z.object({
@@ -1109,6 +1115,8 @@ export const WriteProjectConfigRequestMessageSchema = z.object({
   repoRoot: z.string(),
   config: PaseoConfigRawSchema,
   expectedRevision: PaseoConfigRevisionSchema.nullable(),
+  // Omitted = "base" (paseo.json). Set to "local" to edit paseo.local.json.
+  target: ProjectConfigTargetSchema.optional(),
 });
 
 // ============================================================================

@@ -1968,6 +1968,12 @@ export const es: TranslationResources = {
       noEditableTarget: "No tenemos una copia editable de este proyecto en ningún host conectado.",
       backToProjects: "Volver a proyectos",
       switchHost: "Cambiar de anfitrión",
+      target: {
+        shared: "Compartido",
+        local: "Anulación local",
+        sharedHint: "paseo.json — versionado, se aplica a todos.",
+        localHint: "paseo.local.json — ignorado por git y personal; anula la config compartida.",
+      },
       rename: {
         renamedToast: "Proyecto renombrado",
         errorFallback: "No se pudo cambiar el nombre del proyecto",

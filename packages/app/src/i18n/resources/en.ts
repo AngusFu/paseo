@@ -1932,6 +1932,12 @@ export const en = {
       noEditableTarget: "We don't have an editable copy of this project on any connected host.",
       backToProjects: "Back to projects",
       switchHost: "Switch host",
+      target: {
+        shared: "Shared",
+        local: "Local override",
+        sharedHint: "paseo.json — committed, applies to everyone.",
+        localHint: "paseo.local.json — git-ignored and personal; overrides the shared config.",
+      },
       rename: {
         renamedToast: "Project renamed",
         errorFallback: "Couldn't rename project",

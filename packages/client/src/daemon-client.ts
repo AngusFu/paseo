@@ -88,6 +88,7 @@ import type {
   SendAgentMessageRequest,
   PaseoConfigRaw,
   PaseoConfigRevision,
+  ProjectConfigTarget,
   WorkspaceCreateRequest,
 } from "@getpaseo/protocol/messages";
 import type {
@@ -390,6 +391,7 @@ export interface WriteProjectConfigInput {
   config: PaseoConfigRaw;
   expectedRevision: PaseoConfigRevision | null;
   requestId?: string;
+  target?: ProjectConfigTarget;
 }
 interface ListCommandsOptions {
   agentId: string;
@@ -3942,12 +3944,18 @@ export class DaemonClient {
     this.sendSessionMessageStrict(response);
   }
 
-  async readProjectConfig(repoRoot: string, requestId?: string): Promise<ReadProjectConfigPayload> {
+  async readProjectConfig(
+    repoRoot: string,
+    requestId?: string,
+    target?: ProjectConfigTarget,
+  ): Promise<ReadProjectConfigPayload> {
     return this.sendCorrelatedSessionRequest({
       requestId,
       message: {
         type: "read_project_config_request",
         repoRoot,
+        // Only send when non-default so the base-file wire format is unchanged.
+        ...(target && target !== "base" ? { target } : {}),
       },
       responseType: "read_project_config_response",
     });
@@ -3961,6 +3969,7 @@ export class DaemonClient {
         repoRoot: input.repoRoot,
         config: input.config,
         expectedRevision: input.expectedRevision,
+        ...(input.target && input.target !== "base" ? { target: input.target } : {}),
       },
       responseType: "write_project_config_response",
     });

@@ -6,6 +6,7 @@ import {
   type PaseoConfigRaw,
   type PaseoConfigRevision,
   type ProjectConfigRpcError,
+  type ProjectConfigTarget,
 } from "@getpaseo/protocol/paseo-config-schema";
 export {
   PaseoConfigRevisionSchema,
@@ -29,6 +30,17 @@ export interface WritePaseoConfigForEditInput {
   repoRoot: string;
   config: PaseoConfigRaw;
   expectedRevision: PaseoConfigRevision | null;
+  target?: ProjectConfigTarget;
+}
+
+function resolveEditConfigPath(repoRoot: string, target: ProjectConfigTarget): string {
+  return target === "local"
+    ? resolvePaseoLocalConfigPath(repoRoot)
+    : resolvePaseoConfigPath(repoRoot);
+}
+
+function editConfigFileName(target: ProjectConfigTarget): string {
+  return target === "local" ? PASEO_LOCAL_CONFIG_FILE_NAME : PASEO_CONFIG_FILE_NAME;
 }
 
 export function resolvePaseoConfigPath(repoRoot: string): string {
@@ -39,8 +51,11 @@ export function resolvePaseoLocalConfigPath(repoRoot: string): string {
   return join(repoRoot, PASEO_LOCAL_CONFIG_FILE_NAME);
 }
 
-export function statPaseoConfigPath(repoRoot: string): PaseoConfigRevision | null {
-  const configPath = resolvePaseoConfigPath(repoRoot);
+export function statPaseoConfigPath(
+  repoRoot: string,
+  target: ProjectConfigTarget = "base",
+): PaseoConfigRevision | null {
+  const configPath = resolveEditConfigPath(repoRoot, target);
   if (!existsSync(configPath)) {
     return null;
   }
@@ -98,16 +113,19 @@ export function readMergedPaseoConfigJson(repoRoot: string): unknown {
   return deepMergeConfigJson(base, local);
 }
 
-export function readPaseoConfigForEdit(repoRoot: string): ReadPaseoConfigForEditResult {
+export function readPaseoConfigForEdit(
+  repoRoot: string,
+  target: ProjectConfigTarget = "base",
+): ReadPaseoConfigForEditResult {
   try {
-    const json = readPaseoConfigJson(repoRoot);
+    const json = readJsonFileOrNull(resolveEditConfigPath(repoRoot, target));
     if (json === null) {
       return { ok: true, config: null, revision: null };
     }
     return {
       ok: true,
       config: PaseoConfigRawSchema.parse(json),
-      revision: statPaseoConfigPath(repoRoot),
+      revision: statPaseoConfigPath(repoRoot, target),
     };
   } catch {
     return {
@@ -125,15 +143,16 @@ export function writePaseoConfigForEdit(
     return { ok: false, error: { code: "invalid_project_config" } };
   }
 
-  const configPath = resolvePaseoConfigPath(input.repoRoot);
+  const target = input.target ?? "base";
+  const configPath = resolveEditConfigPath(input.repoRoot, target);
   const tempPath = join(
     input.repoRoot,
-    `.${PASEO_CONFIG_FILE_NAME}.${process.pid}.${randomUUID()}.tmp`,
+    `.${editConfigFileName(target)}.${process.pid}.${randomUUID()}.tmp`,
   );
 
   try {
     writeFileSync(tempPath, `${JSON.stringify(parsed.data, null, 2)}\n`);
-    const currentRevision = statPaseoConfigPath(input.repoRoot);
+    const currentRevision = statPaseoConfigPath(input.repoRoot, target);
     if (!paseoConfigRevisionsEqual(currentRevision, input.expectedRevision)) {
       removeTempPaseoConfig(tempPath);
       return {
@@ -143,7 +162,7 @@ export function writePaseoConfigForEdit(
     }
 
     renameSync(tempPath, configPath);
-    const revision = statPaseoConfigPath(input.repoRoot);
+    const revision = statPaseoConfigPath(input.repoRoot, target);
     if (!revision) {
       return { ok: false, error: { code: "write_failed" } };
     }

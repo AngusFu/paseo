@@ -1923,6 +1923,12 @@ export const ar: TranslationResources = {
       noEditableTarget: "ليس لدينا نسخة قابلة للتحرير من هذا المشروع على أي مضيف متصل.",
       backToProjects: "العودة إلى المشاريع",
       switchHost: "تبديل المضيف",
+      target: {
+        shared: "مشترك",
+        local: "تجاوز محلي",
+        sharedHint: "paseo.json — مُلتزَم به ويسري على الجميع.",
+        localHint: "paseo.local.json — يتجاهله git وخاص بك؛ يتجاوز الإعداد المشترك.",
+      },
       rename: {
         renamedToast: "تمت إعادة تسمية المشروع",
         errorFallback: "تعذرت إعادة تسمية المشروع",

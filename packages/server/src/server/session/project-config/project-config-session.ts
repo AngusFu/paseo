@@ -46,7 +46,7 @@ export class ProjectConfigSession {
       return;
     }
 
-    const result = readPaseoConfigForEdit(repoRoot);
+    const result = readPaseoConfigForEdit(repoRoot, msg.target ?? "base");
     if (!result.ok) {
       this.logger.warn(
         { repoRoot, requestId: msg.requestId, outcome: result.error.code },
@@ -92,6 +92,7 @@ export class ProjectConfigSession {
       repoRoot,
       config: msg.config,
       expectedRevision: msg.expectedRevision,
+      target: msg.target ?? "base",
     });
     if (!result.ok) {
       this.logger.debug(

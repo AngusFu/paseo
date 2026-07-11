@@ -1960,6 +1960,13 @@ export const ru: TranslationResources = {
         "У нас нет редактируемой копии этого проекта ни на одном подключенном хосте.",
       backToProjects: "Вернуться к проектам",
       switchHost: "Сменить хост",
+      target: {
+        shared: "Общий",
+        local: "Локальное переопределение",
+        sharedHint: "paseo.json — в репозитории, применяется ко всем.",
+        localHint:
+          "paseo.local.json — игнорируется git и персональный; переопределяет общую конфигурацию.",
+      },
       rename: {
         renamedToast: "Проект переименован",
         errorFallback: "Не удалось переименовать проект",

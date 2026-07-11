@@ -231,6 +231,48 @@ describe("paseo config file substrate", () => {
     expect(deepMergeConfigJson(undefined, { a: 1 })).toEqual({ a: 1 });
   });
 
+  it("edits paseo.local.json when target is local, leaving paseo.json untouched", () => {
+    writeFileSync(join(tempDir, "paseo.json"), JSON.stringify({ worktree: { setup: "base" } }));
+
+    const write = writePaseoConfigForEdit({
+      repoRoot: tempDir,
+      config: { scripts: { web: { command: "npm run dev", port: 4100 } } },
+      expectedRevision: null,
+      target: "local",
+    });
+
+    expect(write.ok).toBe(true);
+    // Base file is unchanged; local file now holds the override.
+    expect(readFileSync(join(tempDir, "paseo.json"), "utf8")).toBe(
+      JSON.stringify({ worktree: { setup: "base" } }),
+    );
+    expect(JSON.parse(readFileSync(join(tempDir, "paseo.local.json"), "utf8"))).toEqual({
+      scripts: { web: { command: "npm run dev", port: 4100 } },
+    });
+
+    // Reading each target returns its own file + revision.
+    expect(readPaseoConfigForEdit(tempDir, "local")).toEqual({
+      ok: true,
+      config: { scripts: { web: { command: "npm run dev", port: 4100 } } },
+      revision: statPaseoConfigPath(tempDir, "local"),
+    });
+    expect(readPaseoConfigForEdit(tempDir, "base")).toEqual({
+      ok: true,
+      config: { worktree: { setup: "base" } },
+      revision: statPaseoConfigPath(tempDir, "base"),
+    });
+  });
+
+  it("returns null local config for edit when paseo.local.json is missing", () => {
+    writeFileSync(join(tempDir, "paseo.json"), JSON.stringify({ worktree: { setup: "base" } }));
+
+    expect(readPaseoConfigForEdit(tempDir, "local")).toEqual({
+      ok: true,
+      config: null,
+      revision: null,
+    });
+  });
+
   it("returns write_failed for filesystem write exceptions", () => {
     const fileRoot = join(tempDir, "not-a-directory");
     writeFileSync(fileRoot, "file");

@@ -1973,6 +1973,12 @@ export const fr: TranslationResources = {
         "Nous n'avons pas de copie modifiable de ce projet sur aucun hôte connecté.",
       backToProjects: "Retour aux projets",
       switchHost: "Changer d'hôte",
+      target: {
+        shared: "Partagé",
+        local: "Surcharge locale",
+        sharedHint: "paseo.json — versionné, s'applique à tous.",
+        localHint: "paseo.local.json — ignoré par git et personnel ; remplace la config partagée.",
+      },
       rename: {
         renamedToast: "Projet renommé",
         errorFallback: "Impossible de renommer le projet",

@@ -2,6 +2,11 @@ import { useMemo } from "react";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { segmentUserMessage } from "@/utils/user-message-segments";
+import { baseColors } from "@/styles/theme";
+
+// Hoisted out of StyleSheet.create: the unistyles babel plugin does not resolve
+// imported member expressions referenced inside the create callback.
+const LINK_COLOR = baseColors.blue[500];
 
 // A read-only layer drawn on top of the composer's TextInput. It renders the
 // exact same text with identical font metrics, but paints only the special
@@ -81,7 +86,7 @@ const styles = StyleSheet.create((theme) => ({
     fontWeight: theme.fontWeight.medium,
   },
   url: {
-    color: theme.colors.accentBright,
+    color: LINK_COLOR,
   },
 }));
 

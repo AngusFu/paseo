@@ -48,7 +48,7 @@ import {
   FileSymlink,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import type { Theme } from "@/styles/theme";
+import { baseColors, type Theme } from "@/styles/theme";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import Animated, {
   Easing,
@@ -329,6 +329,10 @@ function shouldStopDetailWheelPropagation(detailRoot: HTMLElement, event: WheelE
   return canScrollHorizontally;
 }
 
+// Hoisted out of StyleSheet.create: the unistyles babel plugin does not resolve
+// imported member expressions referenced inside the create callback.
+const MESSAGE_LINK_COLOR = baseColors.blue[500];
+
 const userMessageStylesheet = StyleSheet.create((theme) => ({
   container: {
     flexDirection: "row",
@@ -370,9 +374,9 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     color: theme.colors.statusWarning,
     fontWeight: theme.fontWeight.medium,
   },
-  // Inline URL — same link color as assistant markdown links.
+  // Inline URL — same blue link color as assistant markdown links.
   linkText: {
-    color: theme.colors.accentBright,
+    color: MESSAGE_LINK_COLOR,
     ...(isWeb ? { cursor: "pointer" as const } : {}),
   },
   imagePreviewContainer: {

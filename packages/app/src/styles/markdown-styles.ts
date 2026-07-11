@@ -1,5 +1,9 @@
-import type { Theme } from "./theme";
+import { baseColors, type Theme } from "./theme";
 import { isWeb } from "@/constants/platform";
+
+// Links use a blue rather than the app accent (which is green in the default
+// tint and reads as low-value for hyperlinks).
+const LINK_COLOR = baseColors.blue[500];
 
 const webSelectableTextStyle = isWeb ? { userSelect: "text" as const } : {};
 
@@ -22,9 +26,8 @@ export function createMarkdownStyles(theme: Theme) {
       // prose stands out clearly against the muted tool-call / thinking rows.
       color: theme.colors.foreground,
       fontSize: theme.fontSize.sm,
-      // Prose line-height scales with the UI ramp (≈22 at base 16), NOT the
-      // code-size-coupled lineHeight.diff token used by code/diff surfaces.
-      lineHeight: Math.round(theme.fontSize.sm * 1.65),
+      // Prose line-height — tightened toward a denser, Cursor-like rhythm.
+      lineHeight: Math.round(theme.fontSize.sm * 1.5),
       flexShrink: 1,
       minWidth: 0,
       width: "100%" as const,
@@ -40,7 +43,7 @@ export function createMarkdownStyles(theme: Theme) {
 
     paragraph: {
       marginTop: 0,
-      marginBottom: theme.spacing[3],
+      marginBottom: theme.spacing[2],
       flexWrap: "wrap" as const,
       flexDirection: "row" as const,
       alignItems: "flex-start" as const,
@@ -59,7 +62,7 @@ export function createMarkdownStyles(theme: Theme) {
       fontSize: 20,
       fontWeight: theme.fontWeight.bold,
       color: theme.colors.foreground,
-      marginTop: theme.spacing[4],
+      marginTop: theme.spacing[3],
       marginBottom: theme.spacing[2],
       lineHeight: 28,
       borderBottomWidth: 1,
@@ -72,7 +75,7 @@ export function createMarkdownStyles(theme: Theme) {
       fontSize: 18,
       fontWeight: theme.fontWeight.bold,
       color: theme.colors.foreground,
-      marginTop: theme.spacing[4],
+      marginTop: theme.spacing[3],
       marginBottom: theme.spacing[2],
       lineHeight: 26,
       borderBottomWidth: 1,
@@ -85,7 +88,7 @@ export function createMarkdownStyles(theme: Theme) {
       fontSize: 17,
       fontWeight: theme.fontWeight.semibold,
       color: theme.colors.foreground,
-      marginTop: theme.spacing[4],
+      marginTop: theme.spacing[3],
       marginBottom: theme.spacing[2],
       lineHeight: 24,
     },
@@ -95,7 +98,7 @@ export function createMarkdownStyles(theme: Theme) {
       fontSize: 15,
       fontWeight: theme.fontWeight.semibold,
       color: theme.colors.foreground,
-      marginTop: theme.spacing[4],
+      marginTop: theme.spacing[3],
       marginBottom: theme.spacing[2],
       lineHeight: 22,
     },
@@ -145,7 +148,7 @@ export function createMarkdownStyles(theme: Theme) {
 
     link: {
       ...webSelectableTextStyle,
-      color: theme.colors.accentBright,
+      color: LINK_COLOR,
       textDecorationLine: "none" as const,
       flexShrink: 1,
       minWidth: 0,
@@ -154,7 +157,7 @@ export function createMarkdownStyles(theme: Theme) {
 
     blocklink: {
       ...webSelectableTextStyle,
-      color: theme.colors.accentBright,
+      color: LINK_COLOR,
       textDecorationLine: "none" as const,
       flexShrink: 1,
       minWidth: 0,
@@ -366,7 +369,7 @@ export function createCompactMarkdownStyles(theme: Theme) {
     heading1: {
       ...baseStyles.heading1,
       fontSize: theme.fontSize.xl,
-      marginTop: theme.spacing[4],
+      marginTop: theme.spacing[3],
       marginBottom: theme.spacing[2],
       lineHeight: 26,
     },

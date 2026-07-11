@@ -7,7 +7,6 @@ import {
   type PressableStateCallbackType,
   Text,
   TextInput,
-  type TextStyle,
   View,
   type StyleProp,
   type ViewStyle,
@@ -596,11 +595,6 @@ export function InlineReviewEditor({
     };
   }, [canSave, handleSave, onCancel]);
 
-  const inputStyle = useMemo<StyleProp<TextStyle>>(
-    () => [styles.editorInput, isFocused && styles.editorInputFocused],
-    [isFocused],
-  );
-
   return (
     <View style={styles.editorBlock} testID={testID}>
       <TextInput
@@ -614,7 +608,7 @@ export function InlineReviewEditor({
         onChangeText={setBody}
         onFocus={handleFocus}
         onBlur={handleBlur}
-        style={inputStyle}
+        style={styles.editorInput}
       />
       <View style={styles.editorActions}>
         <Button
@@ -688,9 +682,9 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing[3],
   },
   commentBlock: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surface1,
     borderWidth: theme.borderWidth[1],
-    borderColor: theme.colors.borderAccent,
+    borderColor: theme.colors.border,
     borderRadius: theme.borderRadius.lg,
     paddingHorizontal: theme.spacing[3],
     paddingVertical: theme.spacing[2],
@@ -733,7 +727,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   editorBlock: {
     minHeight: INLINE_REVIEW_EDITOR_HEIGHT,
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surface1,
     borderWidth: theme.borderWidth[1],
     borderColor: theme.colors.borderAccent,
     borderRadius: theme.borderRadius.lg,
@@ -745,12 +739,6 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minHeight: 0,
     color: theme.colors.foreground,
-    backgroundColor: theme.colors.surface1,
-    borderWidth: theme.borderWidth[1],
-    borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.md,
-    paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[2],
     fontSize: theme.fontSize.sm,
     lineHeight: theme.fontSize.sm * 1.4,
     textAlignVertical: "top",
@@ -760,9 +748,6 @@ const styles = StyleSheet.create((theme) => ({
           outlineColor: "transparent",
         }
       : {}),
-  },
-  editorInputFocused: {
-    borderColor: theme.colors.accent,
   },
   editorActions: {
     flexDirection: "row",

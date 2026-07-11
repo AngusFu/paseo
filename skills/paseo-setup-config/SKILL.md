@@ -61,6 +61,8 @@ Decide before writing. Ask only if genuinely ambiguous.
 4. **`paseo.json` exists and the change is genuinely shared** (fixing the team dev command, adding a service everyone needs) → edit `paseo.json` in place.
 5. **No config at all yet** → start with `paseo.json` for the shared baseline; peel personal bits into `paseo.local.json` only if the user flags them.
 
+**Before writing `paseo.local.json`, warn the user it won't show up in Paseo's project-settings panel** — that built-in editor only reads and writes `paseo.json`. A local file takes effect at runtime but stays invisible in the UI.
+
 When unsure between "shared" and "personal", state your pick and why in one line, then proceed — the user corrects if wrong.
 
 ## Workflow
@@ -70,13 +72,19 @@ When unsure between "shared" and "personal", state your pick and why in one line
    - package manager + scripts: `package.json`, lockfile (`package-lock.json` / `pnpm-lock.yaml` / `yarn.lock` / `bun.lockb`), or the equivalent for non-JS stacks (`Cargo.toml`, `pyproject.toml`, `go.mod`, `Makefile`, `docker-compose.yml`).
    - the dev/build/test commands and any service ports actually used.
 3. **Draft** the minimal config that serves the request. Minimal beats exhaustive — only fields that matter.
-4. **Pick the file** per the rules above.
-5. **Show the user** the config and the target file; let them adjust.
-6. **Write** valid JSON, 2-space indent, trailing newline. If you wrote `paseo.local.json`, confirm it's git-ignored (Paseo ships a `.gitignore` entry; add one if the project lacks it).
+4. **Pick the file and confirm** per the rules above — show the user the config and target file so they can adjust.
+5. **Write** valid JSON, 2-space indent, trailing newline. If you wrote `paseo.local.json`, confirm it's git-ignored (add a `.gitignore` entry if the project lacks one).
+
+## Pitfalls
+
+- **Settings panel edits `paseo.json` only.** Values you put in `paseo.local.json` never appear in Paseo's project-settings UI — the edit RPC reads and writes the base file alone. Avoid surprise: when you write a local file, tell the user it lives only on disk, not in the panel.
+- **Runtime uses the merged value, the panel shows the base.** Worktree setup/teardown, scripts/services, and metadata prompts read `paseo.json` deep-merged with `paseo.local.json`; the panel shows the base. If a key is overridden locally, say so — the effective value differs from what the UI displays.
+- **A non-object `paseo.local.json` wipes the config.** Valid-but-non-object JSON at the top level (`[]`, `"x"`, `42`) wins the merge and replaces the whole config, which then falls back to empty — worktree setup and scripts silently vanish at runtime. Always write the local file as a top-level JSON object.
+- **Not git-ignoring the local file leaks it.** If the project's `.gitignore` doesn't cover `paseo.local.json`, it gets committed and "personal" settings reach the whole team. Ensure it's ignored before you finish.
+- **Local is read from the base checkout's working tree.** Paseo reads config from the base branch checkout you picked, on disk; `paseo.local.json` is git-ignored so it never travels through git to other worktrees or branches. Put it in the base checkout root, next to `paseo.json`.
 
 ## Rules
 
 - Valid JSON only (no comments in the written file — the schema block above uses jsonc for docs).
-- Preserve every key you didn't intend to change.
 - `paseo.local.json` holds only overrides, not a full copy — the deep merge fills the rest.
 - Don't invent fields outside the schema; Paseo ignores unknown keys but they add noise.

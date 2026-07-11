@@ -13,11 +13,9 @@ import {
 } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { Button } from "@/components/ui/button";
-import { Shortcut } from "@/components/ui/shortcut";
 import { isWeb } from "@/constants/platform";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import type { Theme } from "@/styles/theme";
-import type { ShortcutKey } from "@/utils/format-shortcut";
 import { useWorkspaceFocusRestoration } from "@/workspace/focus";
 import { useReviewDraftComments, useReviewDraftStore, type ReviewDraftComment } from "./store";
 import { buildReviewableDiffTargetKey, type ReviewableDiffTarget } from "@/utils/diff-layout";
@@ -45,39 +43,10 @@ function getWebTextInputElement(input: TextInput | null): HTMLElement | null {
   return element instanceof HTMLElement ? element : null;
 }
 
-function getCanShowReviewKeyboardHints(): boolean {
-  if (!isWeb || typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return false;
-  }
-  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
-}
-
-function useCanShowReviewKeyboardHints(): boolean {
-  const [canShowHints, setCanShowHints] = useState(getCanShowReviewKeyboardHints);
-
-  useEffect(() => {
-    if (!isWeb || typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return;
-    }
-
-    const mediaQuery = window.matchMedia("(hover: hover) and (pointer: fine)");
-    const handleChange = () => setCanShowHints(mediaQuery.matches);
-    handleChange();
-    mediaQuery.addEventListener?.("change", handleChange);
-    return () => {
-      mediaQuery.removeEventListener?.("change", handleChange);
-    };
-  }, []);
-
-  return canShowHints;
-}
-
 export const INLINE_REVIEW_COMMENT_HEIGHT = 72;
 export const INLINE_REVIEW_EDITOR_HEIGHT = 132;
 const INLINE_REVIEW_GAP = 6;
 export const SMALL_ACTION_HIT_SLOP = 8;
-const REVIEW_CANCEL_SHORTCUT_KEYS: ShortcutKey[] = ["Esc"];
-const REVIEW_SAVE_SHORTCUT_KEYS: ShortcutKey[] = ["mod", "Enter"];
 const foregroundMutedIconColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const destructiveIconColorMapping = (theme: Theme) => ({ color: theme.colors.destructive });
 const accentForegroundIconColorMapping = (theme: Theme) => ({
@@ -532,12 +501,9 @@ export function InlineReviewEditor({
   const { t } = useTranslation();
   const inputRef = useRef<TextInput | null>(null);
   const focus = useWorkspaceFocusRestoration();
-  const canShowKeyboardHints = useCanShowReviewKeyboardHints();
   const [body, setBody] = useState(initialBody);
-  const [isFocused, setIsFocused] = useState(false);
   const trimmedBody = body.trim();
   const canSave = trimmedBody.length > 0;
-  const showKeyboardHints = isFocused && canShowKeyboardHints;
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -545,27 +511,11 @@ export function InlineReviewEditor({
 
   const handleFocus = useCallback(() => {
     focus.unfocus();
-    setIsFocused(true);
   }, [focus]);
   const handleBlur = useCallback(() => {
-    setIsFocused(false);
     focus.restore();
   }, [focus]);
   const handleSave = useCallback(() => onSave(trimmedBody), [onSave, trimmedBody]);
-  const cancelShortcut = useMemo(
-    () =>
-      showKeyboardHints ? (
-        <Shortcut keys={REVIEW_CANCEL_SHORTCUT_KEYS} style={styles.shortcutHint} />
-      ) : null,
-    [showKeyboardHints],
-  );
-  const saveShortcut = useMemo(
-    () =>
-      showKeyboardHints ? (
-        <Shortcut keys={REVIEW_SAVE_SHORTCUT_KEYS} style={styles.shortcutHint} />
-      ) : null,
-    [showKeyboardHints],
-  );
 
   useEffect(() => {
     const element = getWebTextInputElement(inputRef.current);
@@ -624,7 +574,6 @@ export function InlineReviewEditor({
           onPress={onCancel}
           variant="ghost"
           size="xs"
-          trailing={cancelShortcut}
         >
           {t("review.comment.cancel")}
         </Button>
@@ -636,7 +585,6 @@ export function InlineReviewEditor({
           onPress={handleSave}
           variant="default"
           size="xs"
-          trailing={saveShortcut}
         >
           {t("review.comment.save")}
         </Button>
@@ -646,13 +594,6 @@ export function InlineReviewEditor({
 }
 
 const styles = StyleSheet.create((theme) => ({
-  // Render the keyboard hint as plain muted text, not a chip that reads as a button.
-  shortcutHint: {
-    backgroundColor: "transparent",
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-    borderRadius: 0,
-  },
   gutterInner: {
     minHeight: theme.lineHeight.diff,
     alignItems: "stretch",

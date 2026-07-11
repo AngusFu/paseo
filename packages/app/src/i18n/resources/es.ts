@@ -688,7 +688,7 @@ export const es: TranslationResources = {
           success: "Actualizado",
         },
         archive: {
-          label: "Árbol de trabajo de archivo",
+          label: "Archivar espacio de trabajo",
           pending: "Archivando...",
           success: "Archivado",
         },
@@ -742,8 +742,6 @@ export const es: TranslationResources = {
             "La actualización no está disponible mientras tenga cambios locales, así que confírmelos o guárdelos primero",
           updateCurrent:
             "La actualización no está disponible porque esta rama ya está actualizada con{{baseRef}}",
-          archiveNotWorktree:
-            "El archivo no está disponible aquí porque este espacio de trabajo no se creó como un árbol de trabajoPaseo",
           mergePrNoGithub:
             "FusionarPRno está disponible en este momento porqueGitHubno está conectado",
           mergePrMissing:
@@ -775,11 +773,9 @@ export const es: TranslationResources = {
           baseRefUnavailable: "Referencia base no disponible",
           failedMerge: "No se pudo fusionar",
           failedMergeFromBase: "No se pudo fusionar desde la base",
-          worktreePathUnavailable: "Ruta del árbol de trabajo no disponible",
-          failedArchive: "No se pudo archivar el árbol de trabajo",
         },
         archiveWarning: {
-          title: '¿Archivo "{{worktreeName}}"?',
+          title: '¿Archivo "{{workspaceName}}"?',
           confirm: "Archivo",
           cancel: "Cancelar",
           uncommittedChanges: "Cambios no confirmados",
@@ -964,7 +960,7 @@ export const es: TranslationResources = {
         copyBranchName: "Copiar nombre de sucursal",
         rename: "Cambiar nombre del espacio de trabajo",
         archive: "Archivo",
-        archiveWorktree: "Árbol de trabajo de archivo",
+        archiveWorkspace: "Archivar espacio de trabajo",
         hideFromSidebar: "Ocultar de la barra lateral",
         archiving: "Archivando...",
         hiding: "Ocultación...",
@@ -989,7 +985,7 @@ export const es: TranslationResources = {
         branchNameCopied: "Nombre de la sucursal copiado",
         hostDisconnected: "Hostno está conectado",
         hideFailed: "No se pudo ocultar el espacio de trabajo",
-        archiveFailed: "No se pudo archivar el árbol de trabajo",
+        archiveFailed: "No se pudo archivar el espacio de trabajo",
       },
     },
   },
@@ -1795,7 +1791,7 @@ export const es: TranslationResources = {
         openProject: "Abrir proyecto",
         newWorkspace: "Nuevo espacio de trabajo",
         newWorktree: "Nuevo árbol de trabajo",
-        archiveWorktree: "Árbol de trabajo de archivo",
+        archiveWorkspace: "Archivar espacio de trabajo",
         newTab: "Nueva pestaña",
         closeCurrentTab: "Cerrar pestaña actual",
         jumpToWorkspace: "Saltar al espacio de trabajo",

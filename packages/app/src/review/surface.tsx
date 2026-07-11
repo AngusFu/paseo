@@ -325,7 +325,7 @@ export function InlineReviewGutterCell({
   const actionIconStyle = useMemo<StyleProp<ViewStyle>>(
     () => [
       styles.gutterActionIcon,
-      lineHeight !== undefined && inlineUnistylesStyle({ top: Math.floor((lineHeight - 22) / 2) }),
+      lineHeight !== undefined && inlineUnistylesStyle({ top: lineHeight - 22 }),
     ],
     [lineHeight],
   );
@@ -627,9 +627,14 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface2,
   },
   gutterActionIcon: {
+    // The button (22px) is taller than a diff row, so it must overhang. Anchor
+    // it flush to the row's bottom so it only overhangs *upward*: the upward
+    // overlap paints over the row above (this row renders later), while a
+    // downward overhang would be painted over by the next row's content cell —
+    // which read as a clipped green "tail" on untinted lines.
     position: "absolute",
     right: -10,
-    top: Math.floor((theme.lineHeight.diff - 22) / 2),
+    top: theme.lineHeight.diff - 22,
     width: 22,
     height: 22,
     borderRadius: theme.borderRadius.md,

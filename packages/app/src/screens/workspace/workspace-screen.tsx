@@ -59,7 +59,8 @@ import {
   FloatingPanelPortalHostNameProvider,
 } from "@/components/ui/floating-panel-portal";
 import { ExplorerSidebar } from "@/components/explorer-sidebar";
-import { MountedTabActiveContext, SplitContainer } from "@/components/split-container";
+import { SplitContainer } from "@/components/split-container";
+import { RetainedPanel } from "@/components/retained-panel";
 import { SourceControlPanelIcon } from "@/components/icons/source-control-panel-icon";
 import { WorkspaceActions } from "@/git/workspace-actions";
 import { WorkspaceOpenInEditorButton } from "@/screens/workspace/workspace-open-in-editor-button";
@@ -851,21 +852,15 @@ const MobileMountedTabSlot = memo(function MobileMountedTabSlot({
     [buildPaneContentModel, paneId, tabDescriptor],
   );
 
-  const slotStyle = isVisible
-    ? styles.mobileMountedTabSlotVisible
-    : styles.mobileMountedTabSlotHidden;
-
   return (
     <RenderProfile id={`MobileMountedTabSlot:${tabDescriptor.kind}:${tabDescriptor.tabId}`}>
-      <MountedTabActiveContext value={isVisible}>
-        <View style={slotStyle} pointerEvents={isVisible ? "auto" : "none"}>
-          <WorkspacePaneContent
-            content={content}
-            isWorkspaceFocused={isWorkspaceFocused}
-            isPaneFocused={isPaneFocused}
-          />
-        </View>
-      </MountedTabActiveContext>
+      <RetainedPanel active={isVisible} style={styles.mobileMountedTabSlot}>
+        <WorkspacePaneContent
+          content={content}
+          isWorkspaceFocused={isWorkspaceFocused}
+          isPaneFocused={isPaneFocused}
+        />
+      </RetainedPanel>
     </RenderProfile>
   );
 });
@@ -3970,13 +3965,8 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface0,
     position: "relative",
   },
-  mobileMountedTabSlotVisible: {
+  mobileMountedTabSlot: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 1,
-  },
-  mobileMountedTabSlotHidden: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0,
   },
   contentPlaceholder: {
     flex: 1,

@@ -64,11 +64,11 @@ import {
 } from "@/utils/host-routes";
 import {
   shouldShowSidebarHostLabels,
-  useSidebarWorkspaceEntry,
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
   type SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
+import { useSidebarWorkspaceEntries } from "@/hooks/use-sidebar-workspace-entries";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import { usePinnedWorkspacesStore } from "@/stores/pinned-workspaces-store";
 import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
@@ -227,6 +227,7 @@ function selectionForSelectedWorkspace(
 interface SidebarWorkspaceListProps {
   statusGroups: StatusGroup[];
   projects: SidebarProjectEntry[];
+  workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   projectNamesByKey: Map<string, string>;
   collapsedProjectKeys: ReadonlySet<string>;
   onToggleProjectCollapsed: (projectKey: string) => void;
@@ -1655,6 +1656,7 @@ function WorkspaceRowWithMenu({
 
 interface WorkspaceRowItemProps {
   workspace: SidebarWorkspacePlacement;
+  workspaceEntry: SidebarWorkspaceEntry | null;
   subtitle?: string | null;
   shortcutNumber: number | null;
   showShortcutBadge: boolean;
@@ -1670,6 +1672,7 @@ interface WorkspaceRowItemProps {
 
 function WorkspaceRowItem({
   workspace,
+  workspaceEntry,
   subtitle,
   shortcutNumber,
   showShortcutBadge,
@@ -1692,7 +1695,7 @@ function WorkspaceRowItem({
 
   return (
     <WorkspaceRow
-      workspace={workspace}
+      workspaceEntry={workspaceEntry}
       subtitle={subtitle}
       shortcutNumber={shortcutNumber}
       showShortcutBadge={showShortcutBadge}
@@ -1730,6 +1733,7 @@ function areWorkspaceRowItemPropsEqual(
   });
   return (
     previous.workspace === next.workspace &&
+    previous.workspaceEntry === next.workspaceEntry &&
     previous.subtitle === next.subtitle &&
     previous.shortcutNumber === next.shortcutNumber &&
     previous.showShortcutBadge === next.showShortcutBadge &&
@@ -1746,7 +1750,7 @@ function areWorkspaceRowItemPropsEqual(
 const MemoWorkspaceRowItem = memo(WorkspaceRowItem, areWorkspaceRowItemPropsEqual);
 
 function WorkspaceRow({
-  workspace,
+  workspaceEntry,
   subtitle,
   shortcutNumber,
   showShortcutBadge,
@@ -1758,7 +1762,7 @@ function WorkspaceRow({
   isCreating = false,
   selected,
 }: {
-  workspace: SidebarWorkspacePlacement;
+  workspaceEntry: SidebarWorkspaceEntry | null;
   subtitle?: string | null;
   shortcutNumber: number | null;
   showShortcutBadge: boolean;
@@ -1770,15 +1774,13 @@ function WorkspaceRow({
   isCreating?: boolean;
   selected: boolean;
 }) {
-  const hydratedWorkspace = useSidebarWorkspaceEntry(workspace.serverId, workspace.workspaceId);
-
-  if (!hydratedWorkspace) {
+  if (!workspaceEntry) {
     return null;
   }
 
   return (
     <WorkspaceRowWithMenu
-      workspace={hydratedWorkspace}
+      workspace={workspaceEntry}
       subtitle={subtitle}
       selected={selected}
       shortcutNumber={shortcutNumber}
@@ -1795,6 +1797,7 @@ function WorkspaceRow({
 
 function ProjectBlock({
   project,
+  workspaceEntriesByKey,
   collapsed,
   displayName,
   iconDataUri,
@@ -1817,6 +1820,7 @@ function ProjectBlock({
   supportsMultiplicityByServerId,
 }: {
   project: SidebarProjectEntry;
+  workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   collapsed: boolean;
   displayName: string;
   iconDataUri: string | null;
@@ -1866,6 +1870,7 @@ function ProjectBlock({
       return (
         <MemoWorkspaceRowItem
           workspace={item}
+          workspaceEntry={workspaceEntriesByKey.get(item.workspaceKey) ?? null}
           subtitle={
             showHostLabels ? (hostLabelByServerId.get(item.serverId) ?? item.serverId) : null
           }
@@ -1892,6 +1897,7 @@ function ProjectBlock({
       selectionEnabled,
       shortcutIndexByWorkspaceKey,
       showShortcutBadges,
+      workspaceEntriesByKey,
     ],
   );
 
@@ -2046,6 +2052,7 @@ type ProjectBlockProps = Parameters<typeof ProjectBlock>[0];
 function areProjectBlockPropsEqual(previous: ProjectBlockProps, next: ProjectBlockProps): boolean {
   return (
     previous.project === next.project &&
+    previous.workspaceEntriesByKey === next.workspaceEntriesByKey &&
     previous.collapsed === next.collapsed &&
     previous.displayName === next.displayName &&
     previous.iconDataUri === next.iconDataUri &&
@@ -2152,6 +2159,8 @@ export function SidebarPinnedSection({
     return result;
   }, [projects, pinnedWorkspaceKeys]);
 
+  const workspaceEntriesByKey = useSidebarWorkspaceEntries(pinnedWorkspaces);
+
   const renderWorkspace = useCallback(
     ({
       item,
@@ -2162,6 +2171,7 @@ export function SidebarPinnedSection({
       return (
         <MemoWorkspaceRowItem
           workspace={item}
+          workspaceEntry={workspaceEntriesByKey.get(item.workspaceKey) ?? null}
           subtitle={
             showHostLabels ? (hostLabelByServerId.get(item.serverId) ?? item.serverId) : null
           }
@@ -2185,6 +2195,7 @@ export function SidebarPinnedSection({
       selectionEnabled,
       activeWorkspaceSelection,
       onWorkspacePress,
+      workspaceEntriesByKey,
     ],
   );
 
@@ -2226,6 +2237,7 @@ export function SidebarPinnedSection({
 export function SidebarWorkspaceList({
   statusGroups,
   projects,
+  workspaceEntriesByKey,
   projectNamesByKey,
   collapsedProjectKeys,
   onToggleProjectCollapsed,
@@ -2264,6 +2276,7 @@ export function SidebarWorkspaceList({
     ) : (
       <ProjectModeList
         projects={projects}
+        workspaceEntriesByKey={workspaceEntriesByKey}
         collapsedProjectKeys={collapsedProjectKeys}
         onToggleProjectCollapsed={onToggleProjectCollapsed}
         shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
@@ -2337,6 +2350,7 @@ function SidebarStatusModeWrapper({
 
 function ProjectModeList({
   projects,
+  workspaceEntriesByKey,
   collapsedProjectKeys,
   onToggleProjectCollapsed,
   shortcutIndexByWorkspaceKey,
@@ -2549,6 +2563,7 @@ function ProjectModeList({
       return (
         <MemoProjectBlock
           project={item}
+          workspaceEntriesByKey={workspaceEntriesByKey}
           collapsed={collapsedProjectKeys.has(item.projectKey)}
           displayName={item.projectName}
           iconDataUri={projectIconByProjectKey.get(item.projectKey) ?? null}
@@ -2587,6 +2602,7 @@ function ProjectModeList({
       selectionEnabled,
       shortcutIndexByWorkspaceKey,
       showShortcutBadges,
+      workspaceEntriesByKey,
       creatingWorkspaceIds,
     ],
   );

@@ -18,7 +18,9 @@ export function createMarkdownStyles(theme: Theme) {
 
     body: {
       ...webSelectableTextStyle,
-      color: theme.colors.foregroundProse,
+      // Full-strength foreground (not the dimmer foregroundProse) so assistant
+      // prose stands out clearly against the muted tool-call / thinking rows.
+      color: theme.colors.foreground,
       fontSize: theme.fontSize.sm,
       // Prose line-height scales with the UI ramp (≈22 at base 16), NOT the
       // code-size-coupled lineHeight.diff token used by code/diff surfaces.
@@ -30,7 +32,7 @@ export function createMarkdownStyles(theme: Theme) {
 
     text: {
       ...webSelectableTextStyle,
-      color: theme.colors.foregroundProse,
+      color: theme.colors.foreground,
       flexShrink: 1,
       minWidth: 0,
       overflowWrap: "anywhere" as const,

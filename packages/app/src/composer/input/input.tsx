@@ -1676,7 +1676,14 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
 
     const handleInputScroll = useCallback(
       (event: NativeSyntheticEvent<TextInputScrollEventData>) => {
-        setInputScrollTop(event.nativeEvent.contentOffset?.y ?? 0);
+        // On web the scroll event's nativeEvent has no RN `contentOffset`; read
+        // the textarea's DOM scrollTop directly so the highlight overlay tracks
+        // the input as it scrolls.
+        const native = event.nativeEvent as unknown as {
+          contentOffset?: { y?: number };
+          target?: { scrollTop?: number };
+        };
+        setInputScrollTop(native.contentOffset?.y ?? native.target?.scrollTop ?? 0);
       },
       [],
     );

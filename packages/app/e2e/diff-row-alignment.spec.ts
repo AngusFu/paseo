@@ -239,7 +239,10 @@ test("changes diff switches between flat and tree file lists", async ({ page }) 
   await openWorkspaceChanges(page, workspace);
 
   await expectFlatFileList(page);
-  await expect(page.getByTestId("changes-toggle-layout")).toBeVisible();
+  // The Changes pane is a fixed ~400px side panel here — below the split
+  // minimum width — so the unified/split layout toggle is hidden and only
+  // unified renders. (Split re-appears once the pane is dragged wider.)
+  await expect(page.getByTestId("changes-toggle-layout")).toHaveCount(0);
   await expect(page.getByTestId("changes-layout-unified")).toHaveCount(0);
   await expect(page.getByTestId("changes-layout-split")).toHaveCount(0);
 

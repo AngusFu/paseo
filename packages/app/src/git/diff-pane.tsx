@@ -1793,12 +1793,24 @@ function shouldEnableCheckoutDiff(input: { paneEnabled: boolean; isGit: boolean 
   return input.paneEnabled && input.isGit;
 }
 
+// Minimum Changes-pane width (px) at which side-by-side split is usable; below
+// it the two columns truncate badly, so we force unified and hide the toggle.
+const SPLIT_MIN_PANE_WIDTH = 720;
+
 export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPaneProps) {
   const { settings: appSettings } = useAppSettings();
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
   const showDesktopWebScrollbar = isWeb && !isMobile;
-  const canUseSplitLayout = isWeb && !isMobile;
+  // Side-by-side split needs room for two gutter+code columns; below this the
+  // columns squish to unreadable truncation. The Changes pane is a fixed ~400px
+  // side panel by default, so split is only offered once it's dragged wide
+  // enough — otherwise we fall back to (and hide the toggle for) unified.
+  const [paneWidth, setPaneWidth] = useState(0);
+  const handlePaneLayout = useCallback((event: LayoutChangeEvent) => {
+    setPaneWidth(event.nativeEvent.layout.width);
+  }, []);
+  const canUseSplitLayout = isWeb && !isMobile && paneWidth >= SPLIT_MIN_PANE_WIDTH;
   const { preferences: changesPreferences, updatePreferences: updateChangesPreferences } =
     useChangesPreferences();
   const wrapLines = changesPreferences.wrapLines;
@@ -2447,7 +2459,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
   );
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} onLayout={handlePaneLayout}>
       {isGit && (currentBranchName || isMobile) ? (
         <View style={styles.header} testID="changes-header">
           <BranchSwitcher

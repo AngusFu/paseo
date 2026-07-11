@@ -1956,4 +1956,27 @@ export const zhCN: TranslationResources = {
       },
     },
   },
+  schedule: {
+    target: {
+      label: "目标",
+      newAgent: "新建 Agent",
+      command: "命令",
+      commandUnsupported: "请更新主机以使用命令计划。",
+    },
+    command: {
+      label: "命令",
+      placeholder: "每次运行的命令",
+      env: {
+        label: "环境变量",
+        add: "添加变量",
+        keyPlaceholder: "键",
+        valuePlaceholder: "值",
+        remove: "删除变量",
+      },
+      timeout: {
+        label: "超时（秒）",
+        placeholder: "无限制",
+      },
+    },
+  },
 };

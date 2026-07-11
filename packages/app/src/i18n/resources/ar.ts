@@ -1979,4 +1979,27 @@ export const ar: TranslationResources = {
       },
     },
   },
+  schedule: {
+    target: {
+      label: "الهدف",
+      newAgent: "وكيل جديد",
+      command: "الأمر",
+      commandUnsupported: "حدّث المضيف لاستخدام جداول الأوامر.",
+    },
+    command: {
+      label: "الأمر",
+      placeholder: "الأمر الذي يُنفّذ في كل مرة",
+      env: {
+        label: "متغيرات البيئة",
+        add: "إضافة متغير",
+        keyPlaceholder: "المفتاح",
+        valuePlaceholder: "القيمة",
+        remove: "إزالة المتغير",
+      },
+      timeout: {
+        label: "المهلة (ثوانٍ)",
+        placeholder: "بلا حد",
+      },
+    },
+  },
 };

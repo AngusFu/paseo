@@ -2032,4 +2032,27 @@ export const fr: TranslationResources = {
       },
     },
   },
+  schedule: {
+    target: {
+      label: "Cible",
+      newAgent: "Nouvel agent",
+      command: "Commande",
+      commandUnsupported: "Mettez à jour l'hôte pour utiliser les planifications de commande.",
+    },
+    command: {
+      label: "Commande",
+      placeholder: "Commande à exécuter à chaque fois",
+      env: {
+        label: "Variables d'environnement",
+        add: "Ajouter une variable",
+        keyPlaceholder: "CLÉ",
+        valuePlaceholder: "valeur",
+        remove: "Supprimer la variable",
+      },
+      timeout: {
+        label: "Délai (secondes)",
+        placeholder: "Aucune limite",
+      },
+    },
+  },
 };

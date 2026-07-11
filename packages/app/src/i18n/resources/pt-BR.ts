@@ -2011,4 +2011,27 @@ export const ptBR: TranslationResources = {
       },
     },
   },
+  schedule: {
+    target: {
+      label: "Destino",
+      newAgent: "Novo agente",
+      command: "Comando",
+      commandUnsupported: "Atualize o host para usar agendamentos de comando.",
+    },
+    command: {
+      label: "Comando",
+      placeholder: "Comando a executar a cada vez",
+      env: {
+        label: "Variáveis de ambiente",
+        add: "Adicionar variável",
+        keyPlaceholder: "CHAVE",
+        valuePlaceholder: "valor",
+        remove: "Remover variável",
+      },
+      timeout: {
+        label: "Tempo limite (segundos)",
+        placeholder: "Sem limite",
+      },
+    },
+  },
 };

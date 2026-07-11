@@ -2026,4 +2026,27 @@ export const es: TranslationResources = {
       },
     },
   },
+  schedule: {
+    target: {
+      label: "Destino",
+      newAgent: "Nuevo agente",
+      command: "Comando",
+      commandUnsupported: "Actualiza el host para usar programaciones de comandos.",
+    },
+    command: {
+      label: "Comando",
+      placeholder: "Comando que se ejecuta cada vez",
+      env: {
+        label: "Variables de entorno",
+        add: "Añadir variable",
+        keyPlaceholder: "CLAVE",
+        valuePlaceholder: "valor",
+        remove: "Eliminar variable",
+      },
+      timeout: {
+        label: "Tiempo límite (segundos)",
+        placeholder: "Sin límite",
+      },
+    },
+  },
 };

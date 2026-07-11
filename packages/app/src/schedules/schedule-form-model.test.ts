@@ -7,7 +7,11 @@ import type { ScheduleSummary } from "@getpaseo/protocol/schedule/types";
 import type { FormPreferences } from "@/create-agent-preferences/preferences";
 import { describe, expect, it } from "vitest";
 import { buildProjectOptionId, type ScheduleProjectTarget } from "./schedule-project-targets";
-import { openScheduleForm, type ScheduleFormSnapshot } from "./schedule-form-model";
+import {
+  buildCommandEnvRecord,
+  openScheduleForm,
+  type ScheduleFormSnapshot,
+} from "./schedule-form-model";
 
 type TestSchedule = ScheduleSummary & { serverId: string; serverName: string };
 
@@ -608,5 +612,86 @@ describe("schedule form model", () => {
       selectedMode: "load-test",
       isolation: "worktree",
     });
+  });
+
+  const COMMAND_HOSTS = [
+    { serverId: "host-a", label: "Host A", supportsCommandSchedules: true },
+    { serverId: "host-b", label: "Host B", supportsCommandSchedules: false },
+  ] as const;
+
+  it("gates command submit on host support, a project cwd, and a command", () => {
+    const form = openWithHosts({
+      mode: "create",
+      defaults: { serverId: "host-a", projectTargets: PROJECT_TARGETS, preferences: {} },
+      hosts: COMMAND_HOSTS,
+    });
+
+    form.setTargetKind("command");
+    expect(form.getState()).toMatchObject({
+      targetKind: "command",
+      commandSchedulesSupported: true,
+      canSubmit: false,
+    });
+
+    form.setProject(buildProjectOptionId("host-a", "project-a"), { label: "Project A" });
+    form.setCommand("npm run build");
+    expect(form.getState()).toMatchObject({
+      workingDir: "/repo/a",
+      command: "npm run build",
+      canSubmit: true,
+    });
+
+    // Env rows collapse to a record, blank keys dropped.
+    form.addCommandEnvRow();
+    const rowId = form.getState().commandEnvRows[0]?.id ?? "";
+    form.setCommandEnvKey(rowId, "NODE_ENV");
+    form.setCommandEnvValue(rowId, "production");
+    expect(buildCommandEnvRecord(form.getState().commandEnvRows)).toEqual({
+      NODE_ENV: "production",
+    });
+  });
+
+  it("hydrates an edited command schedule", () => {
+    const commandSchedule: TestSchedule = {
+      id: "schedule-command",
+      serverId: "host-a",
+      serverName: "Host A",
+      name: "Nightly build",
+      prompt: "npm run build",
+      cadence: { type: "cron", expression: "0 9 * * *" },
+      target: {
+        type: "command",
+        command: "npm run build",
+        cwd: "/repo/a",
+        env: { NODE_ENV: "production" },
+        timeoutMs: 30_000,
+      },
+      status: "active",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      nextRunAt: "2026-07-02T00:00:00.000Z",
+      lastRunAt: null,
+      pausedAt: null,
+      expiresAt: null,
+      maxRuns: null,
+    };
+
+    const form = openWithHosts({
+      mode: "edit",
+      schedule: commandSchedule,
+      defaults: { serverId: "host-a", projectTargets: PROJECT_TARGETS, preferences: {} },
+      hosts: COMMAND_HOSTS,
+    });
+
+    expect(form.getState()).toMatchObject({
+      targetKind: "command",
+      command: "npm run build",
+      workingDir: "/repo/a",
+      commandTimeoutSeconds: "30",
+      canSubmit: true,
+    });
+    expect(form.getState().commandEnvRows).toEqual([
+      { id: "env-0", key: "NODE_ENV", value: "production" },
+    ]);
   });
 });

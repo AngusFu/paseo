@@ -9,9 +9,10 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { Text, View } from "react-native";
-import { Brain, Folder, GitBranch } from "lucide-react-native";
+import { Pressable, Text, View } from "react-native";
+import { Brain, Folder, GitBranch, Plus, X } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
+import { useTranslation } from "react-i18next";
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import type { ScheduleSummary } from "@getpaseo/protocol/schedule/types";
 import { useStoreWithEqualityFn } from "zustand/traditional";
@@ -23,6 +24,7 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { HostStatusDotSlot } from "@/components/hosts/host-picker";
 import { createControlGeometry, type FieldControlSize } from "@/components/ui/control-geometry";
 import { Field, FormTextInput } from "@/components/ui/form-field";
+import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { getProviderIcon } from "@/components/provider-icons";
 import { CadenceEditor } from "@/components/schedules/cadence-editor";
@@ -47,12 +49,15 @@ import { useSessionStore } from "@/stores/session-store";
 import { buildScheduleProjectTargets } from "@/schedules/schedule-project-targets";
 import { useScheduleFormModel } from "@/schedules/use-schedule-form-model";
 import { useScheduleFormProviderSnapshot } from "@/schedules/use-schedule-form-provider-snapshot";
-import type {
-  ScheduleFormDisplay,
-  ScheduleFormHost,
-  ScheduleFormModel,
-  ScheduleFormSnapshot,
-  ScheduleFormState,
+import {
+  buildCommandEnvRecord,
+  parseCommandTimeoutMs,
+  type ScheduleFormDisplay,
+  type ScheduleFormHost,
+  type ScheduleFormModel,
+  type ScheduleFormSnapshot,
+  type ScheduleFormState,
+  type ScheduleFormTargetKind,
 } from "@/schedules/schedule-form-model";
 import { validateCron } from "@/utils/schedule-format";
 import { toErrorMessage } from "@/utils/error-messages";
@@ -112,6 +117,8 @@ function selectScheduleHosts(
       label: host.label,
       supportsWorkspaceMultiplicity:
         state.sessions[host.serverId]?.serverInfo?.features?.workspaceMultiplicity === true,
+      supportsCommandSchedules:
+        state.sessions[host.serverId]?.serverInfo?.features?.commandSchedules === true,
     }));
 }
 
@@ -374,21 +381,79 @@ function OpenScheduleFormSheet({
     return true;
   }, [createSchedule, mode, persistPreferences, schedule, state, updateSchedule]);
 
+  const submitCommand = useCallback(async (): Promise<boolean> => {
+    const cwd = state.workingDir.trim();
+    const command = state.command.trim();
+    if (!cwd || !command) {
+      return false;
+    }
+    const env = buildCommandEnvRecord(state.commandEnvRows);
+    const hasEnv = Object.keys(env).length > 0;
+    const timeoutMs = parseCommandTimeoutMs(state.commandTimeoutSeconds);
+    const maxRuns = parseMaxRuns(state.maxRuns);
+    // The daemon runs `target.command`; the required prompt mirrors it so old
+    // clients still have something to show.
+    if (mode === "edit" && schedule) {
+      await updateSchedule({
+        id: schedule.id,
+        name: state.name.trim() || null,
+        prompt: command,
+        cadence: state.submitCadence,
+        commandConfig: {
+          command,
+          cwd,
+          env: hasEnv ? env : null,
+          timeoutMs: timeoutMs ?? null,
+        },
+        maxRuns,
+      });
+      return true;
+    }
+    await createSchedule({
+      prompt: command,
+      name: state.name.trim() || undefined,
+      cadence: state.submitCadence,
+      target: {
+        type: "command",
+        command,
+        cwd,
+        ...(hasEnv ? { env } : {}),
+        ...(timeoutMs != null ? { timeoutMs } : {}),
+      },
+      ...(maxRuns != null ? { maxRuns } : {}),
+    });
+    return true;
+  }, [createSchedule, mode, schedule, state, updateSchedule]);
+
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) {
       return;
     }
     model.setSubmitError(null);
     try {
-      const submitted =
-        state.targetKind === "agent" ? await submitAgentTarget() : await submitNewAgent();
+      let submitted: boolean;
+      if (state.targetKind === "agent") {
+        submitted = await submitAgentTarget();
+      } else if (state.targetKind === "command") {
+        submitted = await submitCommand();
+      } else {
+        submitted = await submitNewAgent();
+      }
       if (submitted) {
         onClose();
       }
     } catch (error) {
       model.setSubmitError(toErrorMessage(error));
     }
-  }, [canSubmit, model, onClose, state.targetKind, submitAgentTarget, submitNewAgent]);
+  }, [
+    canSubmit,
+    model,
+    onClose,
+    state.targetKind,
+    submitAgentTarget,
+    submitCommand,
+    submitNewAgent,
+  ]);
 
   const handleSubmitPress = useCallback(() => {
     void handleSubmit();
@@ -483,21 +548,23 @@ function ScheduleFormFields({
         />
       </Field>
 
-      <Field label="Prompt">
-        <FormTextInput
-          size={controlSize}
-          testID="schedule-prompt-input"
-          accessibilityLabel="Prompt"
-          initialValue={state.prompt}
-          value={state.prompt}
-          onChangeText={model.setPrompt}
-          placeholder="What should the agent do each run?"
-          style={styles.multilineInput}
-          multiline
-          numberOfLines={4}
-          textAlignVertical="top"
-        />
-      </Field>
+      {state.targetKind === "command" ? null : (
+        <Field label="Prompt">
+          <FormTextInput
+            size={controlSize}
+            testID="schedule-prompt-input"
+            accessibilityLabel="Prompt"
+            initialValue={state.prompt}
+            value={state.prompt}
+            onChangeText={model.setPrompt}
+            placeholder="What should the agent do each run?"
+            style={styles.multilineInput}
+            multiline
+            numberOfLines={4}
+            textAlignVertical="top"
+          />
+        </Field>
+      )}
 
       <ScheduleTargetFields
         model={model}
@@ -683,6 +750,10 @@ function ScheduleTargetFields({
 
   return (
     <>
+      {state.mode === "create" ? (
+        <ScheduleKindField model={model} state={state} controlSize={controlSize} />
+      ) : null}
+
       {state.mode === "edit" || state.hosts.length > 1 ? (
         <SelectField
           label="Host"
@@ -719,6 +790,10 @@ function ScheduleTargetFields({
           triggerTestID="schedule-project-trigger"
           renderOption={renderProjectOption}
         />
+      ) : null}
+
+      {state.targetKind === "command" ? (
+        <ScheduleCommandFields model={model} state={state} controlSize={controlSize} />
       ) : null}
 
       {state.disclosure.showModelField ? (
@@ -790,6 +865,191 @@ function ScheduleTargetFields({
         </Field>
       ) : null}
     </>
+  );
+}
+
+function ScheduleKindField({
+  model,
+  state,
+  controlSize,
+}: {
+  model: ScheduleFormModel;
+  state: ScheduleFormState;
+  controlSize: FieldControlSize;
+}): ReactElement {
+  const { t } = useTranslation();
+  const handleSelectKind = useCallback(
+    (kind: ScheduleFormTargetKind) => {
+      model.setTargetKind(kind);
+    },
+    [model],
+  );
+  const kindOptions = useMemo<SegmentedControlOption<ScheduleFormTargetKind>[]>(
+    () => [
+      {
+        value: "new-agent",
+        label: t("schedule.target.newAgent"),
+        testID: "schedule-kind-new-agent",
+      },
+      {
+        value: "command",
+        label: t("schedule.target.command"),
+        disabled: !state.commandSchedulesSupported,
+        testID: "schedule-kind-command",
+      },
+    ],
+    [state.commandSchedulesSupported, t],
+  );
+  const commandKindHint =
+    state.selectedServerId && !state.commandSchedulesSupported
+      ? t("schedule.target.commandUnsupported")
+      : undefined;
+
+  return (
+    <Field label={t("schedule.target.label")} hint={commandKindHint} testID="schedule-kind">
+      <SegmentedControl
+        options={kindOptions}
+        value={state.targetKind === "command" ? "command" : "new-agent"}
+        onValueChange={handleSelectKind}
+        size={controlSize}
+        testID="schedule-kind-control"
+      />
+    </Field>
+  );
+}
+
+function ScheduleCommandFields({
+  model,
+  state,
+  controlSize,
+}: {
+  model: ScheduleFormModel;
+  state: ScheduleFormState;
+  controlSize: FieldControlSize;
+}): ReactElement {
+  const { t } = useTranslation();
+  const handleAddEnvRow = useCallback(() => {
+    model.addCommandEnvRow();
+  }, [model]);
+
+  return (
+    <>
+      <Field label={t("schedule.command.label")}>
+        <FormTextInput
+          size={controlSize}
+          testID="schedule-command-input"
+          accessibilityLabel={t("schedule.command.label")}
+          initialValue={state.command}
+          value={state.command}
+          onChangeText={model.setCommand}
+          placeholder={t("schedule.command.placeholder")}
+          style={styles.multilineInput}
+          autoCapitalize="none"
+          autoCorrect={false}
+          multiline
+          numberOfLines={3}
+          textAlignVertical="top"
+        />
+      </Field>
+
+      <Field label={t("schedule.command.env.label")}>
+        <View style={styles.envRows}>
+          {state.commandEnvRows.map((row) => (
+            <ScheduleCommandEnvRow key={row.id} model={model} row={row} controlSize={controlSize} />
+          ))}
+          <Pressable
+            onPress={handleAddEnvRow}
+            style={styles.envAddButton}
+            accessibilityRole="button"
+            accessibilityLabel={t("schedule.command.env.add")}
+            testID="schedule-command-env-add"
+          >
+            <Plus size={14} color={styles.providerIcon.color} />
+            <Text style={styles.envAddLabel}>{t("schedule.command.env.add")}</Text>
+          </Pressable>
+        </View>
+      </Field>
+
+      <Field label={t("schedule.command.timeout.label")}>
+        <FormTextInput
+          size={controlSize}
+          testID="schedule-command-timeout-input"
+          accessibilityLabel={t("schedule.command.timeout.label")}
+          initialValue={state.commandTimeoutSeconds}
+          value={state.commandTimeoutSeconds}
+          onChangeText={model.setCommandTimeout}
+          placeholder={t("schedule.command.timeout.placeholder")}
+          keyboardType="number-pad"
+        />
+      </Field>
+    </>
+  );
+}
+
+function ScheduleCommandEnvRow({
+  model,
+  row,
+  controlSize,
+}: {
+  model: ScheduleFormModel;
+  row: { id: string; key: string; value: string };
+  controlSize: FieldControlSize;
+}): ReactElement {
+  const { t } = useTranslation();
+  const handleKeyChange = useCallback(
+    (value: string) => {
+      model.setCommandEnvKey(row.id, value);
+    },
+    [model, row.id],
+  );
+  const handleValueChange = useCallback(
+    (value: string) => {
+      model.setCommandEnvValue(row.id, value);
+    },
+    [model, row.id],
+  );
+  const handleRemove = useCallback(() => {
+    model.removeCommandEnvRow(row.id);
+  }, [model, row.id]);
+
+  return (
+    <View style={styles.envRow}>
+      <View style={styles.envInput}>
+        <FormTextInput
+          size={controlSize}
+          testID={`schedule-command-env-key-${row.id}`}
+          accessibilityLabel={t("schedule.command.env.keyPlaceholder")}
+          initialValue={row.key}
+          value={row.key}
+          onChangeText={handleKeyChange}
+          placeholder={t("schedule.command.env.keyPlaceholder")}
+          autoCapitalize="characters"
+          autoCorrect={false}
+        />
+      </View>
+      <View style={styles.envInput}>
+        <FormTextInput
+          size={controlSize}
+          testID={`schedule-command-env-value-${row.id}`}
+          accessibilityLabel={t("schedule.command.env.valuePlaceholder")}
+          initialValue={row.value}
+          value={row.value}
+          onChangeText={handleValueChange}
+          placeholder={t("schedule.command.env.valuePlaceholder")}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
+      <Pressable
+        onPress={handleRemove}
+        style={styles.envRemoveButton}
+        accessibilityRole="button"
+        accessibilityLabel={t("schedule.command.env.remove")}
+        testID={`schedule-command-env-remove-${row.id}`}
+      >
+        <X size={14} color={styles.providerIcon.color} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -1044,6 +1304,35 @@ const styles = StyleSheet.create((theme) => {
       height: 18,
       alignItems: "center",
       justifyContent: "center",
+    },
+    envRows: {
+      gap: theme.spacing[2],
+    },
+    envRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing[2],
+    },
+    envInput: {
+      flex: 1,
+      minWidth: 0,
+    },
+    envRemoveButton: {
+      width: 32,
+      height: 32,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: theme.borderRadius.base,
+    },
+    envAddButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing[2],
+      paddingVertical: theme.spacing[1],
+    },
+    envAddLabel: {
+      color: theme.colors.foregroundMuted,
+      fontSize: theme.fontSize.sm,
     },
     footer: {
       flex: 1,

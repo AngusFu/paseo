@@ -2019,4 +2019,27 @@ export const ru: TranslationResources = {
       },
     },
   },
+  schedule: {
+    target: {
+      label: "Цель",
+      newAgent: "Новый агент",
+      command: "Команда",
+      commandUnsupported: "Обновите хост, чтобы использовать команды по расписанию.",
+    },
+    command: {
+      label: "Команда",
+      placeholder: "Команда для запуска каждый раз",
+      env: {
+        label: "Переменные окружения",
+        add: "Добавить переменную",
+        keyPlaceholder: "КЛЮЧ",
+        valuePlaceholder: "значение",
+        remove: "Удалить переменную",
+      },
+      timeout: {
+        label: "Тайм-аут (секунды)",
+        placeholder: "Без ограничения",
+      },
+    },
+  },
 };

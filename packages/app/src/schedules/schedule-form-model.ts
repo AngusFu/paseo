@@ -37,6 +37,13 @@ export interface ScheduleFormHost {
   serverId: string;
   label: string;
   supportsWorkspaceMultiplicity?: boolean;
+  supportsCommandSchedules?: boolean;
+}
+
+export interface CommandEnvRow {
+  id: string;
+  key: string;
+  value: string;
 }
 
 export interface ScheduleFormSnapshot {
@@ -76,7 +83,7 @@ export interface ScheduleFormProjectOption {
   testID: string;
 }
 
-export type ScheduleFormTargetKind = "agent" | "new-agent";
+export type ScheduleFormTargetKind = "agent" | "new-agent" | "command";
 type ProviderResolutionStatus = "idle" | "pending" | "complete";
 
 export interface ScheduleFormState {
@@ -109,6 +116,10 @@ export interface ScheduleFormState {
   submitArchiveOnFinish: boolean | undefined;
   submitIsolation: "local" | "worktree" | undefined;
   canUseWorktreeIsolation: boolean;
+  command: string;
+  commandEnvRows: CommandEnvRow[];
+  commandTimeoutSeconds: string;
+  commandSchedulesSupported: boolean;
   providerResolutionByServerId: Record<string, ProviderResolutionStatus>;
   providerSnapshotRequest: ScheduleProviderSnapshotRequest | null;
   disclosure: ScheduleDisclosureState;
@@ -135,6 +146,13 @@ export interface ScheduleFormModel {
   setCadence: (value: ScheduleCadence) => void;
   setIsolation: (value: "local" | "worktree") => void;
   setArchiveOnFinish: (value: boolean) => void;
+  setTargetKind: (kind: ScheduleFormTargetKind) => void;
+  setCommand: (value: string) => void;
+  setCommandTimeout: (value: string) => void;
+  addCommandEnvRow: () => void;
+  removeCommandEnvRow: (id: string) => void;
+  setCommandEnvKey: (id: string, value: string) => void;
+  setCommandEnvValue: (id: string, value: string) => void;
   setSubmitError: (value: string | null) => void;
 }
 
@@ -148,6 +166,46 @@ function newAgentConfig(schedule: ScheduleFormSnapshot["schedule"]) {
     return schedule.target.config;
   }
   return null;
+}
+
+function commandTargetConfig(schedule: ScheduleFormSnapshot["schedule"]) {
+  if (schedule?.target.type === "command") {
+    return schedule.target;
+  }
+  return null;
+}
+
+function buildCommandEnvRows(env: Record<string, string> | undefined): CommandEnvRow[] {
+  if (!env) {
+    return [];
+  }
+  return Object.entries(env).map(([key, value], index) => ({ id: `env-${index}`, key, value }));
+}
+
+function formatInitialTimeoutSeconds(timeoutMs: number | undefined): string {
+  if (timeoutMs == null) {
+    return "";
+  }
+  return String(Math.round(timeoutMs / 1000));
+}
+
+function resolveInitialWorkingDir(
+  config: ReturnType<typeof newAgentConfig>,
+  commandConfig: ReturnType<typeof commandTargetConfig>,
+): string {
+  return config?.cwd ?? commandConfig?.cwd ?? "";
+}
+
+function buildInitialCommandFields(commandConfig: ReturnType<typeof commandTargetConfig>): {
+  command: string;
+  commandEnvRows: CommandEnvRow[];
+  commandTimeoutSeconds: string;
+} {
+  return {
+    command: commandConfig?.command ?? "",
+    commandEnvRows: buildCommandEnvRows(commandConfig?.env),
+    commandTimeoutSeconds: formatInitialTimeoutSeconds(commandConfig?.timeoutMs),
+  };
 }
 
 function buildProjectOptionTestId(optionId: string): string {
@@ -378,6 +436,9 @@ function resolveTargetKind(snapshot: ScheduleFormSnapshot): ScheduleFormTargetKi
   if (snapshot.mode === "edit" && snapshot.schedule?.target.type === "agent") {
     return "agent";
   }
+  if (snapshot.mode === "edit" && snapshot.schedule?.target.type === "command") {
+    return "command";
+  }
   return "new-agent";
 }
 
@@ -492,6 +553,16 @@ function selectedHostSupportsWorkspaceMultiplicity(input: {
   );
 }
 
+function selectedHostSupportsCommandSchedules(input: {
+  hosts: readonly ScheduleFormHost[];
+  selectedServerId: string | null;
+}): boolean {
+  return (
+    input.hosts.find((entry) => entry.serverId === input.selectedServerId)
+      ?.supportsCommandSchedules === true
+  );
+}
+
 function resolveEffectiveIsolation(input: {
   isolation: "local" | "worktree";
   canUseWorktreeIsolation: boolean;
@@ -525,6 +596,19 @@ function resolveDisclosure(state: ScheduleFormState): ScheduleDisclosureState {
     };
   }
 
+  if (state.targetKind === "command") {
+    // Command schedules reuse the project picker only to choose a cwd; every
+    // agent-specific field stays hidden.
+    return {
+      showProjectField: state.mode === "edit" || Boolean(state.selectedServerId),
+      showModelField: false,
+      showThinkingField: false,
+      showModeField: false,
+      showIsolationField: false,
+      showArchiveOnFinishField: false,
+    };
+  }
+
   const hasProject = state.workingDir.trim().length > 0;
   const hasSelectedProvider = Boolean(state.selectedProvider);
   const hasSelectedModel = Boolean(state.selectedProvider && state.selectedModel.trim());
@@ -547,6 +631,21 @@ function resolveDisclosure(state: ScheduleFormState): ScheduleDisclosureState {
 }
 
 function resolveCanSubmit(state: ScheduleFormState): boolean {
+  if (state.targetKind === "command") {
+    if (!state.commandSchedulesSupported) {
+      return false;
+    }
+    if (state.command.trim().length === 0) {
+      return false;
+    }
+    if (state.workingDir.trim().length === 0) {
+      return false;
+    }
+    if (state.mode === "create" && state.selectedProjectOptionId.trim().length === 0) {
+      return false;
+    }
+    return true;
+  }
   if (state.prompt.trim().length === 0) {
     return false;
   }
@@ -589,6 +688,10 @@ function updateDerivedState(input: {
     hosts: input.hosts,
     selectedServerId: input.state.selectedServerId,
   });
+  const commandSchedulesSupported = selectedHostSupportsCommandSchedules({
+    hosts: input.hosts,
+    selectedServerId: input.state.selectedServerId,
+  });
   const effectiveIsolation = resolveEffectiveIsolation({
     isolation: input.state.isolation,
     canUseWorktreeIsolation,
@@ -618,6 +721,7 @@ function updateDerivedState(input: {
     modeOptions,
     availableThinkingOptions,
     canUseWorktreeIsolation,
+    commandSchedulesSupported,
     effectiveIsolation,
     submitArchiveOnFinish: canSubmitWorkspaceLifecycleOptions
       ? input.state.archiveOnFinish
@@ -631,8 +735,10 @@ function updateDerivedState(input: {
 function buildInitialState(snapshot: ScheduleFormSnapshot): ScheduleFormState {
   const selectedServerId = resolveInitialServerId(snapshot);
   const config = newAgentConfig(snapshot.schedule);
+  const commandConfig = commandTargetConfig(snapshot.schedule);
   const targetKind = resolveTargetKind(snapshot);
-  const workingDir = config?.cwd ?? "";
+  const workingDir = resolveInitialWorkingDir(config, commandConfig);
+  const commandFields = buildInitialCommandFields(commandConfig);
   const selectedProjectTarget = resolveProjectTarget({
     targets: snapshot.defaults.projectTargets,
     serverId: selectedServerId,
@@ -684,6 +790,10 @@ function buildInitialState(snapshot: ScheduleFormSnapshot): ScheduleFormState {
     submitArchiveOnFinish: undefined,
     submitIsolation: undefined,
     canUseWorktreeIsolation: false,
+    command: commandFields.command,
+    commandEnvRows: commandFields.commandEnvRows,
+    commandTimeoutSeconds: commandFields.commandTimeoutSeconds,
+    commandSchedulesSupported: false,
     providerResolutionByServerId: buildInitialProviderResolution(providerSnapshotRequest),
     providerSnapshotRequest,
     disclosure: {
@@ -786,6 +896,24 @@ function pickModelForProvider(input: {
   return resolveDefaultModelId(resolveAvailableModels(input.entries, input.provider));
 }
 
+/** Collapse the form's env rows into the wire record, dropping blank keys. */
+export function buildCommandEnvRecord(rows: readonly CommandEnvRow[]): Record<string, string> {
+  const record: Record<string, string> = {};
+  for (const row of rows) {
+    const key = row.key.trim();
+    if (key) {
+      record[key] = row.value;
+    }
+  }
+  return record;
+}
+
+/** Seconds string -> positive timeoutMs, or null when unset/invalid. */
+export function parseCommandTimeoutMs(seconds: string): number | null {
+  const parsed = Number.parseInt(seconds, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed * 1000 : null;
+}
+
 export function openScheduleForm(snapshot: ScheduleFormSnapshot): ScheduleFormModel {
   const listeners = new Set<() => void>();
   const initialValues = normalizeInitialValues({
@@ -800,6 +928,7 @@ export function openScheduleForm(snapshot: ScheduleFormSnapshot): ScheduleFormMo
   let userModified = { ...INITIAL_USER_MODIFIED, isolation: false };
   const timezone = snapshot.defaults.timezone ?? DEFAULT_TIMEZONE;
   let state = buildInitialState(snapshot);
+  let envRowSeq = state.commandEnvRows.length;
 
   function publish(nextState: ScheduleFormState): void {
     if (closed) {
@@ -1046,6 +1175,49 @@ export function openScheduleForm(snapshot: ScheduleFormSnapshot): ScheduleFormMo
     },
     setArchiveOnFinish(value) {
       publish({ ...state, archiveOnFinish: value });
+    },
+    setTargetKind(kind) {
+      if (closed || state.targetKind === kind) {
+        return;
+      }
+      publish({ ...state, targetKind: kind });
+      if (kind === "new-agent") {
+        requestProviderSnapshot(state.selectedServerId, state.workingDir);
+      } else {
+        requestProviderSnapshot(null, "");
+      }
+    },
+    setCommand(value) {
+      publish({ ...state, command: value });
+    },
+    setCommandTimeout(value) {
+      publish({ ...state, commandTimeoutSeconds: value });
+    },
+    addCommandEnvRow() {
+      const id = `env-${envRowSeq++}`;
+      publish({ ...state, commandEnvRows: [...state.commandEnvRows, { id, key: "", value: "" }] });
+    },
+    removeCommandEnvRow(id) {
+      publish({
+        ...state,
+        commandEnvRows: state.commandEnvRows.filter((row) => row.id !== id),
+      });
+    },
+    setCommandEnvKey(id, value) {
+      publish({
+        ...state,
+        commandEnvRows: state.commandEnvRows.map((row) =>
+          row.id === id ? { ...row, key: value } : row,
+        ),
+      });
+    },
+    setCommandEnvValue(id, value) {
+      publish({
+        ...state,
+        commandEnvRows: state.commandEnvRows.map((row) =>
+          row.id === id ? { ...row, value } : row,
+        ),
+      });
     },
     setSubmitError(value) {
       publish({ ...state, submitError: value });

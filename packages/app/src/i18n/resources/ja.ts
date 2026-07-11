@@ -2003,4 +2003,27 @@ export const ja: TranslationResources = {
       },
     },
   },
+  schedule: {
+    target: {
+      label: "ターゲット",
+      newAgent: "新しいエージェント",
+      command: "コマンド",
+      commandUnsupported: "コマンドスケジュールを使うにはホストを更新してください。",
+    },
+    command: {
+      label: "コマンド",
+      placeholder: "毎回実行するコマンド",
+      env: {
+        label: "環境変数",
+        add: "変数を追加",
+        keyPlaceholder: "キー",
+        valuePlaceholder: "値",
+        remove: "変数を削除",
+      },
+      timeout: {
+        label: "タイムアウト（秒）",
+        placeholder: "制限なし",
+      },
+    },
+  },
 } as const;

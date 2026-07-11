@@ -1989,6 +1989,29 @@ export const en = {
       },
     },
   },
+  schedule: {
+    target: {
+      label: "Target",
+      newAgent: "New agent",
+      command: "Command",
+      commandUnsupported: "Update the host to use command schedules.",
+    },
+    command: {
+      label: "Command",
+      placeholder: "Command to run each time",
+      env: {
+        label: "Environment variables",
+        add: "Add variable",
+        keyPlaceholder: "KEY",
+        valuePlaceholder: "value",
+        remove: "Remove variable",
+      },
+      timeout: {
+        label: "Timeout (seconds)",
+        placeholder: "No limit",
+      },
+    },
+  },
 } as const;
 
 type WidenStringLeaves<T> = {

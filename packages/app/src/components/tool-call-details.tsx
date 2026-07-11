@@ -4,6 +4,7 @@ import {
   Text,
   ScrollView as RNScrollView,
   type StyleProp,
+  type TextStyle,
   type ViewStyle,
 } from "react-native";
 import { ScrollView as GHScrollView } from "react-native-gesture-handler";
@@ -19,6 +20,7 @@ import { useWebScrollbarStyle } from "@/hooks/use-web-scrollbar-style";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { extensionFromPath, highlightToKeyedLines } from "@/utils/highlight-cache";
+import { tokenizeShellCommand, type ShellTokenStyle } from "@/utils/shell-highlight";
 import { HighlightedLines } from "./highlighted-content";
 import { DiffViewer } from "./diff-viewer";
 import { getCodeInsets } from "./code-insets";
@@ -160,6 +162,16 @@ function ShellDetailSection({ command, output, ds }: ShellDetailProps) {
   const normalizedCommand = command.replace(/\n+$/, "");
   const commandOutput = (output ?? "").replace(/^\n+/, "");
   const hasOutput = commandOutput.length > 0;
+  // Key each token by its character offset — stable and unique for a given
+  // command string (avoids array-index keys).
+  const commandTokens = useMemo(() => {
+    let offset = 0;
+    return tokenizeShellCommand(normalizedCommand).map((token) => {
+      const key = `${offset}-${token.style}`;
+      offset += token.text.length;
+      return { key, token };
+    });
+  }, [normalizedCommand]);
   return (
     <View style={ds.sectionFillStyle}>
       <View style={ds.codeBlockFillStyle}>
@@ -179,8 +191,14 @@ function ShellDetailSection({ command, output, ds }: ShellDetailProps) {
             <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
               <Text selectable style={styles.scrollText}>
                 <Text style={styles.shellPrompt}>$ </Text>
-                {normalizedCommand}
-                {hasOutput ? `\n\n${commandOutput}` : ""}
+                {commandTokens.map(({ key, token }) => (
+                  <Text key={key} style={SHELL_TOKEN_STYLES[token.style]}>
+                    {token.text}
+                  </Text>
+                ))}
+                {hasOutput ? (
+                  <Text style={styles.shellOutput}>{`\n\n${commandOutput}`}</Text>
+                ) : null}
               </Text>
             </View>
           </ScrollView>
@@ -908,6 +926,27 @@ const styles = StyleSheet.create((theme) => {
     shellPrompt: {
       color: theme.colors.foregroundMuted,
     },
+    // Lightweight shell command highlighting (see utils/shell-highlight). Colors
+    // come from the shared syntax palette so they track the editor theme.
+    shellCmdCommand: {
+      color: theme.colors.syntax.keyword,
+    },
+    shellCmdFlag: {
+      color: theme.colors.syntax.attribute,
+    },
+    shellCmdString: {
+      color: theme.colors.syntax.string,
+    },
+    shellCmdOperator: {
+      color: theme.colors.syntax.operator,
+    },
+    shellCmdPath: {
+      color: theme.colors.syntax.class,
+    },
+    // Command output is de-emphasized so the command line reads first.
+    shellOutput: {
+      color: theme.colors.foregroundMuted,
+    },
     subAgentSessionText: {
       fontFamily: theme.fontFamily.mono,
       fontSize: theme.fontSize.code,
@@ -1009,4 +1048,15 @@ const styles = StyleSheet.create((theme) => {
 
 const SECTION_TITLE_ERROR_STYLE = [styles.sectionTitle, styles.errorText];
 const ERROR_SECTION_STYLE = [styles.section, styles.errorSection];
+
+// Maps a shell token kind to its color style. `plain` tokens carry no override
+// so they inherit the surrounding scrollText foreground.
+const SHELL_TOKEN_STYLES: Record<ShellTokenStyle, StyleProp<TextStyle>> = {
+  command: styles.shellCmdCommand,
+  flag: styles.shellCmdFlag,
+  string: styles.shellCmdString,
+  operator: styles.shellCmdOperator,
+  path: styles.shellCmdPath,
+  plain: undefined,
+};
 const SCROLL_TEXT_ERROR_STYLE = styles.errorMessageText;

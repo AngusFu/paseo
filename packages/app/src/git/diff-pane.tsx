@@ -3431,7 +3431,12 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface1,
   },
   fileSectionBodyContainer: {
-    overflow: "hidden",
+    // visible (not hidden): the gutter's add-comment button is intentionally taller
+    // than the diff line (22px vs the 18px line height) and sits at right:-10, so the
+    // first/last row's button pokes past this container's top/bottom edge. The
+    // horizontal scroll clipping of code content is handled independently by
+    // DiffScroll's own ScrollView, so this doesn't unclip that.
+    overflow: "visible",
     backgroundColor: theme.colors.surface2,
   },
   fileSectionBorder: {

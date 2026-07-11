@@ -29,7 +29,7 @@ Cadence is either an interval, like every 30 minutes, or a cron expression, like
 
 ## Ways to create one
 
-- **In the app** — open the Schedules view and create one with an agent, a cadence, a repo, and a prompt. This is the main way to create and manage schedules.
+- **In the app** — open the Schedules view and create one with a cadence, a repo, and either an agent + prompt or a shell command. This is the main way to create and manage schedules.
 - **[From chat](/docs/schedules-chat)** — ask the agent in a chat and it sets the schedule up for you.
 - **[From the CLI](/docs/schedules-cli)** — `paseo schedule create`, for headless boxes and scripts.
 - **[Over MCP](/docs/mcp)** — agents create and manage schedules programmatically.

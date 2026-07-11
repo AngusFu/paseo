@@ -101,7 +101,9 @@ paseo schedule update <id> --clear-env
 paseo schedule delete <id>
 ```
 
-`inspect` shows the command, working directory, environment variables, and timeout for command targets. `ls` and `logs` show the target and, for command runs, the exit code of the last run.
+On `update`, `--command`/`--env`/`--timeout` can't be combined with `--provider`/`--model`/`--mode`, and `--env` can't be combined with `--clear-env`.
+
+`inspect` shows the command, working directory, environment variables, and timeout for command targets. `ls` shows the target; `logs` shows the exit code of each command run.
 
 ## Cadence
 

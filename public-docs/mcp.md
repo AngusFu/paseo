@@ -41,14 +41,15 @@ The MCP server itself is controlled by `daemon.mcp.enabled`. Existing agents may
 
 ### Schedules
 
-| Tool               | Function                                                                            |
-| ------------------ | ----------------------------------------------------------------------------------- |
-| `create_schedule`  | Create a recurring schedule that runs on an agent, a new agent, or a shell command. |
-| `list_schedules`   | List schedules managed by the daemon.                                               |
-| `inspect_schedule` | Inspect a schedule and its run history.                                             |
-| `pause_schedule`   | Pause an active schedule.                                                           |
-| `resume_schedule`  | Resume a paused schedule.                                                           |
-| `delete_schedule`  | Delete a schedule permanently.                                                      |
+| Tool               | Function                                                                     |
+| ------------------ | ---------------------------------------------------------------------------- |
+| `create_schedule`  | Create a recurring schedule that starts a new agent or runs a shell command. |
+| `update_schedule`  | Update a schedule's cadence, target settings, name, or limits.               |
+| `list_schedules`   | List schedules managed by the daemon.                                        |
+| `inspect_schedule` | Inspect a schedule and its run history.                                      |
+| `pause_schedule`   | Pause an active schedule.                                                    |
+| `resume_schedule`  | Resume a paused schedule.                                                    |
+| `delete_schedule`  | Delete a schedule permanently.                                               |
 
 ### Providers
 

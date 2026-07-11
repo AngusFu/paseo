@@ -2,6 +2,8 @@ import { MoreVertical, Pause, Pencil, Play, RotateCw, Trash2 } from "lucide-reac
 import { useCallback, useState, type ReactElement } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,20 +72,20 @@ interface ScheduleRowProps extends ScheduleRowActions {
 }
 
 function stateBadge(state: ScheduleDerivedState): {
-  label: string;
+  labelKey: string;
   variant: "success" | "error" | "muted";
 } {
   switch (state) {
     case "active":
-      return { label: "Active", variant: "success" };
+      return { labelKey: "schedule.state.active", variant: "success" };
     case "paused":
-      return { label: "Paused", variant: "muted" };
+      return { labelKey: "schedule.state.paused", variant: "muted" };
     case "expired":
-      return { label: "Expired", variant: "muted" };
+      return { labelKey: "schedule.state.expired", variant: "muted" };
     case "finished":
-      return { label: "Finished", variant: "muted" };
+      return { labelKey: "schedule.state.finished", variant: "muted" };
     case "targetGone":
-      return { label: "Target gone", variant: "error" };
+      return { labelKey: "schedule.state.targetGone", variant: "error" };
   }
 }
 
@@ -95,16 +97,19 @@ function buildMeta(
   state: ScheduleDerivedState,
   serverName: string | undefined,
   singleHost: boolean,
+  t: TFunction,
 ): string {
   const parts = [
     formatCadence(schedule.cadence),
-    `Created ${formatTimeAgo(new Date(schedule.createdAt))}`,
-    schedule.lastRunAt ? `Last run ${formatTimeAgo(new Date(schedule.lastRunAt))}` : "Never run",
+    t("schedule.meta.created", { time: formatTimeAgo(new Date(schedule.createdAt)) }),
+    schedule.lastRunAt
+      ? t("schedule.meta.lastRun", { time: formatTimeAgo(new Date(schedule.lastRunAt)) })
+      : t("schedule.meta.neverRun"),
   ];
   if (state === "active") {
     const next = formatNextRun(schedule.nextRunAt);
     if (next) {
-      parts.push(`Next run ${next}`);
+      parts.push(t("schedule.meta.nextRun", { next }));
     }
   }
   if (serverName && !singleHost) {
@@ -147,6 +152,7 @@ export function ScheduleRow({
   onRunNow,
   onDelete,
 }: ScheduleRowProps): ReactElement {
+  const { t } = useTranslation();
   const isCompact = useIsCompactFormFactor();
   const [isHovered, setIsHovered] = useState(false);
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
@@ -154,7 +160,7 @@ export function ScheduleRow({
 
   const title = resolveScheduleTitle(schedule);
   const badge = stateBadge(state);
-  const meta = buildMeta(schedule, state, serverName, singleHost ?? false);
+  const meta = buildMeta(schedule, state, serverName, singleHost ?? false, t);
   const canRun = state === "active" || state === "paused";
 
   const rowStyle = useCallback(
@@ -178,7 +184,7 @@ export function ScheduleRow({
         style={rowStyle}
         onPress={onEdit}
         accessibilityRole="button"
-        accessibilityLabel={`Edit schedule ${title}`}
+        accessibilityLabel={t("schedule.menu.editA11y", { title })}
         testID={`schedule-row-${schedule.id}`}
       >
         <View style={styles.main}>
@@ -199,7 +205,7 @@ export function ScheduleRow({
         </View>
 
         <View style={styles.trailing}>
-          <StatusBadge label={badge.label} variant={badge.variant} />
+          <StatusBadge label={t(badge.labelKey)} variant={badge.variant} />
           <ScheduleKebabMenu
             schedule={schedule}
             canRun={canRun}
@@ -246,13 +252,14 @@ function ScheduleKebabMenu({
 > & {
   canRun: boolean;
 }): ReactElement {
+  const { t } = useTranslation();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         hitSlop={8}
         style={kebabTriggerStyle}
         accessibilityRole={isNative ? "button" : undefined}
-        accessibilityLabel="Schedule actions"
+        accessibilityLabel={t("schedule.menu.actions")}
         testID={`schedule-kebab-${schedule.id}`}
       >
         {renderKebabTriggerIcon}
@@ -263,51 +270,51 @@ function ScheduleKebabMenu({
           onSelect={onEdit}
           testID={`schedule-menu-edit-${schedule.id}`}
         >
-          Edit schedule
+          {t("schedule.menu.edit")}
         </DropdownMenuItem>
         {schedule.status === "paused" ? (
           <DropdownMenuItem
             leading={resumeLeading}
             disabled={!canRun}
             status={pending?.resume ? "pending" : "idle"}
-            pendingLabel="Resuming..."
+            pendingLabel={t("schedule.menu.resuming")}
             onSelect={onResume}
             testID={`schedule-menu-resume-${schedule.id}`}
           >
-            Resume schedule
+            {t("schedule.menu.resume")}
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem
             leading={pauseLeading}
             disabled={schedule.status === "completed" || !canRun}
             status={pending?.pause ? "pending" : "idle"}
-            pendingLabel="Pausing..."
+            pendingLabel={t("schedule.menu.pausing")}
             onSelect={onPause}
             testID={`schedule-menu-pause-${schedule.id}`}
           >
-            Pause schedule
+            {t("schedule.menu.pause")}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem
           leading={runLeading}
           disabled={!canRun}
           status={pending?.runNow ? "pending" : "idle"}
-          pendingLabel="Starting..."
+          pendingLabel={t("common.states.starting")}
           onSelect={onRunNow}
           testID={`schedule-menu-run-${schedule.id}`}
         >
-          Run now
+          {t("schedule.menu.runNow")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           leading={deleteLeading}
           destructive
           status={pending?.delete ? "pending" : "idle"}
-          pendingLabel="Deleting..."
+          pendingLabel={t("schedule.menu.deleting")}
           onSelect={onDelete}
           testID={`schedule-menu-delete-${schedule.id}`}
         >
-          Delete schedule
+          {t("schedule.menu.delete")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

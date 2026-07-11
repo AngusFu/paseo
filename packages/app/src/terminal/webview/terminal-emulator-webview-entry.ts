@@ -122,6 +122,8 @@ body,
   display: flex;
   min-width: 0;
   min-height: 0;
+  box-sizing: border-box;
+  padding: 8px;
 }
 #terminal-host {
   flex: 1;

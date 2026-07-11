@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { ChevronRight } from "lucide-react-native";
+import { ChevronRight, Folder, FolderOpen } from "lucide-react-native";
 import { SPACING, type Theme } from "@/styles/theme";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 
@@ -21,6 +21,25 @@ export function treeRowPaddingLeft(depth: number): number {
 const foregroundMutedIconColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 const ThemedChevronRight = withUnistyles(ChevronRight);
+const ThemedFolder = withUnistyles(Folder);
+const ThemedFolderOpen = withUnistyles(FolderOpen);
+
+/**
+ * Directory folder glyph shown after the disclosure chevron, matching VS Code /
+ * GitHub tree rows. Open when expanded, closed when collapsed. Muted so the file
+ * type icons (which are colored) stay the visual anchor.
+ */
+export function TreeFolderIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <View style={styles.folderIcon}>
+      {expanded ? (
+        <ThemedFolderOpen size={16} uniProps={foregroundMutedIconColorMapping} />
+      ) : (
+        <ThemedFolder size={16} uniProps={foregroundMutedIconColorMapping} />
+      )}
+    </View>
+  );
+}
 
 /**
  * Vertical guide lines connecting nested rows to their ancestors — one line per
@@ -63,9 +82,19 @@ const styles = StyleSheet.create((theme: Theme) => ({
     top: 0,
     bottom: 0,
     width: 1,
-    backgroundColor: theme.colors.surface2,
+    // surface3 (one step up from the near-invisible surface2) so the guides read
+    // against the row background in both light and dark, matching VS Code's
+    // low-but-present indent-guide contrast.
+    backgroundColor: theme.colors.surface3,
   },
   chevron: {
+    width: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  folderIcon: {
     width: 16,
     height: 16,
     alignItems: "center",

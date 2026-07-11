@@ -66,6 +66,8 @@ CLAUDE.local.md
 .debug/
 .dev/
 .paseo/
+paseo.local.json
+**/paseo.local.json
 .wrangler/
 **/.wrangler/
 **/.tanstack/

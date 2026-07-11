@@ -15,6 +15,7 @@ export {
 } from "@getpaseo/protocol/paseo-config-schema";
 
 export const PASEO_CONFIG_FILE_NAME = "paseo.json";
+export const PASEO_LOCAL_CONFIG_FILE_NAME = "paseo.local.json";
 
 export type ReadPaseoConfigForEditResult =
   | { ok: true; config: PaseoConfigRaw | null; revision: PaseoConfigRevision | null }
@@ -34,6 +35,10 @@ export function resolvePaseoConfigPath(repoRoot: string): string {
   return join(repoRoot, PASEO_CONFIG_FILE_NAME);
 }
 
+export function resolvePaseoLocalConfigPath(repoRoot: string): string {
+  return join(repoRoot, PASEO_LOCAL_CONFIG_FILE_NAME);
+}
+
 export function statPaseoConfigPath(repoRoot: string): PaseoConfigRevision | null {
   const configPath = resolvePaseoConfigPath(repoRoot);
   if (!existsSync(configPath)) {
@@ -46,12 +51,51 @@ export function statPaseoConfigPath(repoRoot: string): PaseoConfigRevision | nul
   };
 }
 
-export function readPaseoConfigJson(repoRoot: string): unknown {
-  const configPath = resolvePaseoConfigPath(repoRoot);
-  if (!existsSync(configPath)) {
+function readJsonFileOrNull(filePath: string): unknown {
+  if (!existsSync(filePath)) {
     return null;
   }
-  return JSON.parse(readFileSync(configPath, "utf8"));
+  return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+export function readPaseoConfigJson(repoRoot: string): unknown {
+  return readJsonFileOrNull(resolvePaseoConfigPath(repoRoot));
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// paseo.local.json overrides paseo.json. Plain objects merge recursively so a
+// local file can tweak a single nested key (e.g. one script's port) without
+// restating the rest; arrays and scalars are replaced wholesale by the local
+// value.
+export function deepMergeConfigJson(base: unknown, override: unknown): unknown {
+  if (!isPlainObject(base) || !isPlainObject(override)) {
+    return override;
+  }
+  const result: Record<string, unknown> = { ...base };
+  for (const [key, overrideValue] of Object.entries(override)) {
+    result[key] = key in base ? deepMergeConfigJson(base[key], overrideValue) : overrideValue;
+  }
+  return result;
+}
+
+// Runtime config read: paseo.json deep-merged with an optional paseo.local.json
+// override. Returns null only when neither file exists, so callers keep their
+// "no config" behavior. The edit RPC deliberately keeps reading paseo.json alone
+// (readPaseoConfigJson) so round-tripping an edit never collapses the local
+// override into the base file.
+export function readMergedPaseoConfigJson(repoRoot: string): unknown {
+  const base = readJsonFileOrNull(resolvePaseoConfigPath(repoRoot));
+  const local = readJsonFileOrNull(resolvePaseoLocalConfigPath(repoRoot));
+  if (base === null) {
+    return local;
+  }
+  if (local === null) {
+    return base;
+  }
+  return deepMergeConfigJson(base, local);
 }
 
 export function readPaseoConfigForEdit(repoRoot: string): ReadPaseoConfigForEditResult {

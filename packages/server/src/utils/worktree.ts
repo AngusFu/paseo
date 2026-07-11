@@ -10,7 +10,7 @@ import {
   buildStringCommandShellInvocation,
   createStringCommandShellEnv,
 } from "./string-command-shell.js";
-import { readPaseoConfigJson, resolvePaseoConfigPath } from "./paseo-config-file.js";
+import { readMergedPaseoConfigJson, resolvePaseoConfigPath } from "./paseo-config-file.js";
 export {
   PaseoConfigRawSchema,
   PaseoLifecycleCommandRawSchema,
@@ -226,7 +226,7 @@ export type ReadPaseoConfigResult =
 
 export function readPaseoConfig(repoRoot: string): ReadPaseoConfigResult {
   try {
-    const json = readPaseoConfigJson(repoRoot);
+    const json = readMergedPaseoConfigJson(repoRoot);
     if (json === null) {
       return { ok: true, config: null };
     }

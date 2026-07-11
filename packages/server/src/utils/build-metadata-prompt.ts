@@ -1,4 +1,4 @@
-import { readPaseoConfigJson } from "./paseo-config-file.js";
+import { readMergedPaseoConfigJson } from "./paseo-config-file.js";
 import {
   PaseoConfigSchema,
   type PaseoMetadataGeneration,
@@ -52,7 +52,7 @@ async function readProjectMetadataOverrides(
   }
   try {
     const repoRoot = await options.workspaceGitService.resolveRepoRoot(options.cwd);
-    const json = readPaseoConfigJson(repoRoot);
+    const json = readMergedPaseoConfigJson(repoRoot);
     return PaseoConfigSchema.parse(json).metadataGeneration;
   } catch {
     return undefined;

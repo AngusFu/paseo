@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { isPlatform } from "../test-utils/platform.js";
 import { getWorktreeSetupCommands, getWorktreeTeardownCommands } from "./worktree.js";
 import {
+  deepMergeConfigJson,
+  readMergedPaseoConfigJson,
   readPaseoConfigForEdit,
   statPaseoConfigPath,
   writePaseoConfigForEdit,
@@ -155,6 +157,78 @@ describe("paseo config file substrate", () => {
       config,
       revision: statPaseoConfigPath(tempDir),
     });
+  });
+
+  it("merges paseo.local.json over paseo.json at runtime", () => {
+    writeFileSync(
+      join(tempDir, "paseo.json"),
+      JSON.stringify({
+        worktree: { setup: ["npm install"] },
+        scripts: { dev: { command: "npm run dev", type: "service", port: 3000 } },
+      }),
+    );
+    writeFileSync(
+      join(tempDir, "paseo.local.json"),
+      JSON.stringify({
+        scripts: { dev: { port: 4100 }, extra: { command: "npm run mock" } },
+      }),
+    );
+
+    expect(readMergedPaseoConfigJson(tempDir)).toEqual({
+      worktree: { setup: ["npm install"] },
+      scripts: {
+        // Deep merge keeps the base command/type, local port wins.
+        dev: { command: "npm run dev", type: "service", port: 4100 },
+        extra: { command: "npm run mock" },
+      },
+    });
+  });
+
+  it("replaces lifecycle arrays wholesale from paseo.local.json", () => {
+    writeFileSync(
+      join(tempDir, "paseo.json"),
+      JSON.stringify({ worktree: { setup: ["npm install", "npm run build"] } }),
+    );
+    writeFileSync(
+      join(tempDir, "paseo.local.json"),
+      JSON.stringify({ worktree: { setup: ["pnpm install"] } }),
+    );
+
+    expect(getWorktreeSetupCommands(tempDir)).toEqual(["pnpm install"]);
+  });
+
+  it("returns each file alone when the other is missing, null when both absent", () => {
+    expect(readMergedPaseoConfigJson(tempDir)).toBeNull();
+
+    writeFileSync(
+      join(tempDir, "paseo.local.json"),
+      JSON.stringify({ scripts: { dev: { command: "only-local" } } }),
+    );
+    expect(readMergedPaseoConfigJson(tempDir)).toEqual({
+      scripts: { dev: { command: "only-local" } },
+    });
+  });
+
+  it("keeps the edit RPC on paseo.json alone, ignoring paseo.local.json", () => {
+    writeFileSync(join(tempDir, "paseo.json"), JSON.stringify({ worktree: { setup: "base" } }));
+    writeFileSync(
+      join(tempDir, "paseo.local.json"),
+      JSON.stringify({ worktree: { setup: "local-override" } }),
+    );
+
+    const result = readPaseoConfigForEdit(tempDir);
+
+    expect(result).toEqual({
+      ok: true,
+      config: { worktree: { setup: "base" } },
+      revision: statPaseoConfigPath(tempDir),
+    });
+  });
+
+  it("deepMergeConfigJson lets non-object overrides win", () => {
+    expect(deepMergeConfigJson({ a: { b: 1 } }, { a: "scalar" })).toEqual({ a: "scalar" });
+    expect(deepMergeConfigJson({ a: 1 }, { b: 2 })).toEqual({ a: 1, b: 2 });
+    expect(deepMergeConfigJson(undefined, { a: 1 })).toEqual({ a: 1 });
   });
 
   it("returns write_failed for filesystem write exceptions", () => {

@@ -57,6 +57,20 @@ Drop a `paseo.json` in your repo root. Paseo reads it from the committed version
 }
 ```
 
+### Local overrides (paseo.local.json)
+
+Add a `paseo.local.json` next to `paseo.json` for personal or machine-specific settings — a different service port, an extra local-only script, a tweaked setup command. It is git-ignored (never committed) and deep-merges over `paseo.json`: objects merge key by key, so you only restate what you change, while arrays and scalars replace the base value. If only `paseo.local.json` is present, it is used on its own.
+
+```json
+{
+  "scripts": {
+    "web": { "port": 4100 }
+  }
+}
+```
+
+Tip: run the `paseo-setup-config` skill (Settings → Integrations installs it) and let the agent draft the file and pick the right target for you.
+
 ## Setup and teardown
 
 `setup` runs once after the worktree is created. A fresh worktree has no installed dependencies and no ignored files (like `.env`), so use setup to install and copy what you need. `teardown` runs during archive, before the directory is removed.

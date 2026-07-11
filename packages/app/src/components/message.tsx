@@ -751,7 +751,9 @@ export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
   },
   imageFrame: {
     width: "100%",
-    minHeight: 160,
+    // No minHeight here: a ready image sizes to its aspect-correct cappedSize,
+    // and a floor would letterbox short/wide images (empty space below). The
+    // loading/error placeholder reserves height via surfaceStyle instead.
     marginHorizontal: -theme.spacing[1],
   },
   imageSurface: {

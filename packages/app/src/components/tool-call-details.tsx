@@ -977,6 +977,10 @@ const styles = StyleSheet.create((theme) => {
       color: theme.colors.foregroundMuted,
       fontSize: theme.fontSize.sm,
       fontStyle: "italic",
+      // The detail area is full-bleed (padding 0), so inset the placeholder to
+      // line up with normal content instead of sitting flush against the edge.
+      paddingHorizontal: theme.spacing[3],
+      paddingVertical: theme.spacing[1],
     },
     loadingContainer: {
       gap: theme.spacing[2],

@@ -199,6 +199,7 @@ import type pino from "pino";
 import { FileBackedChatService } from "./chat/chat-service.js";
 import { LoopService } from "./loop-service.js";
 import { ScheduleService } from "./schedule/service.js";
+import { KanbanService } from "./kanban/service.js";
 import { createGitHubService, type GitHubService } from "../services/github-service.js";
 import type { ProviderUsageService } from "../services/quota-fetcher/service.js";
 import {
@@ -441,6 +442,7 @@ export interface SessionOptions {
   filesystem?: SessionFileSystem;
   chatService: FileBackedChatService;
   scheduleService: ScheduleService;
+  kanbanService: KanbanService;
   loopService: LoopService;
   checkoutDiffManager: CheckoutDiffManager;
   github?: GitHubService;
@@ -607,6 +609,7 @@ export class Session {
   private readonly voiceSession: VoiceSession;
   private readonly checkoutSession: CheckoutSession;
   private readonly chatScheduleLoopSession: ChatScheduleLoopSession;
+  private readonly kanbanService: KanbanService;
   private readonly providerCatalogSession: ProviderCatalogSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
   private readonly agentConfigSession: AgentConfigSession;
@@ -636,6 +639,7 @@ export class Session {
       filesystem,
       chatService,
       scheduleService,
+      kanbanService,
       loopService,
       checkoutDiffManager,
       github,
@@ -772,6 +776,7 @@ export class Session {
       clientId: this.clientId,
       logger: this.sessionLogger,
     });
+    this.kanbanService = kanbanService;
     this.providerCatalogSession = new ProviderCatalogSession({
       host: {
         emit: (msg) => this.emit(msg),
@@ -1398,6 +1403,7 @@ export class Session {
       this.dispatchProviderMessage(msg) ??
       this.dispatchTerminalMessage(msg) ??
       this.dispatchChatScheduleLoopMessage(msg) ??
+      this.dispatchKanbanMessage(msg) ??
       this.dispatchMiscMessage(msg);
     if (promise) await promise;
   }
@@ -1750,6 +1756,197 @@ export class Session {
       default:
         return undefined;
     }
+  }
+
+  private dispatchKanbanMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "kanban.card.create.request":
+        return this.handleKanbanCardCreateRequest(msg);
+      case "kanban.card.list.request":
+        return this.handleKanbanCardListRequest(msg);
+      case "kanban.card.inspect.request":
+        return this.handleKanbanCardInspectRequest(msg);
+      case "kanban.card.update.request":
+        return this.handleKanbanCardUpdateRequest(msg);
+      case "kanban.card.move.request":
+        return this.handleKanbanCardMoveRequest(msg);
+      case "kanban.card.delete.request":
+        return this.handleKanbanCardDeleteRequest(msg);
+      case "kanban.source.create.request":
+        return this.handleKanbanSourceCreateRequest(msg);
+      case "kanban.source.list.request":
+        return this.handleKanbanSourceListRequest(msg);
+      case "kanban.source.update.request":
+        return this.handleKanbanSourceUpdateRequest(msg);
+      case "kanban.source.delete.request":
+        return this.handleKanbanSourceDeleteRequest(msg);
+      case "kanban.source.sync.request":
+        return this.handleKanbanSourceSyncRequest(msg);
+      default:
+        return undefined;
+    }
+  }
+
+  private async handleKanbanCardCreateRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.card.create.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.createCard({
+      title: msg.title,
+      url: msg.url,
+      status: msg.status,
+      theme: msg.theme,
+      source: msg.source,
+      externalId: msg.externalId,
+      labels: msg.labels,
+      assignee: msg.assignee,
+      priority: msg.priority,
+      trigger: msg.trigger,
+      metadata: msg.metadata,
+    });
+    this.emit({
+      type: "kanban.card.create.response",
+      payload: { requestId: msg.requestId, card: result.card, error: result.error },
+    });
+  }
+
+  private async handleKanbanCardListRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.card.list.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.listCards();
+    this.emit({
+      type: "kanban.card.list.response",
+      payload: { requestId: msg.requestId, cards: result.cards, error: result.error },
+    });
+  }
+
+  private async handleKanbanCardInspectRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.card.inspect.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.inspectCard(msg.cardId);
+    this.emit({
+      type: "kanban.card.inspect.response",
+      payload: { requestId: msg.requestId, card: result.card, error: result.error },
+    });
+  }
+
+  private async handleKanbanCardUpdateRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.card.update.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.updateCard({
+      id: msg.cardId,
+      title: msg.title,
+      url: msg.url,
+      status: msg.status,
+      theme: msg.theme,
+      order: msg.order,
+      labels: msg.labels,
+      assignee: msg.assignee,
+      priority: msg.priority,
+      trigger: msg.trigger,
+      metadata: msg.metadata,
+    });
+    this.emit({
+      type: "kanban.card.update.response",
+      payload: { requestId: msg.requestId, card: result.card, error: result.error },
+    });
+  }
+
+  private async handleKanbanCardMoveRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.card.move.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.moveCard({
+      id: msg.cardId,
+      status: msg.status,
+      order: msg.order,
+    });
+    this.emit({
+      type: "kanban.card.move.response",
+      payload: { requestId: msg.requestId, card: result.card, error: result.error },
+    });
+  }
+
+  private async handleKanbanCardDeleteRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.card.delete.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.deleteCard(msg.cardId);
+    this.emit({
+      type: "kanban.card.delete.response",
+      payload: { requestId: msg.requestId, cardId: result.cardId, error: result.error },
+    });
+  }
+
+  private async handleKanbanSourceCreateRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.source.create.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.createSource({
+      kind: msg.kind,
+      name: msg.name,
+      baseUrl: msg.baseUrl,
+      query: msg.query,
+      enabled: msg.enabled,
+      statusMap: msg.statusMap,
+      pollEverySec: msg.pollEverySec,
+      auth: msg.auth,
+    });
+    this.emit({
+      type: "kanban.source.create.response",
+      payload: { requestId: msg.requestId, source: result.source, error: result.error },
+    });
+  }
+
+  private async handleKanbanSourceListRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.source.list.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.listSources();
+    this.emit({
+      type: "kanban.source.list.response",
+      payload: { requestId: msg.requestId, sources: result.sources, error: result.error },
+    });
+  }
+
+  private async handleKanbanSourceUpdateRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.source.update.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.updateSource({
+      id: msg.sourceId,
+      name: msg.name,
+      baseUrl: msg.baseUrl,
+      query: msg.query,
+      enabled: msg.enabled,
+      statusMap: msg.statusMap,
+      pollEverySec: msg.pollEverySec,
+      auth: msg.auth,
+    });
+    this.emit({
+      type: "kanban.source.update.response",
+      payload: { requestId: msg.requestId, source: result.source, error: result.error },
+    });
+  }
+
+  private async handleKanbanSourceDeleteRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.source.delete.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.deleteSource(msg.sourceId);
+    this.emit({
+      type: "kanban.source.delete.response",
+      payload: { requestId: msg.requestId, sourceId: result.sourceId, error: result.error },
+    });
+  }
+
+  private async handleKanbanSourceSyncRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.source.sync.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.syncSource(msg.sourceId);
+    this.emit({
+      type: "kanban.source.sync.response",
+      payload: {
+        requestId: msg.requestId,
+        source: result.source,
+        cards: result.cards,
+        upsertedCount: result.upsertedCount,
+        error: result.error,
+      },
+    });
   }
 
   private async dispatchMiscMessage(msg: SessionInboundMessage): Promise<void> {

@@ -882,6 +882,7 @@ export const es: TranslationResources = {
     sections: {
       sessions: "Historial",
       schedules: "Horarios",
+      kanban: "Kanban",
     },
     worktreeSetup: {
       title: "Configurar secuencias de comandos del árbol de trabajo",
@@ -2096,6 +2097,49 @@ export const es: TranslationResources = {
         cancel: "Cancelar",
       },
     },
+  },
+  kanban: {
+    title: "Kanban",
+    empty: "Aún no hay tarjetas",
+    loadError: "No se pudieron cargar las tarjetas",
+    unsupported: "Actualiza el host para usar Kanban.",
+    columns: {
+      pending: "Pendiente",
+      wip: "En progreso",
+      done: "Hecho",
+      skip: "Omitido",
+      fail: "Fallido",
+      abort: "Cancelado",
+    },
+    card: {
+      open: "Abrir enlace",
+      edit: "Editar",
+      delete: "Eliminar",
+      url: "URL",
+      source: "Origen",
+    },
+    actions: {
+      add: "Añadir tarjeta",
+      move: "Mover",
+      sync: "Sincronizar",
+    },
+    status: {
+      pick: "Mover a columna",
+    },
+    form: {
+      createTitle: "Nueva tarjeta",
+      editTitle: "Editar tarjeta",
+      title: "Título",
+      titlePlaceholder: "Título de la tarjeta",
+      url: "URL",
+      urlPlaceholder: "https://…",
+      theme: "Tema",
+      themePlaceholder: "jira, gitlab-mr o #RRGGBB",
+      status: "Estado",
+      create: "Crear",
+      save: "Guardar",
+    },
+    confirmDelete: '¿Eliminar "{{title}}"? Esta acción no se puede deshacer.',
   },
   schedule: {
     target: {

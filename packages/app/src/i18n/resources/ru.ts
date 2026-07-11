@@ -874,6 +874,7 @@ export const ru: TranslationResources = {
     sections: {
       sessions: "История",
       schedules: "Расписания",
+      kanban: "Канбан",
     },
     worktreeSetup: {
       title: "Настройка сценариев рабочего дерева",
@@ -2090,6 +2091,49 @@ export const ru: TranslationResources = {
         cancel: "Отмена",
       },
     },
+  },
+  kanban: {
+    title: "Канбан",
+    empty: "Пока нет карточек",
+    loadError: "Не удалось загрузить карточки",
+    unsupported: "Обновите хост, чтобы использовать Канбан.",
+    columns: {
+      pending: "Ожидание",
+      wip: "В работе",
+      done: "Готово",
+      skip: "Пропущено",
+      fail: "Ошибка",
+      abort: "Прервано",
+    },
+    card: {
+      open: "Открыть ссылку",
+      edit: "Изменить",
+      delete: "Удалить",
+      url: "URL",
+      source: "Источник",
+    },
+    actions: {
+      add: "Добавить карточку",
+      move: "Переместить",
+      sync: "Синхронизация",
+    },
+    status: {
+      pick: "Переместить в столбец",
+    },
+    form: {
+      createTitle: "Новая карточка",
+      editTitle: "Изменить карточку",
+      title: "Заголовок",
+      titlePlaceholder: "Заголовок карточки",
+      url: "URL",
+      urlPlaceholder: "https://…",
+      theme: "Тема",
+      themePlaceholder: "jira, gitlab-mr или #RRGGBB",
+      status: "Статус",
+      create: "Создать",
+      save: "Сохранить",
+    },
+    confirmDelete: "Удалить «{{title}}»? Это действие нельзя отменить.",
   },
   schedule: {
     target: {

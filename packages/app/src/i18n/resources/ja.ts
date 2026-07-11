@@ -870,6 +870,7 @@ export const ja: TranslationResources = {
     sections: {
       sessions: "履歴",
       schedules: "スケジュール",
+      kanban: "カンバン",
     },
     worktreeSetup: {
       title: "ワークツリースクリプトを設定",
@@ -2076,6 +2077,49 @@ export const ja: TranslationResources = {
         cancel: "キャンセル",
       },
     },
+  },
+  kanban: {
+    title: "カンバン",
+    empty: "カードがまだありません",
+    loadError: "カードを読み込めませんでした",
+    unsupported: "カンバンを使うにはホストを更新してください。",
+    columns: {
+      pending: "保留",
+      wip: "進行中",
+      done: "完了",
+      skip: "スキップ",
+      fail: "失敗",
+      abort: "中止",
+    },
+    card: {
+      open: "リンクを開く",
+      edit: "編集",
+      delete: "削除",
+      url: "URL",
+      source: "ソース",
+    },
+    actions: {
+      add: "カードを追加",
+      move: "移動",
+      sync: "同期",
+    },
+    status: {
+      pick: "列に移動",
+    },
+    form: {
+      createTitle: "新しいカード",
+      editTitle: "カードを編集",
+      title: "タイトル",
+      titlePlaceholder: "カードのタイトル",
+      url: "URL",
+      urlPlaceholder: "https://…",
+      theme: "テーマ",
+      themePlaceholder: "jira、gitlab-mr、または #RRGGBB",
+      status: "ステータス",
+      create: "作成",
+      save: "保存",
+    },
+    confirmDelete: "「{{title}}」を削除しますか？この操作は取り消せません。",
   },
   schedule: {
     target: {

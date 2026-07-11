@@ -873,6 +873,7 @@ export const ptBR: TranslationResources = {
     sections: {
       sessions: "Histórico",
       schedules: "Agendamentos",
+      kanban: "Kanban",
     },
     worktreeSetup: {
       title: "Configurar scripts de worktree",
@@ -2082,6 +2083,49 @@ export const ptBR: TranslationResources = {
         cancel: "Cancelar",
       },
     },
+  },
+  kanban: {
+    title: "Kanban",
+    empty: "Ainda não há cartões",
+    loadError: "Não foi possível carregar os cartões",
+    unsupported: "Atualize o host para usar o Kanban.",
+    columns: {
+      pending: "Pendente",
+      wip: "Em andamento",
+      done: "Concluído",
+      skip: "Ignorado",
+      fail: "Falhou",
+      abort: "Cancelado",
+    },
+    card: {
+      open: "Abrir link",
+      edit: "Editar",
+      delete: "Excluir",
+      url: "URL",
+      source: "Origem",
+    },
+    actions: {
+      add: "Adicionar cartão",
+      move: "Mover",
+      sync: "Sincronizar",
+    },
+    status: {
+      pick: "Mover para coluna",
+    },
+    form: {
+      createTitle: "Novo cartão",
+      editTitle: "Editar cartão",
+      title: "Título",
+      titlePlaceholder: "Título do cartão",
+      url: "URL",
+      urlPlaceholder: "https://…",
+      theme: "Tema",
+      themePlaceholder: "jira, gitlab-mr ou #RRGGBB",
+      status: "Status",
+      create: "Criar",
+      save: "Salvar",
+    },
+    confirmDelete: 'Excluir "{{title}}"? Isso não pode ser desfeito.',
   },
   schedule: {
     target: {

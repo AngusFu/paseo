@@ -848,6 +848,7 @@ export const zhCN: TranslationResources = {
     sections: {
       sessions: "历史",
       schedules: "计划",
+      kanban: "看板",
     },
     worktreeSetup: {
       title: "设置 worktree scripts",
@@ -2025,6 +2026,49 @@ export const zhCN: TranslationResources = {
         cancel: "取消",
       },
     },
+  },
+  kanban: {
+    title: "看板",
+    empty: "暂无卡片",
+    loadError: "无法加载卡片",
+    unsupported: "请更新主机以使用看板。",
+    columns: {
+      pending: "待处理",
+      wip: "进行中",
+      done: "已完成",
+      skip: "已跳过",
+      fail: "失败",
+      abort: "已中止",
+    },
+    card: {
+      open: "打开链接",
+      edit: "编辑",
+      delete: "删除",
+      url: "URL",
+      source: "来源",
+    },
+    actions: {
+      add: "添加卡片",
+      move: "移动",
+      sync: "同步",
+    },
+    status: {
+      pick: "移动到列",
+    },
+    form: {
+      createTitle: "新建卡片",
+      editTitle: "编辑卡片",
+      title: "标题",
+      titlePlaceholder: "卡片标题",
+      url: "URL",
+      urlPlaceholder: "https://…",
+      theme: "主题",
+      themePlaceholder: "jira、gitlab-mr 或 #RRGGBB",
+      status: "状态",
+      create: "创建",
+      save: "保存",
+    },
+    confirmDelete: "删除“{{title}}”？此操作无法撤销。",
   },
   schedule: {
     target: {

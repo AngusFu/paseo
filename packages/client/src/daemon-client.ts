@@ -2,6 +2,13 @@ import type { z } from "zod";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 // COMPAT(commandSchedules): added in v0.1.106, drop the gate when floor >= v0.1.106.
 import type { UpdateScheduleCommandConfig } from "@getpaseo/protocol/schedule/types";
+import type {
+  CreateKanbanCardInput,
+  CreateKanbanSourceInput,
+  MoveKanbanCardInput,
+  UpdateKanbanCardInput,
+  UpdateKanbanSourceInput,
+} from "@getpaseo/protocol/kanban/types";
 import {
   AgentCreateFailedStatusPayloadSchema,
   AgentCreatedStatusPayloadSchema,
@@ -475,6 +482,56 @@ type ScheduleUpdatePayload = Extract<
   SessionOutboundMessage,
   { type: "schedule/update/response" }
 >["payload"];
+type KanbanCardCreatePayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.card.create.response" }
+>["payload"];
+type KanbanCardListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.card.list.response" }
+>["payload"];
+type KanbanCardInspectPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.card.inspect.response" }
+>["payload"];
+type KanbanCardUpdatePayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.card.update.response" }
+>["payload"];
+type KanbanCardMovePayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.card.move.response" }
+>["payload"];
+type KanbanCardDeletePayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.card.delete.response" }
+>["payload"];
+type KanbanSourceCreatePayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.source.create.response" }
+>["payload"];
+type KanbanSourceListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.source.list.response" }
+>["payload"];
+type KanbanSourceUpdatePayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.source.update.response" }
+>["payload"];
+type KanbanSourceDeletePayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.source.delete.response" }
+>["payload"];
+type KanbanSourceSyncPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.source.sync.response" }
+>["payload"];
+
+export type KanbanCardCreateOptions = CreateKanbanCardInput & { requestId?: string };
+export type KanbanCardUpdateOptions = UpdateKanbanCardInput & { requestId?: string };
+export type KanbanCardMoveOptions = MoveKanbanCardInput & { requestId?: string };
+export type KanbanSourceCreateOptions = CreateKanbanSourceInput & { requestId?: string };
+export type KanbanSourceUpdateOptions = UpdateKanbanSourceInput & { requestId?: string };
 export type FetchAgentTimelinePayload = FetchAgentTimelineResponseMessage["payload"];
 export type AgentForkContextPayload = AgentForkContextResponseMessage["payload"];
 
@@ -4611,6 +4668,138 @@ export class DaemonClient {
         ...(options.expiresAt !== undefined ? { expiresAt: options.expiresAt } : {}),
       },
       responseType: "schedule/update/response",
+    });
+  }
+
+  // COMPAT(kanban): added in v0.1.107. Requires server_info.features.kanban.
+  async kanbanCardCreate(options: KanbanCardCreateOptions): Promise<KanbanCardCreatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "kanban.card.create.request",
+        title: options.title,
+        ...(options.url !== undefined ? { url: options.url } : {}),
+        ...(options.status !== undefined ? { status: options.status } : {}),
+        ...(options.theme !== undefined ? { theme: options.theme } : {}),
+        ...(options.source !== undefined ? { source: options.source } : {}),
+        ...(options.externalId !== undefined ? { externalId: options.externalId } : {}),
+        ...(options.labels !== undefined ? { labels: options.labels } : {}),
+        ...(options.assignee !== undefined ? { assignee: options.assignee } : {}),
+        ...(options.priority !== undefined ? { priority: options.priority } : {}),
+        ...(options.trigger !== undefined ? { trigger: options.trigger } : {}),
+        ...(options.metadata !== undefined ? { metadata: options.metadata } : {}),
+      },
+    });
+  }
+
+  async kanbanCardList(requestId?: string): Promise<KanbanCardListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.card.list.request" },
+    });
+  }
+
+  async kanbanCardInspect(cardId: string, requestId?: string): Promise<KanbanCardInspectPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.card.inspect.request", cardId },
+    });
+  }
+
+  async kanbanCardUpdate(options: KanbanCardUpdateOptions): Promise<KanbanCardUpdatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "kanban.card.update.request",
+        cardId: options.id,
+        ...(options.title !== undefined ? { title: options.title } : {}),
+        ...(options.url !== undefined ? { url: options.url } : {}),
+        ...(options.status !== undefined ? { status: options.status } : {}),
+        ...(options.theme !== undefined ? { theme: options.theme } : {}),
+        ...(options.order !== undefined ? { order: options.order } : {}),
+        ...(options.labels !== undefined ? { labels: options.labels } : {}),
+        ...(options.assignee !== undefined ? { assignee: options.assignee } : {}),
+        ...(options.priority !== undefined ? { priority: options.priority } : {}),
+        ...(options.trigger !== undefined ? { trigger: options.trigger } : {}),
+        ...(options.metadata !== undefined ? { metadata: options.metadata } : {}),
+      },
+    });
+  }
+
+  async kanbanCardMove(options: KanbanCardMoveOptions): Promise<KanbanCardMovePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "kanban.card.move.request",
+        cardId: options.id,
+        status: options.status,
+        ...(options.order !== undefined ? { order: options.order } : {}),
+      },
+    });
+  }
+
+  async kanbanCardDelete(cardId: string, requestId?: string): Promise<KanbanCardDeletePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.card.delete.request", cardId },
+    });
+  }
+
+  async kanbanSourceCreate(options: KanbanSourceCreateOptions): Promise<KanbanSourceCreatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "kanban.source.create.request",
+        kind: options.kind,
+        name: options.name,
+        baseUrl: options.baseUrl,
+        query: options.query,
+        ...(options.enabled !== undefined ? { enabled: options.enabled } : {}),
+        ...(options.statusMap !== undefined ? { statusMap: options.statusMap } : {}),
+        ...(options.pollEverySec !== undefined ? { pollEverySec: options.pollEverySec } : {}),
+        ...(options.auth !== undefined ? { auth: options.auth } : {}),
+      },
+    });
+  }
+
+  async kanbanSourceList(requestId?: string): Promise<KanbanSourceListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.source.list.request" },
+    });
+  }
+
+  async kanbanSourceUpdate(options: KanbanSourceUpdateOptions): Promise<KanbanSourceUpdatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "kanban.source.update.request",
+        sourceId: options.id,
+        ...(options.name !== undefined ? { name: options.name } : {}),
+        ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
+        ...(options.query !== undefined ? { query: options.query } : {}),
+        ...(options.enabled !== undefined ? { enabled: options.enabled } : {}),
+        ...(options.statusMap !== undefined ? { statusMap: options.statusMap } : {}),
+        ...(options.pollEverySec !== undefined ? { pollEverySec: options.pollEverySec } : {}),
+        ...(options.auth !== undefined ? { auth: options.auth } : {}),
+      },
+    });
+  }
+
+  async kanbanSourceDelete(
+    sourceId: string,
+    requestId?: string,
+  ): Promise<KanbanSourceDeletePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.source.delete.request", sourceId },
+    });
+  }
+
+  async kanbanSourceSync(sourceId: string, requestId?: string): Promise<KanbanSourceSyncPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.source.sync.request", sourceId },
     });
   }
 

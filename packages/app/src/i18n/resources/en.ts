@@ -862,6 +862,7 @@ export const en = {
     sections: {
       sessions: "History",
       schedules: "Schedules",
+      kanban: "Kanban",
     },
     worktreeSetup: {
       title: "Set up worktree scripts",
@@ -2059,6 +2060,49 @@ export const en = {
         cancel: "Cancel",
       },
     },
+  },
+  kanban: {
+    title: "Kanban",
+    empty: "No cards yet",
+    loadError: "Unable to load cards",
+    unsupported: "Update the host to use Kanban.",
+    columns: {
+      pending: "Pending",
+      wip: "In progress",
+      done: "Done",
+      skip: "Skipped",
+      fail: "Failed",
+      abort: "Aborted",
+    },
+    card: {
+      open: "Open link",
+      edit: "Edit",
+      delete: "Delete",
+      url: "URL",
+      source: "Source",
+    },
+    actions: {
+      add: "Add card",
+      move: "Move",
+      sync: "Sync",
+    },
+    status: {
+      pick: "Move to column",
+    },
+    form: {
+      createTitle: "New card",
+      editTitle: "Edit card",
+      title: "Title",
+      titlePlaceholder: "Card title",
+      url: "URL",
+      urlPlaceholder: "https://…",
+      theme: "Theme",
+      themePlaceholder: "jira, gitlab-mr, or #RRGGBB",
+      status: "Status",
+      create: "Create",
+      save: "Save",
+    },
+    confirmDelete: 'Delete "{{title}}"? This cannot be undone.',
   },
   schedule: {
     target: {

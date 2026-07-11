@@ -882,6 +882,7 @@ export const fr: TranslationResources = {
     sections: {
       sessions: "Historique",
       schedules: "Planifications",
+      kanban: "Kanban",
     },
     worktreeSetup: {
       title: "Configurer les scripts d'arbre de travail",
@@ -2103,6 +2104,49 @@ export const fr: TranslationResources = {
         cancel: "Annuler",
       },
     },
+  },
+  kanban: {
+    title: "Kanban",
+    empty: "Aucune carte pour l'instant",
+    loadError: "Impossible de charger les cartes",
+    unsupported: "Mettez à jour l'hôte pour utiliser Kanban.",
+    columns: {
+      pending: "En attente",
+      wip: "En cours",
+      done: "Terminé",
+      skip: "Ignoré",
+      fail: "Échoué",
+      abort: "Annulé",
+    },
+    card: {
+      open: "Ouvrir le lien",
+      edit: "Modifier",
+      delete: "Supprimer",
+      url: "URL",
+      source: "Source",
+    },
+    actions: {
+      add: "Ajouter une carte",
+      move: "Déplacer",
+      sync: "Synchroniser",
+    },
+    status: {
+      pick: "Déplacer vers la colonne",
+    },
+    form: {
+      createTitle: "Nouvelle carte",
+      editTitle: "Modifier la carte",
+      title: "Titre",
+      titlePlaceholder: "Titre de la carte",
+      url: "URL",
+      urlPlaceholder: "https://…",
+      theme: "Thème",
+      themePlaceholder: "jira, gitlab-mr ou #RRGGBB",
+      status: "Statut",
+      create: "Créer",
+      save: "Enregistrer",
+    },
+    confirmDelete: "Supprimer « {{title}} » ? Cette action est irréversible.",
   },
   schedule: {
     target: {

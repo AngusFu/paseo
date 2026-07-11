@@ -855,6 +855,7 @@ export const ar: TranslationResources = {
     sections: {
       sessions: "السجل",
       schedules: "الجداول",
+      kanban: "كانبان",
     },
     worktreeSetup: {
       title: "إعداد البرامج النصية لشجرة العمل",
@@ -2049,6 +2050,49 @@ export const ar: TranslationResources = {
         cancel: "يلغي",
       },
     },
+  },
+  kanban: {
+    title: "كانبان",
+    empty: "لا توجد بطاقات بعد",
+    loadError: "تعذّر تحميل البطاقات",
+    unsupported: "قم بتحديث المضيف لاستخدام كانبان.",
+    columns: {
+      pending: "قيد الانتظار",
+      wip: "قيد التنفيذ",
+      done: "مكتمل",
+      skip: "تم التخطي",
+      fail: "فشل",
+      abort: "أُلغي",
+    },
+    card: {
+      open: "فتح الرابط",
+      edit: "تعديل",
+      delete: "حذف",
+      url: "الرابط",
+      source: "المصدر",
+    },
+    actions: {
+      add: "إضافة بطاقة",
+      move: "نقل",
+      sync: "مزامنة",
+    },
+    status: {
+      pick: "النقل إلى عمود",
+    },
+    form: {
+      createTitle: "بطاقة جديدة",
+      editTitle: "تعديل البطاقة",
+      title: "العنوان",
+      titlePlaceholder: "عنوان البطاقة",
+      url: "الرابط",
+      urlPlaceholder: "https://…",
+      theme: "السمة",
+      themePlaceholder: "jira أو gitlab-mr أو #RRGGBB",
+      status: "الحالة",
+      create: "إنشاء",
+      save: "حفظ",
+    },
+    confirmDelete: 'حذف "{{title}}"؟ لا يمكن التراجع عن ذلك.',
   },
   schedule: {
     target: {

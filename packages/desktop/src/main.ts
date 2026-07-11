@@ -59,6 +59,10 @@ import {
   registerPaseoBrowserWebContents,
   setWorkspaceActivePaseoBrowserId,
 } from "./features/browser-webviews/index.js";
+import {
+  importCookiesFromChrome,
+  listChromeProfiles,
+} from "./features/browser-cookie-import/import-service.js";
 import { parseOpenProjectPathFromArgv } from "./open-project-routing.js";
 import { PendingOpenProjectStore } from "./pending-open-project-store.js";
 import { getDesktopSettingsStore } from "./settings/desktop-settings-electron.js";
@@ -380,6 +384,32 @@ ipcMain.handle("paseo:browser:open-devtools", (_event, browserId: unknown) => {
     isDevToolsOpened: contents.isDevToolsOpened(),
   };
   log.info("[browser-devtools] open-devtools.done", result);
+  return result;
+});
+
+ipcMain.handle("paseo:browser:list-chrome-profiles", () => {
+  try {
+    return { ok: true, profiles: listChromeProfiles() };
+  } catch (error) {
+    log.warn("[browser-cookie-import] list-chrome-profiles.failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { ok: false, reason: "unexpected-error", profiles: [] };
+  }
+});
+
+ipcMain.handle("paseo:browser:import-cookies-from-chrome", async (_event, rawInput: unknown) => {
+  const input = rawInput as { browserId?: unknown; profileId?: unknown } | null;
+  const browserId = typeof input?.browserId === "string" ? input.browserId.trim() : "";
+  const profileId = typeof input?.profileId === "string" ? input.profileId.trim() : "";
+  if (browserId.length === 0 || profileId.length === 0) {
+    const result = { ok: false as const, reason: "invalid-input" };
+    log.warn("[browser-cookie-import] import.invalid", { browserId, profileId });
+    return result;
+  }
+  log.info("[browser-cookie-import] import.request", { browserId, profileId });
+  const result = await importCookiesFromChrome({ browserId, profileId });
+  log.info("[browser-cookie-import] import.done", { browserId, profileId, result });
   return result;
 });
 

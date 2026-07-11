@@ -429,6 +429,7 @@ export const ptBR: TranslationResources = {
         browserUrl: "URL do navegador",
         enterUrl: "Inserir URL",
         openDevTools: "Abrir ferramentas de desenvolvedor do navegador",
+        importCookies: "Importar cookies do Chrome",
         cancelSelector: "Cancelar seletor de elemento",
         annotateElement: "Anotar elemento",
         screenshotElement: "Capturar elemento",
@@ -445,6 +446,27 @@ export const ptBR: TranslationResources = {
       devices: {
         label: "Tamanho do dispositivo",
         responsive: "Responsivo",
+      },
+      importCookies: {
+        title: "Importar cookies do Chrome",
+        privacyNotice:
+          "Isso lê e descriptografa os cookies do seu perfil do Chrome pelo Keychain do macOS. O macOS pedirá sua permissão primeiro.",
+        profileLabel: "Perfil do Chrome",
+        confirm: "Importar",
+        cancel: "Cancelar",
+        importing: "Importando…",
+        resultSummary: "{{imported}} cookies importados, {{skipped}} ignorados.",
+        warnings: {
+          unsupportedEncryption:
+            "Alguns cookies usam criptografia App-Bound (Chrome v20) e não puderam ser importados.",
+        },
+        errors: {
+          keychainDenied: "O acesso ao Keychain foi negado. Os cookies não foram importados.",
+          chromeNotFound: "O Google Chrome não está instalado.",
+          noProfiles: "Nenhum perfil do Chrome com cookies foi encontrado.",
+          unsupportedEncryption: "Esses cookies usam um formato de criptografia não compatível.",
+          generic: "Não foi possível importar os cookies do Chrome.",
+        },
       },
       errors: {
         failedToLoad: "Falha ao carregar página",

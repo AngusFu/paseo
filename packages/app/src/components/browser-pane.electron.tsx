@@ -8,12 +8,22 @@ import {
   type ReactNode,
   createElement,
 } from "react";
-import { Pressable, Text, TextInput, View, type StyleProp, type ViewStyle } from "react-native";
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
 import {
   ArrowLeft,
   ArrowRight,
   Camera,
   ChevronDown,
+  Cookie,
   Maximize,
   Monitor,
   MousePointer2,
@@ -47,6 +57,7 @@ import { WORKSPACE_SECONDARY_HEADER_HEIGHT } from "@/constants/layout";
 import {
   getDesktopHost,
   isElectronRuntime,
+  type ChromeProfileSummary,
   type DesktopBrowserShortcutEvent,
 } from "@/desktop/host";
 import { useBrowserStore, normalizeWorkspaceBrowserUrl } from "@/stores/browser-store";
@@ -1635,6 +1646,7 @@ export function BrowserPane({
           >
             <Wrench size={16} color={theme.colors.foregroundMuted} />
           </ToolbarButton>
+          <ImportChromeCookiesButton browserId={browserId} iconButtonStyle={baseIconButtonStyle} />
           <ToolbarButton
             label={
               selectorMode === "annotate"
@@ -1692,6 +1704,225 @@ export function BrowserPane({
         ) : null}
       </View>
     </View>
+  );
+}
+
+const ThemedCookieIcon = withUnistyles(Cookie);
+
+type ImportPhase = "loading" | "select" | "importing" | "done" | "error";
+
+function ImportProfileRow({
+  profile,
+  selected,
+  onSelect,
+}: {
+  profile: ChromeProfileSummary;
+  selected: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const handlePress = useCallback(() => onSelect(profile.id), [onSelect, profile.id]);
+  const accessibilityState = useMemo(() => ({ selected }), [selected]);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={accessibilityState}
+      onPress={handlePress}
+      style={selected ? styles.importProfileRowSelected : styles.importProfileRow}
+    >
+      <Text style={styles.importProfileName} numberOfLines={1}>
+        {profile.name}
+      </Text>
+    </Pressable>
+  );
+}
+
+// Chrome cookie import (macOS): user-explicit, Keychain-gated. Electron-only.
+function ImportChromeCookiesButton({
+  browserId,
+  iconButtonStyle,
+}: {
+  browserId: string;
+  iconButtonStyle: (state: { hovered?: boolean; pressed?: boolean }) => StyleProp<ViewStyle>;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [phase, setPhase] = useState<ImportPhase>("loading");
+  const [profiles, setProfiles] = useState<ChromeProfileSummary[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [result, setResult] = useState<{
+    imported: number;
+    skipped: number;
+    warnings: string[];
+  } | null>(null);
+
+  const errorForReason = useCallback(
+    (reason: string): string => {
+      switch (reason) {
+        case "keychain-denied":
+          return t("workspace.browser.importCookies.errors.keychainDenied");
+        case "chrome-not-found":
+        case "not-macos":
+          return t("workspace.browser.importCookies.errors.chromeNotFound");
+        case "no-profiles":
+        case "profile-not-found":
+          return t("workspace.browser.importCookies.errors.noProfiles");
+        default:
+          return t("workspace.browser.importCookies.errors.generic");
+      }
+    },
+    [t],
+  );
+
+  const loadProfiles = useCallback(async () => {
+    setPhase("loading");
+    setErrorMessage(null);
+    const bridge = getDesktopHost()?.browser;
+    if (!bridge?.listChromeProfiles) {
+      setPhase("error");
+      setErrorMessage(t("workspace.browser.importCookies.errors.generic"));
+      return;
+    }
+    try {
+      const res = await bridge.listChromeProfiles();
+      const list = res.profiles ?? [];
+      if (!res.ok || list.length === 0) {
+        setPhase("error");
+        setErrorMessage(t("workspace.browser.importCookies.errors.noProfiles"));
+        return;
+      }
+      setProfiles(list);
+      setSelectedId(list[0]?.id ?? null);
+      setPhase("select");
+    } catch {
+      setPhase("error");
+      setErrorMessage(t("workspace.browser.importCookies.errors.generic"));
+    }
+  }, [t]);
+
+  const handleOpen = useCallback(() => {
+    setResult(null);
+    setOpen(true);
+    void loadProfiles();
+  }, [loadProfiles]);
+
+  const handleClose = useCallback(() => {
+    setOpen(false);
+  }, []);
+
+  const handleConfirm = useCallback(async () => {
+    if (!selectedId) {
+      return;
+    }
+    const bridge = getDesktopHost()?.browser;
+    if (!bridge?.importCookiesFromChrome) {
+      setPhase("error");
+      setErrorMessage(t("workspace.browser.importCookies.errors.generic"));
+      return;
+    }
+    setPhase("importing");
+    try {
+      const res = await bridge.importCookiesFromChrome({ browserId, profileId: selectedId });
+      if (!res.ok) {
+        setPhase("error");
+        setErrorMessage(errorForReason(res.reason));
+        return;
+      }
+      setResult({ imported: res.imported, skipped: res.skipped, warnings: res.warnings });
+      setPhase("done");
+    } catch {
+      setPhase("error");
+      setErrorMessage(t("workspace.browser.importCookies.errors.generic"));
+    }
+  }, [browserId, selectedId, errorForReason, t]);
+
+  const isFinished = phase === "done" || phase === "error";
+
+  return (
+    <>
+      <ToolbarButton
+        label={t("workspace.browser.controls.importCookies")}
+        onPress={handleOpen}
+        style={iconButtonStyle}
+      >
+        <ThemedCookieIcon size={16} uniProps={iconForegroundMutedMapping} />
+      </ToolbarButton>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={handleClose}>
+        <View style={styles.importOverlay}>
+          <Pressable style={styles.importBackdrop} onPress={handleClose} />
+          <View style={styles.importCard}>
+            <Text style={styles.importTitle}>{t("workspace.browser.importCookies.title")}</Text>
+            <Text style={styles.importNotice}>
+              {t("workspace.browser.importCookies.privacyNotice")}
+            </Text>
+            {phase === "loading" || phase === "importing" ? (
+              <View style={styles.importCenter}>
+                <ActivityIndicator />
+                {phase === "importing" ? (
+                  <Text style={styles.importMuted}>
+                    {t("workspace.browser.importCookies.importing")}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+            {phase === "select" ? (
+              <>
+                <Text style={styles.importLabel}>
+                  {t("workspace.browser.importCookies.profileLabel")}
+                </Text>
+                <View style={styles.importProfileList}>
+                  {profiles.map((profile) => (
+                    <ImportProfileRow
+                      key={profile.id}
+                      profile={profile}
+                      selected={profile.id === selectedId}
+                      onSelect={setSelectedId}
+                    />
+                  ))}
+                </View>
+              </>
+            ) : null}
+            {phase === "done" && result ? (
+              <View style={styles.importResult}>
+                <Text style={styles.importResultText}>
+                  {t("workspace.browser.importCookies.resultSummary", {
+                    imported: result.imported,
+                    skipped: result.skipped,
+                  })}
+                </Text>
+                {result.warnings.includes("unsupported-encryption") ? (
+                  <Text style={styles.importWarning}>
+                    {t("workspace.browser.importCookies.warnings.unsupportedEncryption")}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+            {phase === "error" ? <Text style={styles.importError}>{errorMessage}</Text> : null}
+            <View style={styles.importActions}>
+              {isFinished ? (
+                <Button variant="default" size="sm" onPress={handleClose}>
+                  {t("common.actions.close")}
+                </Button>
+              ) : (
+                <>
+                  <Button variant="ghost" size="sm" onPress={handleClose}>
+                    {t("workspace.browser.importCookies.cancel")}
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={phase !== "select"}
+                    onPress={handleConfirm}
+                  >
+                    {t("workspace.browser.importCookies.confirm")}
+                  </Button>
+                </>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -1941,6 +2172,97 @@ const styles = StyleSheet.create((theme) => ({
     textAlignVertical: "top",
   },
   annotationActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: theme.spacing[2],
+  },
+  importOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: theme.spacing[4],
+  },
+  importBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  importCard: {
+    width: "100%",
+    maxWidth: 420,
+    gap: theme.spacing[3],
+    padding: theme.spacing[4],
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface0,
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  importTitle: {
+    fontSize: theme.fontSize.base,
+    fontWeight: "600",
+    color: theme.colors.foreground,
+  },
+  importNotice: {
+    fontSize: theme.fontSize.xs,
+    lineHeight: theme.fontSize.xs * 1.5,
+    color: theme.colors.foregroundMuted,
+  },
+  importCenter: {
+    alignItems: "center",
+    gap: theme.spacing[2],
+    paddingVertical: theme.spacing[3],
+  },
+  importMuted: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.foregroundMuted,
+  },
+  importLabel: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "600",
+    color: theme.colors.foregroundMuted,
+  },
+  importProfileList: {
+    gap: theme.spacing[1],
+  },
+  importProfileRow: {
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface1,
+  },
+  importProfileRowSelected: {
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.surface1,
+  },
+  importProfileName: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.foreground,
+  },
+  importResult: {
+    gap: theme.spacing[2],
+  },
+  importResultText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.foreground,
+  },
+  importWarning: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.foregroundMuted,
+  },
+  importError: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.destructive,
+  },
+  importActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
     gap: theme.spacing[2],

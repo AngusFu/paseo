@@ -425,6 +425,7 @@ export const en = {
         browserUrl: "Browser URL",
         enterUrl: "Enter URL",
         openDevTools: "Open browser dev tools",
+        importCookies: "Import cookies from Chrome",
         cancelSelector: "Cancel element selector",
         annotateElement: "Annotate element",
         screenshotElement: "Screenshot element",
@@ -441,6 +442,27 @@ export const en = {
       devices: {
         label: "Device size",
         responsive: "Responsive",
+      },
+      importCookies: {
+        title: "Import cookies from Chrome",
+        privacyNotice:
+          "This reads and decrypts cookies from your Chrome profile via the macOS Keychain. macOS will ask for your permission first.",
+        profileLabel: "Chrome profile",
+        confirm: "Import",
+        cancel: "Cancel",
+        importing: "Importing…",
+        resultSummary: "Imported {{imported}} cookies, skipped {{skipped}}.",
+        warnings: {
+          unsupportedEncryption:
+            "Some cookies use App-Bound encryption (Chrome v20) and could not be imported.",
+        },
+        errors: {
+          keychainDenied: "Keychain access was denied. Cookies were not imported.",
+          chromeNotFound: "Google Chrome is not installed.",
+          noProfiles: "No Chrome profiles with cookies were found.",
+          unsupportedEncryption: "These cookies use an unsupported encryption format.",
+          generic: "Couldn't import cookies from Chrome.",
+        },
       },
       errors: {
         failedToLoad: "Failed to load page",

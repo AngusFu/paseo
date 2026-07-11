@@ -425,6 +425,7 @@ export const zhCN: TranslationResources = {
         browserUrl: "浏览器 URL",
         enterUrl: "输入 URL",
         openDevTools: "打开浏览器开发者工具",
+        importCookies: "从 Chrome 导入 Cookie",
         cancelSelector: "取消元素选择器",
         annotateElement: "标注元素",
         screenshotElement: "截图元素",
@@ -441,6 +442,26 @@ export const zhCN: TranslationResources = {
       devices: {
         label: "设备尺寸",
         responsive: "自适应",
+      },
+      importCookies: {
+        title: "从 Chrome 导入 Cookie",
+        privacyNotice:
+          "此操作通过 macOS 钥匙串读取并解密你的 Chrome 配置文件中的 Cookie。macOS 会先请求你的授权。",
+        profileLabel: "Chrome 配置文件",
+        confirm: "导入",
+        cancel: "取消",
+        importing: "正在导入…",
+        resultSummary: "已导入 {{imported}} 个 Cookie，跳过 {{skipped}} 个。",
+        warnings: {
+          unsupportedEncryption: "部分 Cookie 使用 App-Bound 加密（Chrome v20），无法导入。",
+        },
+        errors: {
+          keychainDenied: "钥匙串访问被拒绝，未导入 Cookie。",
+          chromeNotFound: "未安装 Google Chrome。",
+          noProfiles: "未找到包含 Cookie 的 Chrome 配置文件。",
+          unsupportedEncryption: "这些 Cookie 使用不受支持的加密格式。",
+          generic: "无法从 Chrome 导入 Cookie。",
+        },
       },
       errors: {
         failedToLoad: "页面加载失败",

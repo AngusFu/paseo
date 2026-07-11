@@ -307,6 +307,16 @@ export const ja: TranslationResources = {
       withTokens: "コンテキストを圧縮しました（{{tokens}}Kトークン）",
       completed: "コンテキストを圧縮しました",
     },
+    toolRun: {
+      filesOne: "ファイル 1 件",
+      filesMany: "ファイル {{count}} 件",
+      searchesOne: "検索 1 件",
+      searchesMany: "検索 {{count}} 件",
+      toolsOne: "ツール 1 件",
+      toolsMany: "ツール {{count}} 件",
+      stepsOne: "1 ステップ",
+      stepsMany: "{{count}} ステップ",
+    },
   },
   importSession: {
     title: "セッションをインポート",

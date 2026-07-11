@@ -304,6 +304,16 @@ export const zhCN: TranslationResources = {
       withTokens: "上下文已压缩（{{tokens}}K tokens）",
       completed: "上下文已压缩",
     },
+    toolRun: {
+      filesOne: "1 个文件",
+      filesMany: "{{count}} 个文件",
+      searchesOne: "1 次搜索",
+      searchesMany: "{{count}} 次搜索",
+      toolsOne: "1 个工具",
+      toolsMany: "{{count}} 个工具",
+      stepsOne: "1 个步骤",
+      stepsMany: "{{count}} 个步骤",
+    },
   },
   importSession: {
     title: "导入会话",

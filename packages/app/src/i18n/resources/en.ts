@@ -303,6 +303,16 @@ export const en = {
       withTokens: "Context compacted ({{tokens}}K tokens)",
       completed: "Context compacted",
     },
+    toolRun: {
+      filesOne: "1 file",
+      filesMany: "{{count}} files",
+      searchesOne: "1 search",
+      searchesMany: "{{count}} searches",
+      toolsOne: "1 tool",
+      toolsMany: "{{count}} tools",
+      stepsOne: "1 step",
+      stepsMany: "{{count}} steps",
+    },
   },
   importSession: {
     title: "Import session",

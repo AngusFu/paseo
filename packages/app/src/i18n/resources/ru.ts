@@ -306,6 +306,16 @@ export const ru: TranslationResources = {
       withTokens: "Сжатый контекст (токены{{tokens}}K)",
       completed: "Контекст сжат",
     },
+    toolRun: {
+      filesOne: "1 файл",
+      filesMany: "{{count}} файлов",
+      searchesOne: "1 поиск",
+      searchesMany: "{{count}} поисков",
+      toolsOne: "1 инструмент",
+      toolsMany: "{{count}} инструментов",
+      stepsOne: "1 шаг",
+      stepsMany: "{{count}} шагов",
+    },
   },
   importSession: {
     title: "Импортировать сеанс",

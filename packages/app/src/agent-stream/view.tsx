@@ -36,6 +36,7 @@ import {
   ActivityLog,
   ToolCall,
   TodoListCard,
+  ToolRunSummary,
   CompactionMarker,
   MessageOuterSpacingProvider,
   type InlinePathTarget,
@@ -694,8 +695,41 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [agent.cwd, setInlineDetailsExpanded, handleToolCallOpenFile],
     );
 
+    // Renders a single member of a collapsed tool run (thought / tool_call /
+    // todo_list) without the grouping branch, so the run's start item can render
+    // its members without recursing back into the summary wrapper.
+    const renderToolRunChild = useCallback(
+      (childItem: StreamLayoutItem): ReactNode => {
+        const item = childItem.item;
+        switch (item.kind) {
+          case "thought":
+            return renderThoughtItem(childItem, item);
+          case "tool_call":
+            return renderToolCallItem(childItem, item);
+          case "todo_list":
+            return <TodoListCard items={item.items} />;
+          default:
+            return null;
+        }
+      },
+      [renderThoughtItem, renderToolCallItem],
+    );
+
     const renderStreamItemContent = useCallback(
       (layoutItem: StreamLayoutItem) => {
+        if (layoutItem.isToolRunMember) {
+          return null;
+        }
+        const toolRunGroup = layoutItem.toolRunGroup;
+        if (toolRunGroup) {
+          return (
+            <ToolRunSummary
+              childItems={toolRunGroup.items}
+              defaultExpanded={toolRunGroup.isActive}
+              renderChild={renderToolRunChild}
+            />
+          );
+        }
         const item = layoutItem.item;
         switch (item.kind) {
           case "user_message":
@@ -736,7 +770,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             return null;
         }
       },
-      [renderUserMessageItem, renderAssistantMessageItem, renderThoughtItem, renderToolCallItem],
+      [
+        renderUserMessageItem,
+        renderAssistantMessageItem,
+        renderThoughtItem,
+        renderToolCallItem,
+        renderToolRunChild,
+      ],
     );
 
     const bottomTurnFooterHost = streamLayout.auxiliaryTurnFooter;

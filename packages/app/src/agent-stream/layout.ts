@@ -12,6 +12,16 @@ export interface TurnFooterHost {
   startIndex: number;
 }
 
+// A run of >= 2 consecutive tool-sequence items (tool_call/thought/todo_list),
+// bounded by non-tool items. Attached only to the run's first layout item; the
+// remaining members are flagged `isToolRunMember` so the view renders them once,
+// collapsed under a single summary row.
+export interface StreamToolRunGroup {
+  runId: string;
+  items: StreamLayoutItem[];
+  isActive: boolean;
+}
+
 export interface StreamLayoutItem {
   item: StreamItem;
   index: number;
@@ -26,6 +36,10 @@ export interface StreamLayoutItem {
   isLastInUserGroup: boolean;
   isLastInToolSequence: boolean;
   frameOrder: StreamFrameChildOrder;
+  // Set on the first item of a >= 2-length tool run; null otherwise.
+  toolRunGroup: StreamToolRunGroup | null;
+  // True for the non-first members of a tool run (rendered inside the group).
+  isToolRunMember: boolean;
 }
 
 export interface StreamLayout {
@@ -224,8 +238,55 @@ function getSegmentNeighbor(input: {
   return null;
 }
 
+function isActiveToolRunItem(item: StreamItem): boolean {
+  if (item.kind === "thought") {
+    return item.status === "loading";
+  }
+  if (item.kind === "tool_call") {
+    const status = item.payload.data.status;
+    return status === "running" || status === "executing";
+  }
+  return false;
+}
+
+// Collapses maximal runs of >= 2 consecutive tool-sequence items into a single
+// group hung off the run's first item. Runs never cross the history/liveHead
+// segment boundary (grouping is segment-local), which keeps the active turn's
+// live run self-contained. The trailing gap and completed-turn footer are
+// hoisted from the run's last item onto the first so the group renders as one
+// unit while its members render null.
+function groupToolRuns(items: StreamLayoutItem[]): void {
+  let start = 0;
+  while (start < items.length) {
+    if (!isToolSequenceItem(items[start].item)) {
+      start += 1;
+      continue;
+    }
+    let end = start;
+    while (end + 1 < items.length && isToolSequenceItem(items[end + 1].item)) {
+      end += 1;
+    }
+    if (end > start) {
+      const startItem = items[start];
+      const endItem = items[end];
+      startItem.toolRunGroup = {
+        runId: startItem.item.id,
+        items: items.slice(start, end + 1),
+        isActive: items.slice(start, end + 1).some((li) => isActiveToolRunItem(li.item)),
+      };
+      startItem.gapBelow = endItem.gapBelow;
+      startItem.completedFooter = endItem.completedFooter;
+      for (let i = start + 1; i <= end; i += 1) {
+        items[i].isToolRunMember = true;
+        items[i].completedFooter = null;
+      }
+    }
+    start = end + 1;
+  }
+}
+
 function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
-  return input.items.map((item, index) => {
+  const result = input.items.map((item, index) => {
     const aboveItem = getSegmentNeighbor({
       strategy: input.strategy,
       items: input.items,
@@ -273,8 +334,12 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
       isLastInUserGroup: item.kind === "user_message" && belowItem?.kind !== "user_message",
       isLastInToolSequence: isToolSequenceItem(item) && !isToolSequenceItem(belowItem),
       frameOrder: input.frameOrder,
+      toolRunGroup: null,
+      isToolRunMember: false,
     };
   });
+  groupToolRuns(result);
+  return result;
 }
 
 // Keyed by history array identity; inner key encodes the inputs that affect history layout.

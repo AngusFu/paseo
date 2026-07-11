@@ -304,6 +304,16 @@ export const ar: TranslationResources = {
       withTokens: "تم ضغط السياق (رموز{{tokens}}K)",
       completed: "تم ضغط السياق",
     },
+    toolRun: {
+      filesOne: "ملف واحد",
+      filesMany: "{{count}} ملفات",
+      searchesOne: "بحث واحد",
+      searchesMany: "{{count}} عمليات بحث",
+      toolsOne: "أداة واحدة",
+      toolsMany: "{{count}} أدوات",
+      stepsOne: "خطوة واحدة",
+      stepsMany: "{{count}} خطوات",
+    },
   },
   importSession: {
     title: "جلسة الاستيراد",

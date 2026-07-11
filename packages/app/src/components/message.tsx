@@ -46,6 +46,7 @@ import {
   Scissors,
   MicVocal,
   FileSymlink,
+  Layers,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { baseColors, type Theme } from "@/styles/theme";
@@ -63,7 +64,8 @@ import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from "reac
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { MarkdownRenderer, type MarkdownStyles } from "@/components/markdown/renderer";
 import { resolveInlineImageSize } from "@/components/markdown/inline-image-size";
-import type { TodoEntry, UserMessageImageAttachment } from "@/types/stream";
+import type { StreamItem, TodoEntry, UserMessageImageAttachment } from "@/types/stream";
+import type { StreamLayoutItem } from "@/agent-stream/layout";
 import { segmentUserMessage } from "@/utils/user-message-segments";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
@@ -2444,6 +2446,10 @@ interface ExpandableBadgeProps {
   isError?: boolean;
   isLastInSequence?: boolean;
   disableOuterSpacing?: boolean;
+  // Skip the filled "attached panel" header styling when expanded. Used by the
+  // tool-run summary, whose members render as separate rows rather than an
+  // attached detail accordion.
+  suppressExpandedSurface?: boolean;
   testID?: string;
 }
 
@@ -2919,6 +2925,7 @@ const ExpandableBadge = memo(function ExpandableBadge({
   isError = false,
   isLastInSequence = false,
   disableOuterSpacing,
+  suppressExpandedSurface = false,
   testID,
 }: ExpandableBadgeProps) {
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
@@ -3087,9 +3094,9 @@ const ExpandableBadge = memo(function ExpandableBadge({
     () => [
       expandableBadgeStylesheet.pressable,
       isPressed && isInteractive ? expandableBadgeStylesheet.pressablePressed : null,
-      isExpanded && expandableBadgeStylesheet.pressableExpanded,
+      isExpanded && !suppressExpandedSurface && expandableBadgeStylesheet.pressableExpanded,
     ],
-    [isExpanded, isInteractive, isPressed],
+    [isExpanded, isInteractive, isPressed, suppressExpandedSurface],
   );
 
   const accessibilityState = useMemo(
@@ -3223,6 +3230,7 @@ function areExpandableBadgePropsEqual(previous: ExpandableBadgeProps, next: Expa
   if (previous.isError !== next.isError) return false;
   if (previous.isLastInSequence !== next.isLastInSequence) return false;
   if (previous.disableOuterSpacing !== next.disableOuterSpacing) return false;
+  if (previous.suppressExpandedSurface !== next.suppressExpandedSurface) return false;
   if (previous.testID !== next.testID) return false;
   if (previous.onToggle !== next.onToggle) return false;
   if (previous.onOpenFile !== next.onOpenFile) return false;
@@ -3230,6 +3238,115 @@ function areExpandableBadgePropsEqual(previous: ExpandableBadgeProps, next: Expa
   if (previous.renderDetails !== next.renderDetails) return false;
   return true;
 }
+
+// Cursor-style aggregation: a run of consecutive tool calls / thoughts collapses
+// into one muted summary row ("2 files, 1 search, 3 tools") that expands to reveal
+// the individual badges. Reuses ExpandableBadge for the muted look + chevron; the
+// members render as sibling rows below rather than an attached detail accordion.
+function summarizeToolRun(items: StreamItem[]): {
+  files: number;
+  searches: number;
+  tools: number;
+  total: number;
+} {
+  let files = 0;
+  let searches = 0;
+  let tools = 0;
+  for (const item of items) {
+    if (item.kind !== "tool_call") {
+      continue;
+    }
+    const detailType = item.payload.source === "agent" ? item.payload.data.detail.type : "unknown";
+    if (detailType === "read" || detailType === "edit" || detailType === "write") {
+      files += 1;
+    } else if (detailType === "search") {
+      searches += 1;
+    } else {
+      tools += 1;
+    }
+  }
+  return { files, searches, tools, total: items.length };
+}
+
+function useToolRunSummaryLabel(childItems: StreamLayoutItem[]): string {
+  const { t } = useTranslation();
+  return useMemo(() => {
+    const { files, searches, tools, total } = summarizeToolRun(
+      childItems.map((child) => child.item),
+    );
+    const parts: string[] = [];
+    if (files > 0) {
+      parts.push(
+        files === 1
+          ? t("message.toolRun.filesOne")
+          : t("message.toolRun.filesMany", { count: files }),
+      );
+    }
+    if (searches > 0) {
+      parts.push(
+        searches === 1
+          ? t("message.toolRun.searchesOne")
+          : t("message.toolRun.searchesMany", { count: searches }),
+      );
+    }
+    if (tools > 0) {
+      parts.push(
+        tools === 1
+          ? t("message.toolRun.toolsOne")
+          : t("message.toolRun.toolsMany", { count: tools }),
+      );
+    }
+    if (parts.length > 0) {
+      return parts.join(", ");
+    }
+    return total === 1
+      ? t("message.toolRun.stepsOne")
+      : t("message.toolRun.stepsMany", { count: total });
+  }, [childItems, t]);
+}
+
+interface ToolRunSummaryProps {
+  childItems: StreamLayoutItem[];
+  defaultExpanded?: boolean;
+  renderChild: (child: StreamLayoutItem) => ReactNode;
+}
+
+export const ToolRunSummary = memo(function ToolRunSummary({
+  childItems,
+  defaultExpanded = false,
+  renderChild,
+}: ToolRunSummaryProps) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const label = useToolRunSummaryLabel(childItems);
+  const handleToggle = useCallback(() => setIsExpanded((prev) => !prev), []);
+
+  return (
+    <View>
+      <ExpandableBadge
+        testID="tool-run-summary"
+        label={label}
+        icon={Layers}
+        isExpanded={isExpanded}
+        onToggle={handleToggle}
+        suppressExpandedSurface
+      />
+      {isExpanded ? (
+        <View style={toolRunSummaryStylesheet.children}>
+          {childItems.map((child) => (
+            <React.Fragment key={child.item.id}>{renderChild(child)}</React.Fragment>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+});
+
+const toolRunSummaryStylesheet = StyleSheet.create((theme) => ({
+  children: {
+    marginTop: theme.spacing[1],
+    gap: theme.spacing[1],
+  },
+}));
 
 interface ToolCallProps {
   toolName: string;

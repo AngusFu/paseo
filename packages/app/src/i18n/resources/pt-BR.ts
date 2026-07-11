@@ -307,6 +307,16 @@ export const ptBR: TranslationResources = {
       withTokens: "Contexto compactado ({{tokens}}K tokens)",
       completed: "Contexto compactado",
     },
+    toolRun: {
+      filesOne: "1 arquivo",
+      filesMany: "{{count}} arquivos",
+      searchesOne: "1 busca",
+      searchesMany: "{{count}} buscas",
+      toolsOne: "1 ferramenta",
+      toolsMany: "{{count}} ferramentas",
+      stepsOne: "1 etapa",
+      stepsMany: "{{count}} etapas",
+    },
   },
   importSession: {
     title: "Importar sessão",

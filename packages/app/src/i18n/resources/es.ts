@@ -307,6 +307,16 @@ export const es: TranslationResources = {
       withTokens: "Contexto compactado (tokens{{tokens}}K)",
       completed: "Contexto compactado",
     },
+    toolRun: {
+      filesOne: "1 archivo",
+      filesMany: "{{count}} archivos",
+      searchesOne: "1 búsqueda",
+      searchesMany: "{{count}} búsquedas",
+      toolsOne: "1 herramienta",
+      toolsMany: "{{count}} herramientas",
+      stepsOne: "1 paso",
+      stepsMany: "{{count}} pasos",
+    },
   },
   importSession: {
     title: "Importar sesión",

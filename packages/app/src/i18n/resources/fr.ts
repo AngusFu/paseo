@@ -307,6 +307,16 @@ export const fr: TranslationResources = {
       withTokens: "Contexte compacté (jetons{{tokens}}K)",
       completed: "Contexte compacté",
     },
+    toolRun: {
+      filesOne: "1 fichier",
+      filesMany: "{{count}} fichiers",
+      searchesOne: "1 recherche",
+      searchesMany: "{{count}} recherches",
+      toolsOne: "1 outil",
+      toolsMany: "{{count}} outils",
+      stepsOne: "1 étape",
+      stepsMany: "{{count}} étapes",
+    },
   },
   importSession: {
     title: "Session d'importation",

@@ -1491,6 +1491,7 @@ export const ptBR: TranslationResources = {
       cancelAccessibility: "Cancelar comentário de revisão",
       save: "Comentar",
       saveAccessibility: "Salvar comentário de revisão",
+      shortcutHint: "{{saveKey}} para comentar · {{cancelKey}} para cancelar",
     },
   },
   settings: {

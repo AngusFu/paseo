@@ -1509,6 +1509,7 @@ export const fr: TranslationResources = {
       cancelAccessibility: "Annuler le commentaire de révision",
       save: "Commentaire",
       saveAccessibility: "Enregistrer le commentaire de l'avis",
+      shortcutHint: "{{saveKey}} pour commenter · {{cancelKey}} pour annuler",
     },
   },
   settings: {

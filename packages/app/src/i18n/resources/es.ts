@@ -1505,6 +1505,7 @@ export const es: TranslationResources = {
       cancelAccessibility: "Cancelar comentario de revisión",
       save: "Comentario",
       saveAccessibility: "Guardar comentario de revisión",
+      shortcutHint: "{{saveKey}} para comentar · {{cancelKey}} para cancelar",
     },
   },
   settings: {

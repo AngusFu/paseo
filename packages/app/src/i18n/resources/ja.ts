@@ -1486,6 +1486,7 @@ export const ja: TranslationResources = {
       cancelAccessibility: "レビューコメントをキャンセル",
       save: "コメント",
       saveAccessibility: "レビューコメントを保存",
+      shortcutHint: "{{saveKey}} でコメント · {{cancelKey}} でキャンセル",
     },
   },
   settings: {

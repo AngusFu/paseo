@@ -14,6 +14,8 @@ import {
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { Button } from "@/components/ui/button";
 import { isWeb } from "@/constants/platform";
+import { formatShortcut } from "@/utils/format-shortcut";
+import { getShortcutOs } from "@/utils/shortcut-platform";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import type { Theme } from "@/styles/theme";
 import { useWorkspaceFocusRestoration } from "@/workspace/focus";
@@ -516,6 +518,13 @@ export function InlineReviewEditor({
     focus.restore();
   }, [focus]);
   const handleSave = useCallback(() => onSave(trimmedBody), [onSave, trimmedBody]);
+  const shortcutHint = useMemo(() => {
+    const os = getShortcutOs();
+    return t("review.comment.shortcutHint", {
+      saveKey: formatShortcut(["mod", "Enter"], os),
+      cancelKey: formatShortcut(["Esc"], os),
+    });
+  }, [t]);
 
   useEffect(() => {
     const element = getWebTextInputElement(inputRef.current);
@@ -567,27 +576,32 @@ export function InlineReviewEditor({
         style={styles.editorInput}
       />
       <View style={styles.editorActions}>
-        <Button
-          accessibilityLabel={t("review.comment.cancelAccessibility")}
-          testID={testID ? `${testID}-cancel` : undefined}
-          hitSlop={SMALL_ACTION_HIT_SLOP}
-          onPress={onCancel}
-          variant="ghost"
-          size="xs"
-        >
-          {t("review.comment.cancel")}
-        </Button>
-        <Button
-          accessibilityLabel={t("review.comment.saveAccessibility")}
-          testID={testID ? `${testID}-save` : undefined}
-          hitSlop={SMALL_ACTION_HIT_SLOP}
-          disabled={!canSave}
-          onPress={handleSave}
-          variant="default"
-          size="xs"
-        >
-          {t("review.comment.save")}
-        </Button>
+        <Text style={styles.shortcutHint} numberOfLines={1}>
+          {shortcutHint}
+        </Text>
+        <View style={styles.editorActionButtons}>
+          <Button
+            accessibilityLabel={t("review.comment.cancelAccessibility")}
+            testID={testID ? `${testID}-cancel` : undefined}
+            hitSlop={SMALL_ACTION_HIT_SLOP}
+            onPress={onCancel}
+            variant="ghost"
+            size="xs"
+          >
+            {t("review.comment.cancel")}
+          </Button>
+          <Button
+            accessibilityLabel={t("review.comment.saveAccessibility")}
+            testID={testID ? `${testID}-save` : undefined}
+            hitSlop={SMALL_ACTION_HIT_SLOP}
+            disabled={!canSave}
+            onPress={handleSave}
+            variant="default"
+            size="xs"
+          >
+            {t("review.comment.save")}
+          </Button>
+        </View>
       </View>
     </View>
   );
@@ -705,8 +719,19 @@ const styles = StyleSheet.create((theme) => ({
   },
   editorActions: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
     alignItems: "center",
     gap: theme.spacing[2],
+  },
+  editorActionButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  shortcutHint: {
+    flexShrink: 1,
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.foregroundMuted,
+    opacity: 0.5,
   },
 }));

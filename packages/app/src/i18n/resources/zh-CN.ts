@@ -1448,6 +1448,7 @@ export const zhCN: TranslationResources = {
       cancelAccessibility: "取消 review 评论",
       save: "评论",
       saveAccessibility: "保存 review 评论",
+      shortcutHint: "{{saveKey}} 评论 · {{cancelKey}} 取消",
     },
   },
   settings: {

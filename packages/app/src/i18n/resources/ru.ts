@@ -1497,6 +1497,7 @@ export const ru: TranslationResources = {
       cancelAccessibility: "Отменить комментарий к отзыву",
       save: "Комментарий",
       saveAccessibility: "Сохранить комментарий к отзыву",
+      shortcutHint: "{{saveKey}} — комментировать · {{cancelKey}} — отмена",
     },
   },
   settings: {

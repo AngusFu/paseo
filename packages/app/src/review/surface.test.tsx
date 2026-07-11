@@ -412,13 +412,8 @@ describe("InlineReviewEditor", () => {
     expect(onSave).toHaveBeenCalledWith("ready");
   });
 
-  it("shows shared shortcut hints while focused on a fine-pointer screen", () => {
-    window.matchMedia = vi.fn().mockReturnValue({
-      matches: true,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    });
-    const { getByTestId, getByText, queryByText } = render(
+  it("shows the keyboard shortcut hint under the composer", () => {
+    const { getByText } = render(
       <InlineReviewEditor
         initialBody="ready"
         onCancel={vi.fn()}
@@ -426,13 +421,10 @@ describe("InlineReviewEditor", () => {
         testID="editor"
       />,
     );
-    const input = getByTestId("editor-input");
 
-    expect(getByText("Esc")).toBeTruthy();
+    // Single muted line combining both shortcuts, e.g. "⌘⏎ to comment · Esc to cancel".
+    expect(getByText(/Esc/)).toBeTruthy();
     expect(getByText(/(?:⌘⏎|Ctrl\+⏎)/)).toBeTruthy();
-
-    fireEvent.blur(input);
-    expect(queryByText("Esc")).toBeNull();
   });
 });
 

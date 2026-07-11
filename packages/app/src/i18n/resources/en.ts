@@ -1474,6 +1474,7 @@ export const en = {
       cancelAccessibility: "Cancel review comment",
       save: "Comment",
       saveAccessibility: "Save review comment",
+      shortcutHint: "{{saveKey}} to comment · {{cancelKey}} to cancel",
     },
   },
   settings: {

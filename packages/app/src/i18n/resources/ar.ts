@@ -1466,6 +1466,7 @@ export const ar: TranslationResources = {
       cancelAccessibility: "إلغاء تعليق المراجعة",
       save: "تعليق",
       saveAccessibility: "حفظ تعليق المراجعة",
+      shortcutHint: "{{saveKey}} للتعليق · {{cancelKey}} للإلغاء",
     },
   },
   settings: {

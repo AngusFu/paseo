@@ -1793,10 +1793,11 @@ function shouldEnableCheckoutDiff(input: { paneEnabled: boolean; isGit: boolean 
   return input.paneEnabled && input.isGit;
 }
 
-// Minimum Changes-pane width (px) at which side-by-side split is usable: two
-// ~280px columns (gutter + ~40 chars of code) is the tight-but-readable floor.
-// Below it we force unified and hide the toggle rather than truncate both sides.
-const SPLIT_MIN_PANE_WIDTH = 560;
+// Minimum Changes-pane width (px) at which side-by-side split is usable; below
+// it the two columns truncate badly, so we force unified and hide the toggle.
+// The pane is resizable (explorer-sidebar drag handle, width persisted), so
+// split re-appears once it's dragged past this; the ~400px default falls back.
+const SPLIT_MIN_PANE_WIDTH = 720;
 
 export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPaneProps) {
   const { settings: appSettings } = useAppSettings();

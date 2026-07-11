@@ -21,7 +21,7 @@ import {
   protocol,
   screen,
   session,
-  webContents,
+  WebContentsView,
 } from "electron";
 import { createDaemonCommandHandlers, registerDaemonManager } from "./daemon/daemon-manager.js";
 import { parsePassthroughCliArgsFromArgv, runPassthroughCli } from "./daemon/cli/passthrough.js";
@@ -336,6 +336,7 @@ ipcMain.handle("paseo:browser:register-workspace-browser", (_event, rawInput: un
 
 ipcMain.handle("paseo:browser:unregister-workspace-browser", (_event, browserId: unknown) => {
   if (typeof browserId === "string" && browserId.trim().length > 0) {
+    closeInlineDevtoolsForBrowser(browserId.trim());
     unregisterPaseoBrowser(browserId.trim());
   }
 });
@@ -414,23 +415,101 @@ ipcMain.handle("paseo:browser:import-cookies-from-chrome", async (_event, rawInp
   return result;
 });
 
-ipcMain.handle("paseo:browser:open-inline-devtools", (_event, rawInput: unknown) => {
+// Inline DevTools host views, keyed by browserId. A <webview> guest cannot dock
+// its DevTools (Electron forces detach mode), so we host the DevTools front-end
+// in a main-process WebContentsView floated over the window at the panel's rect.
+// The guest is parked on a 1px host and shown via compositor capture; this view
+// is a real child view at absolute window (DIP) coordinates, so it lands exactly
+// where the empty panel box is in the renderer.
+const inlineDevtoolsViews = new Map<
+  string,
+  { view: WebContentsView; guestWcId: number; window: BrowserWindow }
+>();
+
+function normalizeDevtoolsBounds(bounds: unknown): Electron.Rectangle | null {
+  if (!bounds || typeof bounds !== "object") {
+    return null;
+  }
+  const candidate = bounds as Record<string, unknown>;
+  const { x, y, width, height } = candidate;
+  if (
+    typeof x !== "number" ||
+    typeof y !== "number" ||
+    typeof width !== "number" ||
+    typeof height !== "number" ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return null;
+  }
+  return {
+    x: Math.round(x),
+    y: Math.round(y),
+    width: Math.round(width),
+    height: Math.round(height),
+  };
+}
+
+// Tear down the inline DevTools host for a browser: close the guest's DevTools,
+// remove the view from the window, and destroy the host WebContents (the caller
+// owns its destruction per setDevToolsWebContents' contract). Idempotent.
+function closeInlineDevtoolsForBrowser(browserId: string): void {
+  const entry = inlineDevtoolsViews.get(browserId);
+  if (!entry) {
+    return;
+  }
+  inlineDevtoolsViews.delete(browserId);
+  try {
+    const guest = getPaseoBrowserWebContents(browserId);
+    if (guest && !guest.isDestroyed() && guest.devToolsWebContents) {
+      guest.closeDevTools();
+    }
+  } catch (error) {
+    log.warn("[browser-devtools] inline.close-devtools-failed", {
+      browserId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  try {
+    if (!entry.window.isDestroyed()) {
+      entry.window.contentView.removeChildView(entry.view);
+    }
+  } catch (error) {
+    log.warn("[browser-devtools] inline.remove-view-failed", {
+      browserId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  try {
+    if (!entry.view.webContents.isDestroyed()) {
+      entry.view.webContents.close();
+    }
+  } catch (error) {
+    log.warn("[browser-devtools] inline.destroy-host-failed", {
+      browserId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+ipcMain.handle("paseo:browser:open-inline-devtools", (event, rawInput: unknown) => {
   const input =
     rawInput && typeof rawInput === "object"
-      ? (rawInput as { browserId?: unknown; hostWebContentsId?: unknown })
+      ? (rawInput as { browserId?: unknown; bounds?: unknown })
       : {};
   const browserId = typeof input.browserId === "string" ? input.browserId.trim() : "";
-  const hostWebContentsId =
-    typeof input.hostWebContentsId === "number" && Number.isInteger(input.hostWebContentsId)
-      ? input.hostWebContentsId
-      : null;
-  if (browserId.length === 0 || hostWebContentsId === null) {
-    const result = { ok: false, reason: "invalid-input", browserId, hostWebContentsId };
+  const bounds = normalizeDevtoolsBounds(input.bounds);
+  if (browserId.length === 0 || bounds === null) {
+    const result = { ok: false, reason: "invalid-input", browserId, bounds: input.bounds };
     log.warn("[browser-devtools] open-inline-devtools.invalid", result);
     return result;
   }
-  const contents = getPaseoBrowserWebContents(browserId);
-  if (!contents) {
+  const guest = getPaseoBrowserWebContents(browserId);
+  if (!guest) {
     const result = {
       ok: false,
       reason: "browser-webcontents-not-found",
@@ -440,39 +519,90 @@ ipcMain.handle("paseo:browser:open-inline-devtools", (_event, rawInput: unknown)
     log.warn("[browser-devtools] open-inline-devtools.not-found", result);
     return result;
   }
-  const host = webContents.fromId(hostWebContentsId);
-  if (!host || host.isDestroyed()) {
-    const result = { ok: false, reason: "devtools-host-not-found", browserId, hostWebContentsId };
-    log.warn("[browser-devtools] open-inline-devtools.host-not-found", result);
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window || window.isDestroyed()) {
+    const result = { ok: false, reason: "owner-window-not-found", browserId };
+    log.warn("[browser-devtools] open-inline-devtools.no-window", result);
     return result;
   }
-  // Render DevTools into the caller-provided host WebContents (a second in-pane
-  // webview) instead of a detached window. Capture reads only the target guest's
-  // compositor surface, so this disjoint host does not disturb screenshots.
-  contents.setDevToolsWebContents(host);
-  contents.openDevTools({ mode: "detach", activate: false });
+
+  // Already open: just reposition the existing host view.
+  const existing = inlineDevtoolsViews.get(browserId);
+  if (existing) {
+    try {
+      existing.view.setBounds(bounds);
+    } catch {}
+    return { ok: true, reason: "already-open", browserId, webContentsId: guest.id };
+  }
+
+  // Fresh, never-navigated host WebContents (no options => own WebContents).
+  // Never loadURL it, so the setDevToolsWebContents navigation-free contract holds.
+  const view = new WebContentsView();
+  window.contentView.addChildView(view);
+  view.setBounds(bounds);
+  view.setBackgroundColor("#00000000");
+  guest.setDevToolsWebContents(view.webContents);
+  guest.openDevTools();
+  inlineDevtoolsViews.set(browserId, { view, guestWcId: guest.id, window });
+
+  const cleanup = () => closeInlineDevtoolsForBrowser(browserId);
+  guest.once("devtools-closed", cleanup);
+  guest.once("destroyed", cleanup);
+
   const result = {
     ok: true,
     reason: "opened",
     browserId,
-    webContentsId: contents.id,
-    hostWebContentsId,
-    isDevToolsOpened: contents.isDevToolsOpened(),
+    webContentsId: guest.id,
+    isDevToolsOpened: guest.isDevToolsOpened(),
   };
   log.info("[browser-devtools] open-inline-devtools.done", result);
   return result;
+});
+
+ipcMain.handle("paseo:browser:set-devtools-bounds", (_event, rawInput: unknown) => {
+  const input =
+    rawInput && typeof rawInput === "object"
+      ? (rawInput as { browserId?: unknown; bounds?: unknown })
+      : {};
+  const browserId = typeof input.browserId === "string" ? input.browserId.trim() : "";
+  const bounds = normalizeDevtoolsBounds(input.bounds);
+  if (browserId.length === 0 || bounds === null) {
+    return { ok: false, reason: "invalid-input", browserId };
+  }
+  const entry = inlineDevtoolsViews.get(browserId);
+  if (!entry) {
+    return { ok: false, reason: "not-open", browserId };
+  }
+  try {
+    entry.view.setBounds(bounds);
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "set-bounds-failed",
+      browserId,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+  return { ok: true, browserId };
 });
 
 ipcMain.handle("paseo:browser:close-devtools", (_event, browserId: unknown) => {
   if (typeof browserId !== "string" || browserId.trim().length === 0) {
     return { ok: false, reason: "invalid-browser-id", browserId };
   }
-  const contents = getPaseoBrowserWebContents(browserId.trim());
-  if (!contents) {
-    return { ok: false, reason: "browser-webcontents-not-found", browserId };
+  const id = browserId.trim();
+  const hadInline = inlineDevtoolsViews.has(id);
+  // Tear down the inline host view (also closes the guest's DevTools).
+  closeInlineDevtoolsForBrowser(id);
+  // For a detached DevTools session there is no inline view; close it directly.
+  if (!hadInline) {
+    const contents = getPaseoBrowserWebContents(id);
+    if (contents && !contents.isDestroyed()) {
+      contents.closeDevTools();
+    }
   }
-  contents.closeDevTools();
-  const result = { ok: true, reason: "closed", browserId: browserId.trim() };
+  const result = { ok: true, reason: "closed", browserId: id };
   log.info("[browser-devtools] close-devtools.done", result);
   return result;
 });

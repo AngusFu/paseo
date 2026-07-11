@@ -159,10 +159,18 @@ export interface DesktopBrowserBridge {
     browserId: string;
     profileId: string;
   }) => Promise<ImportChromeCookiesResult>;
-  /** Render DevTools inline into a caller-provided host webview WebContents. */
+  /**
+   * Render DevTools inline via a main-process WebContentsView floated over the
+   * window at `bounds` (window/DIP coordinates matching CSS px).
+   */
   openInlineDevTools?: (input: {
     browserId: string;
-    hostWebContentsId: number;
+    bounds: { x: number; y: number; width: number; height: number };
+  }) => Promise<unknown>;
+  /** Reposition the inline DevTools host view as the panel resizes/moves. */
+  setDevtoolsBounds?: (input: {
+    browserId: string;
+    bounds: { x: number; y: number; width: number; height: number };
   }) => Promise<unknown>;
   closeDevTools?: (browserId: string) => Promise<unknown>;
   clearPartition?: (browserId: string) => Promise<void>;

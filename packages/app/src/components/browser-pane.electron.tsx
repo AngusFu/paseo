@@ -1725,6 +1725,11 @@ export function BrowserPane({
     window.addEventListener("pointercancel", handlePointerUp);
   }, []);
 
+  // Inline DevTools is hosted by a main-process WebContentsView floated over the
+  // window (a <webview> guest can't dock its DevTools). The renderer only owns
+  // geometry: it keeps an EMPTY placeholder box in the layout, measures its
+  // on-screen rect, and streams that rect to main so the overlay lands exactly
+  // over the box. See main.ts `paseo:browser:open-inline-devtools`.
   useEffect(() => {
     if (!isElectronRuntime() || !inlineDevtoolsOpen) {
       return;
@@ -1735,48 +1740,58 @@ export function BrowserPane({
     }
     const currentBrowserId = browserId;
     const bridge = getDesktopHost()?.browser;
-    host.replaceChildren();
-    const devtoolsWebview = document.createElement("webview") as ElectronWebview & {
-      getWebContentsId?: () => number;
-    };
-    // Blank guest that DevTools renders itself into; a disjoint WebContents from
-    // the captured target, so it can't disturb the parked-host screenshot surface.
-    devtoolsWebview.setAttribute("src", "about:blank");
-    devtoolsWebview.style.display = "flex";
-    devtoolsWebview.style.flex = "1";
-    devtoolsWebview.style.width = "100%";
-    devtoolsWebview.style.height = "100%";
-    devtoolsWebview.style.border = "0";
-    devtoolsWebview.style.background = "transparent";
 
-    let disposed = false;
-    const handleDevtoolsReady = () => {
-      if (disposed) {
+    const measureBounds = (): { x: number; y: number; width: number; height: number } | null => {
+      // getBoundingClientRect is in CSS px relative to the window content area,
+      // which matches WebContentsView.setBounds' DIP coordinate space at zoom 1.
+      const rect = host.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        return null;
+      }
+      return {
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+    };
+
+    let opened = false;
+    const syncBounds = () => {
+      const bounds = measureBounds();
+      if (!bounds) {
         return;
       }
-      const hostWebContentsId = devtoolsWebview.getWebContentsId?.();
-      if (typeof hostWebContentsId !== "number") {
+      if (!opened) {
+        opened = true;
+        void bridge
+          ?.openInlineDevTools?.({ browserId: currentBrowserId, bounds })
+          .catch((error: unknown) => {
+            console.warn("[browser-pane] openInlineDevTools failed", {
+              browserId: currentBrowserId,
+              error,
+            });
+          });
         return;
       }
       void bridge
-        ?.openInlineDevTools?.({ browserId: currentBrowserId, hostWebContentsId })
-        .catch((error: unknown) => {
-          console.warn("[browser-pane] openInlineDevTools failed", {
-            browserId: currentBrowserId,
-            error,
-          });
-        });
+        ?.setDevtoolsBounds?.({ browserId: currentBrowserId, bounds })
+        .catch(() => undefined);
     };
-    devtoolsWebview.addEventListener("dom-ready", handleDevtoolsReady);
-    host.appendChild(devtoolsWebview);
+
+    // Measure after layout settles so the panel box has non-zero size.
+    const raf = window.requestAnimationFrame(syncBounds);
+    const resizeObserver = new ResizeObserver(() => syncBounds());
+    resizeObserver.observe(host);
+    window.addEventListener("resize", syncBounds, true);
+    window.addEventListener("scroll", syncBounds, true);
 
     return () => {
-      disposed = true;
-      devtoolsWebview.removeEventListener("dom-ready", handleDevtoolsReady);
+      window.cancelAnimationFrame(raf);
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", syncBounds, true);
+      window.removeEventListener("scroll", syncBounds, true);
       void bridge?.closeDevTools?.(currentBrowserId).catch(() => undefined);
-      if (host.contains(devtoolsWebview)) {
-        host.removeChild(devtoolsWebview);
-      }
     };
   }, [browserId, inlineDevtoolsOpen]);
 

@@ -9,7 +9,7 @@ import type { ReviewableDiffTarget } from "./diff-layout";
 
 function makeFile(
   lines: ParsedDiffFile["hunks"][number]["lines"],
-  options: { oldStart?: number; newStart?: number } = {},
+  options: { oldStart?: number; newStart?: number; diffTool?: ParsedDiffFile["diffTool"] } = {},
 ): ParsedDiffFile {
   const oldStart = options.oldStart ?? 10;
   const newStart = options.newStart ?? 10;
@@ -20,6 +20,7 @@ function makeFile(
     additions: lines.filter((line) => line.type === "add").length,
     deletions: lines.filter((line) => line.type === "remove").length,
     status: "ok",
+    ...(options.diffTool ? { diffTool: options.diffTool } : {}),
     hunks: [
       {
         oldStart,
@@ -198,6 +199,89 @@ describe("buildSplitDiffRows", () => {
       lineNumber: 10,
       lineType: "add",
       content: "after",
+    });
+  });
+});
+
+describe("assignWordChangeRanges (server-supplied changedRanges)", () => {
+  it("uses server changedRanges verbatim and skips the local word-diff computation", () => {
+    const rows = buildSplitDiffRows(
+      makeFile([
+        { type: "header", content: "@@ -10,1 +10,1 @@" },
+        {
+          type: "remove",
+          content: "before one",
+          changedRanges: [{ start: 0, end: 6 }],
+        },
+        {
+          type: "add",
+          content: "after one",
+          changedRanges: [{ start: 0, end: 5 }],
+        },
+      ]),
+    );
+
+    expect(rows[1]).toMatchObject({
+      kind: "pair",
+      left: { changedRanges: [{ start: 0, end: 6 }] },
+      right: { changedRanges: [{ start: 0, end: 5 }] },
+    });
+  });
+
+  it("falls back to local computation when the server sends no changedRanges", () => {
+    const rows = buildSplitDiffRows(
+      makeFile([
+        { type: "header", content: "@@ -10,1 +10,1 @@" },
+        { type: "remove", content: "before one" },
+        { type: "add", content: "after one" },
+      ]),
+    );
+
+    if (rows[1]?.kind !== "pair") {
+      throw new Error("Expected split pair row");
+    }
+    // Locally computed ranges exist (exact spans covered by diff-word-highlight's own tests).
+    expect(rows[1].left?.changedRanges).toBeDefined();
+    expect(rows[1].right?.changedRanges).toBeDefined();
+  });
+
+  it("never computes local ranges for difftastic files, even when the server sent none", () => {
+    // difftastic deliberately suppresses whole-line highlights on some pairs; those must
+    // stay unhighlighted instead of falling through to the local LCS guess.
+    const rows = buildSplitDiffRows(
+      makeFile(
+        [
+          { type: "header", content: "@@ -10,1 +10,1 @@" },
+          { type: "remove", content: "before one" },
+          { type: "add", content: "after one" },
+        ],
+        { diffTool: "difftastic" },
+      ),
+    );
+
+    if (rows[1]?.kind !== "pair") {
+      throw new Error("Expected split pair row");
+    }
+    expect(rows[1].left?.changedRanges).toBeUndefined();
+    expect(rows[1].right?.changedRanges).toBeUndefined();
+  });
+
+  it("still applies server-sent changedRanges on difftastic files", () => {
+    const rows = buildSplitDiffRows(
+      makeFile(
+        [
+          { type: "header", content: "@@ -10,1 +10,1 @@" },
+          { type: "remove", content: "before one", changedRanges: [{ start: 0, end: 6 }] },
+          { type: "add", content: "after one", changedRanges: [{ start: 0, end: 5 }] },
+        ],
+        { diffTool: "difftastic" },
+      ),
+    );
+
+    expect(rows[1]).toMatchObject({
+      kind: "pair",
+      left: { changedRanges: [{ start: 0, end: 6 }] },
+      right: { changedRanges: [{ start: 0, end: 5 }] },
     });
   });
 });

@@ -1278,6 +1278,12 @@ export const DaemonUpdateRequestMessageSchema = z.object({
   requestId: z.string(),
 });
 
+// Client asks the server to download + install the difftastic binary (see diffTools capability).
+export const InstallDifftasticRequestMessageSchema = z.object({
+  type: z.literal("install_difftastic_request"),
+  requestId: z.string(),
+});
+
 export const AgentTimelineCursorSchema = z.object({
   epoch: z.string(),
   seq: z.number().int().nonnegative(),
@@ -1468,9 +1474,17 @@ const CheckoutErrorSchema = z.object({
 });
 
 const CheckoutDiffCompareSchema = z.object({
-  mode: z.enum(["uncommitted", "base"]),
+  mode: z.enum(["uncommitted", "base", "refs"]),
   baseRef: z.string().optional(),
   ignoreWhitespace: z.boolean().optional(),
+  // Diff engine selection: which tool computes the diff (defaults to "git" when absent).
+  tool: z.enum(["git", "vscode", "difftastic"]).optional(),
+  // Only used when tool is "git" (or absent); passed through as `--diff-algorithm`.
+  gitAlgorithm: z.enum(["histogram", "myers", "patience"]).optional(),
+  // Only used when mode is "refs": compare arbitrary refs instead of uncommitted/base.
+  fromRef: z.string().optional(),
+  toRef: z.string().optional(),
+  mergeBase: z.boolean().optional(),
 });
 
 export const CheckoutStatusRequestSchema = z.object({
@@ -1809,10 +1823,19 @@ const HighlightTokenSchema = z.object({
   style: z.string().nullable(),
 });
 
+// Word-level change range within a line's content (char offsets, half-open [start, end)).
+const DiffChangedRangeSchema = z.object({
+  start: z.number(),
+  end: z.number(),
+});
+
 const DiffLineSchema = z.object({
   type: z.enum(["add", "remove", "context", "header"]),
   content: z.string(),
   tokens: z.array(HighlightTokenSchema).optional(),
+  // Word-level change ranges, sent by structural diff engines (e.g. difftastic); git mode
+  // leaves this unset and the app computes word ranges locally.
+  changedRanges: z.array(DiffChangedRangeSchema).optional(),
 });
 
 const DiffHunkSchema = z.object({
@@ -1823,7 +1846,7 @@ const DiffHunkSchema = z.object({
   lines: z.array(DiffLineSchema),
 });
 
-const ParsedDiffFileSchema = z.object({
+export const ParsedDiffFileSchema = z.object({
   path: z.string(),
   isNew: z.boolean(),
   isDeleted: z.boolean(),
@@ -1831,6 +1854,9 @@ const ParsedDiffFileSchema = z.object({
   deletions: z.number(),
   hunks: z.array(DiffHunkSchema),
   status: z.enum(["ok", "too_large", "binary"]).optional(),
+  // Which diff engine actually produced this file's hunks; lets a single file fall back to
+  // git while the rest of the diff uses the requested tool.
+  diffTool: z.enum(["git", "difftastic", "vscode"]).optional(),
 });
 
 const FileExplorerEntrySchema = z.object({
@@ -2088,6 +2114,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ShutdownServerRequestMessageSchema,
   RestartServerRequestMessageSchema,
   DaemonUpdateRequestMessageSchema,
+  InstallDifftasticRequestMessageSchema,
   FetchAgentTimelineRequestMessageSchema,
   AgentForkContextRequestMessageSchema,
   SetAgentModeRequestMessageSchema,
@@ -2291,9 +2318,23 @@ export const ServerVoiceCapabilitiesSchema = z.object({
   voice: ServerCapabilityStateSchema,
 });
 
+// Tri-state availability for an optional diff engine: "available" (ready to use),
+// "installable" (server can auto-install it on request), "unavailable" (no path for it here).
+export const DiffToolAvailabilitySchema = z.enum(["available", "installable", "unavailable"]);
+
+export const ServerDiffToolsCapabilitySchema = z.object({
+  // git and vscode-diff run without external dependencies, so they're always available.
+  git: z.literal("available"),
+  vscode: z.literal("available"),
+  difftastic: DiffToolAvailabilitySchema,
+  difftasticVersion: z.string().optional(),
+});
+
 export const ServerCapabilitiesSchema = z
   .object({
     voice: ServerVoiceCapabilitiesSchema.optional(),
+    // COMPAT(diffTools): added in v0.1.107, drop the optional gate when floor >= v0.1.107.
+    diffTools: ServerDiffToolsCapabilitySchema.optional(),
   })
   .passthrough();
 
@@ -4174,6 +4215,30 @@ export const DaemonUpdateProgressMessageSchema = z.object({
 
 export type DaemonUpdateProgressMessage = z.infer<typeof DaemonUpdateProgressMessageSchema>;
 
+export const InstallDifftasticProgressMessageSchema = z.object({
+  type: z.literal("install_difftastic_progress"),
+  payload: z.object({
+    requestId: z.string(),
+    phase: z.enum(["starting", "downloading", "verifying", "installing", "complete"]),
+  }),
+});
+
+export type InstallDifftasticProgressMessage = z.infer<
+  typeof InstallDifftasticProgressMessageSchema
+>;
+
+export const InstallDifftasticResponseSchema = z.object({
+  type: z.literal("install_difftastic_response"),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    version: z.string().nullable(),
+  }),
+});
+
+export type InstallDifftasticResponse = z.infer<typeof InstallDifftasticResponseSchema>;
+
 export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   BrowserAutomationExecuteRequestSchema,
   ActivityLogMessageSchema,
@@ -4313,6 +4378,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   LoopStopResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
+  InstallDifftasticProgressMessageSchema,
+  InstallDifftasticResponseSchema,
 ]);
 
 export type SessionOutboundMessage = z.infer<typeof SessionOutboundMessageSchema>;
@@ -4325,6 +4392,8 @@ export type TranscriptionResultMessage = z.infer<typeof TranscriptionResultMessa
 export type StatusMessage = z.infer<typeof StatusMessageSchema>;
 export type ServerCapabilityState = z.infer<typeof ServerCapabilityStateSchema>;
 export type ServerVoiceCapabilities = z.infer<typeof ServerVoiceCapabilitiesSchema>;
+export type DiffToolAvailability = z.infer<typeof DiffToolAvailabilitySchema>;
+export type ServerDiffToolsCapability = z.infer<typeof ServerDiffToolsCapabilitySchema>;
 export type ServerCapabilities = z.infer<typeof ServerCapabilitiesSchema>;
 export type ServerInfoStatusPayload = z.infer<typeof ServerInfoStatusPayloadSchema>;
 export type RpcErrorMessage = z.infer<typeof RpcErrorMessageSchema>;

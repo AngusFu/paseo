@@ -6,6 +6,7 @@ pre-commit:
       exclude:
         - "package-lock.json"
         - "**/package-lock.json"
+        - "**/__fixtures__/difftastic/**"
       run: npm run format:check:files -- {staged_files}
     - name: lint
       glob: "*.{js,jsx,ts,tsx}"

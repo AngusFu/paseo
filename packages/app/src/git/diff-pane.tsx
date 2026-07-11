@@ -10,6 +10,10 @@ import {
   type RefObject,
 } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
+import type { ServerDiffToolsCapability } from "@getpaseo/protocol/messages";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { useFetchQuery } from "@/data/query";
 import { DiffStat } from "@/components/diff-stat";
 import {
   View,
@@ -27,7 +31,14 @@ import {
   type TextStyle,
 } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { BORDER_WIDTH, ICON_SIZE, SPACING, type Theme } from "@/styles/theme";
+import {
+  BORDER_WIDTH,
+  ICON_SIZE,
+  SPACING,
+  type DiffFontSizeStep,
+  type Theme,
+} from "@/styles/theme";
+import { DIFF_FONT_SIZE_STEPS, resolveDiffFontSize } from "@/git/diff-font-size";
 import { useIsCompactFormFactor, WORKSPACE_SECONDARY_HEADER_HEIGHT } from "@/constants/layout";
 import {
   AlignJustify,
@@ -53,6 +64,8 @@ import {
   type ParsedDiffFile,
   type DiffLine,
   type HighlightToken,
+  type DiffToolId,
+  type GitDiffAlgorithm,
 } from "@/git/use-diff-query";
 import { buildDiffFlatItems, sumHeightsBefore, type DiffFlatItem } from "@/git/diff-flat-items";
 import { buildDiffTree, collectDirPaths, compressSingleChildChains } from "@/git/diff-tree";
@@ -80,6 +93,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -89,6 +103,10 @@ import { lineNumberGutterWidth } from "@/components/code-insets";
 import { useWebScrollViewScrollbar } from "@/components/use-web-scrollbar";
 import { GitActionsSplitButton } from "@/git/actions-split-button";
 import { BranchSwitcher } from "@/components/branch-switcher";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
+import { useHostRuntimeClient } from "@/runtime/host-runtime";
+import { useDiffToolsCapability } from "@/hooks/use-diff-tools-capability";
+import { useInstallDifftastic, type InstallDifftasticStatus } from "@/hooks/use-install-difftastic";
 import { useGitActions } from "@/git/use-actions";
 import { useCheckoutGitActionsStore } from "@/git/actions-store";
 import { useToast } from "@/contexts/toast-context";
@@ -244,6 +262,9 @@ interface DiffFileSectionProps {
   onToggle: (path: string) => void;
   onHeaderHeightChange?: (path: string, height: number) => void;
   testID?: string;
+  // The pane's selected engine (see DiffEngineMenu). Used to badge files that fell back to
+  // git line-level diffing while the rest of the diff uses a structural engine.
+  activeDiffTool?: DiffToolId;
 }
 
 const EMPTY_COMMENTS: readonly ReviewDraftComment[] = [];
@@ -962,6 +983,7 @@ const DiffFileHeader = memo(function DiffFileHeader({
   onToggle,
   onHeaderHeightChange,
   testID,
+  activeDiffTool,
 }: DiffFileSectionProps) {
   const { t } = useTranslation();
   const layoutYRef = useRef<number | null>(null);
@@ -1065,6 +1087,13 @@ const DiffFileHeader = memo(function DiffFileHeader({
               {file.isDeleted && (
                 <View style={styles.deletedBadge}>
                   <Text style={styles.deletedBadgeText}>{t("workspace.git.diff.deletedFile")}</Text>
+                </View>
+              )}
+              {file.diffTool === "git" && activeDiffTool && activeDiffTool !== "git" && (
+                <View style={styles.lineDiffBadge}>
+                  <Text style={styles.lineDiffBadgeText}>
+                    {t("workspace.git.diff.lineDiffBadge")}
+                  </Text>
                 </View>
               )}
             </View>
@@ -1276,6 +1305,15 @@ interface GitDiffPaneProps {
   enabled?: boolean;
 }
 
+// Arbitrary branch/ref compare state (mode "refs" — see the "Compare with branch…" picker).
+// toRef undefined means HEAD; mergeBase true means "only changes on this branch" (fromRef's
+// merge-base with toRef), false means a full two-point diff.
+interface BranchCompareState {
+  fromRef: string;
+  toRef?: string;
+  mergeBase: boolean;
+}
+
 type PressableStyleFn = (
   state: PressableStateCallbackType & { hovered?: boolean; open?: boolean },
 ) => StyleProp<ViewStyle>;
@@ -1441,7 +1479,43 @@ function DiffFilesToolbar({
   );
 }
 
+function diffFontSizeLabel(t: TFunction, step: DiffFontSizeStep): string {
+  if (step === "xs") return t("workspace.git.diff.textSizeXs");
+  if (step === "sm") return t("workspace.git.diff.textSizeSm");
+  if (step === "lg") return t("workspace.git.diff.textSizeLg");
+  if (step === "xl") return t("workspace.git.diff.textSizeXl");
+  if (step === "xxl") return t("workspace.git.diff.textSizeXxl");
+  if (step === "xxxl") return t("workspace.git.diff.textSizeXxxl");
+  return t("workspace.git.diff.textSizeMd");
+}
+
+interface DiffFontSizeMenuItemProps {
+  step: DiffFontSizeStep;
+  selected: boolean;
+  onSelectDiffFontSize: (step: DiffFontSizeStep) => void;
+}
+
+// Split out so each item's onSelect is a stable callback instead of a fresh arrow per
+// render inside DIFF_FONT_SIZE_STEPS.map (jsx-no-new-function-as-prop). The menu stays
+// open on select (closeOnSelect={false}) so the user can step through sizes and watch
+// the diff re-render live.
+function DiffFontSizeMenuItem({ step, selected, onSelectDiffFontSize }: DiffFontSizeMenuItemProps) {
+  const { t } = useTranslation();
+  const handleSelect = useCallback(() => onSelectDiffFontSize(step), [step, onSelectDiffFontSize]);
+  return (
+    <DropdownMenuItem
+      testID={`changes-diff-font-size-${step}`}
+      selected={selected}
+      closeOnSelect={false}
+      onSelect={handleSelect}
+    >
+      {diffFontSizeLabel(t, step)}
+    </DropdownMenuItem>
+  );
+}
+
 interface DiffOptionsMenuProps {
+  diffFontSize: DiffFontSizeStep;
   hideWhitespace: boolean;
   isMobile: boolean;
   isRefreshing: boolean;
@@ -1449,11 +1523,13 @@ interface DiffOptionsMenuProps {
   refreshSupported: boolean;
   wrapLines: boolean;
   onRefresh: () => void;
+  onSelectDiffFontSize: (step: DiffFontSizeStep) => void;
   onToggleHideWhitespace: () => void;
   onToggleWrapLines: () => void;
 }
 
 function DiffOptionsMenu({
+  diffFontSize,
   hideWhitespace,
   isMobile,
   isRefreshing,
@@ -1461,6 +1537,7 @@ function DiffOptionsMenu({
   refreshSupported,
   wrapLines,
   onRefresh,
+  onSelectDiffFontSize,
   onToggleHideWhitespace,
   onToggleWrapLines,
 }: DiffOptionsMenuProps) {
@@ -1519,6 +1596,18 @@ function DiffOptionsMenu({
         >
           {wrapLinesLabel}
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel testID="changes-diff-font-size-label">
+          {t("workspace.git.diff.textSize")}
+        </DropdownMenuLabel>
+        {DIFF_FONT_SIZE_STEPS.map((step) => (
+          <DiffFontSizeMenuItem
+            key={step}
+            step={step}
+            selected={diffFontSize === step}
+            onSelectDiffFontSize={onSelectDiffFontSize}
+          />
+        ))}
         {refreshSupported ? (
           <>
             <DropdownMenuSeparator />
@@ -1539,6 +1628,249 @@ function DiffOptionsMenu({
 
 const ThemedRotateCw = withUnistyles(RotateCw);
 const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
+
+const GIT_ALGORITHMS: readonly GitDiffAlgorithm[] = ["histogram", "myers", "patience"];
+
+function diffToolLabel(t: TFunction, tool: DiffToolId): string {
+  if (tool === "vscode") return t("workspace.git.diff.engineVscode");
+  if (tool === "difftastic") return t("workspace.git.diff.engineDifftastic");
+  return t("workspace.git.diff.engineGit");
+}
+
+function gitAlgorithmLabel(t: TFunction, algorithm: GitDiffAlgorithm): string {
+  if (algorithm === "myers") return t("workspace.git.diff.algorithmMyers");
+  if (algorithm === "patience") return t("workspace.git.diff.algorithmPatience");
+  return t("workspace.git.diff.algorithmHistogram");
+}
+
+function difftasticMenuItemLabel(
+  t: TFunction,
+  difftasticState: ServerDiffToolsCapability["difftastic"] | null,
+  isInstallBusy: boolean,
+): string {
+  if (difftasticState !== "installable") {
+    return t("workspace.git.diff.engineDifftastic");
+  }
+  return isInstallBusy
+    ? t("workspace.git.diff.installingDifftastic")
+    : t("workspace.git.diff.installDifftastic");
+}
+
+interface GitAlgorithmMenuItemProps {
+  algorithm: GitDiffAlgorithm;
+  selected: boolean;
+  onSelectGitAlgorithm: (algorithm: GitDiffAlgorithm) => void;
+}
+
+// Split out so each item's onSelect is a stable callback instead of a fresh arrow per
+// render inside GIT_ALGORITHMS.map (jsx-no-new-function-as-prop).
+function GitAlgorithmMenuItem({
+  algorithm,
+  selected,
+  onSelectGitAlgorithm,
+}: GitAlgorithmMenuItemProps) {
+  const { t } = useTranslation();
+  const handleSelect = useCallback(
+    () => onSelectGitAlgorithm(algorithm),
+    [algorithm, onSelectGitAlgorithm],
+  );
+  return (
+    <DropdownMenuItem
+      testID={`changes-diff-engine-algorithm-${algorithm}`}
+      selected={selected}
+      onSelect={handleSelect}
+    >
+      {gitAlgorithmLabel(t, algorithm)}
+    </DropdownMenuItem>
+  );
+}
+
+// Install progress phases that should read as "busy" on the menu item (spinner + disabled).
+const DIFFTASTIC_INSTALL_BUSY_PHASES: ReadonlySet<InstallDifftasticStatus> = new Set([
+  "starting",
+  "downloading",
+  "verifying",
+  "installing",
+]);
+
+interface DiffEngineMenuProps {
+  diffTool: DiffToolId;
+  // Raw persisted algorithm choice — undefined until the user picks one. No item is shown
+  // as checked in that case: git's own default (myers) applies server-side.
+  gitAlgorithm: GitDiffAlgorithm | undefined;
+  triggerStyle: PressableStyleFn;
+  // null on servers that predate the diffTools capability (COMPAT) — non-git engines are
+  // hidden entirely in that case rather than shown as unavailable.
+  diffToolsCapability: ServerDiffToolsCapability | null;
+  installStatus: InstallDifftasticStatus;
+  installError: string | null;
+  onSelectTool: (tool: DiffToolId) => void;
+  onSelectGitAlgorithm: (algorithm: GitDiffAlgorithm) => void;
+  onInstallDifftastic: () => void;
+}
+
+function DiffEngineMenu({
+  diffTool,
+  gitAlgorithm,
+  triggerStyle,
+  diffToolsCapability,
+  installStatus,
+  installError,
+  onSelectTool,
+  onSelectGitAlgorithm,
+  onInstallDifftastic,
+}: DiffEngineMenuProps) {
+  const { t } = useTranslation();
+  const engineLabel = t("workspace.git.diff.engine");
+  const isInstallBusy = DIFFTASTIC_INSTALL_BUSY_PHASES.has(installStatus);
+  const difftasticState = diffToolsCapability?.difftastic ?? null;
+
+  const handleSelectGit = useCallback(() => onSelectTool("git"), [onSelectTool]);
+  const handleSelectVscode = useCallback(() => onSelectTool("vscode"), [onSelectTool]);
+  const handleSelectDifftastic = useCallback(() => {
+    if (difftasticState === "installable") {
+      onInstallDifftastic();
+      return;
+    }
+    onSelectTool("difftastic");
+  }, [difftasticState, onInstallDifftastic, onSelectTool]);
+
+  return (
+    <DropdownMenu>
+      <Tooltip delayDuration={300}>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger
+            style={triggerStyle}
+            testID="changes-diff-engine"
+            accessibilityRole="button"
+            accessibilityLabel={engineLabel}
+          >
+            <Text style={styles.diffStatusText} numberOfLines={1}>
+              {diffToolLabel(t, diffTool)}
+            </Text>
+            <ThemedChevronDown size={12} uniProps={foregroundMutedIconColorMapping} />
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          <Text style={styles.tooltipText}>{engineLabel}</Text>
+        </TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="start" width={260} testID="changes-diff-engine-menu">
+        <DropdownMenuItem
+          testID="changes-diff-engine-git"
+          selected={diffTool === "git"}
+          onSelect={handleSelectGit}
+        >
+          {t("workspace.git.diff.engineGit")}
+        </DropdownMenuItem>
+        <DropdownMenuLabel testID="changes-diff-engine-algorithm-label">
+          {t("workspace.git.diff.algorithm")}
+        </DropdownMenuLabel>
+        {GIT_ALGORITHMS.map((algorithm) => (
+          <GitAlgorithmMenuItem
+            key={algorithm}
+            algorithm={algorithm}
+            selected={gitAlgorithm === algorithm}
+            onSelectGitAlgorithm={onSelectGitAlgorithm}
+          />
+        ))}
+        {diffToolsCapability ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              testID="changes-diff-engine-vscode"
+              selected={diffTool === "vscode"}
+              onSelect={handleSelectVscode}
+            >
+              {t("workspace.git.diff.engineVscode")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              testID="changes-diff-engine-difftastic"
+              selected={diffTool === "difftastic" && difftasticState === "available"}
+              disabled={difftasticState === "unavailable" || isInstallBusy}
+              status={isInstallBusy ? "pending" : undefined}
+              closeOnSelect={difftasticState !== "installable"}
+              tooltip={
+                difftasticState === "unavailable"
+                  ? t("workspace.git.diff.difftasticUnavailable")
+                  : (installError ?? undefined)
+              }
+              onSelect={handleSelectDifftastic}
+            >
+              {difftasticMenuItemLabel(t, difftasticState, isInstallBusy)}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function branchCompareMergeBaseLabel(t: TFunction, mergeBase: boolean): string {
+  return mergeBase ? t("workspace.git.diff.onlyChangesOnBranch") : t("workspace.git.diff.fullDiff");
+}
+
+interface BranchCompareAdvancedControlsProps {
+  branchCompare: BranchCompareState | null;
+  branchCompareToLabel: string | null;
+  toggleStyle: PressableStyleFn;
+  onOpenToRef: () => void;
+  onSwap: () => void;
+  onToggleMergeBase: () => void;
+}
+
+// The "against ref" / swap / merge-base row shown only while a branch compare is active.
+// Split out so its own conditional rendering + labels don't count against GitDiffPane's
+// complexity budget (it was already dense before this feature landed).
+function BranchCompareAdvancedControls({
+  branchCompare,
+  branchCompareToLabel,
+  toggleStyle,
+  onOpenToRef,
+  onSwap,
+  onToggleMergeBase,
+}: BranchCompareAdvancedControlsProps) {
+  const { t } = useTranslation();
+  if (!branchCompare) {
+    return null;
+  }
+  const mergeBaseLabel = branchCompareMergeBaseLabel(t, branchCompare.mergeBase);
+  return (
+    <View style={styles.diffStatusButtons}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t("workspace.git.diff.compareAgainstRef")}
+        style={toggleStyle}
+        onPress={onOpenToRef}
+        testID="changes-branch-compare-to-ref"
+      >
+        <Text style={styles.diffStatusText} numberOfLines={1}>
+          {branchCompareToLabel}
+        </Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t("workspace.git.diff.swapRefs")}
+        style={toggleStyle}
+        onPress={onSwap}
+        testID="changes-branch-compare-swap"
+      >
+        <ThemedArrowDownUp size={14} uniProps={foregroundMutedIconColorMapping} />
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={mergeBaseLabel}
+        style={toggleStyle}
+        onPress={onToggleMergeBase}
+        testID="changes-branch-compare-merge-base"
+      >
+        <Text style={styles.diffStatusText} numberOfLines={1}>
+          {mergeBaseLabel}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
 
 type DiffFlatItemLayoutGetter = NonNullable<FlatListProps<DiffFlatItem>["getItemLayout"]>;
 
@@ -1793,6 +2125,217 @@ function shouldEnableCheckoutDiff(input: { paneEnabled: boolean; isGit: boolean 
   return input.paneEnabled && input.isGit;
 }
 
+interface UseDiffPaneCheckoutDiffInput {
+  serverId: string;
+  cwd: string;
+  diffMode: "uncommitted" | "base";
+  baseRef: string | undefined;
+  hideWhitespace: boolean;
+  diffTool: DiffToolId;
+  gitAlgorithm: GitDiffAlgorithm | undefined;
+  branchCompare: BranchCompareState | null;
+  paneEnabled: boolean;
+  isGit: boolean;
+}
+
+// Wraps useCheckoutDiffQuery so the branch-compare overlay (mode "refs" takes over
+// uncommitted/base while a branch compare is active — see useDiffPaneBranchCompare) lives
+// outside GitDiffPane's own function scope. gitAlgorithm is passed through as-is: undefined
+// (no explicit user pick) omits the field on the wire so the server/git default applies.
+function useDiffPaneCheckoutDiff({
+  serverId,
+  cwd,
+  diffMode,
+  baseRef,
+  hideWhitespace,
+  diffTool,
+  gitAlgorithm,
+  branchCompare,
+  paneEnabled,
+  isGit,
+}: UseDiffPaneCheckoutDiffInput) {
+  const effectiveDiffMode: "uncommitted" | "base" | "refs" = branchCompare ? "refs" : diffMode;
+  return {
+    ...useCheckoutDiffQuery({
+      serverId,
+      cwd,
+      mode: effectiveDiffMode,
+      baseRef,
+      ignoreWhitespace: hideWhitespace,
+      tool: diffTool,
+      gitAlgorithm,
+      fromRef: branchCompare?.fromRef,
+      toRef: branchCompare?.toRef,
+      mergeBase: branchCompare?.mergeBase,
+      enabled: shouldEnableCheckoutDiff({ paneEnabled, isGit }),
+    }),
+    effectiveDiffMode,
+  };
+}
+
+interface UseDiffPaneBranchCompareInput {
+  serverId: string;
+  cwd: string;
+  client: DaemonClient | null;
+  isGit: boolean;
+  t: TFunction;
+}
+
+interface UseDiffPaneBranchCompareResult {
+  branchCompare: BranchCompareState | null;
+  branchPickerTarget: "from" | "to" | null;
+  diffModeAnchorRef: RefObject<View | null>;
+  branchCompareOptions: ComboboxOption[];
+  // Display labels (refs/heads-stripped) — precomputed here so JSX in GitDiffPane stays a
+  // flat lookup instead of another set of ternaries.
+  branchCompareFromLabel: string | null;
+  branchCompareToLabel: string | null;
+  // DropdownMenuItem description prop wants undefined, not null.
+  branchCompareDescription: string | undefined;
+  // The ref Combobox's controlled value, resolved for whichever side is currently open.
+  branchComparePickerValue: string;
+  handleOpenBranchCompare: () => void;
+  handleOpenBranchCompareToRef: () => void;
+  handleBranchComparePickerOpenChange: (open: boolean) => void;
+  handleSelectBranchCompareRef: (branchId: string) => void;
+  handleToggleBranchCompareMergeBase: () => void;
+  handleSwapBranchCompareRefs: () => void;
+  clearBranchCompare: () => void;
+}
+
+// Split out of GitDiffPane (which was tripping the complexity lint) so the "Compare with
+// branch…" picker's state machine lives in its own function scope. See BranchCompareState
+// for the not-persisted contract.
+function useDiffPaneBranchCompare({
+  serverId,
+  cwd,
+  client,
+  isGit,
+  t,
+}: UseDiffPaneBranchCompareInput): UseDiffPaneBranchCompareResult {
+  const [branchCompare, setBranchCompare] = useState<BranchCompareState | null>(null);
+  const [branchPickerTarget, setBranchPickerTarget] = useState<"from" | "to" | null>(null);
+  const diffModeAnchorRef = useRef<View>(null);
+
+  const branchCompareSuggestionsQuery = useFetchQuery({
+    queryKey: ["checkoutDiffBranchCompareSuggestions", serverId, cwd],
+    queryFn: async () => {
+      if (!client) {
+        throw new Error(t("common.errors.daemonClientUnavailable"));
+      }
+      const payload = await client.getBranchSuggestions({ cwd, limit: 200 });
+      if (payload.error) {
+        throw new Error(payload.error);
+      }
+      return payload.branches ?? [];
+    },
+    dataShape: "list",
+    enabled: branchPickerTarget !== null && isGit && Boolean(client),
+    retry: false,
+    staleTimeMs: 15_000,
+  });
+  const branchCompareOptions = useMemo<ComboboxOption[]>(
+    () => (branchCompareSuggestionsQuery.data ?? []).map((name) => ({ id: name, label: name })),
+    [branchCompareSuggestionsQuery.data],
+  );
+
+  const handleOpenBranchCompare = useCallback(() => {
+    setBranchPickerTarget("from");
+  }, []);
+
+  const handleOpenBranchCompareToRef = useCallback(() => {
+    setBranchPickerTarget("to");
+  }, []);
+
+  const handleBranchComparePickerOpenChange = useCallback((open: boolean) => {
+    if (!open) {
+      setBranchPickerTarget(null);
+    }
+  }, []);
+
+  const handleSelectBranchCompareRef = useCallback(
+    (branchId: string) => {
+      setBranchCompare((prev) => {
+        if (branchPickerTarget === "to") {
+          return prev ? { ...prev, toRef: branchId } : prev;
+        }
+        return { fromRef: branchId, toRef: prev?.toRef, mergeBase: prev?.mergeBase ?? true };
+      });
+      setBranchPickerTarget(null);
+    },
+    [branchPickerTarget],
+  );
+
+  const handleToggleBranchCompareMergeBase = useCallback(() => {
+    setBranchCompare((prev) => (prev ? { ...prev, mergeBase: !prev.mergeBase } : prev));
+  }, []);
+
+  const handleSwapBranchCompareRefs = useCallback(() => {
+    setBranchCompare((prev) =>
+      prev
+        ? { fromRef: prev.toRef ?? "HEAD", toRef: prev.fromRef, mergeBase: prev.mergeBase }
+        : prev,
+    );
+  }, []);
+
+  const clearBranchCompare = useCallback(() => {
+    setBranchCompare(null);
+  }, []);
+
+  const branchCompareFromLabel = branchCompare
+    ? computeBaseRefLabel(branchCompare.fromRef, branchCompare.fromRef)
+    : null;
+  const branchCompareToLabel = branchCompare
+    ? computeBaseRefLabel(branchCompare.toRef, "HEAD")
+    : null;
+  const branchCompareDescription = branchCompareFromLabel ?? undefined;
+  const branchComparePickerValue =
+    branchPickerTarget === "to" ? (branchCompare?.toRef ?? "") : (branchCompare?.fromRef ?? "");
+
+  return {
+    branchCompare,
+    branchPickerTarget,
+    diffModeAnchorRef,
+    branchCompareOptions,
+    branchCompareFromLabel,
+    branchCompareToLabel,
+    branchCompareDescription,
+    branchComparePickerValue,
+    handleOpenBranchCompare,
+    handleOpenBranchCompareToRef,
+    handleBranchComparePickerOpenChange,
+    handleSelectBranchCompareRef,
+    handleToggleBranchCompareMergeBase,
+    handleSwapBranchCompareRefs,
+    clearBranchCompare,
+  };
+}
+
+function computeDiffModeTriggerLabel(input: {
+  t: TFunction;
+  branchCompare: BranchCompareState | null;
+  diffMode: "uncommitted" | "base";
+  uncommittedLabel: string;
+  committedLabel: string;
+}): string {
+  if (input.branchCompare) {
+    return input.t("workspace.git.diff.comparingWithBranch", {
+      branch: computeBaseRefLabel(input.branchCompare.fromRef, input.branchCompare.fromRef),
+    });
+  }
+  return input.diffMode === "uncommitted" ? input.uncommittedLabel : input.committedLabel;
+}
+
+// A plain (non-branch-compare) diff-mode item is only "selected" when no branch compare is
+// active; extracted so the two DropdownMenuItem `selected` checks are flat lookups.
+function isPlainDiffModeSelected(
+  target: "uncommitted" | "base",
+  branchCompare: BranchCompareState | null,
+  diffMode: "uncommitted" | "base",
+): boolean {
+  return !branchCompare && diffMode === target;
+}
+
 // Minimum Changes-pane width (px) at which side-by-side split is usable; below
 // it the two columns truncate badly, so we force unified and hide the toggle.
 // The pane is resizable (explorer-sidebar drag handle, width persisted), so
@@ -1833,7 +2376,11 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
     });
   }, [changesPreferences.layout, updateChangesPreferences]);
 
-  const codeFontSize = appSettings.codeFontSize;
+  // Effective diff text size: the settings-level codeFontSize scaled by the pane's
+  // size step (md = 1×, i.e. exactly the settings value). Everything downstream —
+  // text metrics, gutter width, getItemLayout estimates — derives from this one value.
+  const diffFontSizeStep = changesPreferences.diffFontSize;
+  const codeFontSize = resolveDiffFontSize(diffFontSizeStep, appSettings.codeFontSize);
   const diffBodyLineHeight = Math.round(codeFontSize * 1.5);
   const diffBodyTypographyKey = [appSettings.monoFontFamily, codeFontSize, diffBodyLineHeight].join(
     ":",
@@ -1847,6 +2394,8 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
     };
   }, [appSettings.monoFontFamily, codeFontSize, diffBodyLineHeight]);
   const diffModeTriggerStyle = useMemo(() => buildDiffModeTriggerStyle(), []);
+  const diffEngineTriggerStyle = useMemo(() => buildDiffModeTriggerStyle(), []);
+  const branchCompareAdvancedToggleStyle = useMemo(() => buildExpandAllButtonStyle(), []);
 
   const layoutToggleStyle = useMemo(
     () => buildToggleButtonStyle(false, styles.expandAllButton),
@@ -1890,6 +2439,57 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
   const { isGit, notGit, statusErrorMessage, baseRef, hasUncommittedChanges, currentBranchName } =
     statusState;
 
+  // Engine selection (see DiffEngineMenu) — capability is null on servers that predate the
+  // diffTools broadcast (COMPAT), in which case non-git engines are hidden entirely.
+  const client = useHostRuntimeClient(serverId);
+  const diffToolsCapability = useDiffToolsCapability(serverId);
+  const {
+    status: installStatus,
+    error: installError,
+    install: installDifftastic,
+  } = useInstallDifftastic(client);
+
+  const handleSelectDiffTool = useCallback(
+    (tool: DiffToolId) => {
+      void updateChangesPreferences({ diffTool: tool });
+    },
+    [updateChangesPreferences],
+  );
+
+  const handleSelectGitAlgorithm = useCallback(
+    (algorithm: GitDiffAlgorithm) => {
+      void updateChangesPreferences({ diffTool: "git", gitAlgorithm: algorithm });
+    },
+    [updateChangesPreferences],
+  );
+
+  const handleSelectDiffFontSize = useCallback(
+    (step: DiffFontSizeStep) => {
+      void updateChangesPreferences({ diffFontSize: step });
+    },
+    [updateChangesPreferences],
+  );
+
+  // Arbitrary branch/ref compare (see the "Compare with branch…" item below). Deliberately
+  // not persisted to changes-preferences: branches can be deleted, so a stale ref would
+  // reopen to a broken state — every restart falls back to uncommitted.
+  const {
+    branchCompare,
+    branchPickerTarget,
+    diffModeAnchorRef,
+    branchCompareOptions,
+    branchCompareToLabel,
+    branchCompareDescription,
+    branchComparePickerValue,
+    handleOpenBranchCompare,
+    handleOpenBranchCompareToRef,
+    handleBranchComparePickerOpenChange,
+    handleSelectBranchCompareRef,
+    handleToggleBranchCompareMergeBase,
+    handleSwapBranchCompareRefs,
+    clearBranchCompare,
+  } = useDiffPaneBranchCompare({ serverId, cwd, client, isGit, t });
+
   const reviewDraftScopeKey = useMemo(
     () =>
       buildReviewDraftScopeKey({
@@ -1907,17 +2507,23 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
   });
   const setDiffModeOverride = useSetDiffModeOverride();
 
+  // Branch compare is an overlay on top of uncommitted/base — it doesn't participate in the
+  // review-draft override machinery (no ref persistence, see branchCompare above).
   const {
     files,
     payloadError: diffPayloadError,
     isLoading: isDiffLoading,
-  } = useCheckoutDiffQuery({
+  } = useDiffPaneCheckoutDiff({
     serverId,
     cwd,
-    mode: diffMode,
+    diffMode,
     baseRef,
-    ignoreWhitespace: changesPreferences.hideWhitespace,
-    enabled: shouldEnableCheckoutDiff({ paneEnabled: enabled !== false, isGit }),
+    hideWhitespace: changesPreferences.hideWhitespace,
+    diffTool: changesPreferences.diffTool,
+    gitAlgorithm: changesPreferences.gitAlgorithm,
+    branchCompare,
+    paneEnabled: enabled !== false,
+    isGit,
   });
   const reviewDraftKey = useMemo(
     () =>
@@ -1933,18 +2539,34 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
   );
 
   const handleSelectUncommitted = useCallback(() => {
+    clearBranchCompare();
     setDiffModeOverride({
       scopeKey: reviewDraftScopeKey,
       override: { serverId, cwd, mode: "uncommitted", isDirtyAtSelection: hasUncommittedChanges },
     });
-  }, [cwd, hasUncommittedChanges, reviewDraftScopeKey, serverId, setDiffModeOverride]);
+  }, [
+    clearBranchCompare,
+    cwd,
+    hasUncommittedChanges,
+    reviewDraftScopeKey,
+    serverId,
+    setDiffModeOverride,
+  ]);
 
   const handleSelectBase = useCallback(() => {
+    clearBranchCompare();
     setDiffModeOverride({
       scopeKey: reviewDraftScopeKey,
       override: { serverId, cwd, mode: "base", isDirtyAtSelection: hasUncommittedChanges },
     });
-  }, [cwd, hasUncommittedChanges, reviewDraftScopeKey, serverId, setDiffModeOverride]);
+  }, [
+    clearBranchCompare,
+    cwd,
+    hasUncommittedChanges,
+    reviewDraftScopeKey,
+    serverId,
+    setDiffModeOverride,
+  ]);
 
   const reviewActions = useInlineReviewController({
     reviewDraftKey,
@@ -2318,6 +2940,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
             onToggle={handleToggleExpanded}
             onHeaderHeightChange={handleHeaderHeightChange}
             testID={`diff-file-${item.fileIndex}`}
+            activeDiffTool={changesPreferences.diffTool}
           />
         );
       }
@@ -2335,6 +2958,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
       );
     },
     [
+      changesPreferences.diffTool,
       codeFontSize,
       diffTextMetricsStyle,
       effectiveLayout,
@@ -2375,8 +2999,10 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
       viewMode,
       wrapLines,
       reviewActions,
+      diffTool: changesPreferences.diffTool,
     }),
     [
+      changesPreferences.diffTool,
       expandedPathsArray,
       collapsedFoldersArray,
       effectiveLayout,
@@ -2423,6 +3049,13 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
   );
   const uncommittedLabel = t("workspace.git.diff.uncommitted");
   const committedLabel = t("workspace.git.diff.committed");
+  const diffModeTriggerLabel = computeDiffModeTriggerLabel({
+    t,
+    branchCompare,
+    diffMode,
+    uncommittedLabel,
+    committedLabel,
+  });
 
   const emptyMessage = computeEmptyMessage(
     changesPreferences.hideWhitespace,
@@ -2479,38 +3112,84 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
       {isGit ? (
         <View style={styles.diffStatusContainer}>
           <View style={styles.diffStatusInner}>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                style={diffModeTriggerStyle}
-                testID="changes-diff-status"
-                accessibilityRole="button"
-                accessibilityLabel={t("workspace.git.diff.diffMode")}
-              >
-                <Text style={styles.diffStatusText} numberOfLines={1}>
-                  {diffMode === "uncommitted" ? uncommittedLabel : committedLabel}
-                </Text>
-                <ThemedChevronDown size={12} uniProps={foregroundMutedIconColorMapping} />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" width={260} testID="changes-diff-status-menu">
-                <DropdownMenuItem
-                  testID="changes-diff-mode-uncommitted"
-                  selected={diffMode === "uncommitted"}
-                  onSelect={handleSelectUncommitted}
+            <View ref={diffModeAnchorRef} collapsable={false}>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  style={diffModeTriggerStyle}
+                  testID="changes-diff-status"
+                  accessibilityRole="button"
+                  accessibilityLabel={t("workspace.git.diff.diffMode")}
                 >
-                  {uncommittedLabel}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  testID="changes-diff-mode-committed"
-                  selected={diffMode === "base"}
-                  description={committedDiffDescription}
-                  onSelect={handleSelectBase}
-                >
-                  {committedLabel}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  <Text style={styles.diffStatusText} numberOfLines={1}>
+                    {diffModeTriggerLabel}
+                  </Text>
+                  <ThemedChevronDown size={12} uniProps={foregroundMutedIconColorMapping} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" width={260} testID="changes-diff-status-menu">
+                  <DropdownMenuItem
+                    testID="changes-diff-mode-uncommitted"
+                    selected={isPlainDiffModeSelected("uncommitted", branchCompare, diffMode)}
+                    onSelect={handleSelectUncommitted}
+                  >
+                    {uncommittedLabel}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    testID="changes-diff-mode-committed"
+                    selected={isPlainDiffModeSelected("base", branchCompare, diffMode)}
+                    description={committedDiffDescription}
+                    onSelect={handleSelectBase}
+                  >
+                    {committedLabel}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    testID="changes-diff-mode-branch"
+                    selected={branchCompare !== null}
+                    description={branchCompareDescription}
+                    onSelect={handleOpenBranchCompare}
+                  >
+                    {t("workspace.git.diff.compareWithBranch")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Combobox
+                options={branchCompareOptions}
+                value={branchComparePickerValue}
+                onSelect={handleSelectBranchCompareRef}
+                searchable
+                placeholder={t("branchSwitcher.placeholder")}
+                searchPlaceholder={t("branchSwitcher.searchPlaceholder")}
+                emptyText={t("branchSwitcher.empty")}
+                title={t("workspace.git.diff.branchCompareTitle")}
+                open={branchPickerTarget !== null}
+                onOpenChange={handleBranchComparePickerOpenChange}
+                anchorRef={diffModeAnchorRef}
+                desktopPlacement="bottom-start"
+                desktopPreventInitialFlash
+                desktopMinWidth={280}
+              />
+            </View>
+            <BranchCompareAdvancedControls
+              branchCompare={branchCompare}
+              branchCompareToLabel={branchCompareToLabel}
+              toggleStyle={branchCompareAdvancedToggleStyle}
+              onOpenToRef={handleOpenBranchCompareToRef}
+              onSwap={handleSwapBranchCompareRefs}
+              onToggleMergeBase={handleToggleBranchCompareMergeBase}
+            />
             <View style={styles.diffStatusButtons}>
+              <DiffEngineMenu
+                diffTool={changesPreferences.diffTool}
+                gitAlgorithm={changesPreferences.gitAlgorithm}
+                triggerStyle={diffEngineTriggerStyle}
+                diffToolsCapability={diffToolsCapability}
+                installStatus={installStatus}
+                installError={installError}
+                onSelectTool={handleSelectDiffTool}
+                onSelectGitAlgorithm={handleSelectGitAlgorithm}
+                onInstallDifftastic={installDifftastic}
+              />
               {canUseSplitLayout ? (
                 <DiffLayoutToggle
                   layout={changesPreferences.layout}
@@ -2536,6 +3215,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
                 />
               ) : null}
               <DiffOptionsMenu
+                diffFontSize={diffFontSizeStep}
                 hideWhitespace={changesPreferences.hideWhitespace}
                 isMobile={isMobile}
                 isRefreshing={isRefreshing}
@@ -2543,6 +3223,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
                 refreshSupported={refreshSupported}
                 wrapLines={wrapLines}
                 onRefresh={handleRefresh}
+                onSelectDiffFontSize={handleSelectDiffFontSize}
                 onToggleHideWhitespace={handleToggleHideWhitespace}
                 onToggleWrapLines={handleToggleWrapLines}
               />
@@ -2796,6 +3477,20 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.diffDeletion,
+  },
+  // Shown on a file that fell back to the git engine while the pane's selected engine is
+  // vscode/difftastic (per-file mapper failure, binary content, etc.).
+  lineDiffBadge: {
+    backgroundColor: theme.colors.surface2,
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: theme.spacing[1],
+    borderRadius: theme.borderRadius.md,
+    flexShrink: 0,
+  },
+  lineDiffBadgeText: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.normal,
+    color: theme.colors.foregroundMuted,
   },
   additions: {
     fontSize: theme.fontSize.xs,

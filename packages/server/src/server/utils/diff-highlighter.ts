@@ -24,6 +24,10 @@ export interface ParsedDiffFile {
   deletions: number;
   hunks: DiffHunk[];
   status?: "ok" | "too_large" | "binary";
+  // Which engine actually produced this file's hunks. Absent = git (legacy).
+  // A non-git compare request can still mark individual files "git" when the
+  // engine could not handle them (single-file fallback).
+  diffTool?: "git" | "vscode" | "difftastic";
 }
 
 interface HighlightDiffWithFileContentOptions {

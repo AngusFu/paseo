@@ -83,6 +83,12 @@ paseo daemon restart
 
 Or in the app, open **Settings → your host → Host** and use **Restart daemon**. Running agents keep going, and clients reconnect automatically.
 
+## Difftastic engine unavailable or won't install
+
+The [diff view](/docs/diff-view#installing-difftastic)'s **Difftastic** engine shows **Difftastic isn't available on this server** instead of an install option when the server's platform/architecture has no prebuilt Difftastic release to download, there's nothing to install there.
+
+If **Install difftastic…** fails partway through, it's almost always a download problem, the installer fetches the pinned release from GitHub and verifies its checksum before using it, so a blocked or interrupted download surfaces as an install error rather than a silent partial install. Retry, or install `difft` yourself (Homebrew, Cargo, …) and either put it on the daemon's `PATH` or point `PASEO_DIFFT_PATH` at it, see [Configuration](/docs/configuration#common-env-vars).
+
 ## Still stuck?
 
 - [Custom providers](/docs/custom-providers) — endpoints, profiles, binaries, ACP agents.

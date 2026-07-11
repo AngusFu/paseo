@@ -1,0 +1,51 @@
+{
+ "aligned_lines": [
+  [
+   0,
+   0
+  ],
+  [
+   1,
+   1
+  ],
+  [
+   2,
+   2
+  ],
+  [
+   3,
+   3
+  ]
+ ],
+ "chunks": [
+  [
+   {
+    "lhs": {
+     "line_number": 1,
+     "changes": [
+      {
+       "start": 11,
+       "end": 12,
+       "content": "+",
+       "highlight": "keyword"
+      }
+     ]
+    },
+    "rhs": {
+     "line_number": 1,
+     "changes": [
+      {
+       "start": 11,
+       "end": 12,
+       "content": "-",
+       "highlight": "keyword"
+      }
+     ]
+    }
+   }
+  ]
+ ],
+ "language": "TypeScript",
+ "path": "/tmp/difft-research/f/b.ts",
+ "status": "changed"
+}

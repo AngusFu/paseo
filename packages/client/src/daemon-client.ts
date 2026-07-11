@@ -13,6 +13,7 @@ import {
   RestartRequestedStatusPayloadSchema,
   ShutdownRequestedStatusPayloadSchema,
   DaemonUpdateResponseSchema,
+  InstallDifftasticResponseSchema,
   SessionInboundMessageSchema,
   type ServerInfoStatusPayload,
 } from "@getpaseo/protocol/messages";
@@ -71,6 +72,7 @@ import type {
   ProviderUsageListResponseMessage,
   DaemonGetStatusResponse,
   DaemonGetPairingOfferResponse,
+  InstallDifftasticProgressMessage,
   DiagnosticsResponse,
   AgentRewindResponseMessage,
   ListTerminalsResponse,
@@ -540,6 +542,11 @@ export interface DaemonPairingOfferOptions {
   timeout?: number;
 }
 type DaemonUpdateResponse = z.infer<typeof DaemonUpdateResponseSchema>;
+type InstallDifftasticResponse = z.infer<typeof InstallDifftasticResponseSchema>;
+export type CheckoutDiffCompare = Extract<
+  SessionInboundMessage,
+  { type: "subscribe_checkout_diff_request" }
+>["compare"];
 type FetchAgentsPayload = Extract<
   SessionOutboundMessage,
   { type: "fetch_agents_response" }
@@ -999,7 +1006,7 @@ export class DaemonClient {
     string,
     {
       cwd: string;
-      compare: { mode: "uncommitted" | "base"; baseRef?: string; ignoreWhitespace?: boolean };
+      compare: CheckoutDiffCompare;
     }
   >();
   private terminalDirectorySubscriptions = new Map<string, { cwd: string; workspaceId?: string }>();
@@ -2767,6 +2774,47 @@ export class DaemonClient {
     });
   }
 
+  // Progress is also observable via on("install_difftastic_progress", ...) — same event
+  // wiring the app uses for "daemon.update.progress".
+  async installDifftastic(options?: {
+    requestId?: string;
+    onProgress?: (phase: InstallDifftasticProgressMessage["payload"]["phase"]) => void;
+  }): Promise<InstallDifftasticResponse["payload"]> {
+    const resolvedRequestId = this.createRequestId(options?.requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "install_difftastic_request",
+      requestId: resolvedRequestId,
+    });
+    const unsubscribeProgress = options?.onProgress
+      ? this.on("install_difftastic_progress", (progress) => {
+          if (progress.payload.requestId !== resolvedRequestId) {
+            return;
+          }
+          options.onProgress?.(progress.payload.phase);
+        })
+      : null;
+    try {
+      return await this.sendRequest({
+        requestId: resolvedRequestId,
+        message,
+        timeout: 300_000, // 5 minutes — binary download can be slow on remote machines
+        options: { skipQueue: true },
+        select: (msg) => {
+          const parsed = InstallDifftasticResponseSchema.safeParse(msg);
+          if (!parsed.success) {
+            return null;
+          }
+          if (parsed.data.payload.requestId !== resolvedRequestId) {
+            return null;
+          }
+          return parsed.data.payload;
+        },
+      });
+    } finally {
+      unsubscribeProgress?.();
+    }
+  }
+
   // ============================================================================
   // Audio / Voice
   // ============================================================================
@@ -3076,30 +3124,38 @@ export class DaemonClient {
     return responsePromise;
   }
 
-  private normalizeCheckoutDiffCompare(compare: {
-    mode: "uncommitted" | "base";
-    baseRef?: string;
-    ignoreWhitespace?: boolean;
-  }): { mode: "uncommitted" | "base"; baseRef?: string; ignoreWhitespace?: boolean } {
+  private normalizeCheckoutDiffCompare(compare: CheckoutDiffCompare): CheckoutDiffCompare {
+    // Shared fields must survive verbatim for every mode (diff engine switching).
+    const shared: Omit<CheckoutDiffCompare, "mode"> = {
+      ...(compare.ignoreWhitespace === true ? { ignoreWhitespace: true } : {}),
+      ...(compare.tool !== undefined ? { tool: compare.tool } : {}),
+      ...(compare.gitAlgorithm !== undefined ? { gitAlgorithm: compare.gitAlgorithm } : {}),
+    };
     if (compare.mode === "uncommitted") {
-      return compare.ignoreWhitespace === true
-        ? { mode: "uncommitted", ignoreWhitespace: true }
-        : { mode: "uncommitted" };
+      return { mode: "uncommitted", ...shared };
+    }
+    if (compare.mode === "refs") {
+      const fromRef = compare.fromRef?.trim();
+      const toRef = compare.toRef?.trim();
+      return {
+        mode: "refs",
+        ...(fromRef ? { fromRef } : {}),
+        ...(toRef ? { toRef } : {}),
+        ...(compare.mergeBase !== undefined ? { mergeBase: compare.mergeBase } : {}),
+        ...shared,
+      };
     }
     const trimmedBaseRef = compare.baseRef?.trim();
-    if (!trimmedBaseRef) {
-      return compare.ignoreWhitespace === true
-        ? { mode: "base", ignoreWhitespace: true }
-        : { mode: "base" };
-    }
-    return compare.ignoreWhitespace === true
-      ? { mode: "base", baseRef: trimmedBaseRef, ignoreWhitespace: true }
-      : { mode: "base", baseRef: trimmedBaseRef };
+    return {
+      mode: "base",
+      ...(trimmedBaseRef ? { baseRef: trimmedBaseRef } : {}),
+      ...shared,
+    };
   }
 
   async getCheckoutDiff(
     cwd: string,
-    compare: { mode: "uncommitted" | "base"; baseRef?: string; ignoreWhitespace?: boolean },
+    compare: CheckoutDiffCompare,
     requestId?: string,
   ): Promise<CheckoutDiffPayload> {
     const oneShotSubscriptionId = `oneshot-checkout-diff:${crypto.randomUUID()}`;
@@ -3125,7 +3181,7 @@ export class DaemonClient {
 
   async subscribeCheckoutDiff(
     cwd: string,
-    compare: { mode: "uncommitted" | "base"; baseRef?: string; ignoreWhitespace?: boolean },
+    compare: CheckoutDiffCompare,
     options?: { subscriptionId?: string; requestId?: string },
   ): Promise<SubscribeCheckoutDiffPayload> {
     const subscriptionId = options?.subscriptionId ?? crypto.randomUUID();

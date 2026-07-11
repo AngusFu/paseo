@@ -107,21 +107,46 @@ export class CheckoutDiffManager {
 
   private normalizeCompare(compare: CheckoutDiffCompareInput): CheckoutDiffCompareInput {
     const ignoreWhitespace = compare.ignoreWhitespace === true;
+    // Whitelist rebuild: every compare field the diff pipeline honors must be
+    // re-emitted here or it silently disappears before reaching the engines.
+    const shared = {
+      ignoreWhitespace,
+      ...(compare.tool !== undefined ? { tool: compare.tool } : {}),
+      ...(compare.gitAlgorithm !== undefined ? { gitAlgorithm: compare.gitAlgorithm } : {}),
+    };
     if (compare.mode === "uncommitted") {
-      return { mode: "uncommitted", ignoreWhitespace };
+      return { mode: "uncommitted", ...shared };
+    }
+    if (compare.mode === "refs") {
+      const fromRef = compare.fromRef?.trim();
+      const toRef = compare.toRef?.trim();
+      return {
+        mode: "refs",
+        ...(fromRef ? { fromRef } : {}),
+        ...(toRef ? { toRef } : {}),
+        ...(compare.mergeBase !== undefined ? { mergeBase: compare.mergeBase } : {}),
+        ...shared,
+      };
     }
     const trimmedBaseRef = compare.baseRef?.trim();
     return trimmedBaseRef
-      ? { mode: "base", baseRef: trimmedBaseRef, ignoreWhitespace }
-      : { mode: "base", ignoreWhitespace };
+      ? { mode: "base", baseRef: trimmedBaseRef, ...shared }
+      : { mode: "base", ...shared };
   }
 
   private buildTargetKey(cwd: string, compare: CheckoutDiffCompareInput): string {
+    // Includes tool/gitAlgorithm/refs so a compare change (engine switch,
+    // algorithm switch, ref change) creates a fresh target -> recompute+push.
     return JSON.stringify([
       cwd,
       compare.mode,
       compare.mode === "base" ? (compare.baseRef ?? "") : "",
       compare.ignoreWhitespace === true,
+      compare.tool ?? "git",
+      compare.gitAlgorithm ?? null,
+      compare.mode === "refs"
+        ? [compare.fromRef ?? "", compare.toRef ?? "", compare.mergeBase !== false]
+        : null,
     ]);
   }
 
@@ -174,6 +199,11 @@ export class CheckoutDiffManager {
           mode: compare.mode,
           baseRef: compare.baseRef,
           ignoreWhitespace: compare.ignoreWhitespace,
+          tool: compare.tool,
+          gitAlgorithm: compare.gitAlgorithm,
+          fromRef: compare.fromRef,
+          toRef: compare.toRef,
+          mergeBase: compare.mergeBase,
           includeStructured: true,
         },
         options?.force

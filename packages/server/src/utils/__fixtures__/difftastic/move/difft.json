@@ -1,0 +1,291 @@
+{
+ "aligned_lines": [
+  [
+   0,
+   null
+  ],
+  [
+   1,
+   null
+  ],
+  [
+   2,
+   null
+  ],
+  [
+   3,
+   0
+  ],
+  [
+   4,
+   1
+  ],
+  [
+   5,
+   2
+  ],
+  [
+   6,
+   3
+  ],
+  [
+   7,
+   4
+  ],
+  [
+   8,
+   5
+  ],
+  [
+   9,
+   6
+  ],
+  [
+   10,
+   7
+  ],
+  [
+   11,
+   8
+  ],
+  [
+   12,
+   9
+  ],
+  [
+   null,
+   10
+  ],
+  [
+   null,
+   11
+  ],
+  [
+   null,
+   12
+  ],
+  [
+   13,
+   13
+  ]
+ ],
+ "chunks": [
+  [
+   {
+    "lhs": {
+     "line_number": 0,
+     "changes": [
+      {
+       "start": 0,
+       "end": 8,
+       "content": "function",
+       "highlight": "keyword"
+      },
+      {
+       "start": 9,
+       "end": 16,
+       "content": "movedFn",
+       "highlight": "normal"
+      },
+      {
+       "start": 16,
+       "end": 17,
+       "content": "(",
+       "highlight": "delimiter"
+      },
+      {
+       "start": 17,
+       "end": 18,
+       "content": "x",
+       "highlight": "normal"
+      },
+      {
+       "start": 18,
+       "end": 19,
+       "content": ":",
+       "highlight": "normal"
+      },
+      {
+       "start": 20,
+       "end": 26,
+       "content": "number",
+       "highlight": "type"
+      },
+      {
+       "start": 26,
+       "end": 27,
+       "content": ")",
+       "highlight": "delimiter"
+      },
+      {
+       "start": 28,
+       "end": 29,
+       "content": "{",
+       "highlight": "delimiter"
+      }
+     ]
+    }
+   },
+   {
+    "lhs": {
+     "line_number": 1,
+     "changes": [
+      {
+       "start": 2,
+       "end": 8,
+       "content": "return",
+       "highlight": "keyword"
+      },
+      {
+       "start": 9,
+       "end": 10,
+       "content": "x",
+       "highlight": "normal"
+      },
+      {
+       "start": 11,
+       "end": 12,
+       "content": "*",
+       "highlight": "keyword"
+      },
+      {
+       "start": 13,
+       "end": 14,
+       "content": "2",
+       "highlight": "normal"
+      },
+      {
+       "start": 14,
+       "end": 15,
+       "content": ";",
+       "highlight": "normal"
+      }
+     ]
+    }
+   },
+   {
+    "lhs": {
+     "line_number": 2,
+     "changes": [
+      {
+       "start": 0,
+       "end": 1,
+       "content": "}",
+       "highlight": "delimiter"
+      }
+     ]
+    }
+   }
+  ],
+  [
+   {
+    "rhs": {
+     "line_number": 10,
+     "changes": [
+      {
+       "start": 0,
+       "end": 8,
+       "content": "function",
+       "highlight": "keyword"
+      },
+      {
+       "start": 9,
+       "end": 16,
+       "content": "movedFn",
+       "highlight": "normal"
+      },
+      {
+       "start": 16,
+       "end": 17,
+       "content": "(",
+       "highlight": "delimiter"
+      },
+      {
+       "start": 17,
+       "end": 18,
+       "content": "x",
+       "highlight": "normal"
+      },
+      {
+       "start": 18,
+       "end": 19,
+       "content": ":",
+       "highlight": "normal"
+      },
+      {
+       "start": 20,
+       "end": 26,
+       "content": "number",
+       "highlight": "type"
+      },
+      {
+       "start": 26,
+       "end": 27,
+       "content": ")",
+       "highlight": "delimiter"
+      },
+      {
+       "start": 28,
+       "end": 29,
+       "content": "{",
+       "highlight": "delimiter"
+      }
+     ]
+    }
+   },
+   {
+    "rhs": {
+     "line_number": 11,
+     "changes": [
+      {
+       "start": 2,
+       "end": 8,
+       "content": "return",
+       "highlight": "keyword"
+      },
+      {
+       "start": 9,
+       "end": 10,
+       "content": "x",
+       "highlight": "normal"
+      },
+      {
+       "start": 11,
+       "end": 12,
+       "content": "*",
+       "highlight": "keyword"
+      },
+      {
+       "start": 13,
+       "end": 14,
+       "content": "2",
+       "highlight": "normal"
+      },
+      {
+       "start": 14,
+       "end": 15,
+       "content": ";",
+       "highlight": "normal"
+      }
+     ]
+    }
+   },
+   {
+    "rhs": {
+     "line_number": 12,
+     "changes": [
+      {
+       "start": 0,
+       "end": 1,
+       "content": "}",
+       "highlight": "delimiter"
+      }
+     ]
+    }
+   }
+  ]
+ ],
+ "language": "TypeScript",
+ "path": "/tmp/move_b.ts",
+ "status": "changed"
+}

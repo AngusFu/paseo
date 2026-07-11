@@ -31,9 +31,16 @@ type CheckoutDiffCachePayload = Omit<CheckoutDiffResponsePayload, "subscriptionI
 type ListTerminalsPayload = ListTerminalsResponse["payload"];
 
 interface CheckoutDiffCompare {
-  mode: "uncommitted" | "base";
+  mode: "uncommitted" | "base" | "refs";
   baseRef?: string;
   ignoreWhitespace?: boolean;
+  // Diff engine selection; see CheckoutDiffCompareSchema in @getpaseo/protocol.
+  tool?: "git" | "vscode" | "difftastic";
+  gitAlgorithm?: "histogram" | "myers" | "patience";
+  // Only used when mode is "refs".
+  fromRef?: string;
+  toRef?: string;
+  mergeBase?: boolean;
 }
 
 interface CheckoutDiffRoute {
@@ -658,26 +665,60 @@ function readServerDataRoute(value: Record<string, unknown>): ServerDataRoute | 
   return null;
 }
 
+function isValidCheckoutDiffMode(mode: unknown): mode is CheckoutDiffCompare["mode"] {
+  return mode === "uncommitted" || mode === "base" || mode === "refs";
+}
+
+function isValidDiffTool(tool: unknown): tool is NonNullable<CheckoutDiffCompare["tool"]> {
+  return tool === undefined || tool === "git" || tool === "vscode" || tool === "difftastic";
+}
+
+function isValidGitAlgorithm(
+  algorithm: unknown,
+): algorithm is NonNullable<CheckoutDiffCompare["gitAlgorithm"]> {
+  return (
+    algorithm === undefined ||
+    algorithm === "histogram" ||
+    algorithm === "myers" ||
+    algorithm === "patience"
+  );
+}
+
+// Each remaining field is a plain optional string/boolean — validated together to keep
+// readCheckoutDiffCompare's branch count down.
+function hasValidOptionalCheckoutDiffFields(value: Record<string, unknown>): boolean {
+  const { baseRef, ignoreWhitespace, fromRef, toRef, mergeBase } = value;
+  return (
+    (baseRef === undefined || typeof baseRef === "string") &&
+    (ignoreWhitespace === undefined || typeof ignoreWhitespace === "boolean") &&
+    (fromRef === undefined || typeof fromRef === "string") &&
+    (toRef === undefined || typeof toRef === "string") &&
+    (mergeBase === undefined || typeof mergeBase === "boolean")
+  );
+}
+
 function readCheckoutDiffCompare(value: unknown): CheckoutDiffCompare | null {
   if (!isRecord(value)) {
     return null;
   }
-  const mode = value.mode;
-  const baseRef = value.baseRef;
-  const ignoreWhitespace = value.ignoreWhitespace;
-  if (mode !== "uncommitted" && mode !== "base") {
-    return null;
-  }
-  if (baseRef !== undefined && typeof baseRef !== "string") {
-    return null;
-  }
-  if (ignoreWhitespace !== undefined && typeof ignoreWhitespace !== "boolean") {
+  const { mode, baseRef, ignoreWhitespace, tool, gitAlgorithm, fromRef, toRef, mergeBase } = value;
+  if (
+    !isValidCheckoutDiffMode(mode) ||
+    !isValidDiffTool(tool) ||
+    !isValidGitAlgorithm(gitAlgorithm) ||
+    !hasValidOptionalCheckoutDiffFields(value)
+  ) {
     return null;
   }
   return {
     mode,
-    ...(baseRef ? { baseRef } : {}),
-    ...(ignoreWhitespace !== undefined ? { ignoreWhitespace } : {}),
+    ...(baseRef ? { baseRef: baseRef as string } : {}),
+    ...(ignoreWhitespace !== undefined ? { ignoreWhitespace: ignoreWhitespace as boolean } : {}),
+    ...(tool ? { tool } : {}),
+    ...(gitAlgorithm ? { gitAlgorithm } : {}),
+    ...(fromRef ? { fromRef: fromRef as string } : {}),
+    ...(toRef ? { toRef: toRef as string } : {}),
+    ...(mergeBase !== undefined ? { mergeBase: mergeBase as boolean } : {}),
   };
 }
 
@@ -691,7 +732,12 @@ function areCheckoutDiffRoutesEqual(
     left.cwd === right.cwd &&
     left.compare.mode === right.compare.mode &&
     left.compare.baseRef === right.compare.baseRef &&
-    left.compare.ignoreWhitespace === right.compare.ignoreWhitespace
+    left.compare.ignoreWhitespace === right.compare.ignoreWhitespace &&
+    left.compare.tool === right.compare.tool &&
+    left.compare.gitAlgorithm === right.compare.gitAlgorithm &&
+    left.compare.fromRef === right.compare.fromRef &&
+    left.compare.toRef === right.compare.toRef &&
+    left.compare.mergeBase === right.compare.mergeBase
   );
 }
 
@@ -702,7 +748,12 @@ function isCheckoutDiffQueryKeyForRoute(queryKey: QueryKey, route: CheckoutDiffR
     queryKey[2] === route.cwd &&
     queryKey[3] === route.compare.mode &&
     queryKey[4] === (route.compare.baseRef ?? "") &&
-    queryKey[5] === (route.compare.ignoreWhitespace === true)
+    queryKey[5] === (route.compare.ignoreWhitespace === true) &&
+    queryKey[6] === (route.compare.tool ?? "git") &&
+    queryKey[7] === (route.compare.gitAlgorithm ?? "") &&
+    queryKey[8] === (route.compare.fromRef ?? "") &&
+    queryKey[9] === (route.compare.toRef ?? "") &&
+    queryKey[10] === (route.compare.mergeBase === true)
   );
 }
 

@@ -138,7 +138,14 @@ function getHunkHeader(hunk: ParsedDiffFile["hunks"][number]): string {
 // follows it (index-aligned, matching how the split view lays pairs out) and
 // compute the word-level changed ranges for both sides. Mutates the cells in
 // place. Runs once per hunk during numbering so unified and split share it.
-function assignWordChangeRanges(lines: NumberedDiffLine[]): void {
+//
+// When the server already supplied changedRanges (structural engines like
+// difftastic), those are used verbatim — the two sources disagree on semantics
+// and mixing them would double-highlight or contradict each other. For files
+// produced by difftastic (skipLocalCompute) the local LCS computation is skipped
+// entirely: the server owns word ranges there, so pairs where it deliberately
+// suppressed whole-line highlights must not fall through to a local guess.
+function assignWordChangeRanges(lines: NumberedDiffLine[], skipLocalCompute: boolean): void {
   let removals: NumberedDiffCell[] = [];
   let additions: NumberedDiffCell[] = [];
 
@@ -147,6 +154,20 @@ function assignWordChangeRanges(lines: NumberedDiffLine[]): void {
     for (let index = 0; index < pairCount; index += 1) {
       const removal = removals[index];
       const addition = additions[index];
+      const serverOldRanges = removal.line.changedRanges;
+      const serverNewRanges = addition.line.changedRanges;
+      if (serverOldRanges || serverNewRanges) {
+        if (serverOldRanges && serverOldRanges.length > 0) {
+          removal.changedRanges = serverOldRanges;
+        }
+        if (serverNewRanges && serverNewRanges.length > 0) {
+          addition.changedRanges = serverNewRanges;
+        }
+        continue;
+      }
+      if (skipLocalCompute) {
+        continue;
+      }
       const { oldRanges, newRanges } = computeWordChangeRanges(
         stripDiffMarker(removal.line),
         stripDiffMarker(addition.line),
@@ -240,7 +261,7 @@ export function buildNumberedDiffHunks(file: ParsedDiffFile): NumberedDiffHunk[]
       });
     }
 
-    assignWordChangeRanges(lines);
+    assignWordChangeRanges(lines, file.diffTool === "difftastic");
     numberedHunks.push({ hunkIndex, hunkHeader, lines });
   }
 

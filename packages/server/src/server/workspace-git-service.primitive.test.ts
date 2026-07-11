@@ -1597,6 +1597,62 @@ describe("WorkspaceGitServiceImpl D2 read methods", () => {
     service.dispose();
   });
 
+  test("getCheckoutDiff cache key separates diff tools and git algorithms", async () => {
+    const getCheckoutDiff = vi.fn(async (_cwd: string, compare: CheckoutDiffCompare) => ({
+      diff: `diff:${compare.tool ?? "git"}:${compare.gitAlgorithm ?? "default"}`,
+    }));
+    const service = createService({ getCheckoutDiff, now: () => new Date(0) });
+
+    // Different tools must never share a cache entry (a difftastic result
+    // satisfying a git read would be a wrong-engine cache hit).
+    const [gitDiff, difftasticDiff, vscodeDiff, histogramDiff] = await Promise.all([
+      service.getCheckoutDiff(REPO_CWD, { mode: "uncommitted" }),
+      service.getCheckoutDiff(REPO_CWD, { mode: "uncommitted", tool: "difftastic" }),
+      service.getCheckoutDiff(REPO_CWD, { mode: "uncommitted", tool: "vscode" }),
+      service.getCheckoutDiff(REPO_CWD, {
+        mode: "uncommitted",
+        tool: "git",
+        gitAlgorithm: "histogram",
+      }),
+    ]);
+
+    expect(getCheckoutDiff).toHaveBeenCalledTimes(4);
+    expect(gitDiff.diff).toBe("diff:git:default");
+    expect(difftasticDiff.diff).toBe("diff:difftastic:default");
+    expect(vscodeDiff.diff).toBe("diff:vscode:default");
+    expect(histogramDiff.diff).toBe("diff:git:histogram");
+
+    // Identical compare (same tool) coalesces on the warm cache.
+    await service.getCheckoutDiff(REPO_CWD, { mode: "uncommitted", tool: "difftastic" });
+    expect(getCheckoutDiff).toHaveBeenCalledTimes(4);
+
+    service.dispose();
+  });
+
+  test("getCheckoutDiff cache key separates refs compares and normalize keeps refs fields", async () => {
+    const getCheckoutDiff = vi.fn(async () => ({ diff: "" }));
+    const service = createService({ getCheckoutDiff, now: () => new Date(0) });
+
+    await Promise.all([
+      service.getCheckoutDiff(REPO_CWD, { mode: "refs", fromRef: "feature" }),
+      service.getCheckoutDiff(REPO_CWD, { mode: "refs", fromRef: "feature", mergeBase: false }),
+      service.getCheckoutDiff(REPO_CWD, { mode: "refs", fromRef: "feature", toRef: "main" }),
+    ]);
+    expect(getCheckoutDiff).toHaveBeenCalledTimes(3);
+
+    // The normalize whitelist must not swallow refs/tool fields on the way down.
+    expect(getCheckoutDiff).toHaveBeenCalledWith(
+      REPO_CWD,
+      expect.objectContaining({ mode: "refs", fromRef: "feature", toRef: "main" }),
+      expect.anything(),
+    );
+
+    await service.getCheckoutDiff(REPO_CWD, { mode: "refs", fromRef: "feature" });
+    expect(getCheckoutDiff).toHaveBeenCalledTimes(3);
+
+    service.dispose();
+  });
+
   test("forced getCheckoutDiff bypasses warm cache and internal min-gap", async () => {
     let nowMs = 0;
     const getCheckoutDiff = vi

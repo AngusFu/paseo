@@ -557,6 +557,7 @@ test("advertises client capabilities in hello", async () => {
       custom_mode_icons: true,
       reasoning_merge_enum: true,
       terminal_reflowable_snapshot: true,
+      command_schedules: true,
       browser_host: {
         supportedCommands: ["list_tabs"],
         hostKind: "desktop app",
@@ -2818,6 +2819,188 @@ test("getCheckoutDiff uses one-shot subscription protocol", async () => {
   const unsubscribeRequest = parseSentFrame(mock.sent[1]);
   expect(unsubscribeRequest.type).toBe("unsubscribe_checkout_diff_request");
   expect(unsubscribeRequest.subscriptionId).toBe(subscribeRequest.subscriptionId);
+});
+
+test("subscribeCheckoutDiff passes refs-mode compare and diff tool fields through verbatim", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const promise = client.subscribeCheckoutDiff(
+    "/tmp/project",
+    {
+      mode: "refs",
+      fromRef: "main",
+      toRef: "feature/x",
+      mergeBase: true,
+      ignoreWhitespace: true,
+      tool: "difftastic",
+      gitAlgorithm: "patience",
+    },
+    { subscriptionId: "checkout-sub-refs" },
+  );
+
+  expect(mock.sent).toHaveLength(1);
+  const request = parseSentFrame(mock.sent[0]);
+  expect(request.type).toBe("subscribe_checkout_diff_request");
+  expect(request.compare).toEqual({
+    mode: "refs",
+    fromRef: "main",
+    toRef: "feature/x",
+    mergeBase: true,
+    ignoreWhitespace: true,
+    tool: "difftastic",
+    gitAlgorithm: "patience",
+  });
+
+  mock.triggerMessage(
+    JSON.stringify({
+      type: "session",
+      message: {
+        type: "subscribe_checkout_diff_response",
+        payload: {
+          subscriptionId: "checkout-sub-refs",
+          cwd: "/tmp/project",
+          files: [],
+          error: null,
+          requestId: request.requestId,
+        },
+      },
+    }),
+  );
+
+  await promise;
+});
+
+test("subscribeCheckoutDiff keeps tool and gitAlgorithm on base-mode compare", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const promise = client.subscribeCheckoutDiff(
+    "/tmp/project",
+    { mode: "base", baseRef: " main ", tool: "vscode", gitAlgorithm: "histogram" },
+    { subscriptionId: "checkout-sub-base-tool" },
+  );
+
+  expect(mock.sent).toHaveLength(1);
+  const request = parseSentFrame(mock.sent[0]);
+  expect(request.compare).toEqual({
+    mode: "base",
+    baseRef: "main",
+    tool: "vscode",
+    gitAlgorithm: "histogram",
+  });
+
+  mock.triggerMessage(
+    JSON.stringify({
+      type: "session",
+      message: {
+        type: "subscribe_checkout_diff_response",
+        payload: {
+          subscriptionId: "checkout-sub-base-tool",
+          cwd: "/tmp/project",
+          files: [],
+          error: null,
+          requestId: request.requestId,
+        },
+      },
+    }),
+  );
+
+  await promise;
+});
+
+test("installDifftastic sends request, reports progress, resolves with response payload", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const phases: string[] = [];
+  const promise = client.installDifftastic({ onProgress: (phase) => phases.push(phase) });
+
+  expect(mock.sent).toHaveLength(1);
+  const request = parseSentFrame(mock.sent[0]);
+  expect(request.type).toBe("install_difftastic_request");
+  expect(typeof request.requestId).toBe("string");
+
+  mock.triggerMessage(
+    JSON.stringify({
+      type: "session",
+      message: {
+        type: "install_difftastic_progress",
+        payload: { requestId: request.requestId, phase: "downloading" },
+      },
+    }),
+  );
+  // Progress for another request must be ignored.
+  mock.triggerMessage(
+    JSON.stringify({
+      type: "session",
+      message: {
+        type: "install_difftastic_progress",
+        payload: { requestId: "other-request", phase: "installing" },
+      },
+    }),
+  );
+  mock.triggerMessage(
+    JSON.stringify({
+      type: "session",
+      message: {
+        type: "install_difftastic_response",
+        payload: {
+          requestId: request.requestId,
+          success: true,
+          error: null,
+          version: "0.60.0",
+        },
+      },
+    }),
+  );
+
+  await expect(promise).resolves.toEqual({
+    requestId: request.requestId,
+    success: true,
+    error: null,
+    version: "0.60.0",
+  });
+  expect(phases).toEqual(["downloading"]);
 });
 
 test("requests branch suggestions via RPC", async () => {

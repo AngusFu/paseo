@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ServerCapabilities } from "@getpaseo/protocol/messages";
 import type { DaemonServerInfo } from "@/stores/session-store";
 import {
+  getDiffToolsCapability,
   getServerCapabilities,
   getVoiceReadinessState,
   resolveVoiceUnavailableMessage,
@@ -93,6 +94,20 @@ describe("server-info-capabilities", () => {
         mode: "dictation",
       }),
     ).toBe("Dictation models are still downloading.");
+  });
+
+  it("returns null diffTools capability when the server (old build) never sent it", () => {
+    const serverInfo = buildServerInfo();
+    expect(getDiffToolsCapability({ serverInfo })).toBeNull();
+  });
+
+  it("returns the diffTools capability tri-state when the server sent it", () => {
+    const capabilities: ServerCapabilities = {
+      diffTools: { git: "available", vscode: "available", difftastic: "installable" },
+    };
+    const serverInfo = buildServerInfo(capabilities);
+
+    expect(getDiffToolsCapability({ serverInfo })).toEqual(capabilities.diffTools);
   });
 
   it("returns null when capability reason is blank", () => {

@@ -502,11 +502,22 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   }
 
   private normalizeCheckoutDiffOptions(options: CheckoutDiffCompare): CheckoutDiffCompare {
+    // Whitelist rebuild: any compare field the diff pipeline honors must be
+    // re-emitted here or it gets swallowed before reaching checkout-git.
     return {
       mode: options.mode,
       ...(options.mode === "base" && options.baseRef !== undefined
         ? { baseRef: options.baseRef }
         : {}),
+      ...(options.mode === "refs" && options.fromRef !== undefined
+        ? { fromRef: options.fromRef }
+        : {}),
+      ...(options.mode === "refs" && options.toRef !== undefined ? { toRef: options.toRef } : {}),
+      ...(options.mode === "refs" && options.mergeBase !== undefined
+        ? { mergeBase: options.mergeBase }
+        : {}),
+      ...(options.tool !== undefined ? { tool: options.tool } : {}),
+      ...(options.gitAlgorithm !== undefined ? { gitAlgorithm: options.gitAlgorithm } : {}),
       ...(options.ignoreWhitespace === true ? { ignoreWhitespace: true } : {}),
       ...(options.includeStructured === true ? { includeStructured: true } : {}),
     };
@@ -514,12 +525,18 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
 
   private buildCheckoutDiffCacheKey(cwd: string, options: CheckoutDiffCompare): string {
     // Diff content varies by compare signature. Keep the cache per exact diff read shape so
-    // hot diff panes coalesce while base refs and rendering options never share stale patches.
+    // hot diff panes coalesce while base refs, engines/algorithms and rendering options never
+    // share stale patches (a difftastic read must never satisfy a git read, and vice versa).
     return JSON.stringify([
       "checkout-diff",
       cwd,
       options.mode,
       options.mode === "base" ? (options.baseRef ?? null) : null,
+      options.mode === "refs"
+        ? [options.fromRef ?? null, options.toRef ?? null, options.mergeBase !== false]
+        : null,
+      options.tool ?? "git",
+      options.gitAlgorithm ?? null,
       options.ignoreWhitespace === true,
       options.includeStructured === true,
     ]);

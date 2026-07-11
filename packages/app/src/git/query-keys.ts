@@ -17,14 +17,33 @@ export function checkoutStatusQueryKey(serverId: string, cwd: string) {
   return ["checkoutStatus", serverId, cwd] as const;
 }
 
+// Trailing tool/algorithm/refs fields default to their "current behavior" sentinels so
+// existing 5-arg call sites keep producing the same key (git engine, no refs compare).
 export function checkoutDiffQueryKey(
   serverId: string,
   cwd: string,
-  mode: "uncommitted" | "base",
+  mode: "uncommitted" | "base" | "refs",
   baseRef?: string,
   ignoreWhitespace?: boolean,
+  tool?: "git" | "vscode" | "difftastic",
+  gitAlgorithm?: "histogram" | "myers" | "patience",
+  fromRef?: string,
+  toRef?: string,
+  mergeBase?: boolean,
 ) {
-  return ["checkoutDiff", serverId, cwd, mode, baseRef ?? "", ignoreWhitespace === true] as const;
+  return [
+    "checkoutDiff",
+    serverId,
+    cwd,
+    mode,
+    baseRef ?? "",
+    ignoreWhitespace === true,
+    tool ?? "git",
+    gitAlgorithm ?? "",
+    fromRef ?? "",
+    toRef ?? "",
+    mergeBase === true,
+  ] as const;
 }
 
 export function checkoutPrStatusQueryKey(serverId: string, cwd: string) {

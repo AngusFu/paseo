@@ -1,5 +1,22 @@
 import equal from "fast-deep-equal";
 import { v4 as uuidv4 } from "uuid";
+import { invalidateDifftDetection } from "../utils/difftastic.js";
+import {
+  installDifft,
+  type DifftInstallPhase,
+  type InstallDifftResult,
+} from "../utils/difftastic-installer.js";
+
+// Module-scoped dedup for concurrent difftastic installs: only one download/install runs
+// at a time. A request arriving while one is in flight awaits the same promise and emits
+// its own response with the shared result (progress events go to the initiating request;
+// joiners only see "starting" then the final response).
+let inFlightDifftInstall: Promise<InstallDifftResult> | null = null;
+
+/** Test-only: clears the shared install promise between tests. */
+export function __resetInFlightDifftInstallForTests(): void {
+  inFlightDifftInstall = null;
+}
 import { stat } from "node:fs/promises";
 import { basename, normalize, resolve, sep } from "path";
 import { homedir } from "node:os";
@@ -472,6 +489,9 @@ export interface SessionOptions {
   daemonVersion?: string;
   daemonRuntimeConfig?: DaemonRuntimeConfig;
   getWebSocketRuntimeMetrics?: () => DaemonWebSocketRuntimeDiagnosticSnapshot | null;
+  // Recomputes + broadcasts the diffTools server capability (owned by the
+  // websocket server); called after installing/uninstalling difftastic.
+  refreshDiffToolsCapability?: () => Promise<void>;
 }
 
 export type SessionLifecycleIntent =
@@ -540,6 +560,7 @@ export class Session {
   private readonly onBinaryMessage: ((frame: Uint8Array) => void) | null;
   private readonly getTransportBufferedAmount: () => number | null;
   private readonly onLifecycleIntent: ((intent: SessionLifecycleIntent) => void) | null;
+  private readonly refreshDiffToolsCapability: (() => Promise<void>) | null;
   private readonly sessionLogger: pino.Logger;
   private readonly paseoHome: string;
   private readonly worktreesRoot: string | undefined;
@@ -643,7 +664,9 @@ export class Session {
       daemonVersion,
       daemonRuntimeConfig,
       getWebSocketRuntimeMetrics,
+      refreshDiffToolsCapability,
     } = options;
+    this.refreshDiffToolsCapability = refreshDiffToolsCapability ?? null;
     this.clientId = clientId;
     this.appVersion = appVersion ?? null;
     this.clientCapabilities = parseClientCapabilities(clientCapabilities);
@@ -1556,6 +1579,8 @@ export class Session {
         return this.handleDirectorySuggestionsRequest(msg);
       case "subscribe_checkout_diff_request":
         return this.checkoutSession.handleSubscribeDiffRequest(msg);
+      case "install_difftastic_request":
+        return this.handleInstallDifftasticRequest(msg);
       case "unsubscribe_checkout_diff_request":
         this.checkoutSession.handleUnsubscribeDiffRequest(msg);
         return undefined;
@@ -1777,6 +1802,80 @@ export class Session {
       requestId,
       reason: lifecycleReason,
     });
+  }
+
+  private async handleInstallDifftasticRequest(
+    msg: Extract<SessionInboundMessage, { type: "install_difftastic_request" }>,
+  ): Promise<void> {
+    // Installer phases -> protocol progress phases (coalesced: extracting and
+    // validating are both "installing" for the client).
+    const phaseMap: Record<
+      DifftInstallPhase,
+      "starting" | "downloading" | "verifying" | "installing"
+    > = {
+      resolving: "starting",
+      downloading: "downloading",
+      verifying: "verifying",
+      extracting: "installing",
+      validating: "installing",
+    };
+    let lastPhase: string | null = null;
+    const emitProgress = (
+      phase: "starting" | "downloading" | "verifying" | "installing" | "complete",
+    ): void => {
+      if (phase === lastPhase) {
+        return;
+      }
+      lastPhase = phase;
+      this.emit({
+        type: "install_difftastic_progress",
+        payload: { requestId: msg.requestId, phase },
+      });
+    };
+
+    try {
+      let installPromise = inFlightDifftInstall;
+      if (installPromise) {
+        // Another request is already installing — join it instead of starting a second
+        // concurrent download. This request still gets its own progress/response stream.
+        emitProgress("starting");
+      } else {
+        installPromise = installDifft({
+          onProgress: (phase) => emitProgress(phaseMap[phase]),
+        }).finally(() => {
+          inFlightDifftInstall = null;
+        });
+        inFlightDifftInstall = installPromise;
+      }
+      const result = await installPromise;
+      // Force the next detectDifft() to re-probe (it caches per process) so
+      // the capability refresh below sees the freshly installed binary.
+      invalidateDifftDetection();
+      await this.refreshDiffToolsCapability?.();
+      emitProgress("complete");
+      this.emit({
+        type: "install_difftastic_response",
+        payload: {
+          requestId: msg.requestId,
+          success: true,
+          error: null,
+          version: result.version,
+        },
+      });
+    } catch (error) {
+      this.sessionLogger.warn({ err: error }, "difftastic install failed");
+      invalidateDifftDetection();
+      await this.refreshDiffToolsCapability?.().catch(() => undefined);
+      this.emit({
+        type: "install_difftastic_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          version: null,
+        },
+      });
+    }
   }
 
   private async handleShutdownServerRequest(requestId: string): Promise<void> {

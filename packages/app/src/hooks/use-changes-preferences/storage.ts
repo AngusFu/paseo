@@ -10,6 +10,17 @@ const changesPreferencesSchema = z.object({
   viewMode: z.enum(["flat", "tree"]).optional(),
   wrapLines: z.boolean().optional(),
   hideWhitespace: z.boolean().optional(),
+  // Diff engine selection (see CheckoutDiffCompareSchema in @getpaseo/protocol); persisted so
+  // the choice survives an app restart, unlike the ref picker for branch compares.
+  diffTool: z.enum(["git", "vscode", "difftastic"]).optional(),
+  // Only meaningful when diffTool is "git" (or absent); left undefined until the user
+  // explicitly picks an algorithm. While unset the field is omitted on the wire and the
+  // server/git default (myers) applies.
+  gitAlgorithm: z.enum(["histogram", "myers", "patience"]).optional(),
+  // Diff text size step (see DIFF_FONT_SIZE in styles/theme.ts, resolved by
+  // git/diff-font-size.ts). Optional so payloads persisted before this field existed
+  // still parse; absent falls back to "md" — the pre-selector rendering.
+  diffFontSize: z.enum(["xs", "sm", "md", "lg", "xl", "xxl", "xxxl"]).optional(),
 });
 
 export interface ChangesPreferences {
@@ -17,6 +28,9 @@ export interface ChangesPreferences {
   viewMode: "flat" | "tree";
   wrapLines: boolean;
   hideWhitespace: boolean;
+  diffTool: "git" | "vscode" | "difftastic";
+  gitAlgorithm: "histogram" | "myers" | "patience" | undefined;
+  diffFontSize: "xs" | "sm" | "md" | "lg" | "xl" | "xxl" | "xxxl";
 }
 
 export const DEFAULT_CHANGES_PREFERENCES: ChangesPreferences = {
@@ -24,6 +38,9 @@ export const DEFAULT_CHANGES_PREFERENCES: ChangesPreferences = {
   viewMode: "flat",
   wrapLines: false,
   hideWhitespace: false,
+  diffTool: "git",
+  gitAlgorithm: undefined,
+  diffFontSize: "md",
 };
 
 export interface KeyValueStorage {

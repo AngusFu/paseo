@@ -1,0 +1,43 @@
+{
+ "aligned_lines": [
+  [
+   0,
+   0
+  ],
+  [
+   1,
+   1
+  ]
+ ],
+ "chunks": [
+  [
+   {
+    "lhs": {
+     "line_number": 0,
+     "changes": [
+      {
+       "start": 0,
+       "end": 7,
+       "content": "target1",
+       "highlight": "normal"
+      }
+     ]
+    },
+    "rhs": {
+     "line_number": 0,
+     "changes": [
+      {
+       "start": 0,
+       "end": 7,
+       "content": "target2",
+       "highlight": "normal"
+      }
+     ]
+    }
+   }
+  ]
+ ],
+ "language": "Text",
+ "path": "/tmp/difft-research/f/t2.txt",
+ "status": "changed"
+}

@@ -1196,9 +1196,9 @@ const x = 1;
     expect(diff.diff).toContain("# generated.js: diff too large omitted");
     expect(diff.diff).toContain(`-export const value = "old";`);
     expect(diff.diff).toContain(`+export const value = "new";`);
-    expect(commands).toContain("diff --numstat HEAD");
-    expect(commands).toContain("diff HEAD -- generated.js");
-    expect(commands).toContain("diff HEAD -- small.ts");
+    expect(commands).toContain("diff --no-ext-diff --no-textconv --numstat HEAD");
+    expect(commands).toContain("diff --no-ext-diff --no-textconv HEAD -- :(literal)generated.js");
+    expect(commands).toContain("diff --no-ext-diff --no-textconv HEAD -- :(literal)small.ts");
     expect(metrics.maxConcurrent).toBeLessThanOrEqual(8);
   });
 

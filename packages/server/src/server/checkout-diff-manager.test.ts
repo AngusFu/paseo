@@ -220,4 +220,89 @@ describe("CheckoutDiffManager", () => {
       undefined,
     );
   });
+
+  test("normalizeCompare passes tool and gitAlgorithm through to getCheckoutDiff", async () => {
+    const { manager, workspaceGitService } = createManager();
+
+    await manager.subscribe(
+      {
+        cwd: "/tmp/repo",
+        compare: { mode: "uncommitted", tool: "difftastic", gitAlgorithm: "histogram" },
+      },
+      vi.fn(),
+    );
+
+    expect(workspaceGitService.getCheckoutDiff).toHaveBeenCalledWith(
+      "/tmp/repo",
+      expect.objectContaining({
+        mode: "uncommitted",
+        tool: "difftastic",
+        gitAlgorithm: "histogram",
+        includeStructured: true,
+      }),
+      undefined,
+    );
+  });
+
+  test("normalizeCompare passes refs compare fields through, trimmed", async () => {
+    const { manager, workspaceGitService } = createManager();
+
+    await manager.subscribe(
+      {
+        cwd: "/tmp/repo",
+        compare: {
+          mode: "refs",
+          fromRef: "  feature/x  ",
+          toRef: " main ",
+          mergeBase: false,
+          tool: "vscode",
+        },
+      },
+      vi.fn(),
+    );
+
+    expect(workspaceGitService.getCheckoutDiff).toHaveBeenCalledWith(
+      "/tmp/repo",
+      expect.objectContaining({
+        mode: "refs",
+        fromRef: "feature/x",
+        toRef: "main",
+        mergeBase: false,
+        tool: "vscode",
+        includeStructured: true,
+      }),
+      undefined,
+    );
+  });
+
+  test("a different tool creates a distinct watch target (instant engine switching)", async () => {
+    const { manager, workspaceGitService } = createManager();
+
+    await manager.subscribe({ cwd: "/tmp/repo", compare: { mode: "uncommitted" } }, vi.fn());
+    await manager.subscribe(
+      { cwd: "/tmp/repo", compare: { mode: "uncommitted", tool: "difftastic" } },
+      vi.fn(),
+    );
+
+    // Same cwd + mode but a different tool must not share the cached snapshot:
+    // both subscriptions compute their own diff.
+    expect(workspaceGitService.getCheckoutDiff).toHaveBeenCalledTimes(2);
+    expect(manager.getMetrics().checkoutDiffTargetCount).toBe(2);
+  });
+
+  test("the same compare (including tool) coalesces into one target", async () => {
+    const { manager, workspaceGitService } = createManager();
+
+    await manager.subscribe(
+      { cwd: "/tmp/repo", compare: { mode: "uncommitted", tool: "vscode" } },
+      vi.fn(),
+    );
+    await manager.subscribe(
+      { cwd: "/tmp/repo", compare: { mode: "uncommitted", tool: "vscode" } },
+      vi.fn(),
+    );
+
+    expect(workspaceGitService.getCheckoutDiff).toHaveBeenCalledTimes(1);
+    expect(manager.getMetrics().checkoutDiffTargetCount).toBe(1);
+  });
 });

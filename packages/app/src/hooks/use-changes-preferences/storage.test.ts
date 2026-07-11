@@ -31,6 +31,9 @@ describe("loadChangesPreferencesFromStorage", () => {
       viewMode: "flat",
       wrapLines: true,
       hideWhitespace: false,
+      diffTool: "git",
+      gitAlgorithm: undefined,
+      diffFontSize: "md",
     });
     expect(storage.entries.get(CHANGES_PREFERENCES_STORAGE_KEY)).toBe(JSON.stringify(result));
   });
@@ -53,9 +56,68 @@ describe("loadChangesPreferencesFromStorage", () => {
       viewMode: "tree",
       hideWhitespace: true,
       wrapLines: false,
+      diffTool: "git",
+      gitAlgorithm: undefined,
+      diffFontSize: "md",
     });
     expect(storage.entries.get(CHANGES_PREFERENCES_STORAGE_KEY)).toBe(persisted);
     expect(storage.entries.size).toBe(1);
+  });
+
+  it("loads persisted diffTool and gitAlgorithm selections", async () => {
+    const persisted = JSON.stringify({
+      layout: "unified",
+      viewMode: "flat",
+      wrapLines: false,
+      hideWhitespace: false,
+      diffTool: "difftastic",
+      gitAlgorithm: "histogram",
+    });
+    const storage = createInMemoryKeyValueStorage({
+      [CHANGES_PREFERENCES_STORAGE_KEY]: persisted,
+    });
+
+    const result = await loadChangesPreferencesFromStorage(storage);
+
+    expect(result).toEqual({
+      layout: "unified",
+      viewMode: "flat",
+      wrapLines: false,
+      hideWhitespace: false,
+      diffTool: "difftastic",
+      gitAlgorithm: "histogram",
+      diffFontSize: "md",
+    });
+  });
+
+  it("loads a persisted diffFontSize selection without rewriting storage", async () => {
+    const persisted = JSON.stringify({
+      layout: "unified",
+      viewMode: "flat",
+      wrapLines: false,
+      hideWhitespace: false,
+      diffFontSize: "xxl",
+    });
+    const storage = createInMemoryKeyValueStorage({
+      [CHANGES_PREFERENCES_STORAGE_KEY]: persisted,
+    });
+
+    const result = await loadChangesPreferencesFromStorage(storage);
+
+    expect(result.diffFontSize).toBe("xxl");
+    expect(storage.entries.get(CHANGES_PREFERENCES_STORAGE_KEY)).toBe(persisted);
+  });
+
+  it("falls back to md when a persisted payload predates diffFontSize", async () => {
+    const persisted = JSON.stringify({ layout: "split", viewMode: "flat" });
+    const storage = createInMemoryKeyValueStorage({
+      [CHANGES_PREFERENCES_STORAGE_KEY]: persisted,
+    });
+
+    const result = await loadChangesPreferencesFromStorage(storage);
+
+    expect(result.diffFontSize).toBe("md");
+    expect(result.layout).toBe("split");
   });
 });
 

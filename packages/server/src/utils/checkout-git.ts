@@ -1,10 +1,36 @@
-import { resolve, dirname, basename } from "path";
+import { resolve, dirname, basename, join as joinPath } from "path";
 import { existsSync, realpathSync } from "fs";
-import { open as openFile, readFile, stat as statFile } from "fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  open as openFile,
+  readFile,
+  rm,
+  stat as statFile,
+  writeFile,
+} from "fs/promises";
+import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
 import { TTLCache } from "@isaacs/ttlcache";
 import type { Logger } from "pino";
 import type { ParsedDiffFile } from "../server/utils/diff-highlighter.js";
-import { parseAndHighlightDiff } from "../server/utils/diff-highlighter.js";
+import {
+  parseAndHighlightDiff,
+  highlightDiffWithFileContent,
+} from "../server/utils/diff-highlighter.js";
+import {
+  DifftasticError,
+  DifftasticNotMappableError,
+  detectDifft,
+  mapDifftasticToParsedDiff,
+  runDifftJson,
+  type DifftasticInfo,
+} from "./difftastic.js";
+import {
+  VscodeDiffTimeoutError,
+  computeVscodeDiffFile,
+  VSCODE_DIFF_PACKAGE_VERSION,
+} from "./vscode-diff-engine.js";
 import { parseGitHubRepoFromRemote } from "../server/workspace-git-metadata.js";
 import {
   GitHubAuthenticationError,
@@ -445,12 +471,14 @@ async function listCheckoutFileChanges(
   cwd: string,
   refs: CheckoutDiffRefs,
   ignoreWhitespace = false,
+  gitAlgorithm?: GitDiffAlgorithm,
 ): Promise<CheckoutFileChange[]> {
   const changes: CheckoutFileChange[] = [];
 
   const { stdout: nameStatusOut } = await runGitCommand(
     buildGitDiffArgs({
       ignoreWhitespace,
+      gitAlgorithm,
       extra: ["--name-status", ...getCheckoutDiffRefArgs(refs)],
     }),
     { cwd, envOverlay: READ_ONLY_GIT_ENV },
@@ -543,9 +571,13 @@ async function readGitFileContentAtRef(
   }
 }
 
-async function tryResolveMergeBase(cwd: string, baseRef: string): Promise<string | null> {
+async function tryResolveMergeBase(
+  cwd: string,
+  baseRef: string,
+  targetRef = "HEAD",
+): Promise<string | null> {
   try {
-    const { stdout } = await runGitCommand(["merge-base", baseRef, "HEAD"], {
+    const { stdout } = await runGitCommand(["merge-base", baseRef, targetRef], {
       cwd,
       envOverlay: READ_ONLY_GIT_ENV,
     });
@@ -553,6 +585,19 @@ async function tryResolveMergeBase(cwd: string, baseRef: string): Promise<string
     return sha.length > 0 ? sha : null;
   } catch {
     return null;
+  }
+}
+
+// Validates a user-supplied ref resolves to a commit. Throws a friendly error
+// (surfaced through the checkout diff payload.error channel) when it does not.
+async function requireResolvableCommitRef(cwd: string, ref: string, label: string): Promise<void> {
+  try {
+    await runGitCommand(
+      ["rev-parse", "--verify", "--quiet", "--end-of-options", `${ref}^{commit}`],
+      { cwd, envOverlay: READ_ONLY_GIT_ENV },
+    );
+  } catch {
+    throw new Error(`Unknown git ref for ${label}: "${ref}"`);
   }
 }
 
@@ -573,8 +618,24 @@ function normalizeNumstatPath(pathField: string): string {
   return pathField;
 }
 
-function buildGitDiffArgs(args: { ignoreWhitespace?: boolean; extra: string[] }): string[] {
-  return ["diff", ...(args.ignoreWhitespace ? ["-w"] : []), ...args.extra];
+export function buildGitDiffArgs(args: {
+  ignoreWhitespace?: boolean;
+  gitAlgorithm?: GitDiffAlgorithm;
+  extra: string[];
+}): string[] {
+  return [
+    // Spawn hygiene, applied to every diff invocation:
+    // - --no-ext-diff: repo config can point at an external diff driver that executes
+    //   arbitrary commands; never run it from here
+    // - --no-textconv: keep patch bytes faithful to blob contents
+    // (core.quotepath=false is already prepended by runGitCommand for every git spawn.)
+    "diff",
+    "--no-ext-diff",
+    "--no-textconv",
+    ...(args.gitAlgorithm ? [`--diff-algorithm=${args.gitAlgorithm}`] : []),
+    ...(args.ignoreWhitespace ? ["-w"] : []),
+    ...args.extra,
+  ];
 }
 
 const TRACKED_DIFF_NUMSTAT_MAX_BYTES = 2 * 1024 * 1024; // 2MB
@@ -592,10 +653,12 @@ async function getTrackedNumstatByPath(
   cwd: string,
   refs: CheckoutDiffRefs,
   ignoreWhitespace = false,
+  gitAlgorithm?: GitDiffAlgorithm,
 ): Promise<Map<string, FileStat>> {
   const result = await runGitCommand(
     buildGitDiffArgs({
       ignoreWhitespace,
+      gitAlgorithm,
       extra: ["--numstat", ...getCheckoutDiffRefArgs(refs)],
     }),
     {
@@ -650,11 +713,15 @@ async function getTrackedDiffTextForPath(input: {
   refsForDiff: CheckoutDiffRefs;
   path: string;
   ignoreWhitespace: boolean;
+  gitAlgorithm?: GitDiffAlgorithm;
 }): Promise<{ path: string; text: string; truncated: boolean }> {
   const result = await runGitCommand(
     buildGitDiffArgs({
       ignoreWhitespace: input.ignoreWhitespace,
-      extra: [...getCheckoutDiffRefArgs(input.refsForDiff), "--", input.path],
+      gitAlgorithm: input.gitAlgorithm,
+      // :(literal) keeps user paths from being interpreted as pathspec glob
+      // magic (*, ?, [] would otherwise expand).
+      extra: [...getCheckoutDiffRefArgs(input.refsForDiff), "--", `:(literal)${input.path}`],
     }),
     {
       cwd: input.cwd,
@@ -759,11 +826,25 @@ export interface CheckoutDiffResult {
   structured?: ParsedDiffFile[];
 }
 
+export type DiffToolName = "git" | "vscode" | "difftastic";
+
+export type GitDiffAlgorithm = "histogram" | "myers" | "patience";
+
 export interface CheckoutDiffCompare {
-  mode: "uncommitted" | "base";
+  mode: "uncommitted" | "base" | "refs";
   baseRef?: string;
   ignoreWhitespace?: boolean;
   includeStructured?: boolean;
+  // Which engine computes structured per-file diffs (defaults to "git").
+  tool?: DiffToolName;
+  // Only applied when the effective tool is "git" and the caller asked for it.
+  gitAlgorithm?: GitDiffAlgorithm;
+  // Only used when mode is "refs" (arbitrary ref comparison).
+  fromRef?: string;
+  toRef?: string;
+  // refs mode: true (default) compares from the merge base (changes on toRef
+  // since it diverged from fromRef); false is a direct two-dot comparison.
+  mergeBase?: boolean;
 }
 
 export interface MergeToBaseOptions {
@@ -2303,6 +2384,7 @@ interface ProcessTrackedChangesInput {
   refsForDiff: CheckoutDiffRefs;
   trackedChanges: CheckoutFileChange[];
   ignoreWhitespace: boolean;
+  gitAlgorithm?: GitDiffAlgorithm;
   appendDiff: (text: string) => void;
 }
 
@@ -2316,11 +2398,11 @@ interface ProcessTrackedChangesResult {
 async function processTrackedChanges(
   input: ProcessTrackedChangesInput,
 ): Promise<ProcessTrackedChangesResult> {
-  const { cwd, refsForDiff, trackedChanges, ignoreWhitespace, appendDiff } = input;
+  const { cwd, refsForDiff, trackedChanges, ignoreWhitespace, gitAlgorithm, appendDiff } = input;
   const trackedChangeByPath = new Map(trackedChanges.map((change) => [change.path, change]));
   const trackedNumstatByPath =
     trackedChanges.length > 0
-      ? await getTrackedNumstatByPath(cwd, refsForDiff, ignoreWhitespace)
+      ? await getTrackedNumstatByPath(cwd, refsForDiff, ignoreWhitespace, gitAlgorithm)
       : new Map<string, FileStat>();
   const trackedDiffPaths: string[] = [];
   const trackedPlaceholderByPath = new Map<
@@ -2347,6 +2429,7 @@ async function processTrackedChanges(
           refsForDiff,
           path,
           ignoreWhitespace,
+          gitAlgorithm,
         }),
       ),
     );
@@ -2392,6 +2475,22 @@ async function resolveCheckoutDiffRefs(
   if (compare.mode === "uncommitted") {
     return { baseRef: "HEAD", includeUntracked: true };
   }
+  if (compare.mode === "refs") {
+    const fromRef = compare.fromRef?.trim();
+    if (!fromRef) {
+      throw new Error("Missing fromRef for refs comparison");
+    }
+    const toRef = compare.toRef?.trim() || "HEAD";
+    await requireResolvableCommitRef(cwd, fromRef, "fromRef");
+    if (toRef !== "HEAD") {
+      await requireResolvableCommitRef(cwd, toRef, "toRef");
+    }
+    const useMergeBase = compare.mergeBase !== false;
+    const baseRef = useMergeBase
+      ? ((await tryResolveMergeBase(cwd, fromRef, toRef)) ?? fromRef)
+      : fromRef;
+    return { baseRef, targetRef: toRef, includeUntracked: false };
+  }
   const { storedBaseRef, resolvedBaseRef } = await resolveBaseRefForCwd(cwd, context);
   const baseRef = compare.baseRef ?? resolvedBaseRef;
   if (!baseRef) {
@@ -2408,6 +2507,298 @@ async function resolveCheckoutDiffRefs(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Alternate diff engines (vscode / difftastic)
+// ---------------------------------------------------------------------------
+
+// Test seams: engine building blocks are injectable so fallback-chain tests do
+// not require a real difft binary or pathological timeout inputs.
+let difftDetector: () => Promise<DifftasticInfo | null> = () => detectDifft();
+let difftJsonRunner: typeof runDifftJson = runDifftJson;
+let vscodeDiffComputer: typeof computeVscodeDiffFile = computeVscodeDiffFile;
+
+export function __setDiffEngineSeamsForTests(seams: {
+  detectDifft?: () => Promise<DifftasticInfo | null>;
+  runDifftJson?: typeof runDifftJson;
+  computeVscodeDiffFile?: typeof computeVscodeDiffFile;
+}): void {
+  if (seams.detectDifft) difftDetector = seams.detectDifft;
+  if (seams.runDifftJson) difftJsonRunner = seams.runDifftJson;
+  if (seams.computeVscodeDiffFile) vscodeDiffComputer = seams.computeVscodeDiffFile;
+}
+
+export function __resetDiffEngineSeamsForTests(): void {
+  difftDetector = () => detectDifft();
+  difftJsonRunner = runDifftJson;
+  vscodeDiffComputer = computeVscodeDiffFile;
+  engineResultCache.clear();
+}
+
+// Mapper result cache: watch debounce recomputes the whole diff on every
+// working-tree event; without this a 50-file changeset would re-spawn difft
+// (or re-run vscode-diff) per file per keystroke. Keyed by content hashes +
+// engine version so an engine upgrade or blob change misses naturally.
+const ENGINE_RESULT_CACHE_TTL_MS = 5 * 60_000;
+const ENGINE_RESULT_CACHE_MAX = 2_000;
+const engineResultCache = new TTLCache<string, ParsedDiffFile>({
+  ttl: ENGINE_RESULT_CACHE_TTL_MS,
+  max: ENGINE_RESULT_CACHE_MAX,
+  checkAgeOnGet: true,
+});
+
+function sha1Hex(text: string): string {
+  return createHash("sha1").update(text, "utf8").digest("hex");
+}
+
+function buildEngineCacheKey(params: {
+  tool: "vscode" | "difftastic";
+  engineVersion: string;
+  path: string;
+  oldContent: string | null;
+  newContent: string | null;
+  ignoreWhitespace: boolean;
+}): string {
+  return JSON.stringify([
+    params.tool,
+    params.engineVersion,
+    params.path,
+    params.oldContent === null ? null : sha1Hex(params.oldContent),
+    params.newContent === null ? null : sha1Hex(params.newContent),
+    params.ignoreWhitespace,
+  ]);
+}
+
+// difft panics (exit 101) when fed conflict-marker files — route them to git
+// before spawning.
+const CONFLICT_MARKER_RE = /^(?:<{7}|>{7})(?: |$)/m;
+
+function containsConflictMarkers(text: string): boolean {
+  return CONFLICT_MARKER_RE.test(text);
+}
+
+async function readNewSideContent(
+  cwd: string,
+  refs: CheckoutDiffRefs,
+  path: string,
+): Promise<string | null> {
+  if (refs.targetRef) {
+    return readGitFileContentAtRef(cwd, refs.targetRef, path);
+  }
+  // uncommitted mode: the new side is the working tree.
+  try {
+    return await readFile(resolve(cwd, path), "utf-8");
+  } catch {
+    return null;
+  }
+}
+
+async function runDifftasticForFile(params: {
+  path: string;
+  oldContent: string;
+  newContent: string;
+  difft: DifftasticInfo;
+}): Promise<ParsedDiffFile> {
+  const dir = await mkdtemp(joinPath(tmpdir(), "paseo-difft-"));
+  try {
+    // Keep the original basename: difft's language detection is
+    // extension/filename based (Dockerfile, foo.ts, ...).
+    const name = basename(params.path) || "file";
+    const oldFile = joinPath(dir, "old", name);
+    const newFile = joinPath(dir, "new", name);
+    await mkdir(dirname(oldFile), { recursive: true });
+    await mkdir(dirname(newFile), { recursive: true });
+    await writeFile(oldFile, params.oldContent, "utf-8");
+    await writeFile(newFile, params.newContent, "utf-8");
+    const json = await difftJsonRunner(oldFile, newFile, { difftPath: params.difft.path });
+    // Map with the repo-relative path so downstream consumers never see the
+    // tmp file names difft was fed.
+    return mapDifftasticToParsedDiff(json, params.oldContent, params.newContent, params.path);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+interface ComputeEngineDiffInput {
+  cwd: string;
+  refs: CheckoutDiffRefs;
+  tool: "vscode" | "difftastic";
+  ignoreWhitespace: boolean;
+  file: ParsedDiffFile;
+  change: CheckoutFileChange | undefined;
+  difft: DifftasticInfo | null;
+  logger?: Pick<Logger, "trace">;
+}
+
+interface EngineFileContents {
+  oldContent: string | null;
+  newContent: string | null;
+}
+
+// difftastic compares content pairs only: created/deleted/untracked files
+// have no pair, and rename/mode/symlink changes are git-side metadata it
+// cannot see. Unmerged (conflict) files panic difft outright.
+function passesDifftasticFileGuards(input: {
+  isNew: boolean;
+  isDeleted: boolean;
+  change: CheckoutFileChange | undefined;
+  difft: DifftasticInfo | null;
+}): boolean {
+  if (!input.difft) return false;
+  if (input.isNew || input.isDeleted || input.change?.oldPath !== undefined) return false;
+  const status = input.change?.status ?? "M";
+  return !/^[TURC]/.test(status);
+}
+
+function passesDifftasticContentGuards(contents: EngineFileContents): boolean {
+  if (contents.oldContent === null || contents.newContent === null) return false;
+  return (
+    !containsConflictMarkers(contents.oldContent) && !containsConflictMarkers(contents.newContent)
+  );
+}
+
+// Loads both blob sides and applies the per-engine guards. Returns null when
+// the file must stay on the git path.
+async function loadEngineFileContents(
+  input: ComputeEngineDiffInput,
+): Promise<EngineFileContents | null> {
+  const { file, change, tool } = input;
+  const isNew = file.isNew || change?.isNew === true || change?.isUntracked === true;
+  const isDeleted = file.isDeleted || change?.isDeleted === true;
+
+  if (
+    tool === "difftastic" &&
+    !passesDifftasticFileGuards({ isNew, isDeleted, change, difft: input.difft })
+  ) {
+    return null;
+  }
+
+  const oldContent = isNew
+    ? null
+    : await readGitFileContentAtRef(input.cwd, input.refs.baseRef, change?.oldPath ?? file.path);
+  const newContent = isDeleted ? null : await readNewSideContent(input.cwd, input.refs, file.path);
+  if (oldContent === null && newContent === null) return null;
+  const contents = { oldContent, newContent };
+  if (tool === "difftastic" && !passesDifftasticContentGuards(contents)) {
+    return null;
+  }
+  return contents;
+}
+
+// Runs the selected engine for one file; null = fall back to git for it.
+async function runEngineForFile(
+  input: ComputeEngineDiffInput,
+  contents: EngineFileContents,
+): Promise<ParsedDiffFile | null> {
+  const { file, tool } = input;
+  try {
+    if (tool === "vscode") {
+      return vscodeDiffComputer(file.path, contents.oldContent, contents.newContent, {
+        ignoreTrimWhitespace: input.ignoreWhitespace,
+      });
+    }
+    return await runDifftasticForFile({
+      path: file.path,
+      oldContent: contents.oldContent as string,
+      newContent: contents.newContent as string,
+      difft: input.difft as DifftasticInfo,
+    });
+  } catch (error) {
+    if (error instanceof DifftasticNotMappableError) {
+      // Expected "this file is not difftastic material" signal — silent.
+      return null;
+    }
+    const known = error instanceof DifftasticError || error instanceof VscodeDiffTimeoutError;
+    input.logger?.trace(
+      { path: file.path, tool, err: error },
+      known
+        ? "diff engine failed for file; falling back to git"
+        : "unexpected diff engine error; falling back to git",
+    );
+    return null;
+  }
+}
+
+// Computes one file's diff with the requested engine. Returns null whenever
+// the file must stay on the git path (guards, engine errors, timeouts) —
+// single-file degradation, never a whole-diff failure.
+async function computeEngineDiffForFile(
+  input: ComputeEngineDiffInput,
+): Promise<ParsedDiffFile | null> {
+  const { file, tool } = input;
+  const contents = await loadEngineFileContents(input);
+  if (!contents) return null;
+
+  const engineVersion =
+    tool === "difftastic" ? (input.difft as DifftasticInfo).version : VSCODE_DIFF_PACKAGE_VERSION;
+  const cacheKey = buildEngineCacheKey({
+    tool,
+    engineVersion,
+    path: file.path,
+    oldContent: contents.oldContent,
+    newContent: contents.newContent,
+    ignoreWhitespace: input.ignoreWhitespace,
+  });
+  const cached = engineResultCache.get(cacheKey);
+  if (cached) {
+    return { ...cached, isNew: file.isNew, isDeleted: file.isDeleted };
+  }
+
+  const engineFile = await runEngineForFile(input, contents);
+  if (!engineFile) return null;
+
+  const highlighted = await highlightDiffWithFileContent(engineFile, input.cwd, {
+    oldFileContent: contents.oldContent,
+    newFileContent: contents.newContent,
+  });
+  const result: ParsedDiffFile = {
+    ...highlighted,
+    path: file.path,
+    isNew: file.isNew,
+    isDeleted: file.isDeleted,
+    status: "ok",
+    diffTool: tool,
+  };
+  engineResultCache.set(cacheKey, result);
+  return result;
+}
+
+interface ApplyDiffEnginesInput {
+  cwd: string;
+  refsForDiff: CheckoutDiffRefs;
+  tool: "vscode" | "difftastic";
+  ignoreWhitespace: boolean;
+  changesByPath: Map<string, CheckoutFileChange>;
+  structured: ParsedDiffFile[];
+  logger?: Pick<Logger, "trace">;
+}
+
+async function applyDiffEnginesToStructured(input: ApplyDiffEnginesInput): Promise<void> {
+  const difft = input.tool === "difftastic" ? await difftDetector() : null;
+  for (let i = 0; i < input.structured.length; i++) {
+    const file = input.structured[i];
+    // binary/too_large placeholders always stay on the git path.
+    if (file.status !== undefined && file.status !== "ok") {
+      file.diffTool = "git";
+      continue;
+    }
+    const replaced = await computeEngineDiffForFile({
+      cwd: input.cwd,
+      refs: input.refsForDiff,
+      tool: input.tool,
+      ignoreWhitespace: input.ignoreWhitespace,
+      file,
+      change: input.changesByPath.get(file.path),
+      difft,
+      logger: input.logger,
+    });
+    if (replaced) {
+      input.structured[i] = replaced;
+    } else {
+      file.diffTool = "git";
+    }
+  }
+}
+
 export async function getCheckoutDiff(
   cwd: string,
   compare: CheckoutDiffCompare,
@@ -2421,16 +2812,29 @@ export async function getCheckoutDiff(
   }
 
   const ignoreWhitespace = compare.ignoreWhitespace === true;
+  const requestedTool: DiffToolName = compare.tool ?? "git";
+  // --diff-algorithm is a git-engine sub-option only.
+  const gitAlgorithm = requestedTool === "git" ? compare.gitAlgorithm : undefined;
   let effectiveRefsForDiff = refsForDiff;
   let changes: CheckoutFileChange[];
   try {
-    changes = await listCheckoutFileChanges(cwd, effectiveRefsForDiff, ignoreWhitespace);
+    changes = await listCheckoutFileChanges(
+      cwd,
+      effectiveRefsForDiff,
+      ignoreWhitespace,
+      gitAlgorithm,
+    );
   } catch (error) {
     if (!isUnbornHeadDiffError(error)) {
       throw error;
     }
     effectiveRefsForDiff = { ...refsForDiff, baseRef: EMPTY_TREE_OBJECT_ID };
-    changes = await listCheckoutFileChanges(cwd, effectiveRefsForDiff, ignoreWhitespace);
+    changes = await listCheckoutFileChanges(
+      cwd,
+      effectiveRefsForDiff,
+      ignoreWhitespace,
+      gitAlgorithm,
+    );
   }
   changes.sort((a, b) => {
     if (a.path === b.path) return 0;
@@ -2463,6 +2867,7 @@ export async function getCheckoutDiff(
     refsForDiff: effectiveRefsForDiff,
     trackedChanges,
     ignoreWhitespace,
+    gitAlgorithm,
     appendDiff,
   });
 
@@ -2515,6 +2920,17 @@ export async function getCheckoutDiff(
   }
 
   if (compare.includeStructured) {
+    if (requestedTool !== "git") {
+      await applyDiffEnginesToStructured({
+        cwd,
+        refsForDiff: effectiveRefsForDiff,
+        tool: requestedTool,
+        ignoreWhitespace,
+        changesByPath: new Map(changes.map((change) => [change.path, change])),
+        structured,
+        logger: context?.logger,
+      });
+    }
     return { diff: diffText, structured };
   }
   return { diff: diffText };

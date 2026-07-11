@@ -32,6 +32,7 @@ type RouterMessage =
 type RouterMessageType = RouterMessage["type"];
 type RouterHandler = (message: RouterMessage) => void;
 type RouterClient = Parameters<typeof mountServerDataPushRouter>[0]["client"];
+type FakeClientCheckoutDiffCompare = Parameters<RouterClient["subscribeCheckoutDiff"]>[1];
 
 const daemonConfig: MutableDaemonConfig = {
   mcp: { injectIntoAgents: true },
@@ -48,7 +49,7 @@ function createFakeClient(config: { rejectCheckoutDiffSubscribe?: boolean } = {}
   emit: <K extends RouterMessageType>(message: Extract<RouterMessage, { type: K }>) => void;
   subscribeCheckoutDiffCalls: Array<{
     cwd: string;
-    compare: { mode: "uncommitted" | "base"; baseRef?: string; ignoreWhitespace?: boolean };
+    compare: FakeClientCheckoutDiffCompare;
     subscriptionId: string;
   }>;
   unsubscribeCheckoutDiffCalls: string[];
@@ -64,7 +65,7 @@ function createFakeClient(config: { rejectCheckoutDiffSubscribe?: boolean } = {}
   };
   const subscribeCheckoutDiffCalls: Array<{
     cwd: string;
-    compare: { mode: "uncommitted" | "base"; baseRef?: string; ignoreWhitespace?: boolean };
+    compare: FakeClientCheckoutDiffCompare;
     subscriptionId: string;
   }> = [];
   const unsubscribeCheckoutDiffCalls: string[] = [];

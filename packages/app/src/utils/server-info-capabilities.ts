@@ -1,7 +1,17 @@
-import type { ServerCapabilityState } from "@getpaseo/protocol/messages";
+import type { ServerCapabilityState, ServerDiffToolsCapability } from "@getpaseo/protocol/messages";
 import type { DaemonServerInfo } from "@/stores/session-store";
 
 export type VoiceReadinessMode = "dictation" | "voice";
+
+// COMPAT(diffTools): older servers (pre v0.1.107) never send `capabilities.diffTools` at all —
+// callers must treat an absent capability as "no non-git engines", not as "difftastic
+// unavailable" (that would still show a disabled difftastic entry the old server can't honor).
+export function getDiffToolsCapability(params: {
+  serverInfo: DaemonServerInfo | null | undefined;
+}): ServerDiffToolsCapability | null {
+  const capabilities = getServerCapabilities({ serverInfo: params.serverInfo });
+  return capabilities?.diffTools ?? null;
+}
 
 export function getServerCapabilities(params: {
   serverInfo: DaemonServerInfo | null | undefined;

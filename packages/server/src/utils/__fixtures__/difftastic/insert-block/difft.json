@@ -1,0 +1,109 @@
+{
+ "aligned_lines": [
+  [
+   0,
+   0
+  ],
+  [
+   null,
+   1
+  ],
+  [
+   null,
+   2
+  ],
+  [
+   1,
+   3
+  ],
+  [
+   2,
+   4
+  ],
+  [
+   3,
+   5
+  ]
+ ],
+ "chunks": [
+  [
+   {
+    "rhs": {
+     "line_number": 1,
+     "changes": [
+      {
+       "start": 0,
+       "end": 5,
+       "content": "const",
+       "highlight": "keyword"
+      },
+      {
+       "start": 6,
+       "end": 9,
+       "content": "NEW",
+       "highlight": "keyword"
+      },
+      {
+       "start": 10,
+       "end": 11,
+       "content": "=",
+       "highlight": "keyword"
+      },
+      {
+       "start": 12,
+       "end": 13,
+       "content": "9",
+       "highlight": "normal"
+      },
+      {
+       "start": 13,
+       "end": 14,
+       "content": ";",
+       "highlight": "normal"
+      }
+     ]
+    }
+   },
+   {
+    "rhs": {
+     "line_number": 2,
+     "changes": [
+      {
+       "start": 0,
+       "end": 5,
+       "content": "const",
+       "highlight": "keyword"
+      },
+      {
+       "start": 6,
+       "end": 10,
+       "content": "NEW2",
+       "highlight": "keyword"
+      },
+      {
+       "start": 11,
+       "end": 12,
+       "content": "=",
+       "highlight": "keyword"
+      },
+      {
+       "start": 13,
+       "end": 14,
+       "content": "8",
+       "highlight": "normal"
+      },
+      {
+       "start": 14,
+       "end": 15,
+       "content": ";",
+       "highlight": "normal"
+      }
+     ]
+    }
+   }
+  ]
+ ],
+ "language": "TypeScript",
+ "path": "/tmp/difft-research/f/ins_b.ts",
+ "status": "changed"
+}

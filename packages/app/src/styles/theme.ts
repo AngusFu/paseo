@@ -463,6 +463,24 @@ export const FONT_SIZE = {
   "4xl": 34,
 } as const;
 
+// Diff-pane text size steps. `md` equals the authored code font size (FONT_SIZE.code),
+// so the default step renders exactly what users saw before the selector existed. The
+// other steps act as ratios against `md` when the user's settings-level codeFontSize
+// differs from the authored 12 (see resolveDiffFontSize in git/diff-font-size.ts), so
+// the two controls compose instead of fighting. Line-height is not stored per step —
+// it stays the VSCode-style `round(1.5 × fontSize)` the diff pane already computes.
+export const DIFF_FONT_SIZE = {
+  xs: 10,
+  sm: 11,
+  md: 12,
+  lg: 13,
+  xl: 15,
+  xxl: 17,
+  xxxl: 20,
+} as const;
+
+export type DiffFontSizeStep = keyof typeof DIFF_FONT_SIZE;
+
 export const LINE_HEIGHT = {
   // Default code/diff line-height: the authored default codeFontSize (12) × 1.5,
   // matching VSCode's `round(1.5 × fontSize)` and the runtime value that

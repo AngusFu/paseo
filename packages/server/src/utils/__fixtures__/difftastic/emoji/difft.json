@@ -1,0 +1,43 @@
+{
+ "aligned_lines": [
+  [
+   0,
+   0
+  ],
+  [
+   1,
+   1
+  ]
+ ],
+ "chunks": [
+  [
+   {
+    "lhs": {
+     "line_number": 0,
+     "changes": [
+      {
+       "start": 23,
+       "end": 26,
+       "content": "old",
+       "highlight": "normal"
+      }
+     ]
+    },
+    "rhs": {
+     "line_number": 0,
+     "changes": [
+      {
+       "start": 23,
+       "end": 27,
+       "content": "newv",
+       "highlight": "normal"
+      }
+     ]
+    }
+   }
+  ]
+ ],
+ "language": "TypeScript",
+ "path": "/tmp/difft-research/f/em_b.ts",
+ "status": "changed"
+}

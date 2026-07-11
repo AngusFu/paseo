@@ -23,9 +23,11 @@ import {
   WSInboundMessageSchema,
   type ServerCapabilityState,
   type ServerCapabilities,
+  type ServerDiffToolsCapability,
   type WSOutboundMessage,
   wrapSessionMessage,
 } from "./messages.js";
+import { computeDiffToolsCapability } from "../utils/diff-tools-capability.js";
 import { asUint8Array, decodeBinaryFrame } from "@getpaseo/protocol/binary-frames/index";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import type { HostnamesConfig } from "./hostnames.js";
@@ -269,28 +271,34 @@ function resolveCapabilityReason(params: {
 
 function buildServerCapabilities(params: {
   readiness: SpeechReadinessSnapshot | null;
+  diffTools?: ServerDiffToolsCapability;
 }): ServerCapabilities | undefined {
   const readiness = params.readiness;
-  if (!readiness) {
+  if (!readiness && !params.diffTools) {
     return undefined;
   }
   return {
-    voice: {
-      dictation: toServerCapabilityState({
-        state: readiness.dictation,
-        reason: resolveCapabilityReason({
-          state: readiness.dictation,
-          readiness,
-        }),
-      }),
-      voice: toServerCapabilityState({
-        state: readiness.realtimeVoice,
-        reason: resolveCapabilityReason({
-          state: readiness.realtimeVoice,
-          readiness,
-        }),
-      }),
-    },
+    ...(readiness
+      ? {
+          voice: {
+            dictation: toServerCapabilityState({
+              state: readiness.dictation,
+              reason: resolveCapabilityReason({
+                state: readiness.dictation,
+                readiness,
+              }),
+            }),
+            voice: toServerCapabilityState({
+              state: readiness.realtimeVoice,
+              reason: resolveCapabilityReason({
+                state: readiness.realtimeVoice,
+                readiness,
+              }),
+            }),
+          },
+        }
+      : {}),
+    ...(params.diffTools ? { diffTools: params.diffTools } : {}),
   };
 }
 
@@ -453,6 +461,7 @@ export class VoiceAssistantWebSocketServer {
     | ((workspaceId: string, oldBranch: string | null, newBranch: string | null) => void)
     | null;
   private serverCapabilities: ServerCapabilities | undefined;
+  private diffToolsCapability: ServerDiffToolsCapability | undefined;
   private readonly runtimeMetrics = new WebSocketRuntimeMetricsWindow();
   private lastRuntimeMetricsSnapshot: WebSocketRuntimeDiagnosticPayload | null = null;
   private runtimeMetricsInterval: ReturnType<typeof setInterval> | null = null;
@@ -568,6 +577,11 @@ export class VoiceAssistantWebSocketServer {
     this.providerSnapshotManager = providerSnapshotManager;
     this.serverCapabilities = buildServerCapabilities({
       readiness: this.speech?.getReadiness() ?? null,
+    });
+    // Async probe (difft --version spawn); fills in the diffTools capability
+    // and broadcasts an updated server_info once resolved.
+    void this.refreshDiffToolsCapability().catch((err) => {
+      this.logger.warn({ err }, "Failed to compute diff tools capability");
     });
     this.unsubscribeSpeechReadiness =
       this.speech?.onReadinessChange((snapshot) => {
@@ -777,7 +791,23 @@ export class VoiceAssistantWebSocketServer {
   }
 
   public publishSpeechReadiness(readiness: SpeechReadinessSnapshot | null): void {
-    this.updateServerCapabilities(buildServerCapabilities({ readiness }));
+    this.updateServerCapabilities(
+      buildServerCapabilities({ readiness, diffTools: this.diffToolsCapability }),
+    );
+  }
+
+  // Recomputes the diffTools capability (difft detection is cached in-process;
+  // callers invalidate it first when the binary changed) and broadcasts the
+  // updated server_info to connected clients when it differs. Called at
+  // startup and after install/uninstall of difftastic.
+  public async refreshDiffToolsCapability(): Promise<void> {
+    this.diffToolsCapability = await computeDiffToolsCapability();
+    this.updateServerCapabilities(
+      buildServerCapabilities({
+        readiness: this.speech?.getReadiness() ?? null,
+        diffTools: this.diffToolsCapability,
+      }),
+    );
   }
 
   public updateServerCapabilities(capabilities: ServerCapabilities | null | undefined): void {
@@ -1070,6 +1100,7 @@ export class VoiceAssistantWebSocketServer {
       daemonVersion: this.daemonVersion,
       daemonRuntimeConfig: this.daemonRuntimeConfig,
       getWebSocketRuntimeMetrics: () => this.lastRuntimeMetricsSnapshot,
+      refreshDiffToolsCapability: () => this.refreshDiffToolsCapability(),
     });
 
     connection = {

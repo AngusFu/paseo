@@ -1815,6 +1815,17 @@ export function BrowserPane({
     ],
     [],
   );
+  // Dropdown triggers (device size / color scheme / DevTools) render an icon
+  // plus a chevron, which is wider than the fixed 28x28 iconButton box. Reuse
+  // the same hover token but let the box grow to fit its content so the
+  // hover background doesn't clip and neighboring toolbar buttons keep even gaps.
+  const menuTriggerStyle = useCallback(
+    ({ hovered, pressed }: { hovered?: boolean; pressed?: boolean }) => [
+      styles.menuTriggerButton,
+      (hovered || pressed) && styles.iconButtonHovered,
+    ],
+    [],
+  );
   const backIconButtonStyle = useCallback(
     ({ hovered, pressed }: { hovered?: boolean; pressed?: boolean }) => [
       styles.iconButton,
@@ -1961,18 +1972,18 @@ export function BrowserPane({
           <ColorSchemeMenu
             selected={colorScheme}
             onSelect={handleSelectColorScheme}
-            triggerStyle={baseIconButtonStyle}
+            triggerStyle={menuTriggerStyle}
           />
           <DeviceSizeMenu
             selectedId={deviceSizeId}
             onSelect={setDeviceSizeId}
-            triggerStyle={baseIconButtonStyle}
+            triggerStyle={menuTriggerStyle}
           />
           <DevToolsMenu
             inlineOpen={inlineDevtoolsOpen}
             onToggleInline={handleToggleInlineDevTools}
             onOpenDetached={handleOpenDetachedDevTools}
-            triggerStyle={baseIconButtonStyle}
+            triggerStyle={menuTriggerStyle}
           />
           <ImportChromeCookiesButton browserId={browserId} iconButtonStyle={baseIconButtonStyle} />
           <ToolbarButton
@@ -2381,18 +2392,26 @@ const styles = StyleSheet.create((theme) => ({
   chromeLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[1],
+    gap: theme.spacing[1.5],
     flexShrink: 0,
   },
   chromeRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[1],
+    gap: theme.spacing[1.5],
     flexShrink: 0,
   },
   iconButton: {
     width: 28,
     height: 28,
+    borderRadius: theme.borderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  menuTriggerButton: {
+    minWidth: 28,
+    height: 28,
+    paddingHorizontal: theme.spacing[1],
     borderRadius: theme.borderRadius.md,
     alignItems: "center",
     justifyContent: "center",

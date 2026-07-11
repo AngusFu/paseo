@@ -7,6 +7,7 @@ import {
   resolveTerminalProfiles,
 } from "@getpaseo/protocol/terminal-profiles";
 import { getProviderIcon } from "@/components/provider-icons";
+import { getIsElectron } from "@/constants/platform";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
 import type { Theme } from "@/styles/theme";
 import { pinnedTargetKey, type PinnedTabTarget } from "@/workspace-pins/target";
@@ -83,12 +84,16 @@ export function usePinnedLaunchers({ serverId, onLaunch }: UsePinnedLaunchersInp
         continue;
       }
       if (target.kind === "browser") {
-        resolved.push({
-          key: pinnedTargetKey(target),
-          label: t("workspace.tabs.actions.newBrowser"),
-          icon: <ThemedGlobe size={14} uniProps={mutedColorMapping} />,
-          onPress: () => onLaunch(target),
-        });
+        // The in-app browser is Electron-desktop only; hide pinned browser
+        // launchers on mobile/web where they can't work.
+        if (getIsElectron()) {
+          resolved.push({
+            key: pinnedTargetKey(target),
+            label: t("workspace.tabs.actions.newBrowser"),
+            icon: <ThemedGlobe size={14} uniProps={mutedColorMapping} />,
+            onPress: () => onLaunch(target),
+          });
+        }
         continue;
       }
       const profile = profiles.find((entry) => entry.id === target.profileId);

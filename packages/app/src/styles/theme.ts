@@ -464,7 +464,12 @@ export const FONT_SIZE = {
 } as const;
 
 export const LINE_HEIGHT = {
-  diff: 22,
+  // Default code/diff line-height: the authored default codeFontSize (12) × 1.5,
+  // matching VSCode's `round(1.5 × fontSize)` and the runtime value that
+  // `applyAppearance` patches in per the user's codeFontSize. Kept in sync so the
+  // pre-settings-load initial paint and getItemLayout estimates match the real
+  // rendered rows (was 22 = 1.83×, which flashed loose before settings loaded).
+  diff: 18,
 } as const;
 
 export const ICON_SIZE = {

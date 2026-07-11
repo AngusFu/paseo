@@ -267,6 +267,8 @@ export interface ExplorerEntry {
   kind: ExplorerEntryKind;
   size: number;
   modifiedAt: string;
+  // Git-ignored entries render dimmed (VSCode-style). Absent = not ignored.
+  ignored?: boolean;
 }
 
 export interface ExplorerFile {

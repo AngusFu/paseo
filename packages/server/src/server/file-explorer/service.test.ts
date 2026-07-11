@@ -1,8 +1,9 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { readExplorerFile } from "./service.js";
+import { runGitCommand } from "../../utils/run-git-command.js";
+import { listDirectoryEntries, readExplorerFile } from "./service.js";
 
 async function createHomeTempDir(prefix: string): Promise<string> {
   return mkdtemp(path.join(os.homedir(), prefix));
@@ -11,6 +12,47 @@ async function createHomeTempDir(prefix: string): Promise<string> {
 async function createTempDir(prefix: string): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), prefix));
 }
+
+describe("file explorer git-ignored entries", () => {
+  it("flags git-ignored entries and leaves tracked ones unflagged", async () => {
+    const root = await createTempDir("paseo-file-explorer-ignored-");
+
+    try {
+      await runGitCommand(["init"], { cwd: root });
+      await writeFile(path.join(root, ".gitignore"), "node_modules\n.dev\n", "utf-8");
+      await writeFile(path.join(root, "index.ts"), "export const x = 1;\n", "utf-8");
+      await mkdir(path.join(root, "node_modules"));
+      await writeFile(path.join(root, "node_modules", "pkg.js"), "//\n", "utf-8");
+      await mkdir(path.join(root, ".dev"));
+
+      const directory = await listDirectoryEntries({ root, relativePath: "." });
+      const byPath = new Map(directory.entries.map((entry) => [entry.path, entry]));
+
+      expect(byPath.get("node_modules")?.ignored).toBe(true);
+      expect(byPath.get(".dev")?.ignored).toBe(true);
+      expect(byPath.get("index.ts")?.ignored).toBeUndefined();
+      expect(byPath.get(".gitignore")?.ignored).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves entries unflagged in a non-git directory", async () => {
+    const root = await createTempDir("paseo-file-explorer-nogit-");
+
+    try {
+      await writeFile(path.join(root, "index.ts"), "export const x = 1;\n", "utf-8");
+      await mkdir(path.join(root, "node_modules"));
+
+      const directory = await listDirectoryEntries({ root, relativePath: "." });
+      for (const entry of directory.entries) {
+        expect(entry.ignored).toBeUndefined();
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("file explorer service", () => {
   it("reads .ex files as text", async () => {

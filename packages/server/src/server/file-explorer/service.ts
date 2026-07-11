@@ -1,6 +1,7 @@
 import { constants, promises as fs } from "fs";
 import type { FileHandle } from "fs/promises";
 import path from "path";
+import { runGitCommand } from "../../utils/run-git-command.js";
 import { expandUserPath, resolvePathFromBase } from "../path-utils.js";
 
 export type ExplorerEntryKind = "file" | "directory";
@@ -23,6 +24,9 @@ export interface FileExplorerEntry {
   kind: ExplorerEntryKind;
   size: number;
   modifiedAt: string;
+  // True when the entry is git-ignored; used by clients for VSCode-style dimming.
+  // Absent when the workspace is not a git repo or git is unavailable.
+  ignored?: boolean;
 }
 
 export interface FileExplorerDirectory {
@@ -121,6 +125,16 @@ export async function listDirectoryEntries({
     }),
   );
   const entries = entriesWithNulls.filter((entry): entry is FileExplorerEntry => entry !== null);
+
+  const ignoredPaths = await computeIgnoredPaths({
+    root: expandUserPath(root),
+    paths: entries.map((entry) => entry.path),
+  });
+  for (const entry of entries) {
+    if (ignoredPaths.has(entry.path)) {
+      entry.ignored = true;
+    }
+  }
 
   entries.sort((a, b) => {
     const modifiedComparison = new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime();
@@ -323,6 +337,51 @@ async function buildEntryPayload({
     size: stats.size,
     modifiedAt: stats.mtime.toISOString(),
   };
+}
+
+// git check-ignore reads pathspecs from argv (runGitCommand ignores stdin), so
+// batch to stay clear of ARG_MAX for very large directories.
+const CHECK_IGNORE_BATCH_SIZE = 500;
+
+/**
+ * Return the subset of `paths` (relative to `root`) that git considers ignored.
+ * One batched `git check-ignore` per chunk over the workspace root instead of a
+ * spawn per file. Returns an empty set when the directory is not a git repo or
+ * git is otherwise unavailable — ignore status is a display hint, never fatal.
+ */
+async function computeIgnoredPaths({
+  root,
+  paths,
+}: {
+  root: string;
+  paths: string[];
+}): Promise<Set<string>> {
+  const ignored = new Set<string>();
+  if (paths.length === 0) {
+    return ignored;
+  }
+
+  try {
+    for (let start = 0; start < paths.length; start += CHECK_IGNORE_BATCH_SIZE) {
+      const batch = paths.slice(start, start + CHECK_IGNORE_BATCH_SIZE);
+      const result = await runGitCommand(["check-ignore", "--", ...batch], {
+        cwd: root,
+        // check-ignore exits 1 when no path is ignored; both 0 and 1 are success.
+        acceptExitCodes: [0, 1],
+      });
+      for (const line of result.stdout.split("\n")) {
+        const trimmed = line.trim();
+        if (trimmed) {
+          ignored.add(trimmed);
+        }
+      }
+    }
+  } catch {
+    // Not a git repo, git missing, or the command failed — no ignore info.
+    return new Set();
+  }
+
+  return ignored;
 }
 
 function isMissingEntryError(error: unknown): boolean {

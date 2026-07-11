@@ -150,10 +150,15 @@ function TreeRowItem({
     [theme.colors.foregroundMuted],
   );
 
+  const entryInfoStyle = useMemo(
+    () => (entry.ignored ? [styles.entryInfo, styles.entryInfoIgnored] : styles.entryInfo),
+    [entry.ignored],
+  );
+
   return (
     <Pressable onPress={handlePress} style={pressableStyle}>
       <TreeIndentGuides depth={depth} />
-      <View style={styles.entryInfo}>
+      <View style={entryInfoStyle}>
         <View style={styles.entryIcon}>
           {(() => {
             if (!isDirectory) {
@@ -1144,6 +1149,9 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     gap: theme.spacing[2],
     minWidth: 0,
+  },
+  entryInfoIgnored: {
+    opacity: theme.opacity[50],
   },
   entryIcon: {
     flexShrink: 0,

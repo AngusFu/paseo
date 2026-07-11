@@ -1873,6 +1873,10 @@ const FileExplorerEntrySchema = z.object({
   kind: z.enum(["file", "directory"]),
   size: z.number(),
   modifiedAt: z.string(),
+  // Whether this entry is git-ignored (VSCode-style dimming in the explorer).
+  // Additive display-only field: old daemons omit it (nothing dims), old clients
+  // ignore it. No capability gate needed.
+  ignored: z.boolean().optional(),
 });
 
 const FileExplorerFileSchema = z.object({

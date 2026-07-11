@@ -1575,6 +1575,12 @@ export const es: TranslationResources = {
         description: "Líneas mantenidas en el búfer de terminal incorporado",
         accessibilityLabel: "Líneas del historial de terminal",
       },
+      browserDefaultUrl: {
+        label: "URL predeterminada del navegador",
+        description: "Página de inicio para las nuevas pestañas del navegador integrado",
+        placeholder: "https://example.com",
+        accessibilityLabel: "URL predeterminada del navegador",
+      },
       autoExpandReasoning: {
         label: "Siempre expandir razonamiento",
         description:

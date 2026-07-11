@@ -26,6 +26,8 @@ export const DEFAULT_CODE_FONT_SIZE = 12; // == FONT_SIZE.code
 export const MIN_CODE_FONT_SIZE = 9;
 export const MAX_CODE_FONT_SIZE = 22; // line-height 1.5×22=33 stays safe
 export const MAX_FONT_FAMILY_LENGTH = 200;
+export const DEFAULT_BROWSER_START_URL = "https://example.com";
+export const MAX_BROWSER_START_URL_LENGTH = 2048;
 
 export interface AppSettings {
   theme: ThemeName | "auto";
@@ -40,6 +42,7 @@ export interface AppSettings {
   syntaxTheme: SyntaxThemeId; // default "one"
   workspaceTitleSource: WorkspaceTitleSource;
   autoExpandReasoning: boolean;
+  browserDefaultUrl: string; // start URL for new in-app browsers; "" = example.com fallback
 }
 
 export interface Settings extends AppSettings {
@@ -60,6 +63,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   syntaxTheme: "one",
   workspaceTitleSource: "title",
   autoExpandReasoning: false,
+  browserDefaultUrl: DEFAULT_BROWSER_START_URL,
 };
 
 export const DEFAULT_APP_SETTINGS: Settings = {
@@ -209,6 +213,10 @@ function pickAppSettings(stored: Partial<AppSettings>): Partial<AppSettings> {
   if (typeof stored.autoExpandReasoning === "boolean") {
     result.autoExpandReasoning = stored.autoExpandReasoning;
   }
+  const browserDefaultUrl = sanitizeBrowserDefaultUrl(stored.browserDefaultUrl);
+  if (browserDefaultUrl !== null) {
+    result.browserDefaultUrl = browserDefaultUrl;
+  }
   return result;
 }
 
@@ -270,6 +278,23 @@ export function sanitizeFontFamily(value: unknown): string | null {
     return null; // control chars would corrupt the font-family string
   }
   return trimmed; // quotes/commas are legit in stacks
+}
+
+export function sanitizeBrowserDefaultUrl(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return ""; // explicit empty = fall back to example.com at use time
+  }
+  if (trimmed.length > MAX_BROWSER_START_URL_LENGTH) {
+    return null;
+  }
+  if ([...trimmed].some((char) => char.charCodeAt(0) <= 0x1f)) {
+    return null; // control chars would corrupt the stored URL
+  }
+  return trimmed;
 }
 
 async function loadLegacyDesktopSettingsFromStorage(storage: KeyValueStorage): Promise<{

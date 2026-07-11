@@ -14,10 +14,12 @@ import {
   APP_SETTINGS_KEY,
   APP_SETTINGS_QUERY_KEY,
   DEFAULT_APP_SETTINGS,
+  DEFAULT_BROWSER_START_URL,
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_CODE_FONT_SIZE,
   DEFAULT_TERMINAL_SCROLLBACK_LINES,
   DEFAULT_UI_FONT_SIZE,
+  MAX_BROWSER_START_URL_LENGTH,
   MAX_CODE_FONT_SIZE,
   MAX_TERMINAL_SCROLLBACK_LINES,
   MAX_UI_FONT_SIZE,
@@ -28,6 +30,7 @@ import {
   loadSettingsFromStorage as loadSettingsFromStoragePure,
   parseClampedFontSize,
   parseTerminalScrollbackLines,
+  sanitizeBrowserDefaultUrl,
   sanitizeFontFamily,
   saveAppSettings as saveAppSettingsPure,
   type AppSettings,
@@ -44,10 +47,12 @@ import {
 export {
   APP_SETTINGS_KEY,
   DEFAULT_APP_SETTINGS,
+  DEFAULT_BROWSER_START_URL,
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_CODE_FONT_SIZE,
   DEFAULT_TERMINAL_SCROLLBACK_LINES,
   DEFAULT_UI_FONT_SIZE,
+  MAX_BROWSER_START_URL_LENGTH,
   MAX_CODE_FONT_SIZE,
   MAX_TERMINAL_SCROLLBACK_LINES,
   MAX_UI_FONT_SIZE,
@@ -56,6 +61,7 @@ export {
   MIN_UI_FONT_SIZE,
   parseClampedFontSize,
   parseTerminalScrollbackLines,
+  sanitizeBrowserDefaultUrl,
   sanitizeFontFamily,
 };
 export type {
@@ -185,6 +191,9 @@ export function useSettings<TSelected>(
       }
       if (updates.autoExpandReasoning !== undefined) {
         appUpdates.autoExpandReasoning = updates.autoExpandReasoning;
+      }
+      if (updates.browserDefaultUrl !== undefined) {
+        appUpdates.browserDefaultUrl = updates.browserDefaultUrl;
       }
       const promises: Promise<void>[] = [];
       if (Object.keys(appUpdates).length > 0) {

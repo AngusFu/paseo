@@ -1560,6 +1560,12 @@ export const ptBR: TranslationResources = {
         description: "Linhas mantidas no buffer do terminal integrado",
         accessibilityLabel: "Linhas do scrollback do terminal",
       },
+      browserDefaultUrl: {
+        label: "URL padrão do navegador",
+        description: "Página inicial para novas abas do navegador integrado",
+        placeholder: "https://example.com",
+        accessibilityLabel: "URL padrão do navegador",
+      },
       autoExpandReasoning: {
         label: "Sempre expandir raciocínio",
         description:

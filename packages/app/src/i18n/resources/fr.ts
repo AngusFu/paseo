@@ -1579,6 +1579,12 @@ export const fr: TranslationResources = {
         description: "Lignes conservées dans le tampon du terminal intégré",
         accessibilityLabel: "Lignes de défilementTerminal",
       },
+      browserDefaultUrl: {
+        label: "URL par défaut du navigateur",
+        description: "Page de démarrage des nouveaux onglets du navigateur intégré",
+        placeholder: "https://example.com",
+        accessibilityLabel: "URL par défaut du navigateur",
+      },
       autoExpandReasoning: {
         label: "Toujours afficher le raisonnement",
         description: "Afficher le raisonnement de l'agent entièrement développé par défaut",

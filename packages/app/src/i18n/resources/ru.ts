@@ -1565,6 +1565,12 @@ export const ru: TranslationResources = {
         description: "Строки, хранящиеся во встроенном буфере терминала.",
         accessibilityLabel: "Линии прокрутки Terminal",
       },
+      browserDefaultUrl: {
+        label: "URL браузера по умолчанию",
+        description: "Начальная страница для новых вкладок встроенного браузера",
+        placeholder: "https://example.com",
+        accessibilityLabel: "URL браузера по умолчанию",
+      },
       autoExpandReasoning: {
         label: "Всегда разворачивать размышления",
         description:

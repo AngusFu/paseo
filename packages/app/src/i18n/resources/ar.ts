@@ -1535,6 +1535,12 @@ export const ar: TranslationResources = {
         description: "يتم الاحتفاظ بالخطوط في المخزن المؤقت الطرفي المدمج",
         accessibilityLabel: "خطوط التمرير Terminal",
       },
+      browserDefaultUrl: {
+        label: "عنوان URL الافتراضي للمتصفح",
+        description: "صفحة البداية لعلامات تبويب المتصفح الجديدة داخل التطبيق",
+        placeholder: "https://example.com",
+        accessibilityLabel: "عنوان URL الافتراضي للمتصفح",
+      },
       autoExpandReasoning: {
         label: "عرض التفكير دائماً",
         description: "إظهار تفكير الوكيل وخطوات الاستدلال بشكل كامل بشكل افتراضي",

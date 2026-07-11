@@ -107,6 +107,7 @@ import { useArchiveAgent } from "@/hooks/use-archive-agent";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { removeResidentBrowserWebview } from "@/components/browser-webview-resident";
 import { createWorkspaceBrowser, useBrowserStore } from "@/stores/browser-store";
+import { useSettings } from "@/hooks/use-settings";
 import { getDesktopHost } from "@/desktop/host";
 import { buildProviderCommand } from "@/utils/provider-command-templates";
 import { generateDraftId } from "@/stores/draft-keys";
@@ -1708,6 +1709,7 @@ function WorkspaceScreenContent({
   const openWorkspaceChildTabFocused = useWorkspaceLayoutStore(
     (state) => state.openChildTabFocused,
   );
+  const browserDefaultUrl = useSettings((s) => s.browserDefaultUrl);
   const focusWorkspacePane = useWorkspaceLayoutStore((state) => state.focusPane);
   const hasHydratedWorkspaces = useSessionStore(
     (state) => state.sessions[normalizedServerId]?.hasHydratedWorkspaces ?? false,
@@ -2435,10 +2437,10 @@ function WorkspaceScreenContent({
       if (input?.paneId) {
         focusWorkspacePane(persistenceKey, input.paneId);
       }
-      const { browserId } = createWorkspaceBrowser();
+      const { browserId } = createWorkspaceBrowser({ initialUrl: browserDefaultUrl });
       openWorkspaceTabFocused(persistenceKey, { kind: "browser", browserId });
     },
-    [focusWorkspacePane, openWorkspaceTabFocused, persistenceKey],
+    [browserDefaultUrl, focusWorkspacePane, openWorkspaceTabFocused, persistenceKey],
   );
 
   const handleOpenUrlInBrowserTab = useCallback(

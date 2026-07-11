@@ -246,6 +246,7 @@ interface GeneralSectionProps {
   handleServiceUrlBehaviorChange: (behavior: ServiceUrlBehavior) => void;
   handleLanguageChange: (language: AppLanguage) => void;
   handleTerminalScrollbackLinesChange: (lines: number) => void;
+  handleBrowserDefaultUrlChange: (url: string) => void;
 }
 
 interface ServiceUrlBehaviorMenuItemProps {
@@ -302,6 +303,7 @@ function GeneralSection({
   handleServiceUrlBehaviorChange,
   handleLanguageChange,
   handleTerminalScrollbackLinesChange,
+  handleBrowserDefaultUrlChange,
 }: GeneralSectionProps) {
   const { t, i18n } = useTranslation();
   const activeLocale = getActiveLocale(i18n.language);
@@ -344,6 +346,20 @@ function GeneralSection({
   useEffect(() => {
     setTerminalScrollbackValue(String(settings.terminalScrollbackLines));
   }, [settings.terminalScrollbackLines]);
+
+  const [browserDefaultUrlDraft, setBrowserDefaultUrlDraft] = useState(settings.browserDefaultUrl);
+
+  useEffect(() => {
+    setBrowserDefaultUrlDraft(settings.browserDefaultUrl);
+  }, [settings.browserDefaultUrl]);
+
+  const commitBrowserDefaultUrl = useCallback(() => {
+    const trimmed = browserDefaultUrlDraft.trim();
+    setBrowserDefaultUrlDraft(trimmed);
+    if (trimmed !== settings.browserDefaultUrl) {
+      handleBrowserDefaultUrlChange(trimmed);
+    }
+  }, [browserDefaultUrlDraft, handleBrowserDefaultUrlChange, settings.browserDefaultUrl]);
 
   return (
     <SettingsSection title={t("settings.general.title")}>
@@ -435,6 +451,33 @@ function GeneralSection({
             accessibilityLabel={t("settings.general.terminalScrollback.accessibilityLabel")}
           />
         </View>
+        {isDesktopApp ? (
+          <View style={ROW_WITH_BORDER_STYLE}>
+            <View style={settingsStyles.rowContent}>
+              <Text style={settingsStyles.rowTitle}>
+                {t("settings.general.browserDefaultUrl.label")}
+              </Text>
+              <Text style={settingsStyles.rowHint}>
+                {t("settings.general.browserDefaultUrl.description")}
+              </Text>
+            </View>
+            <TextInput
+              value={browserDefaultUrlDraft}
+              onChangeText={setBrowserDefaultUrlDraft}
+              onBlur={commitBrowserDefaultUrl}
+              onSubmitEditing={commitBrowserDefaultUrl}
+              placeholder={t("settings.general.browserDefaultUrl.placeholder")}
+              placeholderTextColor={styles.browserDefaultUrlPlaceholder.color}
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
+              keyboardType="url"
+              inputMode="url"
+              style={styles.browserDefaultUrlInput}
+              accessibilityLabel={t("settings.general.browserDefaultUrl.accessibilityLabel")}
+            />
+          </View>
+        ) : null}
       </View>
     </SettingsSection>
   );
@@ -1207,6 +1250,13 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     [updateSettings],
   );
 
+  const handleBrowserDefaultUrlChange = useCallback(
+    (browserDefaultUrl: string) => {
+      void updateSettings({ browserDefaultUrl });
+    },
+    [updateSettings],
+  );
+
   const handlePlaybackTest = useCallback(async () => {
     if (!voiceAudioEngine || isPlaybackTestRunning) {
       return;
@@ -1412,6 +1462,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
               handleServiceUrlBehaviorChange={handleServiceUrlBehaviorChange}
               handleLanguageChange={handleLanguageChange}
               handleTerminalScrollbackLinesChange={handleTerminalScrollbackLinesChange}
+              handleBrowserDefaultUrlChange={handleBrowserDefaultUrlChange}
             />
           );
         case "appearance":
@@ -1646,6 +1697,24 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
     textAlign: "right",
+  },
+  browserDefaultUrlInput: {
+    flexGrow: 1,
+    flexShrink: 1,
+    maxWidth: 280,
+    minHeight: 36,
+    paddingVertical: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface2,
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    textAlign: "left",
+  },
+  browserDefaultUrlPlaceholder: {
+    color: theme.colors.foregroundMuted,
   },
   placeholder: {
     flex: 1,

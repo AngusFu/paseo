@@ -1542,6 +1542,12 @@ export const en = {
         description: "Lines kept in the built-in terminal buffer",
         accessibilityLabel: "Terminal scrollback lines",
       },
+      browserDefaultUrl: {
+        label: "Default browser URL",
+        description: "Start page for new in-app browser tabs",
+        placeholder: "https://example.com",
+        accessibilityLabel: "Default browser URL",
+      },
       autoExpandReasoning: {
         label: "Always expand reasoning",
         description: "Show agent thinking and chain-of-thought blocks fully expanded by default",

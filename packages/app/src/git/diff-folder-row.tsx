@@ -8,12 +8,7 @@ import {
 } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { DiffStat } from "@/components/diff-stat";
-import {
-  TreeChevron,
-  TreeFolderIcon,
-  TreeIndentGuides,
-  treeRowPaddingLeft,
-} from "@/components/tree-primitives";
+import { TreeChevron, TreeIndentGuides, treeRowPaddingLeft } from "@/components/tree-primitives";
 import { type Theme } from "@/styles/theme";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 
@@ -80,7 +75,6 @@ export function DiffFolderRow({
       >
         <View style={leftStyle}>
           <TreeChevron expanded={!collapsed} />
-          <TreeFolderIcon expanded={!collapsed} />
           <Text style={styles.folderName} numberOfLines={1}>
             {displayName}
           </Text>

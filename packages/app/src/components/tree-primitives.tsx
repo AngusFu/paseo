@@ -27,9 +27,11 @@ const ThemedFolderOpen = withUnistyles(FolderOpen);
 /**
  * Directory folder glyph shown after the disclosure chevron, matching VS Code /
  * GitHub tree rows. Open when expanded, closed when collapsed. Muted so the file
- * type icons (which are colored) stay the visual anchor.
+ * type icons (which are colored) stay the visual anchor. Rendered inside
+ * `TreeChevron` so every folder row across the app (Changes tree, Files
+ * explorer) gets it from the one shared primitive.
  */
-export function TreeFolderIcon({ expanded }: { expanded: boolean }) {
+function FolderGlyph({ expanded }: { expanded: boolean }) {
   return (
     <View style={styles.folderIcon}>
       {expanded ? (
@@ -67,11 +69,18 @@ export function TreeIndentGuides({ depth }: { depth: number }) {
   );
 }
 
-/** Rotating disclosure chevron for a directory row (points right; rotates down when expanded). */
+/**
+ * Directory-row disclosure: a rotating chevron (points right, rotates down when
+ * expanded) followed by the folder glyph. Used by every folder row in the app
+ * (Changes tree and Files explorer) so the two stay identical.
+ */
 export function TreeChevron({ expanded }: { expanded: boolean }) {
   return (
-    <View style={expanded ? CHEVRON_EXPANDED_STYLE : styles.chevron}>
-      <ThemedChevronRight size={16} uniProps={foregroundMutedIconColorMapping} />
+    <View style={styles.disclosure}>
+      <View style={expanded ? CHEVRON_EXPANDED_STYLE : styles.chevron}>
+        <ThemedChevronRight size={16} uniProps={foregroundMutedIconColorMapping} />
+      </View>
+      <FolderGlyph expanded={expanded} />
     </View>
   );
 }
@@ -86,6 +95,12 @@ const styles = StyleSheet.create((theme: Theme) => ({
     // against the row background in both light and dark, matching VS Code's
     // low-but-present indent-guide contrast.
     backgroundColor: theme.colors.surface3,
+  },
+  disclosure: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    flexShrink: 0,
   },
   chevron: {
     width: 16,

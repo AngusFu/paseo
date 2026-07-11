@@ -52,7 +52,7 @@ function splitIntoWords(text: string): string[] {
   return result;
 }
 
-function computeWordLevelDiff(
+export function computeWordLevelDiff(
   oldLine: string,
   newLine: string,
 ): { oldSegments: DiffSegment[]; newSegments: DiffSegment[] } {

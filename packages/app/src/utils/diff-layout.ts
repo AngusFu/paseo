@@ -1,6 +1,21 @@
 import type { DiffLine, ParsedDiffFile } from "@/git/use-diff-query";
+import { computeWordChangeRanges, type WordChangeRange } from "@/utils/diff-word-highlight";
 
 type ReviewSide = "old" | "new";
+
+// The code on a diff line is its content with the leading +/-/space marker
+// removed — the same coordinate space the syntax tokens and word-change ranges
+// use.
+function stripDiffMarker(line: DiffLine): string {
+  const { content, type } = line;
+  if (type === "add" || type === "remove") {
+    return content.startsWith(type === "add" ? "+" : "-") ? content.slice(1) : content;
+  }
+  if (type === "context") {
+    return content.startsWith(" ") ? content.slice(1) : content;
+  }
+  return content;
+}
 type ReviewableLineType = "add" | "remove" | "context";
 
 export interface ReviewableDiffTargetKeyInput {
@@ -29,6 +44,10 @@ export function buildReviewableDiffTargetKey(input: ReviewableDiffTargetKeyInput
 
 export interface NumberedDiffCell extends ReviewableDiffTarget {
   line: DiffLine;
+  // Intra-line (word-level) changed char ranges, in code coordinate space, for
+  // this cell's side. Present only on removed/added lines that form a partial
+  // edit against their paired counterpart.
+  changedRanges?: WordChangeRange[];
 }
 
 export interface NumberedDiffLine {
@@ -55,6 +74,7 @@ export interface SplitDiffDisplayLine {
   type: DiffLine["type"];
   content: string;
   tokens?: DiffLine["tokens"];
+  changedRanges?: WordChangeRange[];
   lineNumber: number | null;
   reviewTarget: ReviewableDiffTarget | null;
 }
@@ -62,6 +82,7 @@ export interface SplitDiffDisplayLine {
 export interface UnifiedDiffDisplayLine {
   key: string;
   line: DiffLine;
+  changedRanges?: WordChangeRange[];
   lineNumber: number | null;
   reviewTarget: ReviewableDiffTarget | null;
 }
@@ -86,6 +107,7 @@ function toSplitDisplayLine(cell: NumberedDiffCell | null): SplitDiffDisplayLine
     type: cell.lineType,
     content: cell.content,
     ...(cell.line.tokens ? { tokens: cell.line.tokens } : {}),
+    ...(cell.changedRanges ? { changedRanges: cell.changedRanges } : {}),
     lineNumber: cell.lineNumber,
     reviewTarget: toReviewTarget(cell),
   };
@@ -110,6 +132,51 @@ function toReviewTarget(cell: NumberedDiffCell): ReviewableDiffTarget {
 function getHunkHeader(hunk: ParsedDiffFile["hunks"][number]): string {
   const headerLine = hunk.lines.find((line) => line.type === "header");
   return headerLine?.content ?? "@@";
+}
+
+// Pair each run of removed lines with the run of added lines that immediately
+// follows it (index-aligned, matching how the split view lays pairs out) and
+// compute the word-level changed ranges for both sides. Mutates the cells in
+// place. Runs once per hunk during numbering so unified and split share it.
+function assignWordChangeRanges(lines: NumberedDiffLine[]): void {
+  let removals: NumberedDiffCell[] = [];
+  let additions: NumberedDiffCell[] = [];
+
+  const flush = () => {
+    const pairCount = Math.min(removals.length, additions.length);
+    for (let index = 0; index < pairCount; index += 1) {
+      const removal = removals[index];
+      const addition = additions[index];
+      const { oldRanges, newRanges } = computeWordChangeRanges(
+        stripDiffMarker(removal.line),
+        stripDiffMarker(addition.line),
+      );
+      if (oldRanges.length > 0) {
+        removal.changedRanges = oldRanges;
+      }
+      if (newRanges.length > 0) {
+        addition.changedRanges = newRanges;
+      }
+    }
+    removals = [];
+    additions = [];
+  };
+
+  for (const numberedLine of lines) {
+    const { type } = numberedLine.line;
+    if (type === "remove" && numberedLine.oldCell) {
+      // An added run followed by another removed run starts a fresh pairing.
+      if (additions.length > 0) {
+        flush();
+      }
+      removals.push(numberedLine.oldCell);
+    } else if (type === "add" && numberedLine.newCell) {
+      additions.push(numberedLine.newCell);
+    } else {
+      flush();
+    }
+  }
+  flush();
 }
 
 export function buildNumberedDiffHunks(file: ParsedDiffFile): NumberedDiffHunk[] {
@@ -173,6 +240,7 @@ export function buildNumberedDiffHunks(file: ParsedDiffFile): NumberedDiffHunk[]
       });
     }
 
+    assignWordChangeRanges(lines);
     numberedHunks.push({ hunkIndex, hunkHeader, lines });
   }
 
@@ -229,6 +297,9 @@ export function buildUnifiedDiffLines(file: ParsedDiffFile): UnifiedDiffDisplayL
     hunk.lines.map((numberedLine) => ({
       key: numberedLine.key,
       line: numberedLine.line,
+      ...(numberedLine.unifiedCell?.changedRanges
+        ? { changedRanges: numberedLine.unifiedCell.changedRanges }
+        : {}),
       lineNumber: numberedLine.unifiedCell?.lineNumber ?? null,
       reviewTarget: numberedLine.unifiedCell ? toReviewTarget(numberedLine.unifiedCell) : null,
     })),

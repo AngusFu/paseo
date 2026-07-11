@@ -75,6 +75,7 @@ import {
   type SplitDiffDisplayLine,
   type SplitDiffRow,
 } from "@/utils/diff-layout";
+import { splitTokensByChangeRanges, type WordChangeRange } from "@/utils/diff-word-highlight";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -133,6 +134,10 @@ interface HighlightedTextProps {
   textMetricsStyle: TextStyle;
   wrapLines?: boolean;
   testID?: string;
+  // Word-level changed char ranges (code coordinate space) and the tint applied
+  // to those spans. When absent, tokens render without intra-line emphasis.
+  changedRanges?: WordChangeRange[];
+  changedHighlightStyle?: StyleProp<TextStyle>;
 }
 
 type WrappedWebTextStyle = TextStyle & {
@@ -171,6 +176,8 @@ function HighlightedText({
   textMetricsStyle,
   wrapLines = false,
   testID,
+  changedRanges,
+  changedHighlightStyle,
 }: HighlightedTextProps) {
   const containerStyle = useMemo(
     () => [
@@ -187,6 +194,32 @@ function HighlightedText({
     [tokens],
   );
 
+  const keyedPieces = useMemo(() => {
+    if (!changedRanges || changedRanges.length === 0) {
+      return null;
+    }
+    return splitTokensByChangeRanges(tokens, changedRanges).map((piece, index) => ({
+      key: `${index}-${piece.text}`,
+      text: piece.text,
+      changed: piece.changed,
+      style: piece.changed
+        ? [syntaxTokenStyleFor(piece.style), changedHighlightStyle]
+        : syntaxTokenStyleFor(piece.style),
+    }));
+  }, [tokens, changedRanges, changedHighlightStyle]);
+
+  if (keyedPieces) {
+    return (
+      <Text style={containerStyle} testID={testID}>
+        {keyedPieces.map(({ key, text, changed, style }) => (
+          <Text key={key} style={style} {...(changed ? WORD_HIGHLIGHT_TEST_PROPS : null)}>
+            {text}
+          </Text>
+        ))}
+      </Text>
+    );
+  }
+
   return (
     <Text style={containerStyle} testID={testID}>
       {keyedTokens.map(({ key, token }) => (
@@ -195,6 +228,11 @@ function HighlightedText({
     </Text>
   );
 }
+
+// Web-only test hook so Playwright can assert intra-line highlight spans exist.
+const WORD_HIGHLIGHT_TEST_PROPS = isWeb
+  ? ({ dataSet: { diffWordChanged: "true" } } as const)
+  : null;
 
 interface DiffFileSectionProps {
   file: ParsedDiffFile;
@@ -278,6 +316,12 @@ function lineTypeBackground(type: DiffLine["type"] | undefined | null) {
   return styles.contextLineContainer;
 }
 
+function wordHighlightStyle(type: DiffLine["type"] | undefined | null) {
+  if (type === "add") return styles.addWordHighlight;
+  if (type === "remove") return styles.removeWordHighlight;
+  return undefined;
+}
+
 function DiffGutterCell({
   lineNumber,
   type,
@@ -353,6 +397,7 @@ function DiffGutterCell({
 
 function DiffTextLine({
   line,
+  changedRanges,
   wrapLines,
   textMetricsStyle,
   reviewTarget,
@@ -363,6 +408,7 @@ function DiffTextLine({
   textTestID,
 }: {
   line: DiffLine;
+  changedRanges?: WordChangeRange[];
   wrapLines: boolean;
   textMetricsStyle: TextStyle;
   reviewTarget?: ReviewableDiffTarget | null;
@@ -408,6 +454,8 @@ function DiffTextLine({
           textMetricsStyle={textMetricsStyle}
           wrapLines={wrapLines}
           testID={textTestID}
+          changedRanges={changedRanges}
+          changedHighlightStyle={wordHighlightStyle(line.type)}
         />
       ) : (
         <Text style={textStyle} testID={textTestID}>
@@ -470,6 +518,8 @@ function SplitTextLine({
           tokens={visibleTokens}
           textMetricsStyle={textMetricsStyle}
           wrapLines={wrapLines}
+          changedRanges={line?.changedRanges}
+          changedHighlightStyle={wordHighlightStyle(line?.type)}
         />
       ) : (
         <Text style={textStyle}>{formatDiffContentText(line?.content)}</Text>
@@ -480,6 +530,7 @@ function SplitTextLine({
 
 function DiffLineView({
   line,
+  changedRanges,
   lineNumber,
   gutterWidth,
   wrapLines,
@@ -488,6 +539,7 @@ function DiffLineView({
   reviewActions,
 }: {
   line: DiffLine;
+  changedRanges?: WordChangeRange[];
   lineNumber: number | null;
   gutterWidth: number;
   wrapLines: boolean;
@@ -539,6 +591,8 @@ function DiffLineView({
           tokens={visibleTokens}
           textMetricsStyle={textMetricsStyle}
           wrapLines={wrapLines}
+          changedRanges={changedRanges}
+          changedHighlightStyle={wordHighlightStyle(line.type)}
         />
       ) : (
         <Text style={textStyle}>{formatDiffContentText(line.content)}</Text>
@@ -604,6 +658,8 @@ function SplitDiffLine({
           tokens={visibleTokens}
           textMetricsStyle={textMetricsStyle}
           wrapLines={wrapLines}
+          changedRanges={line?.changedRanges}
+          changedHighlightStyle={wordHighlightStyle(line?.type)}
         />
       ) : (
         <Text style={textStyle}>{formatDiffContentText(line?.content)}</Text>
@@ -1122,24 +1178,27 @@ function DiffFileBody({
           return (
             <View style={styles.diffContent} dataSet={CODE_SURFACE_DATASET}>
               <View style={styles.linesContainer}>
-                {computedLines.map(({ line, lineNumber, key, reviewTarget }, index) => (
-                  <View key={key} testID={`diff-wrapped-row-${index}`}>
-                    <DiffLineView
-                      line={line}
-                      lineNumber={lineNumber}
-                      gutterWidth={gutterWidth}
-                      wrapLines={wrapLines}
-                      textMetricsStyle={textMetricsStyle}
-                      reviewTarget={reviewTarget}
-                      reviewActions={reviewActions}
-                    />
-                    <InlineReviewRow
-                      reviewTarget={reviewTarget}
-                      reviewActions={reviewActions}
-                      gutterWidth={gutterWidth}
-                    />
-                  </View>
-                ))}
+                {computedLines.map(
+                  ({ line, changedRanges, lineNumber, key, reviewTarget }, index) => (
+                    <View key={key} testID={`diff-wrapped-row-${index}`}>
+                      <DiffLineView
+                        line={line}
+                        changedRanges={changedRanges}
+                        lineNumber={lineNumber}
+                        gutterWidth={gutterWidth}
+                        wrapLines={wrapLines}
+                        textMetricsStyle={textMetricsStyle}
+                        reviewTarget={reviewTarget}
+                        reviewActions={reviewActions}
+                      />
+                      <InlineReviewRow
+                        reviewTarget={reviewTarget}
+                        reviewActions={reviewActions}
+                        gutterWidth={gutterWidth}
+                      />
+                    </View>
+                  ),
+                )}
               </View>
             </View>
           );
@@ -1180,10 +1239,11 @@ function DiffFileBody({
               contentContainerStyle={styles.diffContentInner}
             >
               <View style={linesContainerRowStyle}>
-                {computedLines.map(({ line, key, reviewTarget }, index) => (
+                {computedLines.map(({ line, changedRanges, key, reviewTarget }, index) => (
                   <View key={key} testID={`diff-code-row-${index}`}>
                     <DiffTextLine
                       line={line}
+                      changedRanges={changedRanges}
                       wrapLines={false}
                       textMetricsStyle={textMetricsStyle}
                       reviewTarget={reviewTarget}
@@ -2850,11 +2910,17 @@ const styles = StyleSheet.create((theme) => ({
   addLineText: {
     color: theme.colors.foreground,
   },
+  addWordHighlight: {
+    backgroundColor: theme.colors.diffAddedWordBg,
+  },
   removeLineContainer: {
     backgroundColor: theme.colors.diffRemovedLineBg,
   },
   removeLineText: {
     color: theme.colors.foreground,
+  },
+  removeWordHighlight: {
+    backgroundColor: theme.colors.diffRemovedWordBg,
   },
   headerLineContainer: {
     backgroundColor: theme.colors.surface2,

@@ -218,6 +218,21 @@ test("changes diff keeps code rows aligned with the gutter", async ({ page }) =>
   });
 });
 
+test("changes diff highlights intra-line word changes", async ({ page }) => {
+  const workspace = await createWorkspaceWithInlineEditDiff();
+  await useUnwrappedDiffLines(page);
+  await openInlineEditWorkspaceChanges(page, workspace);
+
+  // Word-level spans are emitted only for the changed tokens of a paired
+  // remove/add line — here the numeric literal that changed in place.
+  const changed = page.locator("[data-diff-word-changed]");
+  await expect(changed.first()).toBeVisible({ timeout: 30_000 });
+  await expect(changed.filter({ hasText: "1000" })).toHaveCount(1);
+  await expect(changed.filter({ hasText: "2000" })).toHaveCount(1);
+  // The unchanged key on the same line must NOT be part of a highlight span.
+  await expect(changed.filter({ hasText: "timeout" })).toHaveCount(0);
+});
+
 test("changes diff switches between flat and tree file lists", async ({ page }) => {
   const workspace = await createWorkspaceWithMountedTabDiff();
   await useUnwrappedDiffLines(page);
@@ -419,6 +434,54 @@ async function createWorkspaceWithMountedTabDiff(): Promise<DirtyWorkspace> {
     throw new Error(createdWorkspace.error ?? `Failed to create workspace ${repo.path}`);
   }
   return { id: createdWorkspace.workspace.id };
+}
+
+const INLINE_EDIT_BEFORE = `export const config = {
+  timeout: 1000,
+  retries: 3,
+};
+`;
+
+const INLINE_EDIT_AFTER = `export const config = {
+  timeout: 2000,
+  retries: 3,
+};
+`;
+
+async function createWorkspaceWithInlineEditDiff(): Promise<DirtyWorkspace> {
+  const repo = await createTempGitRepo("diff-word-highlight-", {
+    files: [{ path: "src/config.ts", content: INLINE_EDIT_BEFORE }],
+  });
+  const client = await connectSeedClient();
+  cleanupTasks.push({
+    run: async () => {
+      await client.close().catch(() => undefined);
+      await repo.cleanup().catch(() => undefined);
+    },
+  });
+
+  await writeFile(path.join(repo.path, "src/config.ts"), INLINE_EDIT_AFTER);
+  const createdWorkspace = await client.createWorkspace({
+    source: { kind: "directory", path: repo.path },
+  });
+  if (!createdWorkspace.workspace) {
+    throw new Error(createdWorkspace.error ?? `Failed to create workspace ${repo.path}`);
+  }
+  return { id: createdWorkspace.workspace.id };
+}
+
+async function openInlineEditWorkspaceChanges(
+  page: Page,
+  workspace: DirtyWorkspace,
+): Promise<void> {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto(buildHostWorkspaceRoute(getServerId(), workspace.id));
+  await waitForWorkspaceTabsVisible(page);
+  await page.getByRole("button", { name: "Open explorer" }).click();
+  await expect(page.getByTestId("explorer-tab-changes")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("config.ts")).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("diff-file-0").click();
+  await expect(page.getByTestId("diff-file-0-body")).toBeVisible({ timeout: 30_000 });
 }
 
 async function openWorkspaceChanges(page: Page, workspace: DirtyWorkspace): Promise<void> {

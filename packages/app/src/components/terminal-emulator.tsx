@@ -924,6 +924,8 @@ export default function TerminalEmulator({
       height: "100%",
       minHeight: 0,
       minWidth: 0,
+      boxSizing: "border-box",
+      padding: 8,
       backgroundColor: xtermTheme.background ?? "#0b0b0b",
       overflow: "hidden",
       overscrollBehavior: "none",

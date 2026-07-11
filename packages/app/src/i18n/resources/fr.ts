@@ -429,6 +429,7 @@ export const fr: TranslationResources = {
         browserUrl: "NavigateurURL",
         enterUrl: "EntrezURL",
         openDevTools: "Outils de développement du navigateur ouvert",
+        importCookies: "Importer les cookies de Chrome",
         cancelSelector: "Annuler le sélecteur d'élément",
         annotateElement: "Annoter l'élément",
         screenshotElement: "Capturer l'élément",
@@ -445,6 +446,28 @@ export const fr: TranslationResources = {
       devices: {
         label: "Taille de l'appareil",
         responsive: "Adaptatif",
+      },
+      importCookies: {
+        title: "Importer les cookies de Chrome",
+        privacyNotice:
+          "Cette action lit et déchiffre les cookies de votre profil Chrome via le trousseau macOS. macOS vous demandera d'abord l'autorisation.",
+        profileLabel: "Profil Chrome",
+        confirm: "Importer",
+        cancel: "Annuler",
+        importing: "Importation…",
+        resultSummary: "{{imported}} cookies importés, {{skipped}} ignorés.",
+        warnings: {
+          unsupportedEncryption:
+            "Certains cookies utilisent le chiffrement App-Bound (Chrome v20) et n'ont pas pu être importés.",
+        },
+        errors: {
+          keychainDenied: "L'accès au trousseau a été refusé. Les cookies n'ont pas été importés.",
+          chromeNotFound: "Google Chrome n'est pas installé.",
+          noProfiles: "Aucun profil Chrome avec des cookies n'a été trouvé.",
+          unsupportedEncryption:
+            "Ces cookies utilisent un format de chiffrement non pris en charge.",
+          generic: "Impossible d'importer les cookies de Chrome.",
+        },
       },
       errors: {
         failedToLoad: "Échec du chargement de la page",

@@ -73,6 +73,18 @@ agent ──MCP──▶ daemon (broker) ──▶ browser host (desktop app) �
 - **Trusted input.** Clicks, keys, hovers, and drags are dispatched as real browser input events — CSS `:hover` triggers, and pages can't tell an agent's click from a user's. Every action first waits for its target to be visible, enabled, and stable.
 - **Dialogs never block.** `alert` is accepted; `confirm`, `prompt`, and `beforeunload` are dismissed. Every handled dialog is reported in the tool result so the agent knows the page flow changed.
 
+## Import cookies from Chrome (macOS)
+
+If you already have a logged-in session in Google Chrome, you can copy those cookies into a Paseo browser tab instead of logging in again. Open a browser tab's toolbar and choose **Import cookies from Chrome**.
+
+Pick the Chrome profile to import from, and Paseo reads and decrypts that profile's cookies and injects them into the tab's session. macOS asks for your permission through the Keychain first — nothing is read until you approve that prompt, so the import is always explicit.
+
+A few things to know:
+
+- **macOS only.** The import relies on the macOS Keychain and Chrome's on-disk cookie store. It isn't available on other platforms yet.
+- **Some cookies can't be imported.** Cookies protected by Chrome's newer App-Bound encryption (Chrome v20) are skipped, and the summary tells you how many were left out.
+- **The summary reports counts.** After the import you see how many cookies were imported and how many were skipped.
+
 ## Security
 
 - Navigation is restricted to `http(s)` URLs.

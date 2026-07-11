@@ -429,6 +429,7 @@ export const es: TranslationResources = {
         browserUrl: "NavegadorURL",
         enterUrl: "IngreseURL",
         openDevTools: "Abrir herramientas de desarrollo del navegador",
+        importCookies: "Importar cookies de Chrome",
         cancelSelector: "Cancelar selector de elementos",
         annotateElement: "Anotar elemento",
         screenshotElement: "Capturar elemento",
@@ -445,6 +446,27 @@ export const es: TranslationResources = {
       devices: {
         label: "Tamaño del dispositivo",
         responsive: "Adaptable",
+      },
+      importCookies: {
+        title: "Importar cookies de Chrome",
+        privacyNotice:
+          "Esto lee y descifra las cookies de tu perfil de Chrome mediante el llavero de macOS. macOS te pedirá permiso primero.",
+        profileLabel: "Perfil de Chrome",
+        confirm: "Importar",
+        cancel: "Cancelar",
+        importing: "Importando…",
+        resultSummary: "Se importaron {{imported}} cookies y se omitieron {{skipped}}.",
+        warnings: {
+          unsupportedEncryption:
+            "Algunas cookies usan cifrado App-Bound (Chrome v20) y no se pudieron importar.",
+        },
+        errors: {
+          keychainDenied: "Se denegó el acceso al llavero. No se importaron las cookies.",
+          chromeNotFound: "Google Chrome no está instalado.",
+          noProfiles: "No se encontraron perfiles de Chrome con cookies.",
+          unsupportedEncryption: "Estas cookies usan un formato de cifrado no compatible.",
+          generic: "No se pudieron importar las cookies de Chrome.",
+        },
       },
       errors: {
         failedToLoad: "No se pudo cargar la página",

@@ -425,6 +425,7 @@ export const ar: TranslationResources = {
         browserUrl: "متصفح URL",
         enterUrl: "أدخل URL",
         openDevTools: "افتح أدوات تطوير المتصفح",
+        importCookies: "استيراد ملفات تعريف الارتباط من Chrome",
         cancelSelector: "إلغاء محدد العنصر",
         annotateElement: "التعليق على العنصر",
         screenshotElement: "لقطة للعنصر",
@@ -441,6 +442,27 @@ export const ar: TranslationResources = {
       devices: {
         label: "حجم الجهاز",
         responsive: "متجاوب",
+      },
+      importCookies: {
+        title: "استيراد ملفات تعريف الارتباط من Chrome",
+        privacyNotice:
+          "يقرأ هذا ملفات تعريف الارتباط من ملفك الشخصي في Chrome ويفك تشفيرها عبر سلسلة مفاتيح macOS. سيطلب منك macOS الإذن أولاً.",
+        profileLabel: "ملف Chrome الشخصي",
+        confirm: "استيراد",
+        cancel: "إلغاء",
+        importing: "جارٍ الاستيراد…",
+        resultSummary: "تم استيراد {{imported}} ملف تعريف ارتباط، وتم تخطي {{skipped}}.",
+        warnings: {
+          unsupportedEncryption:
+            "تستخدم بعض ملفات تعريف الارتباط تشفير App-Bound (Chrome v20) وتعذّر استيرادها.",
+        },
+        errors: {
+          keychainDenied: "تم رفض الوصول إلى سلسلة المفاتيح. لم يتم استيراد ملفات تعريف الارتباط.",
+          chromeNotFound: "متصفح Google Chrome غير مثبَّت.",
+          noProfiles: "لم يتم العثور على ملفات Chrome شخصية تحتوي على ملفات تعريف ارتباط.",
+          unsupportedEncryption: "تستخدم ملفات تعريف الارتباط هذه تنسيق تشفير غير مدعوم.",
+          generic: "تعذّر استيراد ملفات تعريف الارتباط من Chrome.",
+        },
       },
       errors: {
         failedToLoad: "فشل تحميل الصفحة",

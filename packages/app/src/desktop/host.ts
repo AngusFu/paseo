@@ -126,6 +126,19 @@ export interface DesktopBrowserNewTabRequestEvent {
   url: string;
 }
 
+export interface ChromeProfileSummary {
+  id: string;
+  name: string;
+}
+
+export type ChromeProfileListResult =
+  | { ok: true; profiles: ChromeProfileSummary[] }
+  | { ok: false; reason: string; profiles: ChromeProfileSummary[] };
+
+export type ImportChromeCookiesResult =
+  | { ok: true; imported: number; skipped: number; warnings: string[] }
+  | { ok: false; reason: string };
+
 export interface DesktopBrowserBridge {
   registerWorkspaceBrowser?: (input: { browserId: string; workspaceId: string }) => Promise<void>;
   unregisterWorkspaceBrowser?: (browserId: string) => Promise<void>;
@@ -134,6 +147,13 @@ export interface DesktopBrowserBridge {
     browserId: string | null;
   }) => Promise<void>;
   openDevTools?: (browserId: string) => Promise<unknown>;
+  /** List macOS Chrome profiles available for cookie import. */
+  listChromeProfiles?: () => Promise<ChromeProfileListResult>;
+  /** Import + decrypt cookies from a Chrome profile into this browser's session. */
+  importCookiesFromChrome?: (input: {
+    browserId: string;
+    profileId: string;
+  }) => Promise<ImportChromeCookiesResult>;
   clearPartition?: (browserId: string) => Promise<void>;
   executeAutomationCommand?: (
     request: BrowserAutomationExecuteRequest,

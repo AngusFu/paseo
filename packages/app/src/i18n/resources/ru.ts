@@ -429,6 +429,7 @@ export const ru: TranslationResources = {
         browserUrl: "Браузер URL",
         enterUrl: "Введите URL",
         openDevTools: "Открыть инструменты разработки браузера",
+        importCookies: "Импортировать файлы cookie из Chrome",
         cancelSelector: "Отменить выбор элемента",
         annotateElement: "Аннотировать элемент",
         screenshotElement: "Снимок элемента",
@@ -445,6 +446,27 @@ export const ru: TranslationResources = {
       devices: {
         label: "Размер устройства",
         responsive: "Адаптивный",
+      },
+      importCookies: {
+        title: "Импортировать файлы cookie из Chrome",
+        privacyNotice:
+          "Эта операция читает и расшифровывает файлы cookie из вашего профиля Chrome через связку ключей macOS. Сначала macOS запросит разрешение.",
+        profileLabel: "Профиль Chrome",
+        confirm: "Импортировать",
+        cancel: "Отмена",
+        importing: "Импорт…",
+        resultSummary: "Импортировано {{imported}} файлов cookie, пропущено {{skipped}}.",
+        warnings: {
+          unsupportedEncryption:
+            "Некоторые файлы cookie используют шифрование App-Bound (Chrome v20) и не могут быть импортированы.",
+        },
+        errors: {
+          keychainDenied: "Доступ к связке ключей отклонён. Файлы cookie не импортированы.",
+          chromeNotFound: "Google Chrome не установлен.",
+          noProfiles: "Профили Chrome с файлами cookie не найдены.",
+          unsupportedEncryption: "Эти файлы cookie используют неподдерживаемый формат шифрования.",
+          generic: "Не удалось импортировать файлы cookie из Chrome.",
+        },
       },
       errors: {
         failedToLoad: "Не удалось загрузить страницу",

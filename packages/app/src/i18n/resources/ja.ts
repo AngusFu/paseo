@@ -429,6 +429,7 @@ export const ja: TranslationResources = {
         browserUrl: "ブラウザURL",
         enterUrl: "URLを入力",
         openDevTools: "ブラウザ開発ツールを開く",
+        importCookies: "Chrome から Cookie をインポート",
         cancelSelector: "要素セレクターをキャンセル",
         annotateElement: "要素に注釈を付ける",
         screenshotElement: "要素のスクリーンショット",
@@ -445,6 +446,30 @@ export const ja: TranslationResources = {
       devices: {
         label: "デバイスサイズ",
         responsive: "レスポンシブ",
+      },
+      importCookies: {
+        title: "Chrome から Cookie をインポート",
+        privacyNotice:
+          "この操作は macOS キーチェーンを介して Chrome プロファイルの Cookie を読み取り、復号します。macOS が最初に許可を求めます。",
+        profileLabel: "Chrome プロファイル",
+        confirm: "インポート",
+        cancel: "キャンセル",
+        importing: "インポート中…",
+        resultSummary:
+          "{{imported}} 件の Cookie をインポートし、{{skipped}} 件をスキップしました。",
+        warnings: {
+          unsupportedEncryption:
+            "一部の Cookie は App-Bound 暗号化（Chrome v20）を使用しているため、インポートできませんでした。",
+        },
+        errors: {
+          keychainDenied:
+            "キーチェーンへのアクセスが拒否されました。Cookie はインポートされませんでした。",
+          chromeNotFound: "Google Chrome がインストールされていません。",
+          noProfiles: "Cookie を持つ Chrome プロファイルが見つかりませんでした。",
+          unsupportedEncryption:
+            "これらの Cookie はサポートされていない暗号化形式を使用しています。",
+          generic: "Chrome から Cookie をインポートできませんでした。",
+        },
       },
       errors: {
         failedToLoad: "ページの読み込みに失敗しました",

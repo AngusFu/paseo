@@ -33,6 +33,7 @@ import {
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import {
   BORDER_WIDTH,
+  FONT_SIZE,
   ICON_SIZE,
   SPACING,
   type DiffFontSizeStep,
@@ -1932,6 +1933,8 @@ interface DiffBodyContentProps {
   showDesktopWebScrollbar: boolean;
   checkingRepositoryLabel: string;
   notRepositoryLabel: string;
+  diffEmptyTextStyle: TextStyle;
+  diffMessageTextStyle: TextStyle;
 }
 
 function DiffBodyContent({
@@ -1955,26 +1958,40 @@ function DiffBodyContent({
   showDesktopWebScrollbar,
   checkingRepositoryLabel,
   notRepositoryLabel,
+  diffEmptyTextStyle,
+  diffMessageTextStyle,
 }: DiffBodyContentProps) {
+  const loadingTextStyle = useMemo(
+    () => [styles.loadingText, diffMessageTextStyle],
+    [diffMessageTextStyle],
+  );
+  const errorTextStyle = useMemo(
+    () => [styles.errorText, diffMessageTextStyle],
+    [diffMessageTextStyle],
+  );
+  const emptyTextStyle = useMemo(
+    () => [styles.emptyText, diffEmptyTextStyle],
+    [diffEmptyTextStyle],
+  );
   if (isStatusLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ThemedActivityIndicator size="large" uniProps={foregroundMutedIconColorMapping} />
-        <Text style={styles.loadingText}>{checkingRepositoryLabel}</Text>
+        <Text style={loadingTextStyle}>{checkingRepositoryLabel}</Text>
       </View>
     );
   }
   if (statusErrorMessage) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>{statusErrorMessage}</Text>
+        <Text style={errorTextStyle}>{statusErrorMessage}</Text>
       </View>
     );
   }
   if (notGit) {
     return (
       <View style={styles.emptyContainer} testID="changes-not-git">
-        <Text style={styles.emptyText}>{notRepositoryLabel}</Text>
+        <Text style={emptyTextStyle}>{notRepositoryLabel}</Text>
       </View>
     );
   }
@@ -1988,14 +2005,14 @@ function DiffBodyContent({
   if (diffErrorMessage) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>{diffErrorMessage}</Text>
+        <Text style={errorTextStyle}>{diffErrorMessage}</Text>
       </View>
     );
   }
   if (!hasChanges) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>{emptyMessage}</Text>
+        <Text style={emptyTextStyle}>{emptyMessage}</Text>
       </View>
     );
   }
@@ -2393,6 +2410,19 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
       ...(monoFontFamily ? { fontFamily: monoFontFamily } : null),
     };
   }, [appSettings.monoFontFamily, codeFontSize, diffBodyLineHeight]);
+  // Diff-panel chrome text (empty state, loading/error messages) shares the same
+  // status container as diff rows once they render, so it scales with the same
+  // codeFontSize setting instead of the fixed UI font ramp. Ratios against the
+  // authored FONT_SIZE.code preserve today's look at the default codeFontSize.
+  const diffFontSizeRatio = codeFontSize / FONT_SIZE.code;
+  const diffEmptyTextStyle = useMemo<TextStyle>(
+    () => ({ fontSize: Math.round(FONT_SIZE.lg * diffFontSizeRatio) }),
+    [diffFontSizeRatio],
+  );
+  const diffMessageTextStyle = useMemo<TextStyle>(
+    () => ({ fontSize: Math.round(FONT_SIZE.base * diffFontSizeRatio) }),
+    [diffFontSizeRatio],
+  );
   const diffModeTriggerStyle = useMemo(() => buildDiffModeTriggerStyle(), []);
   const diffEngineTriggerStyle = useMemo(() => buildDiffModeTriggerStyle(), []);
   const branchCompareAdvancedToggleStyle = useMemo(() => buildExpandAllButtonStyle(), []);
@@ -3090,6 +3120,8 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
       showDesktopWebScrollbar={showDesktopWebScrollbar}
       checkingRepositoryLabel={t("workspace.git.diff.checkingRepository")}
       notRepositoryLabel={t("workspace.git.diff.notRepository")}
+      diffEmptyTextStyle={diffEmptyTextStyle}
+      diffMessageTextStyle={diffMessageTextStyle}
     />
   );
 
@@ -3379,10 +3411,12 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
     paddingTop: theme.spacing[16],
+    paddingHorizontal: theme.spacing[6],
   },
   emptyText: {
     fontSize: theme.fontSize.lg,
     color: theme.colors.foregroundMuted,
+    textAlign: "center",
   },
   fileSection: {
     overflow: "hidden",

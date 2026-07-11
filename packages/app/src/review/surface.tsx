@@ -694,7 +694,9 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface3,
   },
   editorBlock: {
-    minHeight: INLINE_REVIEW_EDITOR_HEIGHT,
+    // Subtract vertical padding so the padded box measures exactly
+    // INLINE_REVIEW_EDITOR_HEIGHT — the height the diff reserves for it.
+    minHeight: INLINE_REVIEW_EDITOR_HEIGHT - theme.spacing[3] * 2,
     backgroundColor: theme.colors.surface1,
     borderWidth: theme.borderWidth[1],
     borderColor: theme.colors.borderAccent,

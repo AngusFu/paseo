@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   KanbanCardCreateRequestSchema,
   KanbanCardMoveRequestSchema,
+  KanbanConnectionCreateRequestSchema,
+  KanbanConnectionOauthStartRequestSchema,
+  KanbanConnectionOauthStartResponseSchema,
   KanbanSourceCreateRequestSchema,
   KanbanSourceSyncResponseSchema,
 } from "./rpc-schemas.js";
@@ -62,6 +65,53 @@ describe("kanban RPC schemas", () => {
         query: "state=opened",
       }).baseUrl,
     ).toBe("https://gitlab.mycorp.com");
+  });
+
+  it("carries oauth client + token secrets on a connection create request", () => {
+    const parsed = KanbanConnectionCreateRequestSchema.parse({
+      type: "kanban.connection.create.request",
+      requestId: "req-4b",
+      kind: "gitlab",
+      name: "Corp GitLab",
+      baseUrl: "https://gitlab.mycorp.com",
+      oauthClientId: "client-abc",
+      oauthClientSecret: "secret-xyz",
+      tokenValue: "glpat-123",
+    });
+    expect(parsed.oauthClientId).toBe("client-abc");
+    expect(parsed.tokenValue).toBe("glpat-123");
+  });
+
+  it("lets a source reference a connection by id", () => {
+    const parsed = KanbanSourceCreateRequestSchema.parse({
+      type: "kanban.source.create.request",
+      requestId: "req-4c",
+      kind: "gitlab",
+      name: "My board feed",
+      query: "state=opened",
+      connectionId: "kbn_1",
+    });
+    expect(parsed.connectionId).toBe("kbn_1");
+  });
+
+  it("round-trips a connection oauth start request/response pair", () => {
+    expect(
+      KanbanConnectionOauthStartRequestSchema.parse({
+        type: "kanban.connection.oauth.start.request",
+        requestId: "req-6",
+        connectionId: "kbn_1",
+      }).connectionId,
+    ).toBe("kbn_1");
+    expect(
+      KanbanConnectionOauthStartResponseSchema.parse({
+        type: "kanban.connection.oauth.start.response",
+        payload: {
+          requestId: "req-6",
+          authorizeUrl: "https://gitlab.mycorp.com/oauth/authorize?client_id=x",
+          error: null,
+        },
+      }).payload.authorizeUrl,
+    ).toContain("/oauth/authorize");
   });
 
   it("reports upsertedCount on sync responses for idempotency checks", () => {

@@ -143,6 +143,14 @@ const BEARER_AUTH_BYPASS_PATHS = new Set([
   // the token nor a valid daemon password, so dropping the global bearer here
   // does not make the endpoint unauthenticated.
   "/mcp/agents",
+  // The OAuth provider (Jira/GitLab) redirects the user's browser here
+  // directly after authorization — it cannot attach the daemon's bearer
+  // token. The route's own capability is the single-use `state` query param
+  // (crypto-random, 10-minute TTL, consumed on first use), issued only over
+  // the already-authenticated kanban.connection.oauth.start RPC. Requests with an
+  // unknown/expired/reused state are rejected, so dropping the bearer here
+  // does not make the route unauthenticated.
+  "/kanban/oauth/callback",
 ]);
 
 export function shouldBypassBearerAuth(method: string, path: string): boolean {

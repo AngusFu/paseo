@@ -1,12 +1,14 @@
 import type pino from "pino";
 import type {
   KanbanCardSource,
-  KanbanSourceAuth,
   KanbanStatus,
   StoredKanbanCard,
+  StoredKanbanConnection,
   StoredKanbanSource,
 } from "@getpaseo/protocol/kanban/types";
 import { KanbanStore, type UpsertKanbanCardBySourcePayload } from "./store.js";
+import type { KanbanSecretsStore } from "./secrets-store.js";
+import { credentialRefForConnection, type KanbanOauthService } from "./oauth.js";
 
 interface JiraIssue {
   key: string;
@@ -77,17 +79,6 @@ function trimTrailingSlash(url: string): string {
   return url.endsWith("/") ? url.slice(0, -1) : url;
 }
 
-// COMPAT(kanbanCredentials): v1 resolves credentials by reading
-// process.env[credentialRef] directly. A real OAuth/secret-store integration
-// (rotating tokens, encrypted-at-rest storage) is a follow-up.
-function resolveCredential(auth: KanbanSourceAuth | undefined): string | null {
-  if (!auth) {
-    return null;
-  }
-  const value = process.env[auth.credentialRef];
-  return value && value.length > 0 ? value : null;
-}
-
 export interface KanbanSyncResult {
   source: StoredKanbanSource | null;
   cards: StoredKanbanCard[];
@@ -96,31 +87,54 @@ export interface KanbanSyncResult {
 
 export interface KanbanSyncServiceOptions {
   store: KanbanStore;
+  secrets: KanbanSecretsStore;
   fetchImpl: typeof fetch;
+  // Only needed to refresh an expiring OAuth access token before use. Sync
+  // still works without it — it just uses whatever access token is on hand.
+  oauthService?: KanbanOauthService;
   logger?: pino.Logger;
 }
 
+// An access token is refreshed once it's within this window of expiring,
+// rather than waiting for the provider to reject an already-stale request.
+const TOKEN_REFRESH_SKEW_MS = 60_000;
+
 export class KanbanSyncService {
   private readonly store: KanbanStore;
+  private readonly secrets: KanbanSecretsStore;
   private readonly fetchImpl: typeof fetch;
+  private readonly oauthService?: KanbanOauthService;
   private readonly logger?: pino.Logger;
 
   constructor(options: KanbanSyncServiceOptions) {
     this.store = options.store;
+    this.secrets = options.secrets;
     this.fetchImpl = options.fetchImpl;
+    this.oauthService = options.oauthService;
     this.logger = options.logger;
   }
 
   async sync(source: StoredKanbanSource): Promise<KanbanSyncResult> {
     try {
-      const token = resolveCredential(source.auth);
+      const connection = source.connectionId
+        ? await this.store.getConnection(source.connectionId)
+        : null;
+      if (source.connectionId && !connection) {
+        throw new Error(`Kanban connection not found: ${source.connectionId}`);
+      }
+      const baseUrl = connection?.baseUrl ?? source.baseUrl;
+      if (!baseUrl) {
+        throw new Error("Kanban source has no connection and no baseUrl configured");
+      }
+
+      const token = await this.resolveToken(source, connection);
       const upserts =
         source.kind === "jira"
-          ? (await this.fetchJiraIssues(source, token)).map((issue) =>
-              this.buildJiraUpsert(source, issue),
+          ? (await this.fetchJiraIssues(baseUrl, source.query, token)).map((issue) =>
+              this.buildJiraUpsert(baseUrl, source, issue),
             )
-          : (await this.fetchGitlabMergeRequests(source, token)).map((mr) =>
-              this.buildGitlabUpsert(source, mr),
+          : (await this.fetchGitlabMergeRequests(baseUrl, source.query, token)).map((mr) =>
+              this.buildGitlabUpsert(baseUrl, source, mr),
             );
 
       const cards: StoredKanbanCard[] = [];
@@ -146,11 +160,56 @@ export class KanbanSyncService {
     }
   }
 
-  private async fetchJiraIssues(
+  // Resolves the bearer/PAT value to send upstream. Primary route: the source
+  // points at a reusable connection, whose credential is keyed by
+  // credentialRefForConnection(connection.id) — refreshes an about-to-expire
+  // OAuth token first. Legacy route (no connection): looks up
+  // source.auth.credentialRef directly, falling back to an env var of the
+  // same name for scripts/tests that configure credentials that way
+  // (COMPAT(kanbanCredentials): pre-secrets-store v1 behavior, kept as a
+  // fallback rather than removed).
+  private async resolveToken(
     source: StoredKanbanSource,
+    connection: StoredKanbanConnection | null,
+  ): Promise<string | null> {
+    if (connection) {
+      return this.resolveConnectionToken(connection);
+    }
+    if (!source.auth) {
+      return null;
+    }
+    const secret = await this.secrets.get(source.auth.credentialRef);
+    if (!secret) {
+      const envValue = process.env[source.auth.credentialRef];
+      return envValue && envValue.length > 0 ? envValue : null;
+    }
+    return secret.method === "token" ? secret.token : secret.accessToken;
+  }
+
+  private async resolveConnectionToken(connection: StoredKanbanConnection): Promise<string | null> {
+    const secret = await this.secrets.get(credentialRefForConnection(connection.id));
+    if (!secret) {
+      return null;
+    }
+    if (secret.method === "token") {
+      return secret.token;
+    }
+    const expiringSoon =
+      secret.expiresAt !== null &&
+      new Date(secret.expiresAt).getTime() - Date.now() < TOKEN_REFRESH_SKEW_MS;
+    if (expiringSoon && secret.refreshToken && this.oauthService) {
+      const refreshed = await this.oauthService.refreshAccessToken(connection, secret);
+      return refreshed.accessToken;
+    }
+    return secret.accessToken;
+  }
+
+  private async fetchJiraIssues(
+    baseUrl: string,
+    query: string,
     token: string | null,
   ): Promise<JiraIssue[]> {
-    const url = `${trimTrailingSlash(source.baseUrl)}/rest/api/2/search?jql=${encodeURIComponent(source.query)}`;
+    const url = `${trimTrailingSlash(baseUrl)}/rest/api/2/search?jql=${encodeURIComponent(query)}`;
     const headers: Record<string, string> = { Accept: "application/json" };
     if (token) {
       headers.Authorization = `Bearer ${token}`;
@@ -164,10 +223,11 @@ export class KanbanSyncService {
   }
 
   private async fetchGitlabMergeRequests(
-    source: StoredKanbanSource,
+    baseUrl: string,
+    query: string,
     token: string | null,
   ): Promise<GitlabMergeRequest[]> {
-    const url = `${trimTrailingSlash(source.baseUrl)}/api/v4/merge_requests?${source.query}`;
+    const url = `${trimTrailingSlash(baseUrl)}/api/v4/merge_requests?${query}`;
     const headers: Record<string, string> = { Accept: "application/json" };
     if (token) {
       headers["PRIVATE-TOKEN"] = token;
@@ -181,6 +241,7 @@ export class KanbanSyncService {
   }
 
   private buildJiraUpsert(
+    baseUrl: string,
     source: StoredKanbanSource,
     issue: JiraIssue,
   ): {
@@ -198,7 +259,7 @@ export class KanbanSyncService {
       },
       payload: {
         title: issue.fields?.summary ?? issue.key,
-        url: `${trimTrailingSlash(source.baseUrl)}/browse/${issue.key}`,
+        url: `${trimTrailingSlash(baseUrl)}/browse/${issue.key}`,
         status: mapExternalStatus(externalStatus, JIRA_DEFAULT_STATUS_MAP, source.statusMap),
         theme: "jira",
         labels: issue.fields?.labels,
@@ -209,6 +270,7 @@ export class KanbanSyncService {
   }
 
   private buildGitlabUpsert(
+    baseUrl: string,
     source: StoredKanbanSource,
     mr: GitlabMergeRequest,
   ): {
@@ -228,7 +290,7 @@ export class KanbanSyncService {
       },
       payload: {
         title: mr.title,
-        url: mr.web_url ?? `${trimTrailingSlash(source.baseUrl)}/-/merge_requests/${mrIid}`,
+        url: mr.web_url ?? `${trimTrailingSlash(baseUrl)}/-/merge_requests/${mrIid}`,
         status: mapExternalStatus(externalStatusKey, GITLAB_DEFAULT_STATUS_MAP, source.statusMap),
         theme: "gitlab-mr",
         labels: mr.labels,

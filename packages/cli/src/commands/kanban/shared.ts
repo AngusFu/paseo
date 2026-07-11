@@ -302,7 +302,8 @@ export function toKanbanSourceRow(source: StoredKanbanSource): KanbanSourceRow {
     id: source.id,
     kind: source.kind,
     name: source.name,
-    baseUrl: source.baseUrl,
+    // baseUrl is optional now that a source can reference a connection instead.
+    baseUrl: source.baseUrl ?? source.connectionId ?? "",
     enabled: source.enabled,
     lastSyncAt: source.lastSyncAt,
     lastSyncError: source.lastSyncError,

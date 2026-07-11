@@ -4,14 +4,17 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { KanbanStore } from "./store.js";
 import { KanbanSyncService } from "./sync.js";
+import { KanbanSecretsStore } from "./secrets-store.js";
 
 describe("KanbanSyncService", () => {
   let tempDir: string;
   let store: KanbanStore;
+  let secrets: KanbanSecretsStore;
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), "kanban-sync-test-"));
     store = new KanbanStore(tempDir);
+    secrets = new KanbanSecretsStore(tempDir);
   });
 
   afterEach(async () => {
@@ -48,7 +51,7 @@ describe("KanbanSyncService", () => {
       json: async () => jiraResponse,
     })) as unknown as typeof fetch;
 
-    const syncService = new KanbanSyncService({ store, fetchImpl });
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
     const source = await store.createSource({
       kind: "jira",
       name: "Jira",
@@ -96,7 +99,7 @@ describe("KanbanSyncService", () => {
       json: async () => ({}),
     })) as unknown as typeof fetch;
 
-    const syncService = new KanbanSyncService({ store, fetchImpl });
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
     const source = await store.createSource({
       kind: "gitlab",
       name: "GitLab",
@@ -141,7 +144,7 @@ describe("KanbanSyncService", () => {
       json: async () => gitlabResponse,
     })) as unknown as typeof fetch;
 
-    const syncService = new KanbanSyncService({ store, fetchImpl });
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
     const source = await store.createSource({
       kind: "gitlab",
       name: "GitLab",
@@ -157,5 +160,120 @@ describe("KanbanSyncService", () => {
     expect(byExternalId.get("gitlab:42!5")?.status).toBe("wip");
     expect(byExternalId.get("gitlab:42!6")?.status).toBe("pending");
     expect(byExternalId.get("gitlab:42!7")?.status).toBe("done");
+  });
+
+  test("resolves a token secret via source.auth (legacy, no connection) and sends it as a bearer/PAT header", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => [],
+    })) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const created = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+      query: "state=opened",
+    });
+    const connected = await store.updateSource({
+      id: created.id,
+      auth: { method: "token", credentialRef: "kbs_secret_x" },
+    });
+    await secrets.set("kbs_secret_x", { method: "token", token: "glpat-secret" });
+
+    await syncService.sync(connected!);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [, init] = fetchImpl.mock.calls[0];
+    expect((init as RequestInit).headers).toMatchObject({ "PRIVATE-TOKEN": "glpat-secret" });
+  });
+
+  test("resolves a token secret from a connection and sends it as a bearer/PAT header", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => [],
+    })) as unknown as typeof fetch;
+
+    const { credentialRefForConnection } = await import("./oauth.js");
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const connection = await store.createConnection({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+    });
+    await secrets.set(credentialRefForConnection(connection.id), {
+      method: "token",
+      token: "glpat-secret",
+    });
+    const source = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab MRs",
+      connectionId: connection.id,
+      query: "state=opened",
+    });
+
+    await syncService.sync(source);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toContain("https://gitlab.example.com/api/v4/merge_requests");
+    expect((init as RequestInit).headers).toMatchObject({ "PRIVATE-TOKEN": "glpat-secret" });
+  });
+
+  test("refreshes an expiring OAuth access token before syncing", async () => {
+    const fetchCalls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      fetchCalls.push(url);
+      if (url.endsWith("/oauth/token")) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({
+            access_token: "fresh-token",
+            refresh_token: "refresh-2",
+            expires_in: 3600,
+          }),
+        };
+      }
+      expect((init?.headers as Record<string, string>)?.["PRIVATE-TOKEN"]).toBe("fresh-token");
+      return { ok: true, status: 200, statusText: "OK", json: async () => [] };
+    }) as unknown as typeof fetch;
+
+    const { KanbanOauthService, credentialRefForConnection } = await import("./oauth.js");
+    const oauthService = new KanbanOauthService({ store, secrets, fetchImpl });
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl, oauthService });
+
+    const connection = await store.createConnection({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+      oauthClientId: "client-id",
+    });
+    const credentialRef = credentialRefForConnection(connection.id);
+    await secrets.set(credentialRef, {
+      method: "oauth",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      accessToken: "stale-token",
+      refreshToken: "refresh-1",
+      expiresAt: "2020-01-01T00:00:00.000Z",
+    });
+    const source = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab MRs",
+      connectionId: connection.id,
+      query: "state=opened",
+    });
+
+    await syncService.sync(source);
+
+    expect(fetchCalls[0]).toContain("/oauth/token");
+    const refreshed = await secrets.get(credentialRef);
+    expect(refreshed).toMatchObject({ accessToken: "fresh-token", refreshToken: "refresh-2" });
   });
 });

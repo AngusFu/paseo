@@ -1,15 +1,40 @@
 import type pino from "pino";
 import type {
   CreateKanbanCardInput,
+  CreateKanbanConnectionInput,
   CreateKanbanSourceInput,
   MoveKanbanCardInput,
   StoredKanbanCard,
+  StoredKanbanConnection,
   StoredKanbanSource,
   UpdateKanbanCardInput,
+  UpdateKanbanConnectionInput,
   UpdateKanbanSourceInput,
 } from "@getpaseo/protocol/kanban/types";
 import { KanbanStore } from "./store.js";
 import { KanbanSyncService } from "./sync.js";
+import { KanbanSecretsStore, type KanbanOauthSecret, type KanbanSecret } from "./secrets-store.js";
+import { credentialRefForConnection, KanbanOauthService } from "./oauth.js";
+import { KanbanPollService } from "./poll.js";
+
+// Merge a client id + optional new secret into an OAuth secret, preserving any
+// tokens already issued for this connection. Extracted so applyConnectionSecrets
+// stays under the complexity limit.
+function buildOauthSecret(
+  clientId: string,
+  clientSecretInput: string | null | undefined,
+  existing: KanbanSecret | null,
+): KanbanOauthSecret {
+  const prior = existing?.method === "oauth" ? existing : null;
+  return {
+    method: "oauth",
+    clientId,
+    clientSecret: clientSecretInput ?? prior?.clientSecret ?? "",
+    accessToken: prior?.accessToken ?? null,
+    refreshToken: prior?.refreshToken ?? null,
+    expiresAt: prior?.expiresAt ?? null,
+  };
+}
 
 export interface KanbanCardResult {
   card: StoredKanbanCard | null;
@@ -48,6 +73,26 @@ export interface KanbanSourceSyncResult {
   error: string | null;
 }
 
+export interface KanbanConnectionResult {
+  connection: StoredKanbanConnection | null;
+  error: string | null;
+}
+
+export interface KanbanConnectionListResult {
+  connections: StoredKanbanConnection[];
+  error: string | null;
+}
+
+export interface KanbanConnectionDeleteResult {
+  connectionId: string;
+  error: string | null;
+}
+
+export interface KanbanConnectionOauthStartResult {
+  authorizeUrl: string | null;
+  error: string | null;
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -58,20 +103,58 @@ export interface KanbanServiceOptions {
   logger?: pino.Logger;
 }
 
-// Wraps KanbanStore + KanbanSyncService with one handler per RPC. Handlers
-// never throw — failures come back as { ..., error: string } so session.ts
-// can emit the response payload directly without its own try/catch.
+// Secret-bearing fields on Create/UpdateKanbanConnectionInput. Never
+// persisted on StoredKanbanConnection — written to secrets.json and replaced
+// with a credentialRef-keyed entry before the connection row is stored.
+interface ConnectionSecretInput {
+  tokenValue?: string | null;
+  oauthClientId?: string | null;
+  oauthClientSecret?: string | null;
+}
+
+// Wraps KanbanStore + KanbanSyncService + KanbanOauthService + KanbanPollService
+// with one handler per RPC. Handlers never throw — failures come back as
+// { ..., error: string } so session.ts can emit the response payload directly
+// without its own try/catch.
 export class KanbanService {
   private readonly store: KanbanStore;
+  private readonly secretsStore: KanbanSecretsStore;
   private readonly syncService: KanbanSyncService;
+  private readonly oauthService: KanbanOauthService;
+  private readonly pollService: KanbanPollService;
 
   constructor(options: KanbanServiceOptions) {
     this.store = new KanbanStore(options.dir);
-    this.syncService = new KanbanSyncService({
+    this.secretsStore = new KanbanSecretsStore(options.dir);
+    const fetchImpl = options.fetchImpl ?? fetch;
+    this.oauthService = new KanbanOauthService({
       store: this.store,
-      fetchImpl: options.fetchImpl ?? fetch,
+      secrets: this.secretsStore,
+      fetchImpl,
       logger: options.logger,
     });
+    this.syncService = new KanbanSyncService({
+      store: this.store,
+      secrets: this.secretsStore,
+      fetchImpl,
+      oauthService: this.oauthService,
+      logger: options.logger,
+    });
+    this.pollService = new KanbanPollService({
+      store: this.store,
+      syncService: this.syncService,
+      logger: options.logger,
+    });
+  }
+
+  // Starts the per-source poll timer (checks sources against their
+  // pollEverySec every few seconds). Safe to call multiple times.
+  startPolling(): void {
+    this.pollService.start();
+  }
+
+  stopPolling(): void {
+    this.pollService.stop();
   }
 
   async createCard(input: CreateKanbanCardInput): Promise<KanbanCardResult> {
@@ -185,5 +268,123 @@ export class KanbanService {
     } catch (error) {
       return { source: null, cards: [], upsertedCount: 0, error: errorMessage(error) };
     }
+  }
+
+  async createConnection(input: CreateKanbanConnectionInput): Promise<KanbanConnectionResult> {
+    try {
+      const created = await this.store.createConnection(input);
+      const connection = await this.applyConnectionSecrets(created, input);
+      return { connection, error: null };
+    } catch (error) {
+      return { connection: null, error: errorMessage(error) };
+    }
+  }
+
+  async listConnections(): Promise<KanbanConnectionListResult> {
+    try {
+      const connections = await this.store.listConnections();
+      return { connections, error: null };
+    } catch (error) {
+      return { connections: [], error: errorMessage(error) };
+    }
+  }
+
+  async updateConnection(input: UpdateKanbanConnectionInput): Promise<KanbanConnectionResult> {
+    try {
+      const updated = await this.store.updateConnection(input);
+      if (!updated) {
+        return { connection: null, error: `Kanban connection not found: ${input.id}` };
+      }
+      const connection = await this.applyConnectionSecrets(updated, input);
+      return { connection, error: null };
+    } catch (error) {
+      return { connection: null, error: errorMessage(error) };
+    }
+  }
+
+  async deleteConnection(connectionId: string): Promise<KanbanConnectionDeleteResult> {
+    try {
+      const deleted = await this.store.deleteConnection(connectionId);
+      if (deleted) {
+        await this.secretsStore.delete(credentialRefForConnection(connectionId));
+      }
+      return {
+        connectionId,
+        error: deleted ? null : `Kanban connection not found: ${connectionId}`,
+      };
+    } catch (error) {
+      return { connectionId, error: errorMessage(error) };
+    }
+  }
+
+  // Begins an OAuth authorization-code flow for a connection: returns the
+  // provider authorize URL the client should open. redirectUri is the
+  // daemon's own loopback callback route, computed by the caller (session.ts
+  // knows the bound TCP host/port; this service does not).
+  async startOauth(
+    connectionId: string,
+    redirectUri: string,
+  ): Promise<KanbanConnectionOauthStartResult> {
+    try {
+      const connection = await this.store.getConnection(connectionId);
+      if (!connection) {
+        return { authorizeUrl: null, error: `Kanban connection not found: ${connectionId}` };
+      }
+      const { authorizeUrl } = this.oauthService.startAuthorization(connection, redirectUri);
+      return { authorizeUrl, error: null };
+    } catch (error) {
+      return { authorizeUrl: null, error: errorMessage(error) };
+    }
+  }
+
+  // Called by the daemon's /kanban/oauth/callback HTTP route (not an RPC —
+  // the provider redirects the user's browser here directly).
+  async handleOauthCallback(params: {
+    code?: string;
+    state?: string;
+    error?: string;
+  }): Promise<{ connectionId: string }> {
+    return this.oauthService.handleCallback(params);
+  }
+
+  // Writes tokenValue/oauthClientSecret to secrets.json and flips
+  // authConnected via setConnectionAuthConnected. Secret material itself is
+  // never returned or stored on StoredKanbanConnection.
+  //
+  // Precedence when a caller (create or update) supplies more than one
+  // secret-shaped field: a non-empty tokenValue wins (PAT auth) and marks the
+  // connection connected immediately; a non-empty oauthClientId stores/updates
+  // the OAuth app config but leaves authConnected alone unless a token is
+  // already on file (not "connected" until the callback completes); an
+  // explicit null on either clears the credential. Omitting both leaves the
+  // existing credential untouched.
+  private async applyConnectionSecrets(
+    connection: StoredKanbanConnection,
+    input: ConnectionSecretInput,
+  ): Promise<StoredKanbanConnection> {
+    const credentialRef = credentialRefForConnection(connection.id);
+
+    if (typeof input.tokenValue === "string" && input.tokenValue.length > 0) {
+      await this.secretsStore.set(credentialRef, { method: "token", token: input.tokenValue });
+      const updated = await this.store.setConnectionAuthConnected(connection.id, true);
+      return updated ?? connection;
+    }
+
+    if (typeof input.oauthClientId === "string" && input.oauthClientId.length > 0) {
+      const existing = await this.secretsStore.get(credentialRef);
+      const hasToken = existing?.method === "oauth" && existing.accessToken != null;
+      const secret = buildOauthSecret(input.oauthClientId, input.oauthClientSecret, existing);
+      await this.secretsStore.set(credentialRef, secret);
+      const updated = await this.store.setConnectionAuthConnected(connection.id, hasToken);
+      return updated ?? connection;
+    }
+
+    if (input.tokenValue === null || input.oauthClientId === null) {
+      await this.secretsStore.delete(credentialRef);
+      const updated = await this.store.setConnectionAuthConnected(connection.id, false);
+      return updated ?? connection;
+    }
+
+    return connection;
   }
 }

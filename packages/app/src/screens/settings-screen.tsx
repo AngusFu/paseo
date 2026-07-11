@@ -91,6 +91,7 @@ import {
   HostAgentsPage,
   HostSettingsPage,
   HostProvidersPage,
+  HostIntegrationsPage,
   HostUsagePage,
   HostWorkspacesPage,
   HostTerminalsPage,
@@ -164,6 +165,7 @@ const HOST_SECTION_ITEMS: HostSectionItem[] = [
   { id: "agents", labelKey: "settings.hostSections.agents", icon: Bot },
   { id: "workspaces", labelKey: "settings.hostSections.workspaces", icon: FolderGit2 },
   { id: "providers", labelKey: "settings.hostSections.providers", icon: Boxes },
+  { id: "integrations", labelKey: "settings.hostSections.integrations", icon: Puzzle },
   { id: "usage", labelKey: "settings.hostSections.usage", icon: Gauge },
   { id: "terminals", labelKey: "settings.hostSections.terminals", icon: SquareTerminal },
 ];
@@ -181,6 +183,8 @@ function renderHostSettingsContent(
       return <HostWorkspacesPage serverId={view.serverId} />;
     case "providers":
       return <HostProvidersPage serverId={view.serverId} />;
+    case "integrations":
+      return <HostIntegrationsPage serverId={view.serverId} />;
     case "usage":
       return <HostUsagePage serverId={view.serverId} />;
     case "terminals":

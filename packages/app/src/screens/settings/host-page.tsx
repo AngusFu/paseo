@@ -53,6 +53,7 @@ import {
   useHosts,
 } from "@/runtime/host-runtime";
 import { ProvidersSection } from "@/screens/settings/providers-section";
+import { KanbanConnectionsSection } from "@/screens/settings/kanban-connections-section";
 import { ProviderUsageSettingsSection } from "@/provider-usage/settings-section";
 import { useProviderUsage } from "@/provider-usage/use-provider-usage";
 import { SettingsSection } from "@/screens/settings/settings-section";
@@ -316,6 +317,20 @@ export function HostProvidersPage({ serverId }: { serverId: string }) {
   return (
     <View>
       <ProvidersSection serverId={serverId} />
+    </View>
+  );
+}
+
+export function HostIntegrationsPage({ serverId }: { serverId: string }) {
+  const host = useHostProfile(serverId);
+
+  if (!host) {
+    return <HostNotFound />;
+  }
+
+  return (
+    <View>
+      <KanbanConnectionsSection serverId={serverId} />
     </View>
   );
 }

@@ -246,11 +246,26 @@ export function KanbanCardSheet({
     })();
   }, [card, onClose, onDelete, t]);
 
-  const footer = useMemo(
-    () => (
+  const footer = useMemo(() => {
+    // Jira-style: destructive Delete on the far left, a spring, then the
+    // Cancel/Save pair on the right. Create mode has no Delete and the two
+    // buttons split the row.
+    const isEdit = mode === "edit" && card !== undefined;
+    return (
       <View style={styles.footer}>
+        {isEdit ? (
+          <Button
+            variant="destructive"
+            onPress={handleDelete}
+            disabled={isSubmitting}
+            testID="kanban-card-delete"
+          >
+            {t("kanban.card.delete")}
+          </Button>
+        ) : null}
+        {isEdit ? <View style={styles.footerSpring} /> : null}
         <Button
-          style={styles.footerButton}
+          style={isEdit ? undefined : styles.footerButton}
           variant="secondary"
           onPress={onClose}
           disabled={isSubmitting}
@@ -258,7 +273,7 @@ export function KanbanCardSheet({
           {t("common.actions.cancel")}
         </Button>
         <Button
-          style={styles.footerButton}
+          style={isEdit ? undefined : styles.footerButton}
           variant="default"
           onPress={handleSubmitPress}
           disabled={!canSubmit}
@@ -268,9 +283,8 @@ export function KanbanCardSheet({
           {mode === "edit" ? t("kanban.form.save") : t("kanban.form.create")}
         </Button>
       </View>
-    ),
-    [canSubmit, handleSubmitPress, isSubmitting, mode, onClose, t],
-  );
+    );
+  }, [canSubmit, card, handleDelete, handleSubmitPress, isSubmitting, mode, onClose, t]);
 
   return (
     <AdaptiveModalSheet
@@ -352,17 +366,6 @@ export function KanbanCardSheet({
         </View>
       </Field>
 
-      {mode === "edit" && card ? (
-        <Button
-          variant="ghost"
-          onPress={handleDelete}
-          disabled={isSubmitting}
-          testID="kanban-card-delete"
-        >
-          {t("kanban.card.delete")}
-        </Button>
-      ) : null}
-
       {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
     </AdaptiveModalSheet>
   );
@@ -372,7 +375,12 @@ const styles = StyleSheet.create((theme) => ({
   footer: {
     flex: 1,
     flexDirection: "row",
+    alignItems: "center",
     gap: theme.spacing[3],
+  },
+  // Pushes the Cancel/Save pair to the right of the destructive Delete.
+  footerSpring: {
+    flex: 1,
   },
   footerButton: {
     flex: 1,
@@ -390,6 +398,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[1],
     backgroundColor: theme.colors.surface2,
   },
+  // TODO(kanban): polish selected-state styling (ring/elevation/accent-fill), looks cheap
   statusPillSelected: {
     borderColor: theme.colors.primary,
     backgroundColor: theme.colors.surface3,

@@ -2,17 +2,22 @@ import { useCallback, useState, type ReactElement } from "react";
 import { Text, View } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
-import { Plus, RotateCw, SquareKanban } from "lucide-react-native";
+import { Plug, Plus, RotateCw, SquareKanban } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
+import type { StoredKanbanSource } from "@getpaseo/protocol/kanban/types";
 import { MenuHeader } from "@/components/headers/menu-header";
 import { KanbanBoard } from "@/components/kanban/kanban-board";
 import { KanbanCardSheet } from "@/components/kanban/kanban-card-sheet";
+import { KanbanSourceFormSheet } from "@/components/kanban/kanban-source-form-sheet";
+import { KanbanSourcesSheet } from "@/components/kanban/kanban-sources-sheet";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useKanbanCards } from "@/hooks/use-kanban-cards";
 import { useKanbanMutations } from "@/hooks/use-kanban-mutations";
 import { useHostFeature } from "@/runtime/host-features";
 import { useHostRuntimeConnectionStatuses, useHosts } from "@/runtime/host-runtime";
+
+type SourceFormState = { mode: "create" } | { mode: "edit"; source: StoredKanbanSource } | null;
 
 export function KanbanScreen(): ReactElement {
   const isFocused = useIsFocused();
@@ -54,6 +59,22 @@ function KanbanScreenContent(): ReactElement {
     void mutations.syncSources();
   }, [mutations]);
 
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [sourceForm, setSourceForm] = useState<SourceFormState>(null);
+  // Bump so the form remounts with fresh field state on each open.
+  const [sourceFormNonce, setSourceFormNonce] = useState(0);
+  const openSources = useCallback(() => setSourcesOpen(true), []);
+  const closeSources = useCallback(() => setSourcesOpen(false), []);
+  const openAddSource = useCallback(() => {
+    setSourceFormNonce((nonce) => nonce + 1);
+    setSourceForm({ mode: "create" });
+  }, []);
+  const openEditSource = useCallback((source: StoredKanbanSource) => {
+    setSourceFormNonce((nonce) => nonce + 1);
+    setSourceForm({ mode: "edit", source });
+  }, []);
+  const closeSourceForm = useCallback(() => setSourceForm(null), []);
+
   return (
     <View style={styles.container}>
       <MenuHeader title={t("kanban.title")} />
@@ -68,6 +89,7 @@ function KanbanScreenContent(): ReactElement {
         onRetry={refetch}
         onCreate={openCreate}
         onSync={handleSync}
+        onManageSources={openSources}
         isSyncing={mutations.isSyncing}
         mutations={mutations}
       />
@@ -80,6 +102,25 @@ function KanbanScreenContent(): ReactElement {
         onUpdate={mutations.updateCard}
         onDelete={mutations.deleteCard}
       />
+      {serverId ? (
+        <>
+          <KanbanSourcesSheet
+            serverId={serverId}
+            visible={sourcesOpen}
+            onClose={closeSources}
+            onAddSource={openAddSource}
+            onEditSource={openEditSource}
+          />
+          <KanbanSourceFormSheet
+            key={`source-form:${sourceFormNonce}`}
+            serverId={serverId}
+            visible={sourceForm !== null}
+            mode={sourceForm?.mode === "edit" ? "edit" : "create"}
+            source={sourceForm?.mode === "edit" ? sourceForm.source : undefined}
+            onClose={closeSourceForm}
+          />
+        </>
+      ) : null}
     </View>
   );
 }
@@ -95,6 +136,7 @@ interface KanbanScreenBodyProps {
   onRetry: () => void;
   onCreate: () => void;
   onSync: () => void;
+  onManageSources: () => void;
   isSyncing: boolean;
   mutations: ReturnType<typeof useKanbanMutations>;
 }
@@ -110,6 +152,7 @@ function KanbanScreenBody({
   onRetry,
   onCreate,
   onSync,
+  onManageSources,
   isSyncing,
   mutations,
 }: KanbanScreenBodyProps): ReactElement {
@@ -162,6 +205,15 @@ function KanbanScreenBody({
           testID="kanban-sync"
         >
           {t("kanban.actions.sync")}
+        </Button>
+        <Button
+          variant="ghost"
+          leftIcon={Plug}
+          onPress={onManageSources}
+          size="sm"
+          testID="kanban-sources"
+        >
+          {t("kanban.actions.sources")}
         </Button>
       </View>
       {cards.length > 0 ? (

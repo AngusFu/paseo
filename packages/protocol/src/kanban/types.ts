@@ -93,7 +93,11 @@ export const StoredKanbanSourceSchema = z.object({
   // Instance base URL. NEVER hardcode gitlab.com / atlassian.net — self-host
   // instances and Jira Server/DC use their own domain. All API/OAuth endpoints
   // and status maps derive from this.
-  baseUrl: z.string(),
+  // The instance + auth now live on a reusable KanbanConnection; a source points
+  // at one via connectionId. baseUrl is kept optional for the legacy CLI path
+  // that embeds an instance directly, but connectionId is the primary route.
+  connectionId: z.string().nullable().optional(),
+  baseUrl: z.string().optional(),
   // jira = JQL; gitlab = MR filter string.
   query: z.string(),
   // externalStatus → kanbanStatus override table. Missing keys fall back to the
@@ -107,6 +111,26 @@ export const StoredKanbanSourceSchema = z.object({
   updatedAt: z.string(),
 });
 export type StoredKanbanSource = z.infer<typeof StoredKanbanSourceSchema>;
+
+// A reusable Jira/GitLab connection: one instance + one authorization, shared by
+// any number of kanban sources. Managed in Settings. The client secret and the
+// issued OAuth/PAT tokens live in $PASEO_HOME/kanban/secrets.json keyed by the
+// connection id — never in connections.json.
+export const StoredKanbanConnectionSchema = z.object({
+  id: z.string(),
+  kind: KanbanSourceKindSchema,
+  name: z.string(),
+  // Instance base URL. NEVER hardcode gitlab.com / atlassian.net.
+  baseUrl: z.string(),
+  // OAuth application client id (public). Self-hosted GitLab / Jira Server require
+  // the user to register an OAuth app on their instance and supply this.
+  oauthClientId: z.string().nullable().optional(),
+  // True once the daemon holds a usable token (pasted PAT or completed OAuth).
+  authConnected: z.boolean().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type StoredKanbanConnection = z.infer<typeof StoredKanbanConnectionSchema>;
 
 // ---------------------------------------------------------------------------
 // Service input shapes (not wire schemas)
@@ -149,8 +173,9 @@ export interface MoveKanbanCardInput {
 export interface CreateKanbanSourceInput {
   kind: KanbanSourceKind;
   name: string;
-  baseUrl: string;
   query: string;
+  connectionId?: string | null;
+  baseUrl?: string;
   enabled?: boolean;
   statusMap?: Record<string, KanbanStatus>;
   pollEverySec?: number;
@@ -160,10 +185,31 @@ export interface CreateKanbanSourceInput {
 export interface UpdateKanbanSourceInput {
   id: string;
   name?: string;
-  baseUrl?: string;
   query?: string;
+  connectionId?: string | null;
+  baseUrl?: string;
   enabled?: boolean;
   statusMap?: Record<string, KanbanStatus> | null;
   pollEverySec?: number;
   auth?: KanbanSourceAuth | null;
+}
+
+export interface CreateKanbanConnectionInput {
+  kind: KanbanSourceKind;
+  name: string;
+  baseUrl: string;
+  oauthClientId?: string | null;
+  // Secret material passed on create/update. The daemon writes these to
+  // kanban/secrets.json keyed by connection id and never echoes them back.
+  oauthClientSecret?: string | null;
+  tokenValue?: string | null;
+}
+
+export interface UpdateKanbanConnectionInput {
+  id: string;
+  name?: string;
+  baseUrl?: string;
+  oauthClientId?: string | null;
+  oauthClientSecret?: string | null;
+  tokenValue?: string | null;
 }

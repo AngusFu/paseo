@@ -1782,6 +1782,16 @@ export class Session {
         return this.handleKanbanSourceDeleteRequest(msg);
       case "kanban.source.sync.request":
         return this.handleKanbanSourceSyncRequest(msg);
+      case "kanban.connection.create.request":
+        return this.handleKanbanConnectionCreateRequest(msg);
+      case "kanban.connection.list.request":
+        return this.handleKanbanConnectionListRequest(msg);
+      case "kanban.connection.update.request":
+        return this.handleKanbanConnectionUpdateRequest(msg);
+      case "kanban.connection.delete.request":
+        return this.handleKanbanConnectionDeleteRequest(msg);
+      case "kanban.connection.oauth.start.request":
+        return this.handleKanbanConnectionOauthStartRequest(msg);
       default:
         return undefined;
     }
@@ -1881,6 +1891,7 @@ export class Session {
     const result = await this.kanbanService.createSource({
       kind: msg.kind,
       name: msg.name,
+      connectionId: msg.connectionId,
       baseUrl: msg.baseUrl,
       query: msg.query,
       enabled: msg.enabled,
@@ -1910,6 +1921,7 @@ export class Session {
     const result = await this.kanbanService.updateSource({
       id: msg.sourceId,
       name: msg.name,
+      connectionId: msg.connectionId,
       baseUrl: msg.baseUrl,
       query: msg.query,
       enabled: msg.enabled,
@@ -1944,6 +1956,93 @@ export class Session {
         source: result.source,
         cards: result.cards,
         upsertedCount: result.upsertedCount,
+        error: result.error,
+      },
+    });
+  }
+
+  private async handleKanbanConnectionCreateRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.connection.create.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.createConnection({
+      kind: msg.kind,
+      name: msg.name,
+      baseUrl: msg.baseUrl,
+      oauthClientId: msg.oauthClientId,
+      oauthClientSecret: msg.oauthClientSecret,
+      tokenValue: msg.tokenValue,
+    });
+    this.emit({
+      type: "kanban.connection.create.response",
+      payload: { requestId: msg.requestId, connection: result.connection, error: result.error },
+    });
+  }
+
+  private async handleKanbanConnectionListRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.connection.list.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.listConnections();
+    this.emit({
+      type: "kanban.connection.list.response",
+      payload: { requestId: msg.requestId, connections: result.connections, error: result.error },
+    });
+  }
+
+  private async handleKanbanConnectionUpdateRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.connection.update.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.updateConnection({
+      id: msg.connectionId,
+      name: msg.name,
+      baseUrl: msg.baseUrl,
+      oauthClientId: msg.oauthClientId,
+      oauthClientSecret: msg.oauthClientSecret,
+      tokenValue: msg.tokenValue,
+    });
+    this.emit({
+      type: "kanban.connection.update.response",
+      payload: { requestId: msg.requestId, connection: result.connection, error: result.error },
+    });
+  }
+
+  private async handleKanbanConnectionDeleteRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.connection.delete.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.deleteConnection(msg.connectionId);
+    this.emit({
+      type: "kanban.connection.delete.response",
+      payload: {
+        requestId: msg.requestId,
+        connectionId: result.connectionId,
+        error: result.error,
+      },
+    });
+  }
+
+  private async handleKanbanConnectionOauthStartRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.connection.oauth.start.request" }>,
+  ): Promise<void> {
+    const port = this.getDaemonTcpPort?.();
+    if (!port) {
+      this.emit({
+        type: "kanban.connection.oauth.start.response",
+        payload: {
+          requestId: msg.requestId,
+          authorizeUrl: null,
+          error:
+            "Daemon is not listening on a TCP port; OAuth needs a reachable loopback callback URL.",
+        },
+      });
+      return;
+    }
+    const host = this.getDaemonTcpHost?.() ?? "127.0.0.1";
+    const redirectUri = `http://${host}:${port}/kanban/oauth/callback`;
+    const result = await this.kanbanService.startOauth(msg.connectionId, redirectUri);
+    this.emit({
+      type: "kanban.connection.oauth.start.response",
+      payload: {
+        requestId: msg.requestId,
+        authorizeUrl: result.authorizeUrl,
         error: result.error,
       },
     });

@@ -3,16 +3,20 @@ import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
   StoredKanbanCardSchema,
+  StoredKanbanConnectionSchema,
   StoredKanbanSourceSchema,
   type CreateKanbanCardInput,
+  type CreateKanbanConnectionInput,
   type CreateKanbanSourceInput,
   type KanbanCardSource,
   type KanbanPriority,
   type KanbanStatus,
   type MoveKanbanCardInput,
   type StoredKanbanCard,
+  type StoredKanbanConnection,
   type StoredKanbanSource,
   type UpdateKanbanCardInput,
+  type UpdateKanbanConnectionInput,
   type UpdateKanbanSourceInput,
 } from "@getpaseo/protocol/kanban/types";
 import { writeJsonFileAtomic } from "../atomic-file.js";
@@ -23,6 +27,10 @@ function generateCardId(): string {
 
 function generateSourceId(): string {
   return `kbs_${randomBytes(4).toString("hex")}`;
+}
+
+function generateConnectionId(): string {
+  return `kbn_${randomBytes(4).toString("hex")}`;
 }
 
 // Externally-sourced card, keyed on (source.kind, externalId) for idempotent upsert.
@@ -43,7 +51,9 @@ export class KanbanStore {
   private readonly cardMutations = new Map<string, Promise<unknown>>();
   private readonly identityMutations = new Map<string, Promise<unknown>>();
   private readonly sourcesMutations = new Map<string, Promise<unknown>>();
+  private readonly connectionsMutations = new Map<string, Promise<unknown>>();
   private static readonly SOURCES_LOCK = "sources";
+  private static readonly CONNECTIONS_LOCK = "connections";
 
   constructor(private readonly dir: string) {}
 
@@ -53,6 +63,10 @@ export class KanbanStore {
 
   private get sourcesFile(): string {
     return join(this.dir, "sources.json");
+  }
+
+  private get connectionsFile(): string {
+    return join(this.dir, "connections.json");
   }
 
   private cardFilePath(id: string): string {
@@ -310,6 +324,9 @@ export class KanbanStore {
         kind: input.kind,
         name: input.name,
         enabled: input.enabled ?? true,
+        // Primary route: connectionId (instance + auth live on the connection).
+        // baseUrl stays for the legacy CLI path that embeds an instance directly.
+        connectionId: input.connectionId ?? null,
         baseUrl: input.baseUrl,
         query: input.query,
         statusMap: input.statusMap,
@@ -336,6 +353,7 @@ export class KanbanStore {
       const updated = StoredKanbanSourceSchema.parse({
         ...current,
         name: input.name ?? current.name,
+        connectionId: input.connectionId === undefined ? current.connectionId : input.connectionId,
         baseUrl: input.baseUrl ?? current.baseUrl,
         query: input.query ?? current.query,
         enabled: input.enabled ?? current.enabled,
@@ -394,6 +412,120 @@ export class KanbanStore {
   }
 
   // -------------------------------------------------------------------------
+  // Connections — a reusable Jira/GitLab instance + auth (see
+  // StoredKanbanConnectionSchema doc comment). Any number of sources may
+  // point at one via source.connectionId.
+  // -------------------------------------------------------------------------
+
+  async listConnections(): Promise<StoredKanbanConnection[]> {
+    await this.ensureDir();
+    try {
+      const content = await readFile(this.connectionsFile, "utf-8");
+      const parsed = JSON.parse(content) as unknown[];
+      return parsed
+        .map((entry) => StoredKanbanConnectionSchema.parse(entry))
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  async getConnection(id: string): Promise<StoredKanbanConnection | null> {
+    const connections = await this.listConnections();
+    return connections.find((connection) => connection.id === id) ?? null;
+  }
+
+  async createConnection(input: CreateKanbanConnectionInput): Promise<StoredKanbanConnection> {
+    return this.serializeConnectionsMutation(async () => {
+      const connections = await this.listConnections();
+      const now = new Date().toISOString();
+      const created = StoredKanbanConnectionSchema.parse({
+        id: generateConnectionId(),
+        kind: input.kind,
+        name: input.name,
+        baseUrl: input.baseUrl,
+        oauthClientId: input.oauthClientId ?? null,
+        // Secret material (tokenValue/oauthClientSecret) is never persisted here —
+        // KanbanService writes it to secrets.json and calls setConnectionAuthConnected.
+        authConnected: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await this.writeConnections([...connections, created]);
+      return created;
+    });
+  }
+
+  async updateConnection(
+    input: UpdateKanbanConnectionInput,
+  ): Promise<StoredKanbanConnection | null> {
+    return this.serializeConnectionsMutation(async () => {
+      const connections = await this.listConnections();
+      const index = connections.findIndex((connection) => connection.id === input.id);
+      if (index === -1) {
+        return null;
+      }
+      const current = connections[index];
+      const updated = StoredKanbanConnectionSchema.parse({
+        ...current,
+        name: input.name ?? current.name,
+        baseUrl: input.baseUrl ?? current.baseUrl,
+        oauthClientId:
+          input.oauthClientId === undefined ? current.oauthClientId : input.oauthClientId,
+        updatedAt: new Date().toISOString(),
+      });
+      const next = [...connections];
+      next[index] = updated;
+      await this.writeConnections(next);
+      return updated;
+    });
+  }
+
+  // Updates the connected flag after KanbanService writes secret material to
+  // secrets.json (create/update/OAuth callback). Not part of the update RPC.
+  async setConnectionAuthConnected(
+    id: string,
+    authConnected: boolean,
+  ): Promise<StoredKanbanConnection | null> {
+    return this.serializeConnectionsMutation(async () => {
+      const connections = await this.listConnections();
+      const index = connections.findIndex((connection) => connection.id === id);
+      if (index === -1) {
+        return null;
+      }
+      const updated = StoredKanbanConnectionSchema.parse({
+        ...connections[index],
+        authConnected,
+        updatedAt: new Date().toISOString(),
+      });
+      const next = [...connections];
+      next[index] = updated;
+      await this.writeConnections(next);
+      return updated;
+    });
+  }
+
+  async deleteConnection(id: string): Promise<boolean> {
+    return this.serializeConnectionsMutation(async () => {
+      const connections = await this.listConnections();
+      const next = connections.filter((connection) => connection.id !== id);
+      if (next.length === connections.length) {
+        return false;
+      }
+      await this.writeConnections(next);
+      return true;
+    });
+  }
+
+  private async writeConnections(connections: StoredKanbanConnection[]): Promise<void> {
+    await this.ensureDir();
+    await writeJsonFileAtomic(this.connectionsFile, connections);
+  }
+
+  // -------------------------------------------------------------------------
   // Mutation serialization
   // -------------------------------------------------------------------------
 
@@ -410,6 +542,14 @@ export class KanbanStore {
 
   private async serializeSourcesMutation<T>(mutation: () => Promise<T>): Promise<T> {
     return this.serializeMutation(this.sourcesMutations, KanbanStore.SOURCES_LOCK, mutation);
+  }
+
+  private async serializeConnectionsMutation<T>(mutation: () => Promise<T>): Promise<T> {
+    return this.serializeMutation(
+      this.connectionsMutations,
+      KanbanStore.CONNECTIONS_LOCK,
+      mutation,
+    );
   }
 
   private async serializeMutation<T>(

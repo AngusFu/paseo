@@ -7,6 +7,7 @@ import {
   KanbanSourceKindSchema,
   KanbanStatusSchema,
   StoredKanbanCardSchema,
+  StoredKanbanConnectionSchema,
   StoredKanbanSourceSchema,
 } from "./types.js";
 
@@ -84,8 +85,11 @@ export const KanbanSourceCreateRequestSchema = z.object({
   requestId: z.string(),
   kind: KanbanSourceKindSchema,
   name: z.string().min(1),
-  baseUrl: z.string().min(1),
   query: z.string(),
+  // Primary route: reference a reusable connection (instance + auth). baseUrl is
+  // kept for the legacy CLI path that embeds an instance directly.
+  connectionId: z.string().nullable().optional(),
+  baseUrl: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   statusMap: z.record(z.string(), KanbanStatusSchema).optional(),
   pollEverySec: z.number().int().positive().optional(),
@@ -102,8 +106,9 @@ export const KanbanSourceUpdateRequestSchema = z.object({
   requestId: z.string(),
   sourceId: z.string(),
   name: z.string().min(1).optional(),
-  baseUrl: z.string().min(1).optional(),
   query: z.string().optional(),
+  connectionId: z.string().nullable().optional(),
+  baseUrl: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   statusMap: z.record(z.string(), KanbanStatusSchema).nullable().optional(),
   pollEverySec: z.number().int().positive().optional(),
@@ -120,6 +125,53 @@ export const KanbanSourceSyncRequestSchema = z.object({
   type: z.literal("kanban.source.sync.request"),
   requestId: z.string(),
   sourceId: z.string(),
+});
+
+// ---------------------------------------------------------------------------
+// Connection requests (reusable instance + auth, managed in Settings)
+// ---------------------------------------------------------------------------
+
+export const KanbanConnectionCreateRequestSchema = z.object({
+  type: z.literal("kanban.connection.create.request"),
+  requestId: z.string(),
+  kind: KanbanSourceKindSchema,
+  name: z.string().min(1),
+  baseUrl: z.string().min(1),
+  oauthClientId: z.string().nullable().optional(),
+  oauthClientSecret: z.string().nullable().optional(),
+  tokenValue: z.string().nullable().optional(),
+});
+
+export const KanbanConnectionListRequestSchema = z.object({
+  type: z.literal("kanban.connection.list.request"),
+  requestId: z.string(),
+});
+
+export const KanbanConnectionUpdateRequestSchema = z.object({
+  type: z.literal("kanban.connection.update.request"),
+  requestId: z.string(),
+  connectionId: z.string(),
+  name: z.string().min(1).optional(),
+  baseUrl: z.string().min(1).optional(),
+  oauthClientId: z.string().nullable().optional(),
+  oauthClientSecret: z.string().nullable().optional(),
+  tokenValue: z.string().nullable().optional(),
+});
+
+export const KanbanConnectionDeleteRequestSchema = z.object({
+  type: z.literal("kanban.connection.delete.request"),
+  requestId: z.string(),
+  connectionId: z.string(),
+});
+
+// Begin an OAuth authorization-code flow for a connection. The daemon returns
+// the provider authorize URL (built from the connection baseUrl + oauthClientId);
+// the client opens it in a browser and the daemon's loopback callback route
+// finishes the exchange and stores the tokens.
+export const KanbanConnectionOauthStartRequestSchema = z.object({
+  type: z.literal("kanban.connection.oauth.start.request"),
+  requestId: z.string(),
+  connectionId: z.string(),
 });
 
 // ---------------------------------------------------------------------------
@@ -228,6 +280,55 @@ export const KanbanSourceSyncResponseSchema = z.object({
     source: StoredKanbanSourceSchema.nullable(),
     cards: z.array(StoredKanbanCardSchema),
     upsertedCount: z.number().int(),
+    error: z.string().nullable(),
+  }),
+});
+
+// ---------------------------------------------------------------------------
+// Connection responses
+// ---------------------------------------------------------------------------
+
+export const KanbanConnectionCreateResponseSchema = z.object({
+  type: z.literal("kanban.connection.create.response"),
+  payload: z.object({
+    requestId: z.string(),
+    connection: StoredKanbanConnectionSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const KanbanConnectionListResponseSchema = z.object({
+  type: z.literal("kanban.connection.list.response"),
+  payload: z.object({
+    requestId: z.string(),
+    connections: z.array(StoredKanbanConnectionSchema),
+    error: z.string().nullable(),
+  }),
+});
+
+export const KanbanConnectionUpdateResponseSchema = z.object({
+  type: z.literal("kanban.connection.update.response"),
+  payload: z.object({
+    requestId: z.string(),
+    connection: StoredKanbanConnectionSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const KanbanConnectionDeleteResponseSchema = z.object({
+  type: z.literal("kanban.connection.delete.response"),
+  payload: z.object({
+    requestId: z.string(),
+    connectionId: z.string(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const KanbanConnectionOauthStartResponseSchema = z.object({
+  type: z.literal("kanban.connection.oauth.start.response"),
+  payload: z.object({
+    requestId: z.string(),
+    authorizeUrl: z.string().nullable(),
     error: z.string().nullable(),
   }),
 });

@@ -4,9 +4,11 @@ import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-ca
 import type { UpdateScheduleCommandConfig } from "@getpaseo/protocol/schedule/types";
 import type {
   CreateKanbanCardInput,
+  CreateKanbanConnectionInput,
   CreateKanbanSourceInput,
   MoveKanbanCardInput,
   UpdateKanbanCardInput,
+  UpdateKanbanConnectionInput,
   UpdateKanbanSourceInput,
 } from "@getpaseo/protocol/kanban/types";
 import {
@@ -526,12 +528,34 @@ type KanbanSourceSyncPayload = Extract<
   SessionOutboundMessage,
   { type: "kanban.source.sync.response" }
 >["payload"];
+type KanbanConnectionCreatePayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.connection.create.response" }
+>["payload"];
+type KanbanConnectionListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.connection.list.response" }
+>["payload"];
+type KanbanConnectionUpdatePayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.connection.update.response" }
+>["payload"];
+type KanbanConnectionDeletePayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.connection.delete.response" }
+>["payload"];
+type KanbanConnectionOauthStartPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.connection.oauth.start.response" }
+>["payload"];
 
 export type KanbanCardCreateOptions = CreateKanbanCardInput & { requestId?: string };
 export type KanbanCardUpdateOptions = UpdateKanbanCardInput & { requestId?: string };
 export type KanbanCardMoveOptions = MoveKanbanCardInput & { requestId?: string };
 export type KanbanSourceCreateOptions = CreateKanbanSourceInput & { requestId?: string };
 export type KanbanSourceUpdateOptions = UpdateKanbanSourceInput & { requestId?: string };
+export type KanbanConnectionCreateOptions = CreateKanbanConnectionInput & { requestId?: string };
+export type KanbanConnectionUpdateOptions = UpdateKanbanConnectionInput & { requestId?: string };
 export type FetchAgentTimelinePayload = FetchAgentTimelineResponseMessage["payload"];
 export type AgentForkContextPayload = AgentForkContextResponseMessage["payload"];
 
@@ -4752,8 +4776,9 @@ export class DaemonClient {
         type: "kanban.source.create.request",
         kind: options.kind,
         name: options.name,
-        baseUrl: options.baseUrl,
         query: options.query,
+        ...(options.connectionId !== undefined ? { connectionId: options.connectionId } : {}),
+        ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
         ...(options.enabled !== undefined ? { enabled: options.enabled } : {}),
         ...(options.statusMap !== undefined ? { statusMap: options.statusMap } : {}),
         ...(options.pollEverySec !== undefined ? { pollEverySec: options.pollEverySec } : {}),
@@ -4776,13 +4801,80 @@ export class DaemonClient {
         type: "kanban.source.update.request",
         sourceId: options.id,
         ...(options.name !== undefined ? { name: options.name } : {}),
-        ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
         ...(options.query !== undefined ? { query: options.query } : {}),
+        ...(options.connectionId !== undefined ? { connectionId: options.connectionId } : {}),
+        ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
         ...(options.enabled !== undefined ? { enabled: options.enabled } : {}),
         ...(options.statusMap !== undefined ? { statusMap: options.statusMap } : {}),
         ...(options.pollEverySec !== undefined ? { pollEverySec: options.pollEverySec } : {}),
         ...(options.auth !== undefined ? { auth: options.auth } : {}),
       },
+    });
+  }
+
+  // COMPAT(kanban): added in v0.1.107. Requires server_info.features.kanban.
+  async kanbanConnectionCreate(
+    options: KanbanConnectionCreateOptions,
+  ): Promise<KanbanConnectionCreatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "kanban.connection.create.request",
+        kind: options.kind,
+        name: options.name,
+        baseUrl: options.baseUrl,
+        ...(options.oauthClientId !== undefined ? { oauthClientId: options.oauthClientId } : {}),
+        ...(options.oauthClientSecret !== undefined
+          ? { oauthClientSecret: options.oauthClientSecret }
+          : {}),
+        ...(options.tokenValue !== undefined ? { tokenValue: options.tokenValue } : {}),
+      },
+    });
+  }
+
+  async kanbanConnectionList(requestId?: string): Promise<KanbanConnectionListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.connection.list.request" },
+    });
+  }
+
+  async kanbanConnectionUpdate(
+    options: KanbanConnectionUpdateOptions,
+  ): Promise<KanbanConnectionUpdatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "kanban.connection.update.request",
+        connectionId: options.id,
+        ...(options.name !== undefined ? { name: options.name } : {}),
+        ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
+        ...(options.oauthClientId !== undefined ? { oauthClientId: options.oauthClientId } : {}),
+        ...(options.oauthClientSecret !== undefined
+          ? { oauthClientSecret: options.oauthClientSecret }
+          : {}),
+        ...(options.tokenValue !== undefined ? { tokenValue: options.tokenValue } : {}),
+      },
+    });
+  }
+
+  async kanbanConnectionDelete(
+    connectionId: string,
+    requestId?: string,
+  ): Promise<KanbanConnectionDeletePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.connection.delete.request", connectionId },
+    });
+  }
+
+  async kanbanConnectionOauthStart(
+    connectionId: string,
+    requestId?: string,
+  ): Promise<KanbanConnectionOauthStartPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.connection.oauth.start.request", connectionId },
     });
   }
 

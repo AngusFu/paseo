@@ -4,7 +4,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight } from "lucide-react-native";
+import { ArrowUpRight, GripVertical } from "lucide-react-native";
 import type { StoredKanbanCard, KanbanStatus } from "@getpaseo/protocol/kanban/types";
 import { resolveKanbanCardTheme } from "@/components/kanban/kanban-card-theme";
 import { openExternalUrl } from "@/utils/open-external-url";
@@ -125,6 +125,11 @@ export function KanbanCard({
           testID={`kanban-card-${card.id}`}
         >
           <View style={styles.header}>
+            {/* Visible drag affordance on web, where the whole card is a pointer
+                drag handle. Native uses long-press → status picker instead. */}
+            {dragEnabled ? (
+              <GripVertical size={14} color={styles.dragHandle.color} testID="kanban-card-grip" />
+            ) : null}
             <themeVisual.icon size={THEME_ICON_SIZE} color={iconColor} />
             <Text style={styles.title} numberOfLines={2}>
               {card.title}
@@ -154,6 +159,10 @@ export function KanbanCard({
 const styles = StyleSheet.create((theme) => ({
   // Static color holder for the default (unthemed) card glyph.
   defaultGlyph: {
+    color: theme.colors.foregroundMuted,
+  },
+  // Muted drag-handle glyph (web-only affordance).
+  dragHandle: {
     color: theme.colors.foregroundMuted,
   },
   card: {

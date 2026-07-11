@@ -229,10 +229,44 @@ describe("KanbanStore", () => {
       expect(created.enabled).toBe(true);
       expect(created.pollEverySec).toBe(300);
       expect(created.lastSyncAt).toBeNull();
+      expect(created.connectionId).toBeNull();
 
       const reloaded = new KanbanStore(tempDir);
       expect(await reloaded.listSources()).toEqual([created]);
       expect(await reloaded.getSource(created.id)).toEqual(created);
+    });
+
+    test("createSource persists connectionId when provided", async () => {
+      const connection = await store.createConnection({
+        kind: "gitlab",
+        name: "GitLab",
+        baseUrl: "https://gitlab.example.com",
+      });
+      const created = await store.createSource({
+        kind: "gitlab",
+        name: "GitLab MRs",
+        connectionId: connection.id,
+        query: "state=opened",
+      });
+
+      expect(created.connectionId).toBe(connection.id);
+    });
+
+    test("updateSource can set auth directly (legacy no-connection path)", async () => {
+      const created = await store.createSource({
+        kind: "jira",
+        name: "Jira",
+        baseUrl: "https://jira.example.com",
+        query: "project = PROJ",
+      });
+
+      const updated = await store.updateSource({
+        id: created.id,
+        auth: { method: "token", credentialRef: "kbs_secret_x" },
+      });
+
+      expect(updated).toMatchObject({ auth: { method: "token", credentialRef: "kbs_secret_x" } });
+      expect(await store.updateSource({ id: "kbs_deadbeef", auth: null })).toBeNull();
     });
 
     test("updateSource merges fields and can clear optional fields", async () => {
@@ -282,6 +316,73 @@ describe("KanbanStore", () => {
 
       expect(synced?.lastSyncAt).toBe("2026-01-01T00:00:00.000Z");
       expect(synced?.lastSyncError).toBeNull();
+    });
+  });
+
+  describe("connections", () => {
+    test("creates and reloads connections from disk", async () => {
+      const created = await store.createConnection({
+        kind: "gitlab",
+        name: "GitLab",
+        baseUrl: "https://gitlab.example.com",
+      });
+
+      expect(created.id).toMatch(/^kbn_[0-9a-f]{8}$/);
+      expect(created.oauthClientId).toBeNull();
+      expect(created.authConnected).toBe(false);
+
+      const reloaded = new KanbanStore(tempDir);
+      expect(await reloaded.listConnections()).toEqual([created]);
+      expect(await reloaded.getConnection(created.id)).toEqual(created);
+    });
+
+    test("createConnection persists oauthClientId when provided", async () => {
+      const created = await store.createConnection({
+        kind: "jira",
+        name: "Jira",
+        baseUrl: "https://jira.example.com",
+        oauthClientId: "client-abc",
+      });
+
+      expect(created.oauthClientId).toBe("client-abc");
+    });
+
+    test("updateConnection merges fields", async () => {
+      const created = await store.createConnection({
+        kind: "gitlab",
+        name: "GitLab",
+        baseUrl: "https://gitlab.example.com",
+      });
+
+      const updated = await store.updateConnection({ id: created.id, name: "GitLab renamed" });
+
+      expect(updated?.name).toBe("GitLab renamed");
+      expect(updated?.baseUrl).toBe("https://gitlab.example.com");
+    });
+
+    test("setConnectionAuthConnected flips the connected flag", async () => {
+      const created = await store.createConnection({
+        kind: "jira",
+        name: "Jira",
+        baseUrl: "https://jira.example.com",
+      });
+
+      const connected = await store.setConnectionAuthConnected(created.id, true);
+      expect(connected?.authConnected).toBe(true);
+
+      expect(await store.setConnectionAuthConnected("kbn_deadbeef", true)).toBeNull();
+    });
+
+    test("deleteConnection removes the connection from disk", async () => {
+      const created = await store.createConnection({
+        kind: "gitlab",
+        name: "GitLab",
+        baseUrl: "https://gitlab.example.com",
+      });
+
+      expect(await store.deleteConnection(created.id)).toBe(true);
+      expect(await store.getConnection(created.id)).toBeNull();
+      expect(await store.deleteConnection(created.id)).toBe(false);
     });
   });
 });

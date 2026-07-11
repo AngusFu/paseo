@@ -621,6 +621,39 @@ export async function createPaseoDaemon(
     createTerminalActivityRouteHandler(terminalManager),
   );
 
+  // Constructed here (not near the other kanban wiring below) so the OAuth
+  // callback route can be registered before mountWebUi's SPA catch-all and
+  // the daemon-password middleware. Its own capability is the single-use
+  // `state` param minted by kanban.connection.oauth.start — see the
+  // BEARER_AUTH_BYPASS_PATHS comment in auth.ts.
+  const kanbanService = new KanbanService({
+    dir: path.join(config.paseoHome, "kanban"),
+    logger,
+  });
+  app.get("/kanban/oauth/callback", (req, res) => {
+    void (async () => {
+      try {
+        await kanbanService.handleOauthCallback({
+          code: typeof req.query.code === "string" ? req.query.code : undefined,
+          state: typeof req.query.state === "string" ? req.query.state : undefined,
+          error: typeof req.query.error === "string" ? req.query.error : undefined,
+        });
+        res
+          .status(200)
+          .type("html")
+          .send("<html><body>Kanban source connected. You can close this window.</body></html>");
+      } catch (err) {
+        logger.error({ err }, "Kanban OAuth callback failed");
+        res
+          .status(400)
+          .type("html")
+          .send(
+            "<html><body>Kanban connection failed. You can close this window and retry.</body></html>",
+          );
+      }
+    })();
+  });
+
   // Serve the bundled browser web UI when enabled. Mounted after service-proxy
   // classification and host/CORS handling, but before daemon bearer auth, so
   // static app files load without the daemon password while API/WebSocket calls
@@ -1069,10 +1102,8 @@ export async function createPaseoDaemon(
     createPaseoWorktreeWorkspace: createSchedulePaseoWorktreeExternal,
     archiveWorkspace: archiveScheduleWorkspaceExternal,
   });
-  const kanbanService = new KanbanService({
-    dir: path.join(config.paseoHome, "kanban"),
-    logger,
-  });
+  kanbanService.startPolling();
+
   await scheduleService.start();
   agentManager.setAgentArchivedCallback(async (agentId) => {
     try {
@@ -1457,6 +1488,7 @@ export async function createPaseoDaemon(
     terminalManager.killAll();
     speechService.stop();
     await scheduleService.stop().catch(() => undefined);
+    kanbanService.stopPolling();
     await relayTransport?.stop().catch(() => undefined);
     if (wsServer) {
       await wsServer.close();

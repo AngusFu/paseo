@@ -53,6 +53,11 @@ import {
   KanbanSourceUpdateRequestSchema,
   KanbanSourceDeleteRequestSchema,
   KanbanSourceSyncRequestSchema,
+  KanbanConnectionCreateRequestSchema,
+  KanbanConnectionListRequestSchema,
+  KanbanConnectionUpdateRequestSchema,
+  KanbanConnectionDeleteRequestSchema,
+  KanbanConnectionOauthStartRequestSchema,
   KanbanCardCreateResponseSchema,
   KanbanCardListResponseSchema,
   KanbanCardInspectResponseSchema,
@@ -64,6 +69,11 @@ import {
   KanbanSourceUpdateResponseSchema,
   KanbanSourceDeleteResponseSchema,
   KanbanSourceSyncResponseSchema,
+  KanbanConnectionCreateResponseSchema,
+  KanbanConnectionListResponseSchema,
+  KanbanConnectionUpdateResponseSchema,
+  KanbanConnectionDeleteResponseSchema,
+  KanbanConnectionOauthStartResponseSchema,
 } from "./kanban/rpc-schemas.js";
 import {
   LoopRunRequestSchema,
@@ -2242,6 +2252,11 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   KanbanSourceUpdateRequestSchema,
   KanbanSourceDeleteRequestSchema,
   KanbanSourceSyncRequestSchema,
+  KanbanConnectionCreateRequestSchema,
+  KanbanConnectionListRequestSchema,
+  KanbanConnectionUpdateRequestSchema,
+  KanbanConnectionDeleteRequestSchema,
+  KanbanConnectionOauthStartRequestSchema,
   LoopRunRequestSchema,
   LoopListRequestSchema,
   LoopInspectRequestSchema,
@@ -4431,6 +4446,11 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   KanbanSourceUpdateResponseSchema,
   KanbanSourceDeleteResponseSchema,
   KanbanSourceSyncResponseSchema,
+  KanbanConnectionCreateResponseSchema,
+  KanbanConnectionListResponseSchema,
+  KanbanConnectionUpdateResponseSchema,
+  KanbanConnectionDeleteResponseSchema,
+  KanbanConnectionOauthStartResponseSchema,
   LoopRunResponseSchema,
   LoopListResponseSchema,
   LoopInspectResponseSchema,
@@ -4641,6 +4661,13 @@ export type KanbanSourceListRequest = z.infer<typeof KanbanSourceListRequestSche
 export type KanbanSourceUpdateRequest = z.infer<typeof KanbanSourceUpdateRequestSchema>;
 export type KanbanSourceDeleteRequest = z.infer<typeof KanbanSourceDeleteRequestSchema>;
 export type KanbanSourceSyncRequest = z.infer<typeof KanbanSourceSyncRequestSchema>;
+export type KanbanConnectionCreateRequest = z.infer<typeof KanbanConnectionCreateRequestSchema>;
+export type KanbanConnectionListRequest = z.infer<typeof KanbanConnectionListRequestSchema>;
+export type KanbanConnectionUpdateRequest = z.infer<typeof KanbanConnectionUpdateRequestSchema>;
+export type KanbanConnectionDeleteRequest = z.infer<typeof KanbanConnectionDeleteRequestSchema>;
+export type KanbanConnectionOauthStartRequest = z.infer<
+  typeof KanbanConnectionOauthStartRequestSchema
+>;
 export type KanbanCardCreateResponse = z.infer<typeof KanbanCardCreateResponseSchema>;
 export type KanbanCardListResponse = z.infer<typeof KanbanCardListResponseSchema>;
 export type KanbanCardInspectResponse = z.infer<typeof KanbanCardInspectResponseSchema>;
@@ -4652,6 +4679,13 @@ export type KanbanSourceListResponse = z.infer<typeof KanbanSourceListResponseSc
 export type KanbanSourceUpdateResponse = z.infer<typeof KanbanSourceUpdateResponseSchema>;
 export type KanbanSourceDeleteResponse = z.infer<typeof KanbanSourceDeleteResponseSchema>;
 export type KanbanSourceSyncResponse = z.infer<typeof KanbanSourceSyncResponseSchema>;
+export type KanbanConnectionCreateResponse = z.infer<typeof KanbanConnectionCreateResponseSchema>;
+export type KanbanConnectionListResponse = z.infer<typeof KanbanConnectionListResponseSchema>;
+export type KanbanConnectionUpdateResponse = z.infer<typeof KanbanConnectionUpdateResponseSchema>;
+export type KanbanConnectionDeleteResponse = z.infer<typeof KanbanConnectionDeleteResponseSchema>;
+export type KanbanConnectionOauthStartResponse = z.infer<
+  typeof KanbanConnectionOauthStartResponseSchema
+>;
 
 export type ScheduleCreateRequest = z.infer<typeof ScheduleCreateRequestSchema>;
 export type ScheduleListRequest = z.infer<typeof ScheduleListRequestSchema>;

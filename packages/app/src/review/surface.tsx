@@ -553,11 +553,17 @@ export function InlineReviewEditor({
   }, [focus]);
   const handleSave = useCallback(() => onSave(trimmedBody), [onSave, trimmedBody]);
   const cancelShortcut = useMemo(
-    () => (showKeyboardHints ? <Shortcut keys={REVIEW_CANCEL_SHORTCUT_KEYS} /> : null),
+    () =>
+      showKeyboardHints ? (
+        <Shortcut keys={REVIEW_CANCEL_SHORTCUT_KEYS} style={styles.shortcutHint} />
+      ) : null,
     [showKeyboardHints],
   );
   const saveShortcut = useMemo(
-    () => (showKeyboardHints ? <Shortcut keys={REVIEW_SAVE_SHORTCUT_KEYS} /> : null),
+    () =>
+      showKeyboardHints ? (
+        <Shortcut keys={REVIEW_SAVE_SHORTCUT_KEYS} style={styles.shortcutHint} />
+      ) : null,
     [showKeyboardHints],
   );
 
@@ -640,6 +646,13 @@ export function InlineReviewEditor({
 }
 
 const styles = StyleSheet.create((theme) => ({
+  // Render the keyboard hint as plain muted text, not a chip that reads as a button.
+  shortcutHint: {
+    backgroundColor: "transparent",
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderRadius: 0,
+  },
   gutterInner: {
     minHeight: theme.lineHeight.diff,
     alignItems: "stretch",

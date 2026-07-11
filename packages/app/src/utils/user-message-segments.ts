@@ -11,7 +11,9 @@ export interface UserMessageSegment {
   href?: string;
 }
 
-const LEADING_COMMAND = /^\/[A-Za-z0-9][A-Za-z0-9_-]*/;
+// Includes ":" so plugin-namespaced commands like "/claude-hud:configure" are
+// captured whole rather than stopping at the colon.
+const LEADING_COMMAND = /^\/[A-Za-z0-9][A-Za-z0-9_:-]*/;
 const URL_PATTERN = /https?:\/\/[^\s]+/g;
 // Punctuation that commonly trails a URL in prose but is not part of it.
 const TRAILING_PUNCTUATION = /[.,;:!?)\]}'"]+$/;

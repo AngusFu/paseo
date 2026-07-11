@@ -22,6 +22,13 @@ describe("segmentUserMessage", () => {
     ]);
   });
 
+  it("captures a plugin-namespaced command with a colon", () => {
+    expect(pairs(segmentUserMessage("/claude-hud:configure now"))).toEqual([
+      ["command", "/claude-hud:configure"],
+      ["plain", " now"],
+    ]);
+  });
+
   it("does not treat a mid-string slash as a command", () => {
     expect(pairs(segmentUserMessage("run a/b then /c"))).toEqual([["plain", "run a/b then /c"]]);
   });

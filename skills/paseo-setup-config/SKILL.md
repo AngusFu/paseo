@@ -1,6 +1,6 @@
 ---
 name: paseo-setup-config
-description: Generate or update a project's Paseo config (paseo.json / paseo.local.json). Use whenever the user wants to set up, configure, scaffold, or edit Paseo for a repo — "configure paseo", "set up paseo.json", "add a paseo script/service", "paseo worktree setup command", "make a paseo.local.json", "why isn't my paseo config working" — even if they don't name the file. Inspects the project, writes valid config, and picks the right file to touch.
+description: Generate or update a project's Paseo config (paseo.json / paseo.local.json). Use whenever the user wants to set up, configure, scaffold, or edit Paseo for a repo — "configure paseo", "set up paseo.json", "add a paseo script/service", "paseo worktree setup command", "make a paseo.local.json", "why isn't my paseo config working" — even if they don't name the file — including deciding which of paseo.json or paseo.local.json to write.
 user-invocable: true
 argument-hint: "[what to configure, e.g. 'dev server on 3000' or 'personal DB url']"
 ---

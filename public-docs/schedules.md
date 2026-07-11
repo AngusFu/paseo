@@ -15,6 +15,7 @@ The target can be:
 - A new agent each run — fresh daily jobs and long-running watchers.
 - An existing agent — when you want continuity.
 - The agent that created the schedule — heartbeats from inside an agent.
+- A shell command — run a build, test, or script directly, with no agent involved.
 
 Cadence is either an interval, like every 30 minutes, or a cron expression, like every weekday morning. Every run is recorded, and you can pause, resume, run once, update, or delete a schedule at any time.
 

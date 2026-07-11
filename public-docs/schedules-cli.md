@@ -72,6 +72,20 @@ paseo schedule create \
   "Check the current task state and continue with the next useful step."
 ```
 
+Run a shell command instead of an agent — no prompt, just `--command`:
+
+```bash
+paseo schedule create \
+  --cron "0 * * * *" \
+  --name build-check \
+  --command "npm run build" \
+  --cwd ~/dev/my-app \
+  --env CI=true \
+  --timeout 300000
+```
+
+`--command` is mutually exclusive with `--target`/`--provider`/`--mode`. Repeat `--env KEY=VALUE` for multiple variables, and `--timeout <ms>` to cap how long the command may run. Command schedules need a host that supports them (daemon feature `commandSchedules`); the CLI errors out up front if the host doesn't.
+
 ## Manage
 
 ```bash
@@ -82,8 +96,12 @@ paseo schedule pause <id>
 paseo schedule resume <id>
 paseo schedule run-once <id>
 paseo schedule update <id> --every 10m --max-runs 6
+paseo schedule update <id> --command "npm run e2e" --timeout 60000
+paseo schedule update <id> --clear-env
 paseo schedule delete <id>
 ```
+
+`inspect` shows the command, working directory, environment variables, and timeout for command targets. `ls` and `logs` show the target and, for command runs, the exit code of the last run.
 
 ## Cadence
 

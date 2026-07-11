@@ -550,7 +550,7 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
   const out: ReactNode[] = [];
   if (detail.content) {
     out.push(
-      <View key="search-content" style={styles.section}>
+      <View key="search-content" style={SEARCH_SECTION_STYLE}>
         <ScrollView
           style={ds.scrollAreaStyle}
           contentContainerStyle={styles.scrollContent}
@@ -573,7 +573,7 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
   }
   if (detail.filePaths && detail.filePaths.length > 0) {
     out.push(
-      <View key="search-files" style={styles.section}>
+      <View key="search-files" style={SEARCH_SECTION_STYLE}>
         <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
           {detail.filePaths.join("\n")}
         </Text>
@@ -582,7 +582,7 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
   }
   if (detail.webResults && detail.webResults.length > 0) {
     out.push(
-      <View key="search-web-results" style={styles.section}>
+      <View key="search-web-results" style={SEARCH_SECTION_STYLE}>
         <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
           {detail.webResults.map((entry) => `${entry.title}\n${entry.url}`).join("\n\n")}
         </Text>
@@ -591,7 +591,7 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
   }
   if (detail.annotations && detail.annotations.length > 0) {
     out.push(
-      <View key="search-annotations" style={styles.section}>
+      <View key="search-annotations" style={SEARCH_SECTION_STYLE}>
         <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
           {detail.annotations.join("\n\n")}
         </Text>
@@ -842,6 +842,11 @@ const styles = StyleSheet.create((theme) => {
     section: {
       gap: theme.spacing[2],
     },
+    // Search results are text (paths/URLs), not full-bleed code output — inset
+    // them horizontally like the error box so they don't sit flush to the edge.
+    searchSection: {
+      paddingHorizontal: theme.spacing[3],
+    },
     // The error box is a bordered alert, not full-bleed code output. Inset it
     // horizontally so it does not jut out to the card edge the way the shell/
     // diff sections (which intentionally bleed to fill width) do.
@@ -1048,6 +1053,7 @@ const styles = StyleSheet.create((theme) => {
 
 const SECTION_TITLE_ERROR_STYLE = [styles.sectionTitle, styles.errorText];
 const ERROR_SECTION_STYLE = [styles.section, styles.errorSection];
+const SEARCH_SECTION_STYLE = [styles.section, styles.searchSection];
 
 // Maps a shell token kind to its color style. `plain` tokens carry no override
 // so they inherit the surrounding scrollText foreground.

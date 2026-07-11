@@ -563,6 +563,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       viewportRef.current?.scrollToBottom("jump-to-bottom");
     }, []);
 
+    // A user-initiated tool-run summary expand/collapse changes content height in
+    // the middle of history; tell the viewport to keep the row anchored instead
+    // of re-pinning to the bottom (web), while streaming pin resumes after.
+    const handleToolRunToggle = useStableEvent(() => {
+      viewportRef.current?.suppressAutoStickForContentChange();
+    });
+
     const setInlineDetailsExpanded = useCallback(
       (itemId: string, expanded: boolean) => {
         if (!streamRenderStrategy.shouldDisableParentScrollOnInlineDetailsExpansion()) {
@@ -726,6 +733,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               childItems={toolRunGroup.items}
               defaultExpanded={toolRunGroup.isActive}
               renderChild={renderToolRunChild}
+              onUserToggle={handleToolRunToggle}
             />
           );
         }
@@ -775,6 +783,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         renderThoughtItem,
         renderToolCallItem,
         renderToolRunChild,
+        handleToolRunToggle,
       ],
     );
 

@@ -42,6 +42,10 @@ export interface StreamEdgeSlotProps {
 export interface StreamViewportHandle {
   scrollToBottom: (reason?: BottomAnchorLocalRequest["reason"]) => void;
   prepareForViewportChange: () => void;
+  // Called before a user-initiated inline expand/collapse so the viewport can
+  // keep the toggled row anchored instead of re-pinning to the bottom. No-op on
+  // strategies that don't auto-pin on content-size change (native).
+  suppressAutoStickForContentChange: () => void;
 }
 
 export interface StreamSegmentRenderers {

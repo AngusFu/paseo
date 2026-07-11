@@ -209,6 +209,9 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         bottomAnchorController.prepareForStickyViewportChange();
         markNativeViewportSettling();
       },
+      // Native keeps position via maintainVisibleContentPosition and does not
+      // auto-pin on content-size change, so inline expand needs no handling here.
+      suppressAutoStickForContentChange: () => {},
     };
     viewportRef.current = handle;
     return () => {

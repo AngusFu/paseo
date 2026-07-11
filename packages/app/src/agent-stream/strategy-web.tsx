@@ -21,6 +21,8 @@ interface CreateWebStreamStrategyInput {
 type ScrollBehaviorLike = "auto" | "smooth";
 
 const WEB_BOTTOM_SETTLE_TIMEOUT_MS = 200;
+// Window during which a user expand/collapse suppresses auto-stick-to-bottom.
+const WEB_EXPAND_ANCHOR_SUPPRESS_MS = 250;
 const USER_SCROLL_DELTA_EPSILON = 1;
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
 const AUTO_SCROLL_RESUME_THRESHOLD_PX = 1;
@@ -129,6 +131,11 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const lastTouchClientYRef = useRef<number | null>(null);
   const pendingAutoScrollFrameRef = useRef<number | null>(null);
   const pendingAutoScrollTimeoutRef = useRef<number | null>(null);
+  // Timestamp until which auto-stick-to-bottom is suppressed. Set when the user
+  // expands/collapses an inline row (e.g. a tool-run summary): that content-size
+  // change must not yank a bottom-pinned viewport, so we let the browser's native
+  // scroll anchoring hold the row in place while streaming pin resumes after.
+  const suppressAutoStickUntilRef = useRef(0);
   const pendingVirtualRowMeasureFramesRef = useRef(new Map<Element, number>());
   const historyStartReadyRef = useRef(false);
   const showDesktopWebScrollbar = !isMobileBreakpoint;
@@ -238,6 +245,12 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   );
 
   const scheduleStickToBottom = useCallback(() => {
+    // Skip auto-stick triggered by a user-initiated expand/collapse; the browser
+    // keeps the row anchored. Explicit scrolls (scrollMessagesToBottom) bypass
+    // this gate, so jump-to-bottom and activation still work.
+    if (performance.now() < suppressAutoStickUntilRef.current) {
+      return;
+    }
     const scrollContainer = scrollContainerRef.current;
     if (scrollContainer && isScrollContainerOverscrolledPastBottom(scrollContainer)) {
       return;
@@ -480,6 +493,10 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
           return;
         }
         scheduleStickToBottom();
+      },
+      suppressAutoStickForContentChange: () => {
+        suppressAutoStickUntilRef.current = performance.now() + WEB_EXPAND_ANCHOR_SUPPRESS_MS;
+        cancelPendingStickToBottom();
       },
     };
     viewportRef.current = handle;

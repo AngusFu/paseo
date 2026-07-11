@@ -3309,16 +3309,23 @@ interface ToolRunSummaryProps {
   childItems: StreamLayoutItem[];
   defaultExpanded?: boolean;
   renderChild: (child: StreamLayoutItem) => ReactNode;
+  // Fired on a user tap (not the initial mount) so the host can keep the summary
+  // row anchored across the resulting content-height change.
+  onUserToggle?: () => void;
 }
 
 export const ToolRunSummary = memo(function ToolRunSummary({
   childItems,
   defaultExpanded = false,
   renderChild,
+  onUserToggle,
 }: ToolRunSummaryProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const label = useToolRunSummaryLabel(childItems);
-  const handleToggle = useCallback(() => setIsExpanded((prev) => !prev), []);
+  const handleToggle = useCallback(() => {
+    onUserToggle?.();
+    setIsExpanded((prev) => !prev);
+  }, [onUserToggle]);
 
   return (
     <View>

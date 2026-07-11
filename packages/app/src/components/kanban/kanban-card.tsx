@@ -19,8 +19,14 @@ interface KanbanCardProps {
   card: StoredKanbanCard;
   onPress: (card: StoredKanbanCard) => void;
   onLongPress: (card: StoredKanbanCard) => void;
-  /** Fired when a drag begins, so the board can re-measure column bounds. */
+  /** Touch-down: board re-measures column bounds before any movement. */
   onDragBegin: () => void;
+  /** Drag activated: board raises this card's column above its siblings. */
+  onDragStart: (status: KanbanStatus) => void;
+  /** Each drag frame: board resolves and highlights the hovered column. */
+  onDragUpdate: (absoluteX: number) => void;
+  /** Drag settled/cancelled: board clears drag + drop-target state. */
+  onDragEnd: () => void;
   /** Web pointer-drag drop reporter. Ignored when `dragEnabled` is false. */
   onDrop: KanbanCardDropHandler;
   /** True on web where pointer drag works; false on native (long-press picker). */
@@ -38,6 +44,9 @@ export function KanbanCard({
   onPress,
   onLongPress,
   onDragBegin,
+  onDragStart,
+  onDragUpdate,
+  onDragEnd,
   onDrop,
   dragEnabled,
 }: KanbanCardProps): ReactElement {
@@ -69,10 +78,12 @@ export function KanbanCard({
     })
     .onStart(() => {
       dragging.value = true;
+      runOnJS(onDragStart)(card.status);
     })
     .onUpdate((event) => {
       translateX.value = event.translationX;
       translateY.value = event.translationY;
+      runOnJS(onDragUpdate)(event.absoluteX);
     })
     .onEnd((event) => {
       runOnJS(onDrop)({
@@ -88,6 +99,7 @@ export function KanbanCard({
       translateX.value = 0;
       translateY.value = 0;
       dragging.value = false;
+      runOnJS(onDragEnd)();
     });
 
   const animatedStyle = useAnimatedStyle(() => ({

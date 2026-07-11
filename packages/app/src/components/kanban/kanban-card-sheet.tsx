@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, type ReactElement } from "react";
 import { Pressable, Text, View } from "react-native";
+import { Check } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import {
@@ -8,6 +9,7 @@ import {
   type StoredKanbanCard,
 } from "@getpaseo/protocol/kanban/types";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
+import { resolveKanbanCardTheme } from "@/components/kanban/kanban-card-theme";
 import { Button } from "@/components/ui/button";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -15,6 +17,28 @@ import type { FieldControlSize } from "@/components/ui/control-geometry";
 import type { CreateKanbanCardInput, UpdateKanbanCardInput } from "@/hooks/use-kanban-mutations";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { toErrorMessage } from "@/utils/error-messages";
+
+// Built-in theme presets. "none" stores an empty string (default grey); the
+// others map to the icon+color pairs resolveKanbanCardTheme already understands.
+const THEME_PRESETS = [
+  { key: "none", value: "" },
+  { key: "jira", value: "jira" },
+  { key: "gitlab", value: "gitlab-mr" },
+] as const;
+
+// Color-tag palette. Selecting one stores "#RRGGBB" as the theme.
+const THEME_COLORS = [
+  "#EF4444",
+  "#F97316",
+  "#EAB308",
+  "#22C55E",
+  "#3B82F6",
+  "#8B5CF6",
+  "#EC4899",
+  "#6B7280",
+] as const;
+
+const SWATCH_CHECK_COLOR = "#FFFFFF";
 
 export interface KanbanCardSheetProps {
   visible: boolean;
@@ -61,6 +85,70 @@ function KanbanStatusPill({
 
 const PILL_SELECTED_STATE = { selected: true } as const;
 const PILL_UNSELECTED_STATE = { selected: false } as const;
+
+function KanbanThemePreset({
+  presetKey,
+  value,
+  label,
+  selected,
+  onSelect,
+}: {
+  presetKey: string;
+  value: string;
+  label: string;
+  selected: boolean;
+  onSelect: (value: string) => void;
+}): ReactElement {
+  const visual = resolveKanbanCardTheme(value);
+  const iconColor = visual.color ?? styles.presetDefaultGlyph.color;
+  const handlePress = useCallback(() => onSelect(value), [onSelect, value]);
+  const chipStyle = useMemo(
+    () => [styles.presetChip, selected && styles.presetChipSelected],
+    [selected],
+  );
+  return (
+    <Pressable
+      style={chipStyle}
+      onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityState={selected ? PILL_SELECTED_STATE : PILL_UNSELECTED_STATE}
+      testID={`kanban-theme-preset-${presetKey}`}
+    >
+      <visual.icon size={14} color={iconColor} />
+      <Text style={styles.presetLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function KanbanColorSwatch({
+  color,
+  label,
+  selected,
+  onSelect,
+}: {
+  color: string;
+  label: string;
+  selected: boolean;
+  onSelect: (value: string) => void;
+}): ReactElement {
+  const handlePress = useCallback(() => onSelect(color), [onSelect, color]);
+  const swatchStyle = useMemo(
+    () => [styles.swatch, { backgroundColor: color }, selected && styles.swatchSelected],
+    [color, selected],
+  );
+  return (
+    <Pressable
+      style={swatchStyle}
+      onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={selected ? PILL_SELECTED_STATE : PILL_UNSELECTED_STATE}
+      testID={`kanban-theme-color-${color}`}
+    >
+      {selected ? <Check size={14} color={SWATCH_CHECK_COLOR} /> : null}
+    </Pressable>
+  );
+}
 
 /**
  * Create / edit / delete a Kanban card. A simplified sibling of the schedule
@@ -223,17 +311,31 @@ export function KanbanCardSheet({
       </Field>
 
       <Field label={t("kanban.form.theme")}>
-        <FormTextInput
-          size={controlSize}
-          testID="kanban-theme-input"
-          accessibilityLabel={t("kanban.form.theme")}
-          initialValue={theme}
-          value={theme}
-          onChangeText={setTheme}
-          placeholder={t("kanban.form.themePlaceholder")}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
+        <View style={styles.themeGroup}>
+          <View style={styles.presetRow}>
+            {THEME_PRESETS.map((preset) => (
+              <KanbanThemePreset
+                key={preset.key}
+                presetKey={preset.key}
+                value={preset.value}
+                label={t(`kanban.theme.${preset.key}`)}
+                selected={theme === preset.value}
+                onSelect={setTheme}
+              />
+            ))}
+          </View>
+          <View style={styles.swatchRow}>
+            {THEME_COLORS.map((color) => (
+              <KanbanColorSwatch
+                key={color}
+                color={color}
+                label={`${t("kanban.theme.color")} ${color}`}
+                selected={theme.toLowerCase() === color.toLowerCase()}
+                onSelect={setTheme}
+              />
+            ))}
+          </View>
+        </View>
       </Field>
 
       <Field label={t("kanban.form.status")}>
@@ -298,6 +400,54 @@ const styles = StyleSheet.create((theme) => ({
   },
   statusPillTextSelected: {
     color: theme.colors.foreground,
+  },
+  themeGroup: {
+    gap: theme.spacing[3],
+  },
+  presetRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing[2],
+  },
+  presetChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1.5],
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[1],
+    backgroundColor: theme.colors.surface2,
+  },
+  presetChipSelected: {
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.surface3,
+  },
+  presetLabel: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+  },
+  // Static color holder for the "none" preset glyph (default grey).
+  presetDefaultGlyph: {
+    color: theme.colors.foregroundMuted,
+  },
+  swatchRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing[2],
+  },
+  swatch: {
+    width: 28,
+    height: 28,
+    borderRadius: theme.borderRadius.full,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  swatchSelected: {
+    borderColor: theme.colors.foreground,
   },
   submitError: {
     color: theme.colors.palette.red[300],

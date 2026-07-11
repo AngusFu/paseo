@@ -2126,6 +2126,12 @@ export const es: TranslationResources = {
     status: {
       pick: "Mover a columna",
     },
+    theme: {
+      none: "Predeterminado",
+      jira: "Jira",
+      gitlab: "GitLab MR",
+      color: "Color",
+    },
     form: {
       createTitle: "Nueva tarjeta",
       editTitle: "Editar tarjeta",

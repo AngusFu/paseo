@@ -2055,6 +2055,12 @@ export const zhCN: TranslationResources = {
     status: {
       pick: "移动到列",
     },
+    theme: {
+      none: "默认",
+      jira: "Jira",
+      gitlab: "GitLab MR",
+      color: "颜色",
+    },
     form: {
       createTitle: "新建卡片",
       editTitle: "编辑卡片",

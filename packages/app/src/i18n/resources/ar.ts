@@ -2079,6 +2079,12 @@ export const ar: TranslationResources = {
     status: {
       pick: "النقل إلى عمود",
     },
+    theme: {
+      none: "افتراضي",
+      jira: "Jira",
+      gitlab: "GitLab MR",
+      color: "لون",
+    },
     form: {
       createTitle: "بطاقة جديدة",
       editTitle: "تعديل البطاقة",

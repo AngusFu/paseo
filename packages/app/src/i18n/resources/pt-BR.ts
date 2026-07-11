@@ -2112,6 +2112,12 @@ export const ptBR: TranslationResources = {
     status: {
       pick: "Mover para coluna",
     },
+    theme: {
+      none: "Padrão",
+      jira: "Jira",
+      gitlab: "GitLab MR",
+      color: "Cor",
+    },
     form: {
       createTitle: "Novo cartão",
       editTitle: "Editar cartão",

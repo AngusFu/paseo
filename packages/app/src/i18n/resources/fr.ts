@@ -2133,6 +2133,12 @@ export const fr: TranslationResources = {
     status: {
       pick: "Déplacer vers la colonne",
     },
+    theme: {
+      none: "Par défaut",
+      jira: "Jira",
+      gitlab: "GitLab MR",
+      color: "Couleur",
+    },
     form: {
       createTitle: "Nouvelle carte",
       editTitle: "Modifier la carte",

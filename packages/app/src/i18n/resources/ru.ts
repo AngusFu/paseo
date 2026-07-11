@@ -2120,6 +2120,12 @@ export const ru: TranslationResources = {
     status: {
       pick: "Переместить в столбец",
     },
+    theme: {
+      none: "По умолчанию",
+      jira: "Jira",
+      gitlab: "GitLab MR",
+      color: "Цвет",
+    },
     form: {
       createTitle: "Новая карточка",
       editTitle: "Изменить карточку",

@@ -37,6 +37,10 @@ export function KanbanBoard({ cards, mutations }: KanbanBoardProps): ReactElemen
 
   const [detailCard, setDetailCard] = useState<StoredKanbanCard | null>(null);
   const [pickerCard, setPickerCard] = useState<StoredKanbanCard | null>(null);
+  // Which column a card is being dragged FROM (raised above siblings) and which
+  // column the drag is hovering OVER (drop highlight). Web-only.
+  const [draggingStatus, setDraggingStatus] = useState<KanbanStatus | null>(null);
+  const [dropTargetStatus, setDropTargetStatus] = useState<KanbanStatus | null>(null);
 
   const cardsByStatus = useMemo(() => {
     const groups = new Map<KanbanStatus, StoredKanbanCard[]>();
@@ -79,6 +83,24 @@ export function KanbanBoard({ cards, mutations }: KanbanBoardProps): ReactElemen
       }
     }
     return null;
+  }, []);
+
+  const handleCardDragStart = useCallback((status: KanbanStatus) => {
+    setDraggingStatus(status);
+  }, []);
+
+  const handleCardDragUpdate = useCallback(
+    (absoluteX: number) => {
+      const target = resolveDropStatus(absoluteX);
+      // Only re-render when the hovered column actually changes.
+      setDropTargetStatus((current) => (current === target ? current : target));
+    },
+    [resolveDropStatus],
+  );
+
+  const handleCardDragEnd = useCallback(() => {
+    setDraggingStatus(null);
+    setDropTargetStatus(null);
   }, []);
 
   const handleCardDrop = useCallback<KanbanCardDropHandler>(
@@ -127,8 +149,13 @@ export function KanbanBoard({ cards, mutations }: KanbanBoardProps): ReactElemen
             status={status}
             label={t(`kanban.columns.${status}`)}
             cards={cardsByStatus.get(status) ?? EMPTY_COLUMN_CARDS}
+            isDragging={draggingStatus === status}
+            isDropTarget={dropTargetStatus === status && draggingStatus !== status}
             onRegisterRef={registerColumnRef}
             onCardDragBegin={measureColumns}
+            onCardDragStart={handleCardDragStart}
+            onCardDragUpdate={handleCardDragUpdate}
+            onCardDragEnd={handleCardDragEnd}
             onCardPress={handleCardPress}
             onCardLongPress={handleCardLongPress}
             onCardDrop={handleCardDrop}
@@ -168,6 +195,10 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[3],
     paddingHorizontal: { xs: theme.spacing[3], md: theme.spacing[6] },
     paddingVertical: theme.spacing[4],
-    alignItems: "flex-start",
+    // Fill the board height so columns stretch into full-height lanes, and grow
+    // to at least the viewport so short boards still show tall drop zones.
+    minHeight: "100%",
+    flexGrow: 1,
+    alignItems: "stretch",
   },
 }));

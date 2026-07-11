@@ -2106,6 +2106,12 @@ export const ja: TranslationResources = {
     status: {
       pick: "列に移動",
     },
+    theme: {
+      none: "デフォルト",
+      jira: "Jira",
+      gitlab: "GitLab MR",
+      color: "色",
+    },
     form: {
       createTitle: "新しいカード",
       editTitle: "カードを編集",

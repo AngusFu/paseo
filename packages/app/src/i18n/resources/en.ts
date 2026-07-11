@@ -2089,6 +2089,12 @@ export const en = {
     status: {
       pick: "Move to column",
     },
+    theme: {
+      none: "Default",
+      jira: "Jira",
+      gitlab: "GitLab MR",
+      color: "Color",
+    },
     form: {
       createTitle: "New card",
       editTitle: "Edit card",

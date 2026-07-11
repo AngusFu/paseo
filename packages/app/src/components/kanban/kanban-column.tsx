@@ -1,4 +1,4 @@
-import { useCallback, type ReactElement } from "react";
+import { useCallback, useMemo, type ReactElement } from "react";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import type { StoredKanbanCard, KanbanStatus } from "@getpaseo/protocol/kanban/types";
@@ -13,10 +13,20 @@ interface KanbanColumnProps {
   status: KanbanStatus;
   label: string;
   cards: StoredKanbanCard[];
+  /** True while a card from THIS column is being dragged (raises it above siblings). */
+  isDragging: boolean;
+  /** True while a drag hovers over this column (Jira-style drop highlight). */
+  isDropTarget: boolean;
   /** Registers this column's View with the board so it can be measured on drag. */
   onRegisterRef: (status: KanbanStatus, node: View | null) => void;
-  /** Fired when a card in any column starts dragging, so the board re-measures. */
+  /** Touch-down on a card: board re-measures column bounds. */
   onCardDragBegin: () => void;
+  /** Drag activated: board raises the card's column. */
+  onCardDragStart: (status: KanbanStatus) => void;
+  /** Drag frame: board highlights the hovered column. */
+  onCardDragUpdate: (absoluteX: number) => void;
+  /** Drag settled/cancelled: board clears drag state. */
+  onCardDragEnd: () => void;
   onCardPress: (card: StoredKanbanCard) => void;
   onCardLongPress: (card: StoredKanbanCard) => void;
   onCardDrop: KanbanCardDropHandler;
@@ -24,16 +34,22 @@ interface KanbanColumnProps {
 }
 
 /**
- * One board column: a localized status header with a live count and a vertical
- * stack of cards. The column registers its View with the board, which measures
- * it in window coords at drag-start to hit-test a web pointer-drop.
+ * One board column: a full-height lane with a localized status header + live
+ * count and a vertical stack of cards. Registers its View with the board (for
+ * drag hit-testing), raises above siblings while its own card drags, and shows
+ * a drop highlight when a drag hovers over it.
  */
 export function KanbanColumn({
   status,
   label,
   cards,
+  isDragging,
+  isDropTarget,
   onRegisterRef,
   onCardDragBegin,
+  onCardDragStart,
+  onCardDragUpdate,
+  onCardDragEnd,
   onCardPress,
   onCardLongPress,
   onCardDrop,
@@ -46,8 +62,19 @@ export function KanbanColumn({
     [onRegisterRef, status],
   );
 
+  const columnStyle = useMemo(
+    () => [
+      styles.column,
+      isDropTarget && styles.columnDropTarget,
+      // Raise the dragging column (and its overflowing card) above neighbours,
+      // which have opaque backgrounds and are painted after it.
+      isDragging && styles.columnDragging,
+    ],
+    [isDragging, isDropTarget],
+  );
+
   return (
-    <View ref={handleRef} style={styles.column} testID={`kanban-column-${status}`}>
+    <View ref={handleRef} style={columnStyle} testID={`kanban-column-${status}`}>
       <View style={styles.header}>
         <Text style={styles.headerLabel} numberOfLines={1}>
           {label}
@@ -64,6 +91,9 @@ export function KanbanColumn({
             onPress={onCardPress}
             onLongPress={onCardLongPress}
             onDragBegin={onCardDragBegin}
+            onDragStart={onCardDragStart}
+            onDragUpdate={onCardDragUpdate}
+            onDragEnd={onCardDragEnd}
             onDrop={onCardDrop}
             dragEnabled={dragEnabled}
           />
@@ -77,12 +107,29 @@ const styles = StyleSheet.create((theme) => ({
   column: {
     width: 260,
     flexShrink: 0,
+    // Relative so the raised `columnDragging` zIndex actually stacks on web
+    // (React Native Web honours zIndex only on positioned elements).
+    position: "relative",
+    // Full-height lane (Jira-style): stretch to the board height so the whole
+    // column, including the empty space below the cards, is a drop zone.
+    alignSelf: "stretch",
+    minHeight: 200,
     backgroundColor: theme.colors.surface1,
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: theme.borderRadius.lg,
     padding: theme.spacing[2],
     gap: theme.spacing[2],
+  },
+  columnDragging: {
+    // Sibling columns have opaque backgrounds and paint after this one, so a
+    // card dragged past this column's edge would slip under them without this.
+    zIndex: 50,
+    elevation: 8,
+  },
+  columnDropTarget: {
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.surface2,
   },
   header: {
     flexDirection: "row",

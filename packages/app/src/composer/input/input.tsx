@@ -9,6 +9,7 @@ import {
   NativeSyntheticEvent,
   TextInputContentSizeChangeEventData,
   TextInputKeyPressEventData,
+  type TextInputScrollEventData,
   TextInputSelectionChangeEventData,
 } from "react-native";
 import {
@@ -61,6 +62,7 @@ import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
 import { isWeb } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useComposerHeightMirror } from "./height-mirror";
+import { ComposerHighlightOverlay } from "./highlight-overlay";
 import {
   resolveSendTooltipLabel,
   resolveSubmitAccessibilityLabel,
@@ -1281,6 +1283,9 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
     const focusInputKeys = useShortcutKeys("focus-message-input");
     const [inputHeight, setInputHeight] = useState(MIN_INPUT_HEIGHT);
     const [isInputFocused, setIsInputFocused] = useState(false);
+    // Scroll offset of the input, mirrored onto the web highlight overlay so its
+    // tinted tokens stay aligned with the text when the field overflows.
+    const [inputScrollTop, setInputScrollTop] = useState(0);
     const rootRef = useRef<View | null>(null);
     const inputWrapperRef = useRef<View | null>(null);
     const textInputRef = useRef<TextInput | (TextInput & { getNativeRef?: () => unknown }) | null>(
@@ -1669,6 +1674,13 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       [onSelectionChangeCallback],
     );
 
+    const handleInputScroll = useCallback(
+      (event: NativeSyntheticEvent<TextInputScrollEventData>) => {
+        setInputScrollTop(event.nativeEvent.contentOffset?.y ?? 0);
+      },
+      [],
+    );
+
     const shouldHandleWebKeyPress = isWeb;
     const shouldSubmitOnEnter = isWeb && !isCompact;
 
@@ -1840,8 +1852,10 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
               editable={!isDictating && !isRealtimeVoiceForCurrentAgent && !disabled}
               onKeyPress={shouldHandleWebKeyPress ? handleDesktopKeyPress : undefined}
               onSelectionChange={handleSelectionChange}
+              onScroll={handleInputScroll}
               autoFocus={isWeb && autoFocus}
             />
+            <ComposerHighlightOverlay value={value} scrollTop={inputScrollTop} />
             {inputScrollbar}
             <FocusHint
               visible={isWeb && isPaneFocused && !isInputFocused && !value}

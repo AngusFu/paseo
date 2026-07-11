@@ -134,6 +134,12 @@ export interface DesktopBrowserBridge {
     browserId: string | null;
   }) => Promise<void>;
   openDevTools?: (browserId: string) => Promise<unknown>;
+  /** Render DevTools inline into a caller-provided host webview WebContents. */
+  openInlineDevTools?: (input: {
+    browserId: string;
+    hostWebContentsId: number;
+  }) => Promise<unknown>;
+  closeDevTools?: (browserId: string) => Promise<unknown>;
   clearPartition?: (browserId: string) => Promise<void>;
   executeAutomationCommand?: (
     request: BrowserAutomationExecuteRequest,

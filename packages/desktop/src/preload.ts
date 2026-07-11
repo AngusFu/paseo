@@ -82,6 +82,10 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
       ipcRenderer.invoke("paseo:browser:set-workspace-active-browser", input),
     openDevTools: (browserId: string) =>
       ipcRenderer.invoke("paseo:browser:open-devtools", browserId),
+    openInlineDevTools: (input: { browserId: string; hostWebContentsId: number }) =>
+      ipcRenderer.invoke("paseo:browser:open-inline-devtools", input),
+    closeDevTools: (browserId: string) =>
+      ipcRenderer.invoke("paseo:browser:close-devtools", browserId),
     clearPartition: (browserId: string) =>
       ipcRenderer.invoke("paseo:browser:clear-partition", browserId),
     executeAutomationCommand: (request: Record<string, unknown>) =>

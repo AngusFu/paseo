@@ -426,6 +426,9 @@ export const en = {
         enterUrl: "Enter URL",
         openDevTools: "Open browser dev tools",
         importCookies: "Import cookies from Chrome",
+        devTools: "Dev tools",
+        devToolsInline: "Inline",
+        devToolsDetached: "Detached window",
         cancelSelector: "Cancel element selector",
         annotateElement: "Annotate element",
         screenshotElement: "Screenshot element",
@@ -442,6 +445,12 @@ export const en = {
       devices: {
         label: "Device size",
         responsive: "Responsive",
+      },
+      colorScheme: {
+        label: "Color scheme",
+        system: "System",
+        dark: "Dark",
+        light: "Light",
       },
       importCookies: {
         title: "Import cookies from Chrome",

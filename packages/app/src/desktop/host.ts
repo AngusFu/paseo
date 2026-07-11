@@ -147,6 +147,11 @@ export interface DesktopBrowserBridge {
     browserId: string | null;
   }) => Promise<void>;
   openDevTools?: (browserId: string) => Promise<unknown>;
+  /** Force the guest page's `prefers-color-scheme` (or clear it with "system"). */
+  setColorScheme?: (input: {
+    browserId: string;
+    scheme: "system" | "dark" | "light";
+  }) => Promise<unknown>;
   /** List macOS Chrome profiles available for cookie import. */
   listChromeProfiles?: () => Promise<ChromeProfileListResult>;
   /** Import + decrypt cookies from a Chrome profile into this browser's session. */
@@ -154,6 +159,12 @@ export interface DesktopBrowserBridge {
     browserId: string;
     profileId: string;
   }) => Promise<ImportChromeCookiesResult>;
+  /** Render DevTools inline into a caller-provided host webview WebContents. */
+  openInlineDevTools?: (input: {
+    browserId: string;
+    hostWebContentsId: number;
+  }) => Promise<unknown>;
+  closeDevTools?: (browserId: string) => Promise<unknown>;
   clearPartition?: (browserId: string) => Promise<void>;
   executeAutomationCommand?: (
     request: BrowserAutomationExecuteRequest,

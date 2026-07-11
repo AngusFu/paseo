@@ -430,6 +430,9 @@ export const ja: TranslationResources = {
         enterUrl: "URLを入力",
         openDevTools: "ブラウザ開発ツールを開く",
         importCookies: "Chrome から Cookie をインポート",
+        devTools: "開発ツール",
+        devToolsInline: "インライン",
+        devToolsDetached: "別ウィンドウ",
         cancelSelector: "要素セレクターをキャンセル",
         annotateElement: "要素に注釈を付ける",
         screenshotElement: "要素のスクリーンショット",
@@ -446,6 +449,12 @@ export const ja: TranslationResources = {
       devices: {
         label: "デバイスサイズ",
         responsive: "レスポンシブ",
+      },
+      colorScheme: {
+        label: "配色",
+        system: "システム",
+        dark: "ダーク",
+        light: "ライト",
       },
       importCookies: {
         title: "Chrome から Cookie をインポート",

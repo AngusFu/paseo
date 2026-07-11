@@ -62,6 +62,15 @@ Interactive elements carry refs like `@e3`. The agent passes a ref to `browser_c
 
 For anything the tree can't capture, agents fall back to `browser_screenshot`, and `browser_logs` exposes console messages and network timing.
 
+## DevTools
+
+Every browser tab has Chrome DevTools, opened from the **Dev tools** button in the tab toolbar. Two modes:
+
+- **Inline** — DevTools docks into a resizable panel at the bottom of the tab, so you inspect the page without leaving Paseo. Drag the divider to size it; pick **Inline** again to close it.
+- **Detached window** — the classic standalone DevTools window, for when you want it on a second monitor.
+
+Inline DevTools renders into a separate hidden view, so it never interferes with the screenshots agents take of the same tab.
+
 ## Architecture
 
 ```

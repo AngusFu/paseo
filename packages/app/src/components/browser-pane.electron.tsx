@@ -15,6 +15,7 @@ import {
   Text,
   TextInput,
   View,
+  type PointerEvent as RNPointerEvent,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -26,9 +27,11 @@ import {
   Cookie,
   Maximize,
   Monitor,
+  Moon,
   MousePointer2,
   RotateCw,
   Smartphone,
+  Sun,
   Tablet,
   Wrench,
   X,
@@ -61,6 +64,7 @@ import {
   type DesktopBrowserShortcutEvent,
 } from "@/desktop/host";
 import { useBrowserStore, normalizeWorkspaceBrowserUrl } from "@/stores/browser-store";
+import type { BrowserColorScheme } from "@/stores/browser-store/state";
 import {
   prepareBrowserWebview,
   releaseResidentBrowserWebview,
@@ -515,6 +519,9 @@ const ThemedSmartphone = withUnistyles(Smartphone);
 const ThemedTablet = withUnistyles(Tablet);
 const ThemedMonitor = withUnistyles(Monitor);
 const ThemedChevronDown = withUnistyles(ChevronDown);
+const ThemedWrench = withUnistyles(Wrench);
+const ThemedSun = withUnistyles(Sun);
+const ThemedMoon = withUnistyles(Moon);
 const deviceMutedIconMapping = (theme: { colors: { foregroundMuted: string } }) => ({
   color: theme.colors.foregroundMuted,
 });
@@ -601,6 +608,134 @@ function DeviceSizeMenu({
   );
 }
 
+const DEVTOOLS_MIN_HEIGHT = 160;
+const DEVTOOLS_DEFAULT_HEIGHT = 320;
+
+function DevToolsMenu({
+  inlineOpen,
+  onToggleInline,
+  onOpenDetached,
+  triggerStyle,
+}: {
+  inlineOpen: boolean;
+  onToggleInline: () => void;
+  onOpenDetached: () => void;
+  triggerStyle: (state: { hovered?: boolean; pressed?: boolean }) => StyleProp<ViewStyle>;
+}) {
+  const { t } = useTranslation();
+  const label = t("workspace.browser.controls.devTools");
+  return (
+    <DropdownMenu>
+      <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger accessibilityLabel={label} style={triggerStyle}>
+            <View style={styles.deviceTrigger}>
+              <ThemedWrench size={16} uniProps={deviceMutedIconMapping} />
+              <ThemedChevronDown size={12} uniProps={deviceMutedIconMapping} />
+            </View>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" align="center" offset={8}>
+          <Text style={styles.toolbarTooltipText}>{label}</Text>
+        </TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={onToggleInline} selected={inlineOpen} showSelectedCheck>
+          {t("workspace.browser.controls.devToolsInline")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onOpenDetached}>
+          {t("workspace.browser.controls.devToolsDetached")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+const COLOR_SCHEME_OPTIONS: readonly { id: BrowserColorScheme; icon: LucideIcon }[] = [
+  { id: "system", icon: Monitor },
+  { id: "dark", icon: Moon },
+  { id: "light", icon: Sun },
+];
+
+function resolveThemedColorSchemeIcon(scheme: BrowserColorScheme): typeof ThemedMonitor {
+  if (scheme === "dark") return ThemedMoon;
+  if (scheme === "light") return ThemedSun;
+  return ThemedMonitor;
+}
+
+function ColorSchemeMenuItem({
+  scheme,
+  selected,
+  label,
+  onSelect,
+}: {
+  scheme: BrowserColorScheme;
+  selected: boolean;
+  label: string;
+  onSelect: (scheme: BrowserColorScheme) => void;
+}) {
+  const ThemedIcon = resolveThemedColorSchemeIcon(scheme);
+  const handleSelect = useCallback(() => {
+    onSelect(scheme);
+  }, [onSelect, scheme]);
+  const leading = useMemo(
+    () => <ThemedIcon size={16} uniProps={deviceMutedIconMapping} />,
+    [ThemedIcon],
+  );
+  return (
+    <DropdownMenuItem
+      onSelect={handleSelect}
+      selected={selected}
+      showSelectedCheck
+      leading={leading}
+    >
+      {label}
+    </DropdownMenuItem>
+  );
+}
+
+function ColorSchemeMenu({
+  selected,
+  onSelect,
+  triggerStyle,
+}: {
+  selected: BrowserColorScheme;
+  onSelect: (scheme: BrowserColorScheme) => void;
+  triggerStyle: (state: { hovered?: boolean; pressed?: boolean }) => StyleProp<ViewStyle>;
+}) {
+  const { t } = useTranslation();
+  const label = t("workspace.browser.colorScheme.label");
+  const SelectedIcon = resolveThemedColorSchemeIcon(selected);
+  return (
+    <DropdownMenu>
+      <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger accessibilityLabel={label} style={triggerStyle}>
+            <View style={styles.deviceTrigger}>
+              <SelectedIcon size={16} uniProps={deviceMutedIconMapping} />
+              <ThemedChevronDown size={12} uniProps={deviceMutedIconMapping} />
+            </View>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" align="center" offset={8}>
+          <Text style={styles.toolbarTooltipText}>{label}</Text>
+        </TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end">
+        {COLOR_SCHEME_OPTIONS.map((option) => (
+          <ColorSchemeMenuItem
+            key={option.id}
+            scheme={option.id}
+            selected={option.id === selected}
+            label={t(`workspace.browser.colorScheme.${option.id}`)}
+            onSelect={onSelect}
+          />
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 // eslint-disable-next-line complexity
 export function BrowserPane({
   browserId,
@@ -623,12 +758,21 @@ export function BrowserPane({
   const updateBrowser = useBrowserStore((state) => state.updateBrowser);
   const webviewRef = useRef<ElectronWebview | null>(null);
   const webviewHostRef = useRef<HTMLDivElement | null>(null);
+  const devtoolsHostRef = useRef<HTMLDivElement | null>(null);
+  const [inlineDevtoolsOpen, setInlineDevtoolsOpen] = useState(false);
+  const [devtoolsHeight, setDevtoolsHeight] = useState(DEVTOOLS_DEFAULT_HEIGHT);
   const urlInputRef = useRef<WebTextInput | null>(null);
   const initialUrlRef = useRef(browser?.url ?? "https://example.com");
   const browserIdRef = useRef(browserId);
   browserIdRef.current = browserId;
   const browserRef = useRef(browser);
   browserRef.current = browser;
+  const colorScheme: BrowserColorScheme = browser?.colorScheme ?? "system";
+  const colorSchemeRef = useRef(colorScheme);
+  colorSchemeRef.current = colorScheme;
+  // Skip the initial "system" apply so untouched browsers never attach a
+  // debugger; once the user picks any scheme we always re-apply (incl. clearing).
+  const hasAppliedColorSchemeRef = useRef(false);
   const pendingNavigationUrlRef = useRef<string | null>(null);
   const domReadyRef = useRef(false);
   const annotationMarkersRef = useRef<BrowserAnnotationMarker[]>([]);
@@ -840,6 +984,14 @@ export function BrowserPane({
       if (markers.length > 0) {
         applyAnnotationMarkers(webview, markers);
       }
+      // CDP media emulation resets on cross-document navigation; re-apply a
+      // forced scheme. "system" needs nothing (default is no override).
+      if (colorSchemeRef.current !== "system") {
+        void getDesktopHost()?.browser?.setColorScheme?.({
+          browserId: browserIdRef.current,
+          scheme: colorSchemeRef.current,
+        });
+      }
     };
     const handleWebviewFocus = () => {
       onFocusPane?.();
@@ -1014,6 +1166,26 @@ export function BrowserPane({
   const handleNavigateDraftUrl = useCallback(() => {
     navigate(draftUrl);
   }, [draftUrl, navigate]);
+
+  const handleSelectColorScheme = useCallback((scheme: BrowserColorScheme) => {
+    updateBrowserRef.current(browserIdRef.current, { colorScheme: scheme });
+  }, []);
+
+  // Apply the forced color scheme whenever the choice changes (and re-assert it
+  // if the resident webview is reused across pane remounts).
+  useEffect(() => {
+    if (!isElectronRuntime()) {
+      return;
+    }
+    if (colorScheme === "system" && !hasAppliedColorSchemeRef.current) {
+      return;
+    }
+    hasAppliedColorSchemeRef.current = true;
+    void getDesktopHost()?.browser?.setColorScheme?.({
+      browserId: browserIdRef.current,
+      scheme: colorScheme,
+    });
+  }, [colorScheme]);
 
   const addElementAttachment = useCallback(
     (
@@ -1476,8 +1648,10 @@ export function BrowserPane({
     startElementSelector("screenshot");
   }, [cancelElementSelector, selectorActive, startElementSelector]);
 
-  const handleOpenDevTools = useCallback(() => {
+  const handleOpenDetachedDevTools = useCallback(() => {
     const currentBrowserId = browserIdRef.current;
+    // Detached mode is the fallback; opening it supersedes any inline session.
+    setInlineDevtoolsOpen(false);
     const openDevTools = getDesktopHost()?.browser?.openDevTools;
     if (typeof openDevTools !== "function") {
       console.warn("[browser-pane] openDevTools bridge missing", { browserId: currentBrowserId });
@@ -1495,6 +1669,129 @@ export function BrowserPane({
         console.warn("[browser-pane] openDevTools failed", { browserId: currentBrowserId, error });
       });
   }, []);
+
+  const handleToggleInlineDevTools = useCallback(() => {
+    setInlineDevtoolsOpen((open) => !open);
+  }, []);
+
+  const handleDevtoolsResizeStart = useCallback((event: RNPointerEvent) => {
+    const handleElement = event.currentTarget as unknown as HTMLElement | null;
+    const containerElement = handleElement?.parentElement ?? null;
+    if (!containerElement) {
+      return;
+    }
+    const rect = containerElement.getBoundingClientRect();
+    if (rect.height <= 0) {
+      return;
+    }
+    const pointerId = event.nativeEvent.pointerId;
+    event.preventDefault();
+    event.stopPropagation();
+    handleElement?.setPointerCapture?.(pointerId);
+    const previousCursor = document.body.style.cursor;
+    document.body.style.cursor = "row-resize";
+    const maxHeight = Math.max(DEVTOOLS_MIN_HEIGHT, rect.height - DEVTOOLS_MIN_HEIGHT);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) {
+        return;
+      }
+      moveEvent.preventDefault();
+      // Dragging the divider up grows the panel: panel height = distance from
+      // pointer to the container's bottom edge, clamped to keep both panes usable.
+      const nextHeight = Math.min(
+        maxHeight,
+        Math.max(DEVTOOLS_MIN_HEIGHT, rect.bottom - moveEvent.clientY),
+      );
+      setDevtoolsHeight(nextHeight);
+    };
+    const cleanup = () => {
+      document.body.style.cursor = previousCursor;
+      if (handleElement?.hasPointerCapture?.(pointerId)) {
+        handleElement.releasePointerCapture(pointerId);
+      }
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) {
+        return;
+      }
+      cleanup();
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  }, []);
+
+  useEffect(() => {
+    if (!isElectronRuntime() || !inlineDevtoolsOpen) {
+      return;
+    }
+    const host = devtoolsHostRef.current;
+    if (!host) {
+      return;
+    }
+    const currentBrowserId = browserId;
+    const bridge = getDesktopHost()?.browser;
+    host.replaceChildren();
+    const devtoolsWebview = document.createElement("webview") as ElectronWebview & {
+      getWebContentsId?: () => number;
+    };
+    // Blank guest that DevTools renders itself into; a disjoint WebContents from
+    // the captured target, so it can't disturb the parked-host screenshot surface.
+    devtoolsWebview.setAttribute("src", "about:blank");
+    devtoolsWebview.style.display = "flex";
+    devtoolsWebview.style.flex = "1";
+    devtoolsWebview.style.width = "100%";
+    devtoolsWebview.style.height = "100%";
+    devtoolsWebview.style.border = "0";
+    devtoolsWebview.style.background = "transparent";
+
+    let disposed = false;
+    const handleDevtoolsReady = () => {
+      if (disposed) {
+        return;
+      }
+      const hostWebContentsId = devtoolsWebview.getWebContentsId?.();
+      if (typeof hostWebContentsId !== "number") {
+        return;
+      }
+      void bridge
+        ?.openInlineDevTools?.({ browserId: currentBrowserId, hostWebContentsId })
+        .catch((error: unknown) => {
+          console.warn("[browser-pane] openInlineDevTools failed", {
+            browserId: currentBrowserId,
+            error,
+          });
+        });
+    };
+    devtoolsWebview.addEventListener("dom-ready", handleDevtoolsReady);
+    host.appendChild(devtoolsWebview);
+
+    return () => {
+      disposed = true;
+      devtoolsWebview.removeEventListener("dom-ready", handleDevtoolsReady);
+      void bridge?.closeDevTools?.(currentBrowserId).catch(() => undefined);
+      if (host.contains(devtoolsWebview)) {
+        host.removeChild(devtoolsWebview);
+      }
+    };
+  }, [browserId, inlineDevtoolsOpen]);
+
+  const setDevtoolsHostNode = useCallback((node: HTMLDivElement | null) => {
+    devtoolsHostRef.current = node;
+  }, []);
+  // cursor / touchAction are web-only; apply them inline (cast) like ResizeHandle.
+  const devtoolsResizeHandleStyle = useMemo(
+    () => [styles.devtoolsResizeHandle, { cursor: "row-resize", touchAction: "none" } as object],
+    [],
+  );
+  const devtoolsPanelStyle = useMemo(
+    () => [styles.devtoolsPanel, { height: devtoolsHeight }],
+    [devtoolsHeight],
+  );
 
   const baseIconButtonStyle = useCallback(
     ({ hovered, pressed }: { hovered?: boolean; pressed?: boolean }) => [
@@ -1577,6 +1874,18 @@ export function BrowserPane({
     webviewHostRef.current = node;
   }, []);
 
+  const devtoolsHostStyle = useMemo<CSSProperties>(
+    () => ({
+      display: "flex",
+      flex: 1,
+      width: "100%",
+      height: "100%",
+      minHeight: 0,
+      background: theme.colors.surface0,
+    }),
+    [theme.colors.surface0],
+  );
+
   if (!isElectronRuntime()) {
     return (
       <View style={styles.unavailableState}>
@@ -1634,18 +1943,22 @@ export function BrowserPane({
           />
         </View>
         <View style={styles.chromeRight}>
+          <ColorSchemeMenu
+            selected={colorScheme}
+            onSelect={handleSelectColorScheme}
+            triggerStyle={baseIconButtonStyle}
+          />
           <DeviceSizeMenu
             selectedId={deviceSizeId}
             onSelect={setDeviceSizeId}
             triggerStyle={baseIconButtonStyle}
           />
-          <ToolbarButton
-            label={t("workspace.browser.controls.openDevTools")}
-            onPress={handleOpenDevTools}
-            style={baseIconButtonStyle}
-          >
-            <Wrench size={16} color={theme.colors.foregroundMuted} />
-          </ToolbarButton>
+          <DevToolsMenu
+            inlineOpen={inlineDevtoolsOpen}
+            onToggleInline={handleToggleInlineDevTools}
+            onOpenDetached={handleOpenDetachedDevTools}
+            triggerStyle={baseIconButtonStyle}
+          />
           <ImportChromeCookiesButton browserId={browserId} iconButtonStyle={baseIconButtonStyle} />
           <ToolbarButton
             label={
@@ -1703,6 +2016,22 @@ export function BrowserPane({
           />
         ) : null}
       </View>
+      {inlineDevtoolsOpen ? (
+        <>
+          <View
+            role="separator"
+            aria-orientation="horizontal"
+            style={devtoolsResizeHandleStyle}
+            onPointerDown={handleDevtoolsResizeStart}
+          />
+          <View style={devtoolsPanelStyle}>
+            {createElement("div", {
+              ref: setDevtoolsHostNode,
+              style: devtoolsHostStyle,
+            })}
+          </View>
+        </>
+      ) : null}
     </View>
   );
 }
@@ -2108,6 +2437,18 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
+  },
+  devtoolsResizeHandle: {
+    height: 4,
+    flexShrink: 0,
+    backgroundColor: theme.colors.border,
+  },
+  devtoolsPanel: {
+    flexShrink: 0,
+    minHeight: 0,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    backgroundColor: theme.colors.surface0,
   },
   toolbarTooltipText: {
     fontSize: theme.fontSize.xs,

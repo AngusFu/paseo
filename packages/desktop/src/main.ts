@@ -21,6 +21,7 @@ import {
   protocol,
   screen,
   session,
+  webContents,
 } from "electron";
 import { createDaemonCommandHandlers, registerDaemonManager } from "./daemon/daemon-manager.js";
 import { parsePassthroughCliArgsFromArgv, runPassthroughCli } from "./daemon/cli/passthrough.js";
@@ -413,6 +414,69 @@ ipcMain.handle("paseo:browser:import-cookies-from-chrome", async (_event, rawInp
   return result;
 });
 
+ipcMain.handle("paseo:browser:open-inline-devtools", (_event, rawInput: unknown) => {
+  const input =
+    rawInput && typeof rawInput === "object"
+      ? (rawInput as { browserId?: unknown; hostWebContentsId?: unknown })
+      : {};
+  const browserId = typeof input.browserId === "string" ? input.browserId.trim() : "";
+  const hostWebContentsId =
+    typeof input.hostWebContentsId === "number" && Number.isInteger(input.hostWebContentsId)
+      ? input.hostWebContentsId
+      : null;
+  if (browserId.length === 0 || hostWebContentsId === null) {
+    const result = { ok: false, reason: "invalid-input", browserId, hostWebContentsId };
+    log.warn("[browser-devtools] open-inline-devtools.invalid", result);
+    return result;
+  }
+  const contents = getPaseoBrowserWebContents(browserId);
+  if (!contents) {
+    const result = {
+      ok: false,
+      reason: "browser-webcontents-not-found",
+      browserId,
+      registeredBrowserIds: listRegisteredPaseoBrowserIds(),
+    };
+    log.warn("[browser-devtools] open-inline-devtools.not-found", result);
+    return result;
+  }
+  const host = webContents.fromId(hostWebContentsId);
+  if (!host || host.isDestroyed()) {
+    const result = { ok: false, reason: "devtools-host-not-found", browserId, hostWebContentsId };
+    log.warn("[browser-devtools] open-inline-devtools.host-not-found", result);
+    return result;
+  }
+  // Render DevTools into the caller-provided host WebContents (a second in-pane
+  // webview) instead of a detached window. Capture reads only the target guest's
+  // compositor surface, so this disjoint host does not disturb screenshots.
+  contents.setDevToolsWebContents(host);
+  contents.openDevTools({ mode: "detach", activate: false });
+  const result = {
+    ok: true,
+    reason: "opened",
+    browserId,
+    webContentsId: contents.id,
+    hostWebContentsId,
+    isDevToolsOpened: contents.isDevToolsOpened(),
+  };
+  log.info("[browser-devtools] open-inline-devtools.done", result);
+  return result;
+});
+
+ipcMain.handle("paseo:browser:close-devtools", (_event, browserId: unknown) => {
+  if (typeof browserId !== "string" || browserId.trim().length === 0) {
+    return { ok: false, reason: "invalid-browser-id", browserId };
+  }
+  const contents = getPaseoBrowserWebContents(browserId.trim());
+  if (!contents) {
+    return { ok: false, reason: "browser-webcontents-not-found", browserId };
+  }
+  contents.closeDevTools();
+  const result = { ok: true, reason: "closed", browserId: browserId.trim() };
+  log.info("[browser-devtools] close-devtools.done", result);
+  return result;
+});
+
 ipcMain.handle("paseo:browser:clear-partition", async (_event, browserId: unknown) => {
   if (typeof browserId !== "string" || browserId.trim().length === 0) {
     return;
@@ -491,6 +555,45 @@ ipcMain.handle("paseo:browser:copy-element", (_event, payload: unknown): boolean
     return true;
   }
   return false;
+});
+
+// Force the guest page's `prefers-color-scheme` via CDP media emulation.
+// "system" clears the override. Emulation resets on cross-document navigation,
+// so the renderer re-applies a non-system choice on each dom-ready.
+ipcMain.handle("paseo:browser:set-color-scheme", async (_event, rawInput: unknown) => {
+  const input =
+    rawInput && typeof rawInput === "object"
+      ? (rawInput as { browserId?: unknown; scheme?: unknown })
+      : {};
+  const browserId = typeof input.browserId === "string" ? input.browserId.trim() : "";
+  const scheme =
+    input.scheme === "dark" || input.scheme === "light" || input.scheme === "system"
+      ? input.scheme
+      : null;
+  if (browserId.length === 0 || scheme === null) {
+    return { ok: false, reason: "invalid-input", browserId, scheme: input.scheme };
+  }
+  const contents = getPaseoBrowserWebContents(browserId);
+  if (!contents || contents.isDestroyed()) {
+    return { ok: false, reason: "browser-webcontents-not-found", browserId };
+  }
+  try {
+    // Reuse an existing debugger session (the automation subsystem may already
+    // own it); attach only if nobody has. Never detach — automation relies on it.
+    if (!contents.debugger.isAttached()) {
+      contents.debugger.attach("1.3");
+    }
+    const features = scheme === "system" ? [] : [{ name: "prefers-color-scheme", value: scheme }];
+    await contents.debugger.sendCommand("Emulation.setEmulatedMedia", { features });
+    return { ok: true, browserId, scheme };
+  } catch (error) {
+    log.warn("[browser-color-scheme] set-color-scheme.failed", {
+      browserId,
+      scheme,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { ok: false, reason: "cdp-command-failed", browserId, scheme };
+  }
 });
 
 protocol.registerSchemesAsPrivileged([

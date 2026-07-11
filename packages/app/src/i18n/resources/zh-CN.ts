@@ -426,6 +426,9 @@ export const zhCN: TranslationResources = {
         enterUrl: "输入 URL",
         openDevTools: "打开浏览器开发者工具",
         importCookies: "从 Chrome 导入 Cookie",
+        devTools: "开发者工具",
+        devToolsInline: "内嵌",
+        devToolsDetached: "独立窗口",
         cancelSelector: "取消元素选择器",
         annotateElement: "标注元素",
         screenshotElement: "截图元素",
@@ -442,6 +445,12 @@ export const zhCN: TranslationResources = {
       devices: {
         label: "设备尺寸",
         responsive: "自适应",
+      },
+      colorScheme: {
+        label: "配色方案",
+        system: "跟随系统",
+        dark: "深色",
+        light: "浅色",
       },
       importCookies: {
         title: "从 Chrome 导入 Cookie",

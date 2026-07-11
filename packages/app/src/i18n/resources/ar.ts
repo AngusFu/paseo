@@ -426,6 +426,9 @@ export const ar: TranslationResources = {
         enterUrl: "أدخل URL",
         openDevTools: "افتح أدوات تطوير المتصفح",
         importCookies: "استيراد ملفات تعريف الارتباط من Chrome",
+        devTools: "أدوات المطور",
+        devToolsInline: "مضمّن",
+        devToolsDetached: "نافذة منفصلة",
         cancelSelector: "إلغاء محدد العنصر",
         annotateElement: "التعليق على العنصر",
         screenshotElement: "لقطة للعنصر",
@@ -442,6 +445,12 @@ export const ar: TranslationResources = {
       devices: {
         label: "حجم الجهاز",
         responsive: "متجاوب",
+      },
+      colorScheme: {
+        label: "نظام الألوان",
+        system: "النظام",
+        dark: "داكن",
+        light: "فاتح",
       },
       importCookies: {
         title: "استيراد ملفات تعريف الارتباط من Chrome",

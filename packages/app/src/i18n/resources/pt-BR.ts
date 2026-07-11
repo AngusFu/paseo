@@ -430,6 +430,9 @@ export const ptBR: TranslationResources = {
         enterUrl: "Inserir URL",
         openDevTools: "Abrir ferramentas de desenvolvedor do navegador",
         importCookies: "Importar cookies do Chrome",
+        devTools: "Ferramentas de desenvolvedor",
+        devToolsInline: "Integrado",
+        devToolsDetached: "Janela separada",
         cancelSelector: "Cancelar seletor de elemento",
         annotateElement: "Anotar elemento",
         screenshotElement: "Capturar elemento",
@@ -446,6 +449,12 @@ export const ptBR: TranslationResources = {
       devices: {
         label: "Tamanho do dispositivo",
         responsive: "Responsivo",
+      },
+      colorScheme: {
+        label: "Esquema de cores",
+        system: "Sistema",
+        dark: "Escuro",
+        light: "Claro",
       },
       importCookies: {
         title: "Importar cookies do Chrome",

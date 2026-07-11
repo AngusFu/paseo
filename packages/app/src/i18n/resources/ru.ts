@@ -430,6 +430,9 @@ export const ru: TranslationResources = {
         enterUrl: "Введите URL",
         openDevTools: "Открыть инструменты разработки браузера",
         importCookies: "Импортировать файлы cookie из Chrome",
+        devTools: "Инструменты разработчика",
+        devToolsInline: "Встроенные",
+        devToolsDetached: "Отдельное окно",
         cancelSelector: "Отменить выбор элемента",
         annotateElement: "Аннотировать элемент",
         screenshotElement: "Снимок элемента",
@@ -446,6 +449,12 @@ export const ru: TranslationResources = {
       devices: {
         label: "Размер устройства",
         responsive: "Адаптивный",
+      },
+      colorScheme: {
+        label: "Цветовая схема",
+        system: "Системная",
+        dark: "Тёмная",
+        light: "Светлая",
       },
       importCookies: {
         title: "Импортировать файлы cookie из Chrome",

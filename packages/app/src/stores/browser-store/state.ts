@@ -1,3 +1,6 @@
+/** Forced color scheme for the guest page. "system" clears the override. */
+export type BrowserColorScheme = "system" | "dark" | "light";
+
 export interface BrowserRecord {
   browserId: string;
   url: string;
@@ -7,6 +10,7 @@ export interface BrowserRecord {
   canGoForward: boolean;
   faviconUrl: string | null;
   lastError: string | null;
+  colorScheme: BrowserColorScheme;
   createdAt: number;
 }
 
@@ -55,6 +59,7 @@ export function createBrowserRecord(input: {
     canGoForward: false,
     faviconUrl: null,
     lastError: null,
+    colorScheme: "system",
     createdAt: input.now,
   };
 }
@@ -86,7 +91,8 @@ export function applyBrowserPatch<S extends BrowserIndexState>(
     nextRecord.canGoBack === existing.canGoBack &&
     nextRecord.canGoForward === existing.canGoForward &&
     nextRecord.faviconUrl === existing.faviconUrl &&
-    nextRecord.lastError === existing.lastError
+    nextRecord.lastError === existing.lastError &&
+    nextRecord.colorScheme === existing.colorScheme
   ) {
     return state;
   }

@@ -82,9 +82,15 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
       ipcRenderer.invoke("paseo:browser:set-workspace-active-browser", input),
     openDevTools: (browserId: string) =>
       ipcRenderer.invoke("paseo:browser:open-devtools", browserId),
+    setColorScheme: (input: { browserId: string; scheme: "system" | "dark" | "light" }) =>
+      ipcRenderer.invoke("paseo:browser:set-color-scheme", input),
     listChromeProfiles: () => ipcRenderer.invoke("paseo:browser:list-chrome-profiles"),
     importCookiesFromChrome: (input: { browserId: string; profileId: string }) =>
       ipcRenderer.invoke("paseo:browser:import-cookies-from-chrome", input),
+    openInlineDevTools: (input: { browserId: string; hostWebContentsId: number }) =>
+      ipcRenderer.invoke("paseo:browser:open-inline-devtools", input),
+    closeDevTools: (browserId: string) =>
+      ipcRenderer.invoke("paseo:browser:close-devtools", browserId),
     clearPartition: (browserId: string) =>
       ipcRenderer.invoke("paseo:browser:clear-partition", browserId),
     executeAutomationCommand: (request: Record<string, unknown>) =>

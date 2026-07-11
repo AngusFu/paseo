@@ -430,6 +430,9 @@ export const fr: TranslationResources = {
         enterUrl: "EntrezURL",
         openDevTools: "Outils de développement du navigateur ouvert",
         importCookies: "Importer les cookies de Chrome",
+        devTools: "Outils de développement",
+        devToolsInline: "Intégré",
+        devToolsDetached: "Fenêtre détachée",
         cancelSelector: "Annuler le sélecteur d'élément",
         annotateElement: "Annoter l'élément",
         screenshotElement: "Capturer l'élément",
@@ -446,6 +449,12 @@ export const fr: TranslationResources = {
       devices: {
         label: "Taille de l'appareil",
         responsive: "Adaptatif",
+      },
+      colorScheme: {
+        label: "Thème de couleur",
+        system: "Système",
+        dark: "Sombre",
+        light: "Clair",
       },
       importCookies: {
         title: "Importer les cookies de Chrome",

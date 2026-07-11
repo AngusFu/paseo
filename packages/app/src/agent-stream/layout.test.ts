@@ -64,6 +64,16 @@ function thought(id: string, seed: number): Extract<StreamItem, { kind: "thought
   };
 }
 
+function todoList(id: string, seed: number): Extract<StreamItem, { kind: "todo_list" }> {
+  return {
+    kind: "todo_list",
+    id,
+    timestamp: timestamp(seed),
+    provider: "claude",
+    items: [{ text: id, completed: false }],
+  };
+}
+
 function timingFor(...ids: string[]): Map<string, TurnTiming> {
   const timing = {
     startedAt: timestamp(1),
@@ -296,6 +306,74 @@ describe("layoutStream", () => {
     expect(findLayoutItem(layout, shell.id).toolSequence).toBe("first");
     expect(findLayoutItem(layout, thinking.id).toolSequence).toBe("last");
   });
+
+  it.each(["web", "android"] as const)(
+    "groups a run of >= 2 tool items under the run's chronologically-first item on %s",
+    (platform) => {
+      const first = toolCall("tool-1", 2);
+      const second = thought("thought-1", 3);
+      const layout = layoutFor({
+        platform,
+        tail: [userMessage("u1", 1), first, second, assistantMessage("a1", 4)],
+      });
+
+      const firstRow = findLayoutItem(layout, first.id);
+      expect(firstRow.toolRunGroup?.runId).toBe(first.id);
+      // Members are ordered chronologically regardless of stream inversion.
+      expect(firstRow.toolRunGroup?.items.map((child) => child.item.id)).toEqual([
+        first.id,
+        second.id,
+      ]);
+      expect(firstRow.isToolRunMember).toBe(false);
+      expect(findLayoutItem(layout, second.id).isToolRunMember).toBe(true);
+      expect(findLayoutItem(layout, second.id).toolRunGroup).toBeNull();
+    },
+  );
+
+  it.each(["web", "android"] as const)("does not group a lone tool item on %s", (platform) => {
+    const lone = toolCall("tool-1", 2);
+    const layout = layoutFor({
+      platform,
+      tail: [userMessage("u1", 1), lone, assistantMessage("a1", 3)],
+    });
+
+    expect(findLayoutItem(layout, lone.id).toolRunGroup).toBeNull();
+    expect(findLayoutItem(layout, lone.id).isToolRunMember).toBe(false);
+  });
+
+  it.each(["web", "android"] as const)(
+    "splits a run around a todo_list, leaving the todo ungrouped and visible on %s",
+    (platform) => {
+      const toolA = toolCall("tool-1", 2);
+      const thinkA = thought("thought-1", 3);
+      const todo = todoList("todo-1", 4);
+      const toolB = toolCall("tool-2", 5);
+      const thinkB = thought("thought-2", 6);
+      const layout = layoutFor({
+        platform,
+        tail: [userMessage("u1", 1), toolA, thinkA, todo, toolB, thinkB, assistantMessage("a1", 7)],
+      });
+
+      // First run: toolA + thinkA grouped under toolA.
+      expect(findLayoutItem(layout, toolA.id).toolRunGroup?.items.map((c) => c.item.id)).toEqual([
+        toolA.id,
+        thinkA.id,
+      ]);
+      expect(findLayoutItem(layout, thinkA.id).isToolRunMember).toBe(true);
+
+      // The todo stays ungrouped and rendered on its own row.
+      const todoRow = findLayoutItem(layout, todo.id);
+      expect(todoRow.toolRunGroup).toBeNull();
+      expect(todoRow.isToolRunMember).toBe(false);
+
+      // Second run: toolB + thinkB grouped under toolB.
+      expect(findLayoutItem(layout, toolB.id).toolRunGroup?.items.map((c) => c.item.id)).toEqual([
+        toolB.id,
+        thinkB.id,
+      ]);
+      expect(findLayoutItem(layout, thinkB.id).isToolRunMember).toBe(true);
+    },
+  );
 
   it("keeps bottom and inline footer ownership mutually exclusive", () => {
     const assistant = assistantMessage("a1", 2);

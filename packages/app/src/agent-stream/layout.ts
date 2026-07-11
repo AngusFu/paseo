@@ -197,6 +197,17 @@ function isToolSequenceItem(
   return item?.kind === "tool_call" || item?.kind === "thought" || item?.kind === "todo_list";
 }
 
+// Grouping-only predicate: which items collapse into a tool-run summary. Narrower
+// than isToolSequenceItem — todo_list is deliberately excluded so plan/todo cards
+// stay visible (a todo mid-run splits the run in two). Do NOT swap this for
+// isToolSequenceItem, which also drives spacing/gap adjacency and must keep
+// todo_list tool-adjacent.
+function isGroupableToolItem(
+  item: StreamItem | null,
+): item is Extract<StreamItem, { kind: "tool_call" | "thought" }> {
+  return item?.kind === "tool_call" || item?.kind === "thought";
+}
+
 function getToolSequence(input: {
   item: StreamItem;
   aboveItem: StreamItem | null;
@@ -249,36 +260,45 @@ function isActiveToolRunItem(item: StreamItem): boolean {
   return false;
 }
 
-// Collapses maximal runs of >= 2 consecutive tool-sequence items into a single
-// group hung off the run's first item. Runs never cross the history/liveHead
-// segment boundary (grouping is segment-local), which keeps the active turn's
-// live run self-contained. The trailing gap and completed-turn footer are
-// hoisted from the run's last item onto the first so the group renders as one
-// unit while its members render null.
-function groupToolRuns(items: StreamLayoutItem[]): void {
+// Collapses maximal runs of >= 2 consecutive groupable tool items into a single
+// group anchored on the run's chronologically-first item. Runs never cross the
+// history/liveHead segment boundary (grouping is segment-local), which keeps the
+// active turn's live run self-contained.
+//
+// `reversed` is true for the native inverted stream, where the segment array is
+// in reverse-chronological order. The group must render chronologically (summary
+// on top, earliest tool first) inside its upright cell, so the anchor and child
+// order are derived from chronology, not raw array position. The trailing gap and
+// completed-turn footer are hoisted from the run's chronologically-last item onto
+// the anchor so the group renders as one unit while its members render null.
+function groupToolRuns(items: StreamLayoutItem[], reversed: boolean): void {
   let start = 0;
   while (start < items.length) {
-    if (!isToolSequenceItem(items[start].item)) {
+    if (!isGroupableToolItem(items[start].item)) {
       start += 1;
       continue;
     }
     let end = start;
-    while (end + 1 < items.length && isToolSequenceItem(items[end + 1].item)) {
+    while (end + 1 < items.length && isGroupableToolItem(items[end + 1].item)) {
       end += 1;
     }
     if (end > start) {
-      const startItem = items[start];
-      const endItem = items[end];
-      startItem.toolRunGroup = {
-        runId: startItem.item.id,
-        items: items.slice(start, end + 1),
-        isActive: items.slice(start, end + 1).some((li) => isActiveToolRunItem(li.item)),
+      const run = items.slice(start, end + 1);
+      const chronological = reversed ? run.toReversed() : run;
+      const anchor = chronological[0];
+      const chronoLast = chronological[chronological.length - 1];
+      anchor.toolRunGroup = {
+        runId: anchor.item.id,
+        items: chronological,
+        isActive: chronological.some((li) => isActiveToolRunItem(li.item)),
       };
-      startItem.gapBelow = endItem.gapBelow;
-      startItem.completedFooter = endItem.completedFooter;
-      for (let i = start + 1; i <= end; i += 1) {
-        items[i].isToolRunMember = true;
-        items[i].completedFooter = null;
+      anchor.gapBelow = chronoLast.gapBelow;
+      anchor.completedFooter = chronoLast.completedFooter;
+      for (const layoutItem of run) {
+        if (layoutItem !== anchor) {
+          layoutItem.isToolRunMember = true;
+          layoutItem.completedFooter = null;
+        }
       }
     }
     start = end + 1;
@@ -338,7 +358,10 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
       isToolRunMember: false,
     };
   });
-  groupToolRuns(result);
+  // Native inverted streams order the segment array reverse-chronologically:
+  // there the "above" (earlier) neighbor sits at a higher index.
+  const reversed = input.strategy.getNeighborIndex(0, "above") > 0;
+  groupToolRuns(result, reversed);
   return result;
 }
 

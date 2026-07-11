@@ -695,9 +695,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [agent.cwd, setInlineDetailsExpanded, handleToolCallOpenFile],
     );
 
-    // Renders a single member of a collapsed tool run (thought / tool_call /
-    // todo_list) without the grouping branch, so the run's start item can render
-    // its members without recursing back into the summary wrapper.
+    // Renders a single member of a collapsed tool run (thought / tool_call)
+    // without the grouping branch, so the run's anchor item can render its members
+    // without recursing back into the summary wrapper. todo_list is never grouped
+    // (see isGroupableToolItem), so it never reaches here.
     const renderToolRunChild = useCallback(
       (childItem: StreamLayoutItem): ReactNode => {
         const item = childItem.item;
@@ -706,8 +707,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             return renderThoughtItem(childItem, item);
           case "tool_call":
             return renderToolCallItem(childItem, item);
-          case "todo_list":
-            return <TodoListCard items={item.items} />;
           default:
             return null;
         }

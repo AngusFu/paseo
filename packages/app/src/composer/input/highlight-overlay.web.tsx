@@ -82,8 +82,10 @@ const styles = StyleSheet.create((theme) => ({
     color: "transparent",
   },
   command: {
+    // No fontWeight override: the overlay paints over the TextInput's own text,
+    // so any width difference (e.g. a bolder weight) drifts the tint off the
+    // glyphs. Keep the normal weight and tint by color only.
     color: theme.colors.statusWarning,
-    fontWeight: theme.fontWeight.medium,
   },
   url: {
     color: LINK_COLOR,

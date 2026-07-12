@@ -96,6 +96,28 @@ function escapeCommandQuotes(value: string): string {
   return value.replace(/"/g, '\\"');
 }
 
+// Short branch-name slug from a card title: conventional-commit prefix
+// stripped, lowercased, non-alphanumerics collapsed to "-", capped at 32
+// chars. Teams commonly enforce <prefix>/<KEY>_<slug> branch contracts
+// (e.g. a validate-branch-name pre-push hook), and a keyless bare
+// "fix/SCIF-1234" fails those.
+function branchSlug(title: string): string {
+  const slug = title
+    .replace(/^\w+(\([^)]*\))?!?:\s*/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32)
+    .replace(/-+$/, "");
+  return slug;
+}
+
+// First Jira-style issue key (e.g. SCIF-4993) mentioned in a title, if any.
+function issueKeyFromTitle(title: string): string | null {
+  const match = /\b[A-Z][A-Z0-9]+-\d+\b/.exec(title);
+  return match ? match[0] : null;
+}
+
 // The `paseo run` command a user pastes into a shell to dispatch an agent
 // against this card. Jira cards get a fix/<issueKey> worktree and a --title of
 // just the issue key; GitLab MRs get a review/mr-<iid> worktree plus a
@@ -113,20 +135,26 @@ function buildDispatchCommand(
 
   if (card.source.kind === "jira") {
     const issueKey = card.source.issueKey;
+    const slug = branchSlug(title);
+    const worktree = slug ? `fix/${issueKey}_${slug}` : `fix/${issueKey}`;
     const prefix = `Fix ${issueKey}: ${title}`;
     const prompt = url ? `${prefix}\n${url}` : prefix;
-    return `paseo run ${cwdArg}--worktree "fix/${issueKey}" --title "${escapeCommandQuotes(issueKey)}" "${escapeCommandQuotes(prompt)}"`;
+    return `paseo run ${cwdArg}--worktree "${worktree}" --title "${escapeCommandQuotes(issueKey)}" "${escapeCommandQuotes(prompt)}"`;
   }
   if (card.source.kind === "gitlab") {
     const mrIid = card.source.mrIid;
     const titleArg = `Review !${mrIid}`;
-    const prefix = `Review merge request !${mrIid}: ${title}`;
     // The review runs in its own worktree too — checking out the MR source
     // branch in the main checkout would clobber whatever branch is there.
+    // Branch-contract-friendly name: chore/<KEY>_review-mr-<iid> when the MR
+    // title mentions an issue key, plain review-mr-<iid> slug otherwise.
+    const issueKey = issueKeyFromTitle(title);
+    const worktree = issueKey ? `chore/${issueKey}_review-mr-${mrIid}` : `chore/review-mr-${mrIid}`;
+    const prefix = `Review merge request !${mrIid}: ${title}`;
     const prompt = url
       ? `${prefix}\n${url}\nCheck out the MR source branch in this worktree before reviewing.`
       : `${prefix}\nCheck out the MR source branch in this worktree before reviewing.`;
-    return `paseo run ${cwdArg}--worktree "review/mr-${mrIid}" --title "${escapeCommandQuotes(titleArg)}" "${escapeCommandQuotes(prompt)}"`;
+    return `paseo run ${cwdArg}--worktree "${worktree}" --title "${escapeCommandQuotes(titleArg)}" "${escapeCommandQuotes(prompt)}"`;
   }
   const prompt = url ? `${title}\n${url}` : title;
   return `paseo run ${cwdArg}"${escapeCommandQuotes(prompt)}"`;

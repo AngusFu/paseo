@@ -4,10 +4,13 @@ import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-ca
 import type { UpdateScheduleCommandConfig } from "@getpaseo/protocol/schedule/types";
 import type {
   CreateKanbanCardInput,
+  CreateKanbanColumnInput,
   CreateKanbanConnectionInput,
   CreateKanbanSourceInput,
   MoveKanbanCardInput,
+  ReorderKanbanColumnInput,
   UpdateKanbanCardInput,
+  UpdateKanbanColumnInput,
   UpdateKanbanConnectionInput,
   UpdateKanbanSourceInput,
 } from "@getpaseo/protocol/kanban/types";
@@ -548,6 +551,30 @@ type KanbanConnectionOauthStartPayload = Extract<
   SessionOutboundMessage,
   { type: "kanban.connection.oauth.start.response" }
 >["payload"];
+type KanbanSourceListExternalStatusesPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.source.list_external_statuses.response" }
+>["payload"];
+type KanbanColumnListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.column.list.response" }
+>["payload"];
+type KanbanColumnCreatePayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.column.create.response" }
+>["payload"];
+type KanbanColumnUpdatePayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.column.update.response" }
+>["payload"];
+type KanbanColumnReorderPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.column.reorder.response" }
+>["payload"];
+type KanbanColumnDeletePayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.column.delete.response" }
+>["payload"];
 
 export type KanbanCardCreateOptions = CreateKanbanCardInput & { requestId?: string };
 export type KanbanCardUpdateOptions = UpdateKanbanCardInput & { requestId?: string };
@@ -556,6 +583,9 @@ export type KanbanSourceCreateOptions = CreateKanbanSourceInput & { requestId?: 
 export type KanbanSourceUpdateOptions = UpdateKanbanSourceInput & { requestId?: string };
 export type KanbanConnectionCreateOptions = CreateKanbanConnectionInput & { requestId?: string };
 export type KanbanConnectionUpdateOptions = UpdateKanbanConnectionInput & { requestId?: string };
+export type KanbanColumnCreateOptions = CreateKanbanColumnInput & { requestId?: string };
+export type KanbanColumnUpdateOptions = UpdateKanbanColumnInput & { requestId?: string };
+export type KanbanColumnReorderOptions = ReorderKanbanColumnInput & { requestId?: string };
 export type FetchAgentTimelinePayload = FetchAgentTimelineResponseMessage["payload"];
 export type AgentForkContextPayload = AgentForkContextResponseMessage["payload"];
 
@@ -4757,6 +4787,7 @@ export class DaemonClient {
         type: "kanban.card.move.request",
         cardId: options.id,
         status: options.status,
+        ...(options.columnId !== undefined ? { columnId: options.columnId } : {}),
         ...(options.order !== undefined ? { order: options.order } : {}),
       },
     });
@@ -4781,6 +4812,7 @@ export class DaemonClient {
         ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
         ...(options.enabled !== undefined ? { enabled: options.enabled } : {}),
         ...(options.statusMap !== undefined ? { statusMap: options.statusMap } : {}),
+        ...(options.columnMap !== undefined ? { columnMap: options.columnMap } : {}),
         ...(options.pollEverySec !== undefined ? { pollEverySec: options.pollEverySec } : {}),
         ...(options.auth !== undefined ? { auth: options.auth } : {}),
       },
@@ -4806,8 +4838,25 @@ export class DaemonClient {
         ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
         ...(options.enabled !== undefined ? { enabled: options.enabled } : {}),
         ...(options.statusMap !== undefined ? { statusMap: options.statusMap } : {}),
+        ...(options.columnMap !== undefined ? { columnMap: options.columnMap } : {}),
         ...(options.pollEverySec !== undefined ? { pollEverySec: options.pollEverySec } : {}),
         ...(options.auth !== undefined ? { auth: options.auth } : {}),
+      },
+    });
+  }
+
+  // COMPAT(kanbanColumns): added in v0.1.108. Requires server_info.features.kanbanColumns.
+  async kanbanSourceListExternalStatuses(
+    sourceId: string,
+    projectKey?: string,
+    requestId?: string,
+  ): Promise<KanbanSourceListExternalStatusesPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: {
+        type: "kanban.source.list_external_statuses.request",
+        sourceId,
+        ...(projectKey !== undefined ? { projectKey } : {}),
       },
     });
   }
@@ -4894,6 +4943,64 @@ export class DaemonClient {
     return this.sendNamespacedCorrelatedSessionRequest({
       requestId,
       message: { type: "kanban.source.sync.request", sourceId },
+    });
+  }
+
+  // COMPAT(kanbanColumns): added in v0.1.108. Requires server_info.features.kanbanColumns.
+  async kanbanColumnList(requestId?: string): Promise<KanbanColumnListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.column.list.request" },
+    });
+  }
+
+  async kanbanColumnCreate(options: KanbanColumnCreateOptions): Promise<KanbanColumnCreatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "kanban.column.create.request",
+        title: options.title,
+        legacyStatus: options.legacyStatus,
+        ...(options.order !== undefined ? { order: options.order } : {}),
+        ...(options.hidden !== undefined ? { hidden: options.hidden } : {}),
+      },
+    });
+  }
+
+  async kanbanColumnUpdate(options: KanbanColumnUpdateOptions): Promise<KanbanColumnUpdatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "kanban.column.update.request",
+        columnId: options.id,
+        ...(options.title !== undefined ? { title: options.title } : {}),
+        ...(options.hidden !== undefined ? { hidden: options.hidden } : {}),
+        ...(options.legacyStatus !== undefined ? { legacyStatus: options.legacyStatus } : {}),
+      },
+    });
+  }
+
+  async kanbanColumnReorder(
+    options: KanbanColumnReorderOptions,
+  ): Promise<KanbanColumnReorderPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "kanban.column.reorder.request",
+        columnId: options.id,
+        order: options.order,
+      },
+    });
+  }
+
+  async kanbanColumnDelete(
+    columnId: string,
+    moveCardsToColumnId: string,
+    requestId?: string,
+  ): Promise<KanbanColumnDeletePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.column.delete.request", columnId, moveCardsToColumnId },
     });
   }
 

@@ -1,8 +1,14 @@
-import { memo, useCallback, useMemo, type ReactElement } from "react";
+import { memo, useCallback, useMemo, useState, type ReactElement } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import type { StoredKanbanCard, KanbanStatus } from "@getpaseo/protocol/kanban/types";
+import type {
+  StoredKanbanCard,
+  KanbanColumn as KanbanColumnData,
+} from "@getpaseo/protocol/kanban/types";
 import { KanbanCard, type KanbanCardDropHandler } from "@/components/kanban/kanban-card";
+import { KanbanColumnMenu } from "@/components/kanban/kanban-column-menu";
+import { isNative } from "@/constants/platform";
+import { useIsCompactFormFactor } from "@/constants/layout";
 
 export interface KanbanColumnBounds {
   x: number;
@@ -10,19 +16,18 @@ export interface KanbanColumnBounds {
 }
 
 interface KanbanColumnProps {
-  status: KanbanStatus;
-  label: string;
+  column: KanbanColumnData;
   cards: StoredKanbanCard[];
   /** True while a card from THIS column is being dragged (raises it above siblings). */
   isDragging: boolean;
   /** True while a drag hovers over this column (Jira-style drop highlight). */
   isDropTarget: boolean;
   /** Registers this column's View with the board so it can be measured on drag. */
-  onRegisterRef: (status: KanbanStatus, node: View | null) => void;
+  onRegisterRef: (columnId: string, node: View | null) => void;
   /** Touch-down on a card: board re-measures column bounds. */
   onCardDragBegin: () => void;
   /** Drag activated: board raises the card's column. */
-  onCardDragStart: (status: KanbanStatus) => void;
+  onCardDragStart: (columnId: string) => void;
   /** Drag frame: board highlights the hovered column. */
   onCardDragUpdate: (absoluteX: number) => void;
   /** Drag settled/cancelled: board clears drag state. */
@@ -31,6 +36,18 @@ interface KanbanColumnProps {
   onCardLongPress: (card: StoredKanbanCard) => void;
   onCardDrop: KanbanCardDropHandler;
   dragEnabled: boolean;
+  /** Column management (kebab menu) is only shown when the host supports the
+   * columns capability. `onRenameColumn` is used as the presence sentinel —
+   * flattened props (rather than one settings object) avoid recreating an
+   * object literal on every render. */
+  onRenameColumn?: (column: KanbanColumnData) => void;
+  onHideColumn?: (column: KanbanColumnData) => void;
+  onMoveColumnLeft?: (column: KanbanColumnData) => void;
+  onMoveColumnRight?: (column: KanbanColumnData) => void;
+  onDeleteColumn?: (column: KanbanColumnData) => void;
+  canMoveColumnLeft?: boolean;
+  canMoveColumnRight?: boolean;
+  canDeleteColumn?: boolean;
 }
 
 /**
@@ -46,8 +63,7 @@ interface KanbanColumnProps {
  * bounds, which the inner scroll doesn't change.
  */
 export const KanbanColumn = memo(function KanbanColumn({
-  status,
-  label,
+  column,
   cards,
   isDragging,
   isDropTarget,
@@ -60,12 +76,26 @@ export const KanbanColumn = memo(function KanbanColumn({
   onCardLongPress,
   onCardDrop,
   dragEnabled,
+  onRenameColumn,
+  onHideColumn,
+  onMoveColumnLeft,
+  onMoveColumnRight,
+  onDeleteColumn,
+  canMoveColumnLeft = false,
+  canMoveColumnRight = false,
+  canDeleteColumn = false,
 }: KanbanColumnProps): ReactElement {
+  const isCompact = useIsCompactFormFactor();
+  const [isHovered, setIsHovered] = useState(false);
+  const handlePointerEnter = useCallback(() => setIsHovered(true), []);
+  const handlePointerLeave = useCallback(() => setIsHovered(false), []);
+  const showHeaderMenu = Boolean(onRenameColumn) && (isHovered || isNative || isCompact);
+
   const handleRef = useCallback(
     (node: View | null) => {
-      onRegisterRef(status, node);
+      onRegisterRef(column.id, node);
     },
-    [onRegisterRef, status],
+    [onRegisterRef, column.id],
   );
 
   const columnStyle = useMemo(
@@ -89,14 +119,40 @@ export const KanbanColumn = memo(function KanbanColumn({
   );
 
   return (
-    <View ref={handleRef} style={columnStyle} testID={`kanban-column-${status}`}>
+    <View
+      ref={handleRef}
+      style={columnStyle}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+      testID={`kanban-column-${column.id}`}
+    >
       <View style={styles.header}>
         <Text style={styles.headerLabel} numberOfLines={1}>
-          {label}
+          {column.title}
         </Text>
-        <Text style={styles.headerCount} testID={`kanban-column-count-${status}`}>
+        <Text style={styles.headerCount} testID={`kanban-column-count-${column.id}`}>
           {cards.length}
         </Text>
+        {showHeaderMenu &&
+        onRenameColumn &&
+        onHideColumn &&
+        onMoveColumnLeft &&
+        onMoveColumnRight &&
+        onDeleteColumn ? (
+          <View style={styles.headerMenuSlot}>
+            <KanbanColumnMenu
+              column={column}
+              canMoveLeft={canMoveColumnLeft}
+              canMoveRight={canMoveColumnRight}
+              canDelete={canDeleteColumn}
+              onRename={onRenameColumn}
+              onHide={onHideColumn}
+              onMoveLeft={onMoveColumnLeft}
+              onMoveRight={onMoveColumnRight}
+              onDelete={onDeleteColumn}
+            />
+          </View>
+        ) : null}
       </View>
       <ScrollView
         style={cardScrollStyle}
@@ -107,6 +163,7 @@ export const KanbanColumn = memo(function KanbanColumn({
           <KanbanCard
             key={card.id}
             card={card}
+            columnId={column.id}
             onPress={onCardPress}
             onLongPress={onCardLongPress}
             onDragBegin={onCardDragBegin}
@@ -157,6 +214,8 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
     paddingHorizontal: theme.spacing[1],
     paddingTop: theme.spacing[1],
+    // Fixed slot height so the kebab reveal on hover doesn't shift the header.
+    minHeight: 28,
   },
   headerLabel: {
     flex: 1,
@@ -168,6 +227,10 @@ const styles = StyleSheet.create((theme) => ({
   headerCount: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
+  },
+  headerMenuSlot: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   // Bounded, scrollable region below the pinned header. minHeight:0 lets it
   // shrink inside the column's flex layout on web so it actually scrolls.

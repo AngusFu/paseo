@@ -2145,6 +2145,34 @@ export const fr: TranslationResources = {
     status: {
       pick: "Déplacer vers la colonne",
     },
+    columnMenu: {
+      menu: "Actions de la colonne",
+      rename: "Renommer",
+      hide: "Masquer",
+      moveLeft: "Déplacer à gauche",
+      moveRight: "Déplacer à droite",
+      delete: "Supprimer",
+    },
+    columnForm: {
+      renameTitle: "Renommer la colonne",
+      titleLabel: "Nom de la colonne",
+      titlePlaceholder: "Nom de la colonne",
+      newColumnPlaceholder: "Nom de la nouvelle colonne",
+      addColumn: "Ajouter une colonne",
+      create: "Ajouter",
+    },
+    columnDelete: {
+      title: "Supprimer la colonne",
+      message: 'Supprimer "{{title}}" ? Choisissez où vont ses cartes.',
+      destinationLabel: "Déplacer les cartes vers",
+      confirm: "Supprimer",
+    },
+    hiddenColumns: {
+      entry: "Colonnes masquées",
+      title: "Colonnes masquées",
+      empty: "Aucune colonne masquée",
+      restore: "Restaurer",
+    },
     theme: {
       none: "Par défaut",
       jira: "Jira",
@@ -2178,6 +2206,20 @@ export const fr: TranslationResources = {
       confirmDelete: "Supprimer « {{name}} » ? Cette action est irréversible.",
     },
     sourceForm: {
+      statusMapping: {
+        title: "Correspondance des statuts",
+        createHint: "Enregistrez la source pour configurer la correspondance des statuts.",
+        projectKey: "Clé du projet",
+        projectKeyPlaceholder: "p. ex. SCIF",
+        loadButton: "Charger les statuts",
+        loading: "Chargement des statuts…",
+        loadError: "Impossible de charger les statuts.",
+        columnsLoadError: "Impossible de charger les colonnes.",
+        empty: "Aucun statut trouvé.",
+        columnLabel: "Colonne",
+        columnPlaceholder: "Sélectionner une colonne",
+        autoOption: "Automatique (par catégorie)",
+      },
       queryHint:
         "Jira = qui me sont assignées et non résolues ; GitLab = MR en attente de ma revue.",
       createTitle: "Nouvelle source",

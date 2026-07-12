@@ -3,37 +3,36 @@ import { Pressable, Text, View } from "react-native";
 import { Check } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { KANBAN_STATUS_ORDER, type KanbanStatus } from "@getpaseo/protocol/kanban/types";
+import type { KanbanColumn } from "@getpaseo/protocol/kanban/types";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 
 export interface KanbanStatusPickerSheetProps {
   visible: boolean;
-  currentStatus?: KanbanStatus;
-  onSelect: (status: KanbanStatus) => void;
+  columns: KanbanColumn[];
+  currentColumnId?: string;
+  onSelect: (column: KanbanColumn) => void;
   onClose: () => void;
 }
 
 function KanbanStatusPickerRow({
-  status,
-  label,
+  column,
   selected,
   onSelect,
 }: {
-  status: KanbanStatus;
-  label: string;
+  column: KanbanColumn;
   selected: boolean;
-  onSelect: (status: KanbanStatus) => void;
+  onSelect: (column: KanbanColumn) => void;
 }): ReactElement {
-  const handlePress = useCallback(() => onSelect(status), [onSelect, status]);
+  const handlePress = useCallback(() => onSelect(column), [onSelect, column]);
   return (
     <Pressable
       style={styles.row}
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityState={rowAccessibilityState(selected)}
-      testID={`kanban-status-pick-${status}`}
+      testID={`kanban-status-pick-${column.id}`}
     >
-      <Text style={styles.rowLabel}>{label}</Text>
+      <Text style={styles.rowLabel}>{column.title}</Text>
       {selected ? <Check size={16} color={styles.check.color} /> : null}
     </Pressable>
   );
@@ -46,21 +45,23 @@ function rowAccessibilityState(selected: boolean) {
 }
 
 /**
- * The native (and always-available) path to change a card's column: a sheet
- * listing the six statuses. Picking one moves the card. Web uses drag instead,
- * but this stays reachable so touch devices always have a way to move a card.
+ * The native (and always-available) path to move a card between columns: a
+ * sheet listing the board's visible columns. Picking one moves the card. Web
+ * uses drag instead, but this stays reachable so touch devices always have a
+ * way to move a card.
  */
 export function KanbanStatusPickerSheet({
   visible,
-  currentStatus,
+  columns,
+  currentColumnId,
   onSelect,
   onClose,
 }: KanbanStatusPickerSheetProps): ReactElement {
   const { t } = useTranslation();
   const header = useMemo<SheetHeader>(() => ({ title: t("kanban.status.pick") }), [t]);
   const handleSelect = useCallback(
-    (status: KanbanStatus) => {
-      onSelect(status);
+    (column: KanbanColumn) => {
+      onSelect(column);
       onClose();
     },
     [onSelect, onClose],
@@ -74,12 +75,11 @@ export function KanbanStatusPickerSheet({
       testID="kanban-status-picker-sheet"
     >
       <View style={styles.list}>
-        {KANBAN_STATUS_ORDER.map((status) => (
+        {columns.map((column) => (
           <KanbanStatusPickerRow
-            key={status}
-            status={status}
-            label={t(`kanban.columns.${status}`)}
-            selected={status === currentStatus}
+            key={column.id}
+            column={column}
+            selected={column.id === currentColumnId}
             onSelect={handleSelect}
           />
         ))}

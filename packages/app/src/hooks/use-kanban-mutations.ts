@@ -110,12 +110,19 @@ export function useKanbanMutations({ serverId }: { serverId: string }): UseKanba
       await queryClient.cancelQueries({ queryKey: kanbanCardsQueryBaseKey });
       const snapshot = snapshotCards(queryClient);
       updateCardsData(queryClient, (cards) => {
-        // Append to the end of the target column to match the server's append
-        // semantics (max(order)+1), so the card doesn't jump when the fetch
-        // reconciles. An explicit order (drop between cards) wins.
+        // Group by columnId when the caller knows it (columns capability
+        // present); otherwise fall back to status, matching the pre-columns
+        // behavior. Append to the end of the target group to match the
+        // server's append semantics (max(order)+1), so the card doesn't jump
+        // when the fetch reconciles. An explicit order (drop between cards)
+        // wins.
+        const isSameGroup = (card: StoredKanbanCard) =>
+          input.columnId !== undefined
+            ? card.columnId === input.columnId
+            : card.status === input.status;
         const maxOrder = cards.reduce(
           (max, card) =>
-            card.status === input.status && card.id !== input.id ? Math.max(max, card.order) : max,
+            isSameGroup(card) && card.id !== input.id ? Math.max(max, card.order) : max,
           Number.NEGATIVE_INFINITY,
         );
         const nextOrder = input.order ?? (Number.isFinite(maxOrder) ? maxOrder + 1 : 0);
@@ -124,6 +131,7 @@ export function useKanbanMutations({ serverId }: { serverId: string }): UseKanba
             ? {
                 ...card,
                 status: input.status,
+                ...(input.columnId !== undefined ? { columnId: input.columnId } : {}),
                 statusPinnedByUser: true,
                 order: nextOrder,
               }

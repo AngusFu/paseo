@@ -11,6 +11,7 @@ import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-moda
 import { Button } from "@/components/ui/button";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
+import { SelectField, type SelectFieldOption } from "@/components/ui/select-field";
 import { Switch } from "@/components/ui/switch";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import type { FieldControlSize } from "@/components/ui/control-geometry";
@@ -19,7 +20,13 @@ import {
   useKanbanSourceMutations,
   type CreateKanbanSourceInput,
   type UpdateKanbanSourceInput,
+  type UseKanbanSourceMutationsResult,
 } from "@/hooks/use-kanban-source-mutations";
+import {
+  useKanbanColumns,
+  useKanbanExternalStatuses,
+} from "@/hooks/use-kanban-source-status-mapping";
+import { useHostFeature } from "@/runtime/host-features";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { toErrorMessage } from "@/utils/error-messages";
 
@@ -46,6 +53,11 @@ function parsePollSeconds(raw: string): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+// Sentinel for "let sync derive the column from the external status category"
+// instead of a pinned columnId. Never sent to the server — statuses mapped to
+// this value are simply omitted from columnMap.
+const AUTO_COLUMN_VALUE = "__auto__";
+
 interface SourceFormValues {
   kind: KanbanSourceKind;
   name: string;
@@ -53,6 +65,7 @@ interface SourceFormValues {
   poll: number | null;
   connectionId: string | null;
   enabled: boolean;
+  columnMap: Record<string, string> | undefined;
 }
 
 function buildCreateInput(v: SourceFormValues): CreateKanbanSourceInput {
@@ -74,6 +87,7 @@ function buildUpdateInput(id: string, v: SourceFormValues): UpdateKanbanSourceIn
     enabled: v.enabled,
     ...(v.poll !== null ? { pollEverySec: v.poll } : {}),
     connectionId: v.connectionId,
+    ...(v.columnMap !== undefined ? { columnMap: v.columnMap } : {}),
   };
 }
 
@@ -156,12 +170,14 @@ function ConnectionPicker({
   return (
     <Field label={t("kanban.sourceForm.connection")} hint={t("kanban.sourceForm.connectionHint")}>
       <View style={styles.chipRow}>
-        <ConnectionChip
-          id={null}
-          label={t("kanban.sourceForm.connectionNone")}
-          selected={value === null}
-          onSelect={onSelect}
-        />
+        {connections.length === 0 ? (
+          <ConnectionChip
+            id={null}
+            label={t("kanban.sourceForm.connectionNone")}
+            selected={value === null}
+            onSelect={onSelect}
+          />
+        ) : null}
         {connections.map((connection) => (
           <ConnectionChip
             key={connection.id}
@@ -176,11 +192,291 @@ function ConnectionPicker({
   );
 }
 
+// Connections are filtered to the selected kind — a Jira source can only
+// authenticate through a Jira connection. The "None" chip only appears when
+// there is no matching connection to fall back to, so the effective id falls
+// back to the first matching connection whenever the raw selection doesn't
+// belong to the current kind (e.g. right after switching Type).
+function useKindConnectionSelection(
+  connections: StoredKanbanConnection[],
+  kind: KanbanSourceKind,
+  connectionId: string | null,
+): { kindConnections: StoredKanbanConnection[]; effectiveConnectionId: string | null } {
+  const kindConnections = useMemo(
+    () => connections.filter((connection) => connection.kind === kind),
+    [connections, kind],
+  );
+  const effectiveConnectionId = useMemo(() => {
+    if (connectionId !== null && kindConnections.some((c) => c.id === connectionId)) {
+      return connectionId;
+    }
+    return kindConnections[0]?.id ?? null;
+  }, [connectionId, kindConnections]);
+  return { kindConnections, effectiveConnectionId };
+}
+
+function useKanbanSourceDelete({
+  source,
+  mutations,
+  onClose,
+  setSubmitError,
+}: {
+  source: StoredKanbanSource | undefined;
+  mutations: UseKanbanSourceMutationsResult;
+  onClose: () => void;
+  setSubmitError: (message: string | null) => void;
+}): () => void {
+  const { t } = useTranslation();
+  return useCallback(() => {
+    if (!source) {
+      return;
+    }
+    void (async () => {
+      const confirmed = await confirmDialog({
+        title: t("kanban.sources.delete"),
+        message: t("kanban.sources.confirmDelete", { name: source.name }),
+        confirmLabel: t("kanban.sources.delete"),
+        destructive: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+      try {
+        await mutations.deleteSource(source.id);
+        onClose();
+      } catch (error) {
+        setSubmitError(toErrorMessage(error));
+      }
+    })();
+  }, [mutations, onClose, setSubmitError, source, t]);
+}
+
+function StatusColumnSelect({
+  statusName,
+  category,
+  columnId,
+  columnOptions,
+  onChange,
+  disabled,
+  size,
+}: {
+  statusName: string;
+  category: string | null;
+  columnId: string;
+  columnOptions: SelectFieldOption<string>[];
+  onChange: (statusName: string, columnId: string) => void;
+  disabled: boolean;
+  size: FieldControlSize;
+}): ReactElement {
+  const { t } = useTranslation();
+  const handleChange = useCallback(
+    (value: string) => onChange(statusName, value),
+    [onChange, statusName],
+  );
+  const selectedOption = columnOptions.find((option) => option.value === columnId) ?? null;
+  const selectedDisplay = useMemo(
+    () => (selectedOption ? { label: selectedOption.label } : null),
+    [selectedOption],
+  );
+  return (
+    <View style={styles.statusRow}>
+      <View style={styles.statusRowLabel}>
+        <Text style={styles.statusRowName}>{statusName}</Text>
+        {category ? <Text style={styles.statusRowCategory}>{category}</Text> : null}
+      </View>
+      <View style={styles.statusRowSelect}>
+        <SelectField
+          label={t("kanban.sourceForm.statusMapping.columnLabel")}
+          field={false}
+          value={columnId}
+          selectedDisplay={selectedDisplay}
+          options={columnOptions}
+          onChange={handleChange}
+          placeholder={t("kanban.sourceForm.statusMapping.columnPlaceholder")}
+          emptyText={t("common.empty.noResults")}
+          disabled={disabled}
+          size={size}
+          testID={`kanban-source-status-column-${statusName}`}
+        />
+      </View>
+    </View>
+  );
+}
+
+function StatusMappingSection({
+  serverId,
+  source,
+  kind,
+  columnMap,
+  onChangeColumnMap,
+  controlSize,
+}: {
+  serverId: string;
+  source: StoredKanbanSource;
+  kind: KanbanSourceKind;
+  columnMap: Record<string, string>;
+  onChangeColumnMap: (updater: (current: Record<string, string>) => Record<string, string>) => void;
+  controlSize: FieldControlSize;
+}): ReactElement {
+  const { t } = useTranslation();
+  const [projectKeyInput, setProjectKeyInput] = useState("");
+  const [committedProjectKey, setCommittedProjectKey] = useState("");
+  const columns = useKanbanColumns(serverId);
+  const statuses = useKanbanExternalStatuses(serverId, source.id, committedProjectKey);
+
+  const handleLoadPress = useCallback(() => {
+    const trimmed = projectKeyInput.trim();
+    if (trimmed === committedProjectKey) {
+      statuses.refetch();
+    } else {
+      setCommittedProjectKey(trimmed);
+    }
+  }, [committedProjectKey, projectKeyInput, statuses]);
+
+  const handleColumnChange = useCallback(
+    (statusName: string, value: string) => {
+      onChangeColumnMap((current) => {
+        if (value === AUTO_COLUMN_VALUE) {
+          if (!(statusName in current)) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[statusName];
+          return next;
+        }
+        return { ...current, [statusName]: value };
+      });
+    },
+    [onChangeColumnMap],
+  );
+
+  const columnOptions = useMemo<SelectFieldOption<string>[]>(() => {
+    const autoOption: SelectFieldOption<string> = {
+      id: AUTO_COLUMN_VALUE,
+      value: AUTO_COLUMN_VALUE,
+      label: t("kanban.sourceForm.statusMapping.autoOption"),
+    };
+    const visibleColumns = columns.columns
+      .filter((column) => !column.hidden)
+      .map((column) => ({ id: column.id, value: column.id, label: column.title }));
+    return [autoOption, ...visibleColumns];
+  }, [columns.columns, t]);
+
+  return (
+    <Field label={t("kanban.sourceForm.statusMapping.title")}>
+      {kind === "jira" ? (
+        <View style={styles.projectKeyRow}>
+          <View style={styles.projectKeyInput}>
+            <FormTextInput
+              size={controlSize}
+              testID="kanban-source-status-project-key"
+              accessibilityLabel={t("kanban.sourceForm.statusMapping.projectKey")}
+              initialValue={projectKeyInput}
+              value={projectKeyInput}
+              onChangeText={setProjectKeyInput}
+              placeholder={t("kanban.sourceForm.statusMapping.projectKeyPlaceholder")}
+              autoCapitalize="characters"
+              autoCorrect={false}
+            />
+          </View>
+          <Button variant="secondary" onPress={handleLoadPress} testID="kanban-source-status-load">
+            {t("kanban.sourceForm.statusMapping.loadButton")}
+          </Button>
+        </View>
+      ) : null}
+
+      {columns.isError ? (
+        <View style={styles.statusErrorRow}>
+          <Text style={styles.submitError}>
+            {t("kanban.sourceForm.statusMapping.columnsLoadError")}
+          </Text>
+          <Button variant="ghost" onPress={columns.refetch} testID="kanban-source-columns-retry">
+            {t("common.actions.retry")}
+          </Button>
+        </View>
+      ) : null}
+
+      {statuses.isError ? (
+        <View style={styles.statusErrorRow}>
+          <Text style={styles.submitError}>{t("kanban.sourceForm.statusMapping.loadError")}</Text>
+          <Button variant="ghost" onPress={handleLoadPress} testID="kanban-source-statuses-retry">
+            {t("common.actions.retry")}
+          </Button>
+        </View>
+      ) : null}
+
+      {statuses.isLoading ? (
+        <Text style={styles.hintText}>{t("kanban.sourceForm.statusMapping.loading")}</Text>
+      ) : null}
+
+      {!statuses.isLoading && !statuses.isError && statuses.statuses.length === 0 ? (
+        <Text style={styles.hintText}>{t("kanban.sourceForm.statusMapping.empty")}</Text>
+      ) : null}
+
+      {statuses.statuses.map((status) => (
+        <StatusColumnSelect
+          key={status.name}
+          statusName={status.name}
+          category={status.category}
+          columnId={columnMap[status.name] ?? AUTO_COLUMN_VALUE}
+          columnOptions={columnOptions}
+          onChange={handleColumnChange}
+          disabled={columns.isError}
+          size={controlSize}
+        />
+      ))}
+    </Field>
+  );
+}
+
+function StatusMappingBlock({
+  columnsSupported,
+  mode,
+  serverId,
+  source,
+  kind,
+  columnMap,
+  onChangeColumnMap,
+  controlSize,
+}: {
+  columnsSupported: boolean;
+  mode: "create" | "edit";
+  serverId: string;
+  source: StoredKanbanSource | undefined;
+  kind: KanbanSourceKind;
+  columnMap: Record<string, string>;
+  onChangeColumnMap: (updater: (current: Record<string, string>) => Record<string, string>) => void;
+  controlSize: FieldControlSize;
+}): ReactElement | null {
+  const { t } = useTranslation();
+  if (!columnsSupported) {
+    return null;
+  }
+  if (mode === "edit" && source) {
+    return (
+      <StatusMappingSection
+        serverId={serverId}
+        source={source}
+        kind={kind}
+        columnMap={columnMap}
+        onChangeColumnMap={onChangeColumnMap}
+        controlSize={controlSize}
+      />
+    );
+  }
+  return (
+    <Field label={t("kanban.sourceForm.statusMapping.title")}>
+      <Text style={styles.hintText}>{t("kanban.sourceForm.statusMapping.createHint")}</Text>
+    </Field>
+  );
+}
+
 /**
  * Create / edit a Jira or GitLab source: what to pull (query), how often (poll),
  * an optional base-URL override, and which auth connection to use. Credentials
  * and the Connect button live on the connection, not here.
  */
+// oxlint-disable-next-line complexity
 export function KanbanSourceFormSheet({
   serverId,
   visible,
@@ -192,6 +488,7 @@ export function KanbanSourceFormSheet({
   const controlSize: FieldControlSize = useIsCompactFormFactor() ? "md" : "sm";
   const mutations = useKanbanSourceMutations({ serverId });
   const { connections } = useKanbanConnections(serverId);
+  const columnsSupported = useHostFeature(serverId, "kanbanColumns");
 
   const [kind, setKind] = useState<KanbanSourceKind>(source?.kind ?? "jira");
   const [name, setName] = useState(source?.name ?? "");
@@ -214,8 +511,15 @@ export function KanbanSourceFormSheet({
   );
   const [connectionId, setConnectionId] = useState<string | null>(source?.connectionId ?? null);
   const [enabled, setEnabled] = useState(source?.enabled ?? true);
+  const [columnMap, setColumnMap] = useState<Record<string, string>>(source?.columnMap ?? {});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const { kindConnections, effectiveConnectionId } = useKindConnectionSelection(
+    connections,
+    kind,
+    connectionId,
+  );
 
   const canSubmit = name.trim().length > 0 && query.trim().length > 0 && !isSubmitting;
 
@@ -251,8 +555,9 @@ export function KanbanSourceFormSheet({
         name: name.trim(),
         query: query.trim(),
         poll: parsePollSeconds(pollEverySec),
-        connectionId,
+        connectionId: effectiveConnectionId,
         enabled,
+        columnMap: Object.keys(columnMap).length > 0 ? columnMap : undefined,
       };
       if (mode === "edit" && source) {
         await mutations.updateSource(buildUpdateInput(source.id, values));
@@ -267,7 +572,8 @@ export function KanbanSourceFormSheet({
     }
   }, [
     canSubmit,
-    connectionId,
+    columnMap,
+    effectiveConnectionId,
     enabled,
     kind,
     mode,
@@ -283,28 +589,7 @@ export function KanbanSourceFormSheet({
     void handleSubmit();
   }, [handleSubmit]);
 
-  const handleDelete = useCallback(() => {
-    if (!source) {
-      return;
-    }
-    void (async () => {
-      const confirmed = await confirmDialog({
-        title: t("kanban.sources.delete"),
-        message: t("kanban.sources.confirmDelete", { name: source.name }),
-        confirmLabel: t("kanban.sources.delete"),
-        destructive: true,
-      });
-      if (!confirmed) {
-        return;
-      }
-      try {
-        await mutations.deleteSource(source.id);
-        onClose();
-      } catch (error) {
-        setSubmitError(toErrorMessage(error));
-      }
-    })();
-  }, [mutations, onClose, source, t]);
+  const handleDelete = useKanbanSourceDelete({ source, mutations, onClose, setSubmitError });
 
   const footer = useMemo(
     () => (
@@ -379,7 +664,11 @@ export function KanbanSourceFormSheet({
         />
       </Field>
 
-      <ConnectionPicker connections={connections} value={connectionId} onSelect={setConnectionId} />
+      <ConnectionPicker
+        connections={kindConnections}
+        value={effectiveConnectionId}
+        onSelect={setConnectionId}
+      />
 
       <Field label={t("kanban.sourceForm.pollEverySec")}>
         <FormTextInput
@@ -402,6 +691,17 @@ export function KanbanSourceFormSheet({
           testID="kanban-source-enabled-switch"
         />
       </Field>
+
+      <StatusMappingBlock
+        columnsSupported={columnsSupported}
+        mode={mode}
+        serverId={serverId}
+        source={source}
+        kind={kind}
+        columnMap={columnMap}
+        onChangeColumnMap={setColumnMap}
+        controlSize={controlSize}
+      />
 
       {mode === "edit" && source ? (
         <Button
@@ -459,5 +759,45 @@ const styles = StyleSheet.create((theme) => ({
   submitError: {
     color: theme.colors.palette.red[300],
     fontSize: theme.fontSize.xs,
+  },
+  hintText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+  },
+  projectKeyRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: theme.spacing[2],
+  },
+  projectKeyInput: {
+    flex: 1,
+  },
+  statusErrorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  statusRowLabel: {
+    flex: 1,
+    minWidth: 0,
+  },
+  statusRowName: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+  },
+  statusRowCategory: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
+  statusRowSelect: {
+    width: 180,
   },
 }));

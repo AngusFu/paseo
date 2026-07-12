@@ -5,24 +5,26 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-nativ
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { ArrowUpRight, GripVertical } from "lucide-react-native";
-import type { StoredKanbanCard, KanbanStatus } from "@getpaseo/protocol/kanban/types";
+import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 import { resolveKanbanCardTheme } from "@/components/kanban/kanban-card-theme";
 import { openExternalUrl } from "@/utils/open-external-url";
 
 const THEME_ICON_SIZE = 16;
 
 export interface KanbanCardDropHandler {
-  (params: { cardId: string; fromStatus: KanbanStatus; absoluteX: number }): void;
+  (params: { cardId: string; fromColumnId: string; absoluteX: number }): void;
 }
 
 interface KanbanCardProps {
   card: StoredKanbanCard;
+  /** The column this card is currently rendered under (drag origin). */
+  columnId: string;
   onPress: (card: StoredKanbanCard) => void;
   onLongPress: (card: StoredKanbanCard) => void;
   /** Touch-down: board re-measures column bounds before any movement. */
   onDragBegin: () => void;
   /** Drag activated: board raises this card's column above its siblings. */
-  onDragStart: (status: KanbanStatus) => void;
+  onDragStart: (columnId: string) => void;
   /** Each drag frame: board resolves and highlights the hovered column. */
   onDragUpdate: (absoluteX: number) => void;
   /** Drag settled/cancelled: board clears drag + drop-target state. */
@@ -41,6 +43,7 @@ interface KanbanCardProps {
  */
 export const KanbanCard = memo(function KanbanCard({
   card,
+  columnId,
   onPress,
   onLongPress,
   onDragBegin,
@@ -99,7 +102,7 @@ export const KanbanCard = memo(function KanbanCard({
     .onStart(() => {
       dragging.value = true;
       runOnJS(markDragged)();
-      runOnJS(onDragStart)(card.status);
+      runOnJS(onDragStart)(columnId);
     })
     .onUpdate((event) => {
       translateX.value = event.translationX;
@@ -109,7 +112,7 @@ export const KanbanCard = memo(function KanbanCard({
     .onEnd((event) => {
       runOnJS(onDrop)({
         cardId: card.id,
-        fromStatus: card.status,
+        fromColumnId: columnId,
         absoluteX: event.absoluteX,
       });
       translateX.value = 0;

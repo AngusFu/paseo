@@ -1,66 +1,113 @@
 import { useCallback, useMemo, useRef, useState, type ReactElement } from "react";
 import { ScrollView, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import { useTranslation } from "react-i18next";
-import {
-  KANBAN_STATUS_ORDER,
-  type KanbanStatus,
-  type StoredKanbanCard,
+import type {
+  KanbanColumn as KanbanColumnData,
+  StoredKanbanCard,
 } from "@getpaseo/protocol/kanban/types";
 import { KanbanColumn, type KanbanColumnBounds } from "@/components/kanban/kanban-column";
+import { KanbanAddColumn } from "@/components/kanban/kanban-add-column";
 import { KanbanCardSheet } from "@/components/kanban/kanban-card-sheet";
+import { KanbanColumnDeleteSheet } from "@/components/kanban/kanban-column-delete-sheet";
+import { KanbanColumnRenameSheet } from "@/components/kanban/kanban-column-rename-sheet";
 import { KanbanStatusPickerSheet } from "@/components/kanban/kanban-status-picker-sheet";
 import type { KanbanCardDropHandler } from "@/components/kanban/kanban-card";
 import { isWeb } from "@/constants/platform";
+import type { UseKanbanColumnMutationsResult } from "@/hooks/use-kanban-column-mutations";
 import type { UseKanbanMutationsResult } from "@/hooks/use-kanban-mutations";
 
 interface KanbanBoardProps {
   cards: StoredKanbanCard[];
+  columns: KanbanColumnData[];
+  columnsSupported: boolean;
   mutations: UseKanbanMutationsResult;
+  columnMutations: UseKanbanColumnMutationsResult;
 }
 
 // Stable empty reference so a card-less column doesn't create a new array on
 // every render (react-perf/jsx-no-new-array-as-prop).
 const EMPTY_COLUMN_CARDS: StoredKanbanCard[] = [];
 
+// Resolves which column a card belongs to. `columnId` wins when it matches a
+// visible column. Cards without a matching columnId (legacy cards, or a
+// columnId pointing at a hidden/deleted column) fall back to the column whose
+// legacyStatus matches the card's status; skip/fail/abort cards additionally
+// fall back to the "done" column when no exact legacyStatus match exists.
+// A card that still can't resolve lands in the first column.
+function resolveCardColumn(
+  card: StoredKanbanCard,
+  columns: KanbanColumnData[],
+): KanbanColumnData | null {
+  if (card.columnId) {
+    const direct = columns.find((column) => column.id === card.columnId);
+    if (direct) {
+      return direct;
+    }
+  }
+  const byStatus = columns.find((column) => column.legacyStatus === card.status);
+  if (byStatus) {
+    return byStatus;
+  }
+  if (card.status === "skip" || card.status === "fail" || card.status === "abort") {
+    const done = columns.find((column) => column.legacyStatus === "done");
+    if (done) {
+      return done;
+    }
+  }
+  return columns[0] ?? null;
+}
+
 /**
- * The six-column board. Owns the card detail sheet and the status picker, plus
- * the web pointer-drag drop resolution: columns report their window bounds and
- * a drop's x (corrected for horizontal scroll) is hit-tested against them.
+ * The board: a horizontally-scrolling row of user-configurable columns. Owns
+ * the card detail sheet, the status picker, column management (rename/hide/
+ * reorder/delete/add), and the web pointer-drag drop resolution: columns
+ * report their window bounds and a drop's x (corrected for horizontal scroll)
+ * is hit-tested against them.
  */
-export function KanbanBoard({ cards, mutations }: KanbanBoardProps): ReactElement {
-  const { t } = useTranslation();
+export function KanbanBoard({
+  cards,
+  columns,
+  columnsSupported,
+  mutations,
+  columnMutations,
+}: KanbanBoardProps): ReactElement {
   const dragEnabled = isWeb;
 
-  const columnBoundsRef = useRef<Map<KanbanStatus, KanbanColumnBounds>>(new Map());
-  const columnRefs = useRef<Map<KanbanStatus, View>>(new Map());
+  const columnBoundsRef = useRef<Map<string, KanbanColumnBounds>>(new Map());
+  const columnRefs = useRef<Map<string, View>>(new Map());
 
   const [detailCard, setDetailCard] = useState<StoredKanbanCard | null>(null);
   const [pickerCard, setPickerCard] = useState<StoredKanbanCard | null>(null);
+  const [renameTarget, setRenameTarget] = useState<KanbanColumnData | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<KanbanColumnData | null>(null);
   // Which column a card is being dragged FROM (raised above siblings) and which
   // column the drag is hovering OVER (drop highlight). Web-only.
-  const [draggingStatus, setDraggingStatus] = useState<KanbanStatus | null>(null);
-  const [dropTargetStatus, setDropTargetStatus] = useState<KanbanStatus | null>(null);
+  const [draggingColumnId, setDraggingColumnId] = useState<string | null>(null);
+  const [dropTargetColumnId, setDropTargetColumnId] = useState<string | null>(null);
 
-  const cardsByStatus = useMemo(() => {
-    const groups = new Map<KanbanStatus, StoredKanbanCard[]>();
-    for (const status of KANBAN_STATUS_ORDER) {
-      groups.set(status, []);
+  const cardsByColumn = useMemo(() => {
+    const groups = new Map<string, StoredKanbanCard[]>();
+    for (const column of columns) {
+      groups.set(column.id, []);
     }
     for (const card of cards) {
-      groups.get(card.status)?.push(card);
+      const column = resolveCardColumn(card, columns);
+      if (!column) {
+        continue;
+      }
+      groups.get(column.id)?.push(card);
     }
     for (const group of groups.values()) {
       group.sort((a, b) => a.order - b.order);
     }
     return groups;
-  }, [cards]);
+  }, [cards, columns]);
 
-  const registerColumnRef = useCallback((status: KanbanStatus, node: View | null) => {
+  const registerColumnRef = useCallback((columnId: string, node: View | null) => {
     if (node) {
-      columnRefs.current.set(status, node);
+      columnRefs.current.set(columnId, node);
     } else {
-      columnRefs.current.delete(status);
+      columnRefs.current.delete(columnId);
     }
   }, []);
 
@@ -69,49 +116,64 @@ export function KanbanBoard({ cards, mutations }: KanbanBoardProps): ReactElemen
   // the drop's absoluteX (also window coords) is compared directly — no scroll
   // correction, so nothing can double-count the offset.
   const measureColumns = useCallback(() => {
-    for (const [status, node] of columnRefs.current) {
+    for (const [columnId, node] of columnRefs.current) {
       node.measureInWindow((x, _y, width) => {
-        columnBoundsRef.current.set(status, { x, width });
+        columnBoundsRef.current.set(columnId, { x, width });
       });
     }
   }, []);
 
-  const resolveDropStatus = useCallback((absoluteX: number): KanbanStatus | null => {
-    for (const [status, bounds] of columnBoundsRef.current) {
+  const resolveDropColumnId = useCallback((absoluteX: number): string | null => {
+    for (const [columnId, bounds] of columnBoundsRef.current) {
       if (absoluteX >= bounds.x && absoluteX <= bounds.x + bounds.width) {
-        return status;
+        return columnId;
       }
     }
     return null;
   }, []);
 
-  const handleCardDragStart = useCallback((status: KanbanStatus) => {
-    setDraggingStatus(status);
+  const handleCardDragStart = useCallback((columnId: string) => {
+    setDraggingColumnId(columnId);
   }, []);
 
   const handleCardDragUpdate = useCallback(
     (absoluteX: number) => {
-      const target = resolveDropStatus(absoluteX);
+      const target = resolveDropColumnId(absoluteX);
       // Only re-render when the hovered column actually changes.
-      setDropTargetStatus((current) => (current === target ? current : target));
+      setDropTargetColumnId((current) => (current === target ? current : target));
     },
-    [resolveDropStatus],
+    [resolveDropColumnId],
   );
 
   const handleCardDragEnd = useCallback(() => {
-    setDraggingStatus(null);
-    setDropTargetStatus(null);
+    setDraggingColumnId(null);
+    setDropTargetColumnId(null);
   }, []);
 
+  const moveCardToColumn = useCallback(
+    (cardId: string, target: KanbanColumnData) => {
+      void mutations.moveCard({
+        id: cardId,
+        status: target.legacyStatus,
+        ...(columnsSupported ? { columnId: target.id } : {}),
+      });
+    },
+    [columnsSupported, mutations],
+  );
+
   const handleCardDrop = useCallback<KanbanCardDropHandler>(
-    ({ cardId, fromStatus, absoluteX }) => {
-      const target = resolveDropStatus(absoluteX);
-      if (!target || target === fromStatus) {
+    ({ cardId, fromColumnId, absoluteX }) => {
+      const targetId = resolveDropColumnId(absoluteX);
+      if (!targetId || targetId === fromColumnId) {
         return;
       }
-      void mutations.moveCard({ id: cardId, status: target });
+      const target = columns.find((column) => column.id === targetId);
+      if (!target) {
+        return;
+      }
+      moveCardToColumn(cardId, target);
     },
-    [mutations, resolveDropStatus],
+    [columns, moveCardToColumn, resolveDropColumnId],
   );
 
   const handleCardPress = useCallback((card: StoredKanbanCard) => {
@@ -122,17 +184,89 @@ export function KanbanBoard({ cards, mutations }: KanbanBoardProps): ReactElemen
     setPickerCard(card);
   }, []);
 
-  const handlePickStatus = useCallback(
-    (status: KanbanStatus) => {
-      if (pickerCard && pickerCard.status !== status) {
-        void mutations.moveCard({ id: pickerCard.id, status });
+  const handlePickColumn = useCallback(
+    (column: KanbanColumnData) => {
+      if (pickerCard && resolveCardColumn(pickerCard, columns)?.id !== column.id) {
+        moveCardToColumn(pickerCard.id, column);
       }
     },
-    [mutations, pickerCard],
+    [columns, moveCardToColumn, pickerCard],
   );
 
   const closeDetail = useCallback(() => setDetailCard(null), []);
   const closePicker = useCallback(() => setPickerCard(null), []);
+  const closeRename = useCallback(() => setRenameTarget(null), []);
+  const closeDelete = useCallback(() => setDeleteTarget(null), []);
+
+  const handleHide = useCallback(
+    (column: KanbanColumnData) => {
+      void columnMutations.updateColumn({ id: column.id, hidden: true });
+    },
+    [columnMutations],
+  );
+
+  const handleMoveLeft = useCallback(
+    (column: KanbanColumnData) => {
+      const index = columns.findIndex((candidate) => candidate.id === column.id);
+      const neighbor = index > 0 ? columns[index - 1] : undefined;
+      if (!neighbor) {
+        return;
+      }
+      void columnMutations.reorderColumn({ id: column.id, order: neighbor.order });
+      void columnMutations.reorderColumn({ id: neighbor.id, order: column.order });
+    },
+    [columnMutations, columns],
+  );
+
+  const handleMoveRight = useCallback(
+    (column: KanbanColumnData) => {
+      const index = columns.findIndex((candidate) => candidate.id === column.id);
+      const neighbor = index >= 0 && index < columns.length - 1 ? columns[index + 1] : undefined;
+      if (!neighbor) {
+        return;
+      }
+      void columnMutations.reorderColumn({ id: column.id, order: neighbor.order });
+      void columnMutations.reorderColumn({ id: neighbor.id, order: column.order });
+    },
+    [columnMutations, columns],
+  );
+
+  const handleRenameSave = useCallback(
+    async (title: string) => {
+      if (!renameTarget) {
+        return;
+      }
+      await columnMutations.updateColumn({ id: renameTarget.id, title });
+    },
+    [columnMutations, renameTarget],
+  );
+
+  const handleDeleteConfirm = useCallback(
+    async (moveCardsToColumnId: string) => {
+      if (!deleteTarget) {
+        return;
+      }
+      await columnMutations.deleteColumn({ id: deleteTarget.id, moveCardsToColumnId });
+    },
+    [columnMutations, deleteTarget],
+  );
+
+  const handleAddColumn = useCallback(
+    async (title: string) => {
+      const maxOrder = columns.reduce((max, column) => Math.max(max, column.order), 0);
+      await columnMutations.createColumn({
+        title,
+        legacyStatus: "wip",
+        order: maxOrder + 1,
+      });
+    },
+    [columnMutations, columns],
+  );
+
+  const deleteDestinations = useMemo(
+    () => (deleteTarget ? columns.filter((column) => column.id !== deleteTarget.id) : []),
+    [columns, deleteTarget],
+  );
 
   return (
     <>
@@ -143,14 +277,13 @@ export function KanbanBoard({ cards, mutations }: KanbanBoardProps): ReactElemen
         showsHorizontalScrollIndicator={false}
         testID="kanban-board"
       >
-        {KANBAN_STATUS_ORDER.map((status) => (
+        {columns.map((column, index) => (
           <KanbanColumn
-            key={status}
-            status={status}
-            label={t(`kanban.columns.${status}`)}
-            cards={cardsByStatus.get(status) ?? EMPTY_COLUMN_CARDS}
-            isDragging={draggingStatus === status}
-            isDropTarget={dropTargetStatus === status && draggingStatus !== status}
+            key={column.id}
+            column={column}
+            cards={cardsByColumn.get(column.id) ?? EMPTY_COLUMN_CARDS}
+            isDragging={draggingColumnId === column.id}
+            isDropTarget={dropTargetColumnId === column.id && draggingColumnId !== column.id}
             onRegisterRef={registerColumnRef}
             onCardDragBegin={measureColumns}
             onCardDragStart={handleCardDragStart}
@@ -160,8 +293,17 @@ export function KanbanBoard({ cards, mutations }: KanbanBoardProps): ReactElemen
             onCardLongPress={handleCardLongPress}
             onCardDrop={handleCardDrop}
             dragEnabled={dragEnabled}
+            onRenameColumn={columnsSupported ? setRenameTarget : undefined}
+            onHideColumn={columnsSupported ? handleHide : undefined}
+            onMoveColumnLeft={columnsSupported ? handleMoveLeft : undefined}
+            onMoveColumnRight={columnsSupported ? handleMoveRight : undefined}
+            onDeleteColumn={columnsSupported ? setDeleteTarget : undefined}
+            canMoveColumnLeft={index > 0}
+            canMoveColumnRight={index < columns.length - 1}
+            canDeleteColumn={columns.length > 1}
           />
         ))}
+        {columnsSupported ? <KanbanAddColumn onCreate={handleAddColumn} /> : null}
       </ScrollView>
 
       <KanbanCardSheet
@@ -177,10 +319,33 @@ export function KanbanBoard({ cards, mutations }: KanbanBoardProps): ReactElemen
 
       <KanbanStatusPickerSheet
         visible={pickerCard !== null}
-        currentStatus={pickerCard?.status}
-        onSelect={handlePickStatus}
+        columns={columns}
+        currentColumnId={
+          pickerCard ? (resolveCardColumn(pickerCard, columns)?.id ?? undefined) : undefined
+        }
+        onSelect={handlePickColumn}
         onClose={closePicker}
       />
+
+      {columnsSupported ? (
+        <>
+          <KanbanColumnRenameSheet
+            key={renameTarget ? `rename:${renameTarget.id}` : "rename:none"}
+            visible={renameTarget !== null}
+            column={renameTarget}
+            onClose={closeRename}
+            onSave={handleRenameSave}
+          />
+          <KanbanColumnDeleteSheet
+            key={deleteTarget ? `delete:${deleteTarget.id}` : "delete:none"}
+            visible={deleteTarget !== null}
+            column={deleteTarget}
+            destinations={deleteDestinations}
+            onClose={closeDelete}
+            onConfirm={handleDeleteConfirm}
+          />
+        </>
+      ) : null}
     </>
   );
 }

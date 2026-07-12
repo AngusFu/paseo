@@ -1,23 +1,68 @@
-import { useCallback, useState, type ReactElement } from "react";
+import { useCallback, useMemo, useState, type ReactElement } from "react";
 import { Text, View } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
-import { Plug, Plus, RotateCw, SquareKanban } from "lucide-react-native";
+import { Archive, Plug, Plus, RotateCw, SquareKanban } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
-import type { StoredKanbanSource } from "@getpaseo/protocol/kanban/types";
+import {
+  KANBAN_STATUS_ORDER,
+  type KanbanColumn,
+  type StoredKanbanSource,
+} from "@getpaseo/protocol/kanban/types";
 import { MenuHeader } from "@/components/headers/menu-header";
 import { KanbanBoard } from "@/components/kanban/kanban-board";
 import { KanbanCardSheet } from "@/components/kanban/kanban-card-sheet";
+import { KanbanHiddenColumnsSheet } from "@/components/kanban/kanban-hidden-columns-sheet";
 import { KanbanSourceFormSheet } from "@/components/kanban/kanban-source-form-sheet";
 import { KanbanSourcesSheet } from "@/components/kanban/kanban-sources-sheet";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useKanbanCards } from "@/hooks/use-kanban-cards";
+import { useKanbanColumnMutations } from "@/hooks/use-kanban-column-mutations";
+import { useKanbanColumns } from "@/hooks/use-kanban-columns";
 import { useKanbanMutations } from "@/hooks/use-kanban-mutations";
 import { useHostFeature } from "@/runtime/host-features";
 import { useHostRuntimeConnectionStatuses, useHosts } from "@/runtime/host-runtime";
 
 type SourceFormState = { mode: "create" } | { mode: "edit"; source: StoredKanbanSource } | null;
+
+interface KanbanBoardColumns {
+  visibleColumns: KanbanColumn[];
+  hiddenColumns: KanbanColumn[];
+}
+
+// Old daemons without the columns capability get six fixed pseudo-columns, one
+// per KanbanStatus, so the board renders the same six lanes it always has.
+// `id` equals the status name so card grouping and drag hit-testing fall back
+// to the same identity cards already carry.
+function useKanbanBoardColumns(
+  serverId: string | null,
+  active: boolean,
+  kanbanColumnsSupported: boolean,
+): KanbanBoardColumns {
+  const { t } = useTranslation();
+  const { columns: fetchedColumns } = useKanbanColumns(
+    active && kanbanColumnsSupported ? serverId : null,
+  );
+  const fallbackColumns = useMemo<KanbanColumn[]>(
+    () =>
+      KANBAN_STATUS_ORDER.map((status, index) => ({
+        id: status,
+        title: t(`kanban.columns.${status}`),
+        order: index,
+        hidden: false,
+        legacyStatus: status,
+      })),
+    [t],
+  );
+  const allColumns = kanbanColumnsSupported ? fetchedColumns : fallbackColumns;
+  const visibleColumns = useMemo(
+    () => allColumns.filter((column) => !column.hidden).sort((a, b) => a.order - b.order),
+    [allColumns],
+  );
+  const hiddenColumns = useMemo(() => allColumns.filter((column) => column.hidden), [allColumns]);
+  return { visibleColumns, hiddenColumns };
+}
 
 export function KanbanScreen(): ReactElement {
   const isFocused = useIsFocused();
@@ -42,10 +87,29 @@ function KanbanScreenContent(): ReactElement {
   // false offline/empty state. A truly offline/disconnected host falls through.
   const isConnecting = connectionStatus === "connecting" || connectionStatus === "idle";
   const kanbanSupported = useHostFeature(serverId, "kanban");
+  // Column capability detection lives here, alongside the base "kanban"
+  // capability check above — a single place downstream code reads from.
+  const kanbanColumnsSupported = useHostFeature(serverId, "kanbanColumns");
 
   const active = Boolean(serverId && isOnline && kanbanSupported);
   const { cards, isLoading, isError, refetch } = useKanbanCards(active ? serverId : null);
   const mutations = useKanbanMutations({ serverId: serverId ?? "" });
+  const columnMutations = useKanbanColumnMutations({ serverId: serverId ?? "" });
+  const { visibleColumns, hiddenColumns } = useKanbanBoardColumns(
+    serverId,
+    active,
+    kanbanColumnsSupported,
+  );
+
+  const [hiddenColumnsOpen, setHiddenColumnsOpen] = useState(false);
+  const openHiddenColumns = useCallback(() => setHiddenColumnsOpen(true), []);
+  const closeHiddenColumns = useCallback(() => setHiddenColumnsOpen(false), []);
+  const handleRestoreColumn = useCallback(
+    (columnId: string) => {
+      void columnMutations.updateColumn({ id: columnId, hidden: false });
+    },
+    [columnMutations],
+  );
 
   const [createOpen, setCreateOpen] = useState(false);
   // Bump on each open so the create sheet remounts with empty fields.
@@ -85,15 +149,20 @@ function KanbanScreenContent(): ReactElement {
         isOnline={isOnline}
         isConnecting={isConnecting}
         kanbanSupported={kanbanSupported}
+        kanbanColumnsSupported={kanbanColumnsSupported}
         cards={cards}
+        columns={visibleColumns}
+        hiddenColumnsCount={hiddenColumns.length}
         isLoading={isLoading}
         isError={isError}
         onRetry={refetch}
         onCreate={openCreate}
         onSync={handleSync}
         onManageSources={openSources}
+        onManageHiddenColumns={openHiddenColumns}
         isSyncing={mutations.isSyncing}
         mutations={mutations}
+        columnMutations={columnMutations}
       />
       <KanbanCardSheet
         key={`create:${createNonce}`}
@@ -123,6 +192,14 @@ function KanbanScreenContent(): ReactElement {
           />
         </>
       ) : null}
+      {kanbanColumnsSupported ? (
+        <KanbanHiddenColumnsSheet
+          visible={hiddenColumnsOpen}
+          columns={hiddenColumns}
+          onClose={closeHiddenColumns}
+          onRestore={handleRestoreColumn}
+        />
+      ) : null}
     </View>
   );
 }
@@ -132,15 +209,20 @@ interface KanbanScreenBodyProps {
   isOnline: boolean;
   isConnecting: boolean;
   kanbanSupported: boolean;
+  kanbanColumnsSupported: boolean;
   cards: ReturnType<typeof useKanbanCards>["cards"];
+  columns: KanbanColumn[];
+  hiddenColumnsCount: number;
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
   onCreate: () => void;
   onSync: () => void;
   onManageSources: () => void;
+  onManageHiddenColumns: () => void;
   isSyncing: boolean;
   mutations: ReturnType<typeof useKanbanMutations>;
+  columnMutations: ReturnType<typeof useKanbanColumnMutations>;
 }
 
 function KanbanScreenBody({
@@ -148,15 +230,20 @@ function KanbanScreenBody({
   isOnline,
   isConnecting,
   kanbanSupported,
+  kanbanColumnsSupported,
   cards,
+  columns,
+  hiddenColumnsCount,
   isLoading,
   isError,
   onRetry,
   onCreate,
   onSync,
   onManageSources,
+  onManageHiddenColumns,
   isSyncing,
   mutations,
+  columnMutations,
 }: KanbanScreenBodyProps): ReactElement {
   const { t } = useTranslation();
 
@@ -217,9 +304,26 @@ function KanbanScreenBody({
         >
           {t("kanban.actions.sources")}
         </Button>
+        {kanbanColumnsSupported && hiddenColumnsCount > 0 ? (
+          <Button
+            variant="ghost"
+            leftIcon={Archive}
+            onPress={onManageHiddenColumns}
+            size="sm"
+            testID="kanban-hidden-columns"
+          >
+            {t("kanban.hiddenColumns.entry")}
+          </Button>
+        ) : null}
       </View>
       {cards.length > 0 ? (
-        <KanbanBoard cards={cards} mutations={mutations} />
+        <KanbanBoard
+          cards={cards}
+          columns={columns}
+          columnsSupported={kanbanColumnsSupported}
+          mutations={mutations}
+          columnMutations={columnMutations}
+        />
       ) : (
         <View style={styles.centered}>
           <View style={styles.emptyState} testID="kanban-empty">

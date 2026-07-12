@@ -504,7 +504,7 @@ export function createSharedMarkdownRules(): RenderRules {
     text: (
       node: ASTNode,
       _children: ReactNode[],
-      _parent: ASTNode[],
+      parent: ASTNode[],
       styles: MarkdownStyles,
       inheritedStyles: TextStyle = {},
     ) => (
@@ -512,6 +512,11 @@ export function createSharedMarkdownRules(): RenderRules {
         key={node.key}
         inheritedStyles={inheritedStyles}
         textStyle={styles.text}
+        // Text inside a link (including autolinked bare URLs) must take the link
+        // color. styles.text hardcodes `color: foreground`, which sorts after the
+        // link color in the merged style and would otherwise win. Layered last so
+        // it overrides the color while keeping styles.text's wrapping layout.
+        style={parent.some((ancestor) => ancestor.type === "link") ? styles.link : undefined}
       >
         {node.content}
       </MarkdownInheritedText>

@@ -117,7 +117,7 @@ function isTargetSupportedOnPlatform(
   return true;
 }
 
-function createExternalProcessEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function createExternalProcessEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...baseEnv };
   for (const key of RUNTIME_CONTROL_ENV_KEYS) {
     delete env[key];
@@ -130,7 +130,7 @@ function createExternalProcessEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   return env;
 }
 
-function resolveExecutable(
+export function resolveExecutable(
   command: string,
   input: {
     env: NodeJS.ProcessEnv;

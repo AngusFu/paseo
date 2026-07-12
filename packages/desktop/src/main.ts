@@ -46,6 +46,7 @@ import {
 } from "./features/notifications.js";
 import { registerOpenerHandlers } from "./features/opener.js";
 import { registerEditorTargetHandlers } from "./features/editor-targets.js";
+import { registerCodeServerHandlers, shutdownCodeServer } from "./features/code-server.js";
 import { setupApplicationMenu } from "./features/menu.js";
 import {
   BROWSER_NEW_TAB_REQUEST_EVENT,
@@ -1115,6 +1116,7 @@ async function bootstrap(): Promise<void> {
   registerNotificationHandlers();
   registerOpenerHandlers();
   registerEditorTargetHandlers();
+  registerCodeServerHandlers();
   registerBrowserAutomationIpc();
 
   // In-app "Open in new window": opens a window that lands on the given project
@@ -1183,6 +1185,11 @@ app.on(
     },
   }),
 );
+
+// Do not leak the machine-global `code serve-web` we may have spawned.
+app.on("will-quit", () => {
+  shutdownCodeServer();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

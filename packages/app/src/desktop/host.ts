@@ -79,6 +79,18 @@ export interface DesktopEditorBridge {
   openTarget?: (input: DesktopEditorOpenTargetInput) => Promise<void>;
 }
 
+export interface DesktopCodeServerStatus {
+  running: boolean;
+  url: string;
+  port: number;
+}
+
+export interface DesktopCodeServerBridge {
+  getStatus?: () => Promise<DesktopCodeServerStatus>;
+  start?: () => Promise<DesktopCodeServerStatus>;
+  stop?: () => Promise<DesktopCodeServerStatus>;
+}
+
 export interface DesktopWebUtilsBridge {
   getPathForFile?: (file: File) => string;
 }
@@ -200,6 +212,7 @@ export interface DesktopHostBridge {
   notification?: DesktopNotificationBridge;
   opener?: DesktopOpenerBridge;
   editor?: DesktopEditorBridge;
+  codeServer?: DesktopCodeServerBridge;
   webUtils?: DesktopWebUtilsBridge;
   menu?: DesktopMenuBridge;
   browser?: DesktopBrowserBridge;

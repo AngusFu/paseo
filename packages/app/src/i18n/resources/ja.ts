@@ -839,6 +839,8 @@ export const ja: TranslationResources = {
         openIn: "{{target}}でワークスペースを開く",
         openFileIn: "{{target}}で{{fileName}}を開く",
         failedOpen: "ワークスペースを開けませんでした",
+        codeServerStart: "code-server を起動",
+        codeServerStop: "code-server を停止",
       },
       pr: {
         actions: {

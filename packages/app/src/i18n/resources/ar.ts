@@ -824,6 +824,8 @@ export const ar: TranslationResources = {
         openIn: "افتح مساحة العمل في{{target}}",
         openFileIn: "Open {{fileName}} in {{target}}",
         failedOpen: "فشل في فتح مساحة العمل",
+        codeServerStart: "بدء code-server",
+        codeServerStop: "إيقاف code-server",
       },
       pr: {
         actions: {

@@ -8,16 +8,18 @@ import {
   type PressableStateCallbackType,
 } from "react-native";
 import { useMutation } from "@tanstack/react-query";
-import { Check, ChevronDown } from "lucide-react-native";
+import { Check, ChevronDown, Globe, Play, Square } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { EditorAppIcon } from "@/components/icons/editor-app-icons";
 import { GitHubIcon } from "@/components/icons/github-icon";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/contexts/toast-context";
 import { useCheckoutStatusQuery } from "@/git/use-status-query";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
@@ -26,6 +28,7 @@ import { resolvePreferredEditorId, usePreferredEditor } from "@/hooks/use-prefer
 import { openExternalUrl } from "@/utils/open-external-url";
 import { isAbsolutePath } from "@/utils/path";
 import { isWeb } from "@/constants/platform";
+import { useCodeServer } from "@/workspace/code-server";
 import { openDesktopTarget, useDesktopOpenTargets } from "@/workspace/desktop-open-targets";
 import { resolveWorkspaceFilePaths, type WorkspaceFileLocation } from "@/workspace/file-open";
 import { planWorkspaceOpenTargets } from "@/workspace/open-target-planner";
@@ -50,6 +53,7 @@ const ThemedEditorAppIcon = withUnistyles(EditorAppIcon);
 const ThemedGitHubIcon = withUnistyles(GitHubIcon);
 const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedCheckIcon = withUnistyles(Check);
+const ThemedGlobeIcon = withUnistyles(Globe);
 
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
@@ -93,6 +97,13 @@ export function WorkspaceOpenInEditorButton({
     useDesktopOpenTargets({
       isLocalExecution: isLocalDaemon,
     });
+  const {
+    isAvailable: isCodeServerAvailable,
+    isRunning: isCodeServerRunning,
+    isToggling: isTogglingCodeServer,
+    toggle: toggleCodeServer,
+    openWorkspace: openInCodeServer,
+  } = useCodeServer({ isLocalExecution: isLocalDaemon });
 
   const resolvedFile = useMemo(
     () =>
@@ -112,42 +123,54 @@ export function WorkspaceOpenInEditorButton({
     cwd: shouldQueryCheckout ? cwd : "",
   });
 
-  const targets = useMemo<OpenTarget[]>(
-    () =>
-      planWorkspaceOpenTargets({
-        workspaceDirectory: cwd,
-        activeFile,
-        resolvedActiveFile: resolvedFile,
-        desktopTargets: desktopOpenTargets,
-        canUseDesktopBridge: isDesktopOpenAvailable,
-        isLocalExecution: isLocalDaemon,
-        checkoutStatus,
-      }).map((target) => {
-        if (target.source === "github") {
-          return {
-            id: target.id,
-            label: target.label,
-            icon: <ThemedGitHubIcon size={16} uniProps={mutedColorMapping} />,
-            onOpen: () => openExternalUrl(target.url),
-          };
-        }
+  const targets = useMemo<OpenTarget[]>(() => {
+    const planned = planWorkspaceOpenTargets({
+      workspaceDirectory: cwd,
+      activeFile,
+      resolvedActiveFile: resolvedFile,
+      desktopTargets: desktopOpenTargets,
+      canUseDesktopBridge: isDesktopOpenAvailable,
+      isLocalExecution: isLocalDaemon,
+      checkoutStatus,
+    }).map<OpenTarget>((target) => {
+      if (target.source === "github") {
         return {
           id: target.id,
           label: target.label,
-          icon: <ThemedEditorAppIcon editorId={target.id} size={16} uniProps={mutedColorMapping} />,
-          onOpen: () => openDesktopTarget(target.openInput),
+          icon: <ThemedGitHubIcon size={16} uniProps={mutedColorMapping} />,
+          onOpen: () => openExternalUrl(target.url),
         };
-      }),
-    [
-      activeFile,
-      checkoutStatus,
-      cwd,
-      desktopOpenTargets,
-      isDesktopOpenAvailable,
-      isLocalDaemon,
-      resolvedFile,
-    ],
-  );
+      }
+      return {
+        id: target.id,
+        label: target.label,
+        icon: <ThemedEditorAppIcon editorId={target.id} size={16} uniProps={mutedColorMapping} />,
+        onOpen: () => openDesktopTarget(target.openInput),
+      };
+    });
+    // `code serve-web` opens the workspace in a browser tab rather than spawning
+    // an editor, so it is not a desktop editor target — append it here. It runs
+    // on this machine, hence the same local-only gate as the editor targets.
+    if (isCodeServerAvailable) {
+      planned.push({
+        id: "code-server",
+        label: "code-server",
+        icon: <ThemedGlobeIcon size={16} uniProps={mutedColorMapping} />,
+        onOpen: () => openInCodeServer(cwd),
+      });
+    }
+    return planned;
+  }, [
+    activeFile,
+    checkoutStatus,
+    isCodeServerAvailable,
+    openInCodeServer,
+    cwd,
+    desktopOpenTargets,
+    isDesktopOpenAvailable,
+    isLocalDaemon,
+    resolvedFile,
+  ]);
 
   const targetIds = useMemo(() => targets.map((target) => target.id), [targets]);
   const effectivePreferredEditorId = useMemo(
@@ -196,9 +219,17 @@ export function WorkspaceOpenInEditorButton({
     }
   }, [primaryOption, handleOpenTarget]);
 
+  const handleCodeServerToggle = useCallback(() => {
+    toggleCodeServer();
+  }, [toggleCodeServer]);
+
   if (!canResolveWorkspace || !primaryOption || targets.length === 0) {
     return null;
   }
+
+  const codeServerToggleLabel = isCodeServerRunning
+    ? t("workspace.git.openInEditor.codeServerStop")
+    : t("workspace.git.openInEditor.codeServerStart");
 
   return (
     <View style={styles.row}>
@@ -263,6 +294,26 @@ export function WorkspaceOpenInEditorButton({
           </DropdownMenu>
         ) : null}
       </View>
+      {isCodeServerAvailable ? (
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <View>
+              <Button
+                size="sm"
+                variant="outline"
+                loading={isTogglingCodeServer}
+                leftIcon={isCodeServerRunning ? Square : Play}
+                onPress={handleCodeServerToggle}
+                accessibilityLabel={codeServerToggleLabel}
+                testID="workspace-code-server-toggle"
+              />
+            </View>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="center" offset={8}>
+            <Text style={styles.tooltipText}>{codeServerToggleLabel}</Text>
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
     </View>
   );
 }
@@ -327,5 +378,9 @@ const styles = StyleSheet.create((theme) => ({
   },
   splitButtonCaretHovered: {
     backgroundColor: theme.colors.surface2,
+  },
+  tooltipText: {
+    color: theme.colors.popoverForeground,
+    fontSize: theme.fontSize.sm,
   },
 }));

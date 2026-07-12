@@ -851,6 +851,8 @@ export const fr: TranslationResources = {
         openIn: "Espace de travail ouvert dans{{target}}",
         openFileIn: "Open {{fileName}} in {{target}}",
         failedOpen: "Échec de l'ouverture de l'espace de travail",
+        codeServerStart: "Démarrer code-server",
+        codeServerStop: "Arrêter code-server",
       },
       pr: {
         actions: {

@@ -843,6 +843,8 @@ export const ru: TranslationResources = {
         openIn: "Открыть рабочую область в{{target}}",
         openFileIn: "Open {{fileName}} in {{target}}",
         failedOpen: "Не удалось открыть рабочую область",
+        codeServerStart: "Запустить code-server",
+        codeServerStop: "Остановить code-server",
       },
       pr: {
         actions: {

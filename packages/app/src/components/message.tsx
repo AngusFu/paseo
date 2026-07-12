@@ -1334,6 +1334,10 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   secondaryLabel: {
     flexShrink: 1,
     minWidth: 0,
+    // Cap the title preview so a long shell command / arg string truncates early
+    // on wide screens instead of sprawling across the full row; flexShrink still
+    // lets it shrink below this on narrow screens.
+    maxWidth: 420,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,

@@ -336,7 +336,13 @@ function SchedulesEmptyState({
         <Text style={styles.emptyDescription}>{t("schedule.empty.activeDescription")}</Text>
         <ExternalLink href="https://paseo.sh/docs/schedules" label={t("schedule.empty.seeDocs")} />
       </View>
-      <Button variant="outline" leftIcon={Plus} onPress={onCreate} testID="schedules-empty-new">
+      <Button
+        variant="outline"
+        leftIcon={Plus}
+        onPress={onCreate}
+        size="sm"
+        testID="schedules-empty-new"
+      >
         {t("schedule.list.newSchedule")}
       </Button>
     </View>

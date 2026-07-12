@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/isolated-bottom-sheet-modal";
 import { getCompactSheetSafeAreaPadding } from "@/components/adaptive-modal-sheet-layout";
 import { createControlGeometry } from "@/components/ui/control-geometry";
+import { ControlSizeContext } from "@/components/ui/control-size-context";
 import { isNative, isWeb } from "@/constants/platform";
 import { useWebScrollViewScrollbar } from "@/components/use-web-scrollbar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -658,7 +659,11 @@ export function AdaptiveModalSheet({
         ) : (
           <View style={bottomSheetStaticContentStyle}>{children}</View>
         )}
-        {footer ? <View style={footerStyle}>{footer}</View> : null}
+        {footer ? (
+          <ControlSizeContext.Provider value="md">
+            <View style={footerStyle}>{footer}</View>
+          </ControlSizeContext.Provider>
+        ) : null}
       </IsolatedBottomSheetModal>
     );
   }
@@ -686,7 +691,11 @@ export function AdaptiveModalSheet({
       ) : (
         <View style={styles.desktopStaticContent}>{children}</View>
       )}
-      {footer ? <View style={footerStyle}>{footer}</View> : null}
+      {footer ? (
+        <ControlSizeContext.Provider value="sm">
+          <View style={footerStyle}>{footer}</View>
+        </ControlSizeContext.Provider>
+      ) : null}
     </>
   );
 

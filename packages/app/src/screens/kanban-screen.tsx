@@ -352,7 +352,13 @@ function KanbanScreenBody({
           <View style={styles.emptyState} testID="kanban-empty">
             <SquareKanban size={styles.emptyIcon.width} color={styles.emptyIcon.color} />
             <Text style={styles.emptyTitle}>{t("kanban.empty")}</Text>
-            <Button variant="outline" leftIcon={Plus} onPress={onCreate} testID="kanban-empty-add">
+            <Button
+              variant="outline"
+              leftIcon={Plus}
+              onPress={onCreate}
+              size="sm"
+              testID="kanban-empty-add"
+            >
               {t("kanban.actions.add")}
             </Button>
           </View>

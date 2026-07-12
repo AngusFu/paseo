@@ -58,6 +58,7 @@ export function KanbanColumnRenameSheet({
     () => (
       <View style={styles.footer}>
         <Button
+          size={controlSize}
           style={styles.footerButton}
           variant="secondary"
           onPress={onClose}
@@ -66,6 +67,7 @@ export function KanbanColumnRenameSheet({
           {t("common.actions.cancel")}
         </Button>
         <Button
+          size={controlSize}
           style={styles.footerButton}
           variant="default"
           onPress={handleSubmitPress}
@@ -77,7 +79,7 @@ export function KanbanColumnRenameSheet({
         </Button>
       </View>
     ),
-    [canSubmit, handleSubmitPress, isSubmitting, onClose, t],
+    [canSubmit, controlSize, handleSubmitPress, isSubmitting, onClose, t],
   );
 
   return (

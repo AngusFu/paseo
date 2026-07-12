@@ -758,10 +758,16 @@ const styles = StyleSheet.create((theme) => ({
   glyph: {
     color: theme.colors.foregroundMuted,
   },
+  // Matches the StatusBadge pill shell (rounded, bordered) so the ticket key and
+  // the status tag beside it read as one family — only the mono font differs.
+  // Kept in sync with the identical copy in kanban-card.tsx.
   issueKeyChip: {
     backgroundColor: theme.colors.surface3,
-    borderRadius: theme.borderRadius.sm,
-    paddingHorizontal: theme.spacing[1],
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: 3,
   },
   issueKeyText: {
     color: theme.colors.foregroundMuted,

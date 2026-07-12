@@ -6,6 +6,8 @@ import { useTranslation } from "react-i18next";
 import type { KanbanColumn } from "@getpaseo/protocol/kanban/types";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
+import type { FieldControlSize } from "@/components/ui/control-geometry";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { toErrorMessage } from "@/utils/error-messages";
 
 export interface KanbanColumnDeleteSheetProps {
@@ -58,6 +60,7 @@ export function KanbanColumnDeleteSheet({
   onConfirm,
 }: KanbanColumnDeleteSheetProps): ReactElement {
   const { t } = useTranslation();
+  const controlSize: FieldControlSize = useIsCompactFormFactor() ? "md" : "sm";
   const [destinationId, setDestinationId] = useState<string | null>(destinations[0]?.id ?? null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -88,6 +91,7 @@ export function KanbanColumnDeleteSheet({
     () => (
       <View style={styles.footer}>
         <Button
+          size={controlSize}
           style={styles.footerButton}
           variant="secondary"
           onPress={onClose}
@@ -96,6 +100,7 @@ export function KanbanColumnDeleteSheet({
           {t("common.actions.cancel")}
         </Button>
         <Button
+          size={controlSize}
           style={styles.footerButton}
           variant="destructive"
           onPress={handleConfirmPress}
@@ -107,7 +112,7 @@ export function KanbanColumnDeleteSheet({
         </Button>
       </View>
     ),
-    [destinationId, handleConfirmPress, isSubmitting, onClose, t],
+    [controlSize, destinationId, handleConfirmPress, isSubmitting, onClose, t],
   );
 
   return (

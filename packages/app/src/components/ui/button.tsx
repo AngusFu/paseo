@@ -22,6 +22,7 @@ import {
   createControlGeometry,
   type ButtonControlSize,
 } from "@/components/ui/control-geometry";
+import { useControlSize } from "@/components/ui/control-size-context";
 import type { Theme } from "@/styles/theme";
 
 type ButtonVariant = "default" | "secondary" | "outline" | "ghost" | "destructive";
@@ -132,6 +133,19 @@ const styles = StyleSheet.create((theme) => {
     pressed: {
       opacity: 0.85,
     },
+    // Opt-in hover feedback (web only; `hoverElevate`). Solid variants dim
+    // slightly; hollow variants gain a surface fill. Kept subtle and distinct
+    // from the stronger `pressed` state that layers on top.
+    hoverSolid: {
+      opacity: 0.9,
+    },
+    hoverSecondary: {
+      backgroundColor: theme.colors.surface4,
+      borderColor: theme.colors.surface4,
+    },
+    hoverFill: {
+      backgroundColor: theme.colors.surface2,
+    },
     disabled: {
       opacity: theme.opacity[50],
     },
@@ -158,16 +172,27 @@ const styles = StyleSheet.create((theme) => {
   };
 });
 
+function resolveHoverStyle(variant: ButtonVariant): ViewStyle {
+  if (variant === "default" || variant === "destructive") {
+    return styles.hoverSolid;
+  }
+  if (variant === "secondary") {
+    return styles.hoverSecondary;
+  }
+  return styles.hoverFill;
+}
+
 export function Button({
   children,
   variant = "secondary",
-  size = "md",
+  size: sizeProp,
   leftIcon,
   trailing,
   style,
   textStyle,
   disabled,
   loading = false,
+  hoverElevate = true,
   accessibilityRole,
   accessibilityState: accessibilityStateProp,
   ...props
@@ -180,10 +205,16 @@ export function Button({
     style?: StyleProp<ViewStyle>;
     textStyle?: StyleProp<TextStyle>;
     loading?: boolean;
+    /** Web-only hover highlight. On by default; pass false to opt out. */
+    hoverElevate?: boolean;
   }
 >) {
   const [hovered, setHovered] = useState(false);
   const isDisabled = disabled || loading;
+  // Fall back to the subtree's control size (e.g. a sheet footer) before "md",
+  // so modal actions render compact on desktop without threading a size prop.
+  const contextSize = useControlSize();
+  const size = sizeProp ?? contextSize ?? "md";
 
   let variantStyle: ViewStyle;
   if (variant === "default") {
@@ -213,16 +244,19 @@ export function Button({
   const handleHoverIn = useCallback(() => setHovered(true), []);
   const handleHoverOut = useCallback(() => setHovered(false), []);
 
+  const hoverStyle = hoverElevate && hovered && !isDisabled ? resolveHoverStyle(variant) : null;
+
   const pressableStyle = useCallback(
     ({ pressed }: PressableStateCallbackType): StyleProp<ViewStyle> => [
       styles.base,
       sizeStyle,
       variantStyle,
+      hoverStyle,
       pressed ? styles.pressed : null,
       isDisabled ? styles.disabled : null,
       style,
     ],
-    [sizeStyle, variantStyle, isDisabled, style],
+    [sizeStyle, variantStyle, hoverStyle, isDisabled, style],
   );
 
   const resolvedTextStyle = useMemo(

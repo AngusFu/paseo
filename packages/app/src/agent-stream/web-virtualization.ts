@@ -1,7 +1,11 @@
 import type { StreamItem } from "@/types/stream";
 import { estimateAssistantMessageHeightFromCache } from "@/utils/assistant-message-height-estimate";
 
-export const DEFAULT_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD = 100;
+// Only conversations longer than this virtualize their older history on desktop
+// web; anything at or below renders fully in normal flow (no absolute-positioned
+// rows, so no measurement/flash/jitter). Kept generous so ordinary sessions stay
+// on the simple path and only genuinely long ones pay for virtualization.
+export const DEFAULT_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD = 300;
 export const DEFAULT_WEB_MOUNTED_RECENT_STREAM_ITEMS = 50;
 const COLLAPSED_TOOL_SEQUENCE_ROW_HEIGHT_ESTIMATE = 40;
 

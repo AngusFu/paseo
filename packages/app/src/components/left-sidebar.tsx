@@ -112,7 +112,6 @@ interface MobileSidebarProps extends SidebarSharedProps {
   insetsTop: number;
   insetsBottom: number;
   closeSidebar: () => void;
-  handleViewMoreNavigate: () => void;
   handleViewSchedulesNavigate: () => void;
   handleViewKanbanNavigate: () => void;
 }
@@ -120,7 +119,6 @@ interface MobileSidebarProps extends SidebarSharedProps {
 interface DesktopSidebarProps extends SidebarSharedProps {
   insetsTop: number;
   isOpen: boolean;
-  handleViewMore: () => void;
   handleViewSchedules: () => void;
   handleViewKanban: () => void;
 }
@@ -212,10 +210,6 @@ export const LeftSidebar = memo(function LeftSidebar() {
     router.push(buildOpenProjectRoute());
   }, []);
 
-  const handleViewMoreNavigate = useCallback(() => {
-    router.push(buildSessionsRoute());
-  }, []);
-
   const handleViewSchedulesNavigate = useCallback(() => {
     router.push(buildSchedulesRoute());
   }, []);
@@ -270,7 +264,6 @@ export const LeftSidebar = memo(function LeftSidebar() {
         handleSettings={handleSettingsMobile}
         handleAddHost={handleAddHostMobile}
         handleOpenHostSettings={handleOpenHostSettingsMobile}
-        handleViewMoreNavigate={handleViewMoreNavigate}
         handleViewSchedulesNavigate={handleViewSchedulesNavigate}
         handleViewKanbanNavigate={handleViewKanbanNavigate}
       />
@@ -287,7 +280,6 @@ export const LeftSidebar = memo(function LeftSidebar() {
       handleSettings={handleSettingsDesktop}
       handleAddHost={handleAddHostDesktop}
       handleOpenHostSettings={handleOpenHostSettingsDesktop}
-      handleViewMore={handleViewMoreNavigate}
       handleViewSchedules={handleViewSchedulesNavigate}
       handleViewKanban={handleViewKanbanNavigate}
     />
@@ -420,19 +412,10 @@ function HeaderIconTooltipContent({
   );
 }
 
-const SidebarNewWorkspaceHeaderRow = memo(function SidebarNewWorkspaceHeaderRow({
-  label,
-  testID,
-  variant,
-  shortcutKeys,
-  onBeforeNavigate,
-}: {
-  label: string;
-  testID: string;
-  variant: "header" | "compact";
-  shortcutKeys: ShortcutKey[][] | null;
-  onBeforeNavigate?: () => void;
-}) {
+// New-workspace navigation, shared by the Workspaces-header icon button. Reuses
+// the active-workspace selection so "new workspace" starts from the current
+// project context (worktree source) when the host supports it.
+function useNewWorkspaceNavigation(onBeforeNavigate?: () => void): () => void {
   const activeWorkspaceSelection = useActiveWorkspaceSelection();
   const activeWorkspaceServerId = activeWorkspaceSelection?.serverId ?? null;
   const activeWorkspaceId = activeWorkspaceSelection?.workspaceId ?? null;
@@ -446,7 +429,7 @@ const SidebarNewWorkspaceHeaderRow = memo(function SidebarNewWorkspaceHeaderRow(
     (supportsWorkspaceMultiplicity || canCreateWorktreeForProjectKind(activeWorkspace.projectKind)),
   );
 
-  const handlePress = useCallback(() => {
+  return useCallback(() => {
     onBeforeNavigate?.();
     router.push(
       activeWorkspaceServerId
@@ -462,18 +445,7 @@ const SidebarNewWorkspaceHeaderRow = memo(function SidebarNewWorkspaceHeaderRow(
         : buildNewWorkspaceRoute(),
     );
   }, [activeWorkspace, activeWorkspaceServerId, canUseActiveWorkspaceContext, onBeforeNavigate]);
-
-  return (
-    <SidebarHeaderRow
-      icon={Plus}
-      label={label}
-      onPress={handlePress}
-      testID={testID}
-      variant={variant}
-      shortcutKeys={shortcutKeys}
-    />
-  );
-});
+}
 
 function SidebarFooter({
   theme,
@@ -564,20 +536,14 @@ function MobileSidebar({
   insetsTop,
   insetsBottom,
   closeSidebar,
-  handleViewMoreNavigate,
   handleViewSchedulesNavigate,
   handleViewKanbanNavigate,
 }: MobileSidebarProps) {
   const pathname = usePathname();
-  const isSessionsActive = pathname.includes("/sessions");
+  const isHomeActive = pathname.includes("/open-project");
   const isSchedulesActive = pathname.includes("/schedules");
   const isKanbanActive = pathname.includes("/kanban");
   const { gesture: closeGesture, gestureRef: closeGestureRef } = useCloseAgentListGesture();
-
-  const handleViewMore = useCallback(() => {
-    closeSidebar();
-    handleViewMoreNavigate();
-  }, [closeSidebar, handleViewMoreNavigate]);
 
   const handleViewSchedules = useCallback(() => {
     closeSidebar();
@@ -610,27 +576,12 @@ function MobileSidebar({
     >
       <View style={styles.sidebarContent} pointerEvents="auto">
         <View style={styles.sidebarHeaderGroup}>
-          <SidebarNewWorkspaceHeaderRow
-            label={labels.newWorkspace}
-            testID="sidebar-global-new-workspace"
-            variant="compact"
-            shortcutKeys={newWorkspaceKeys}
-            onBeforeNavigate={closeSidebar}
-          />
           <SidebarHeaderRow
-            icon={History}
-            label={labels.sessions}
-            onPress={handleViewMore}
-            isActive={isSessionsActive}
-            testID="sidebar-sessions"
-            variant="compact"
-          />
-          <SidebarHeaderRow
-            icon={CalendarClock}
-            label={labels.schedules}
-            onPress={handleViewSchedules}
-            isActive={isSchedulesActive}
-            testID="sidebar-schedules"
+            icon={Home}
+            label={labels.home}
+            onPress={handleHome}
+            isActive={isHomeActive}
+            testID="sidebar-nav-home"
             variant="compact"
           />
           <SidebarHeaderRow
@@ -641,8 +592,19 @@ function MobileSidebar({
             testID="sidebar-kanban"
             variant="compact"
           />
+          <SidebarHeaderRow
+            icon={CalendarClock}
+            label={labels.schedules}
+            onPress={handleViewSchedules}
+            isActive={isSchedulesActive}
+            testID="sidebar-schedules"
+            variant="compact"
+          />
         </View>
-        <WorkspacesSectionHeader />
+        <WorkspacesSectionHeader
+          onBeforeNavigate={closeSidebar}
+          newWorkspaceKeys={newWorkspaceKeys}
+        />
         <Pressable
           style={styles.mobileCloseButton}
           onPress={closeSidebar}
@@ -716,12 +678,11 @@ function DesktopSidebar({
   handleOpenHostSettings,
   insetsTop,
   isOpen,
-  handleViewMore,
   handleViewSchedules,
   handleViewKanban,
 }: DesktopSidebarProps) {
   const pathname = usePathname();
-  const isSessionsActive = pathname.includes("/sessions");
+  const isHomeActive = pathname.includes("/open-project");
   const isSchedulesActive = pathname.includes("/schedules");
   const isKanbanActive = pathname.includes("/kanban");
   const padding = useWindowControlsPadding("sidebar");
@@ -789,26 +750,12 @@ function DesktopSidebar({
           <TitlebarDragRegion />
           {padding.top > 0 ? <View style={paddingTopSpacerStyle} /> : null}
           <View style={styles.sidebarHeaderGroup}>
-            <SidebarNewWorkspaceHeaderRow
-              label={labels.newWorkspace}
-              testID="sidebar-global-new-workspace"
-              variant="compact"
-              shortcutKeys={newWorkspaceKeys}
-            />
             <SidebarHeaderRow
-              icon={History}
-              label={labels.sessions}
-              onPress={handleViewMore}
-              isActive={isSessionsActive}
-              testID="sidebar-sessions"
-              variant="compact"
-            />
-            <SidebarHeaderRow
-              icon={CalendarClock}
-              label={labels.schedules}
-              onPress={handleViewSchedules}
-              isActive={isSchedulesActive}
-              testID="sidebar-schedules"
+              icon={Home}
+              label={labels.home}
+              onPress={handleHome}
+              isActive={isHomeActive}
+              testID="sidebar-nav-home"
               variant="compact"
             />
             <SidebarHeaderRow
@@ -819,9 +766,17 @@ function DesktopSidebar({
               testID="sidebar-kanban"
               variant="compact"
             />
+            <SidebarHeaderRow
+              icon={CalendarClock}
+              label={labels.schedules}
+              onPress={handleViewSchedules}
+              isActive={isSchedulesActive}
+              testID="sidebar-schedules"
+              variant="compact"
+            />
           </View>
         </View>
-        <WorkspacesSectionHeader />
+        <WorkspacesSectionHeader newWorkspaceKeys={newWorkspaceKeys} />
 
         {isInitialLoad ? (
           <SidebarAgentListSkeleton />
@@ -861,18 +816,38 @@ function DesktopSidebar({
   );
 }
 
-function WorkspacesSectionHeader() {
+function WorkspacesSectionHeader({
+  onBeforeNavigate,
+  newWorkspaceKeys,
+}: {
+  // Called before navigating away (mobile closes the sidebar overlay first).
+  onBeforeNavigate?: () => void;
+  newWorkspaceKeys: ReturnType<typeof useShortcutKeys>;
+}) {
+  const { t } = useTranslation();
   const { theme } = useUnistyles();
   const setCommandCenterOpen = useKeyboardShortcutsStore((state) => state.setCommandCenterOpen);
   const commandCenterKeys = useShortcutKeys("toggle-command-center");
   const handleSearchPress = useCallback(() => setCommandCenterOpen(true), [setCommandCenterOpen]);
-  const searchButtonStyle = useCallback(
+  const handleNewWorkspace = useNewWorkspaceNavigation(onBeforeNavigate);
+  const handleHistory = useCallback(() => {
+    onBeforeNavigate?.();
+    router.push(buildSessionsRoute());
+  }, [onBeforeNavigate]);
+  const iconButtonStyle = useCallback(
     ({ hovered = false, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.workspacesHeaderIconButton,
       (hovered || pressed) && styles.workspacesHeaderIconButtonHovered,
     ],
     [],
   );
+  const iconColor = useCallback(
+    (hovered: boolean | undefined, pressed: boolean) =>
+      hovered || pressed ? theme.colors.foreground : theme.colors.foregroundMuted,
+    [theme.colors.foreground, theme.colors.foregroundMuted],
+  );
+  const newWorkspaceLabel = t("sidebar.actions.newWorkspace");
+  const historyLabel = t("sidebar.sections.sessions");
 
   return (
     <View style={styles.workspacesSectionHeader}>
@@ -882,19 +857,44 @@ function WorkspacesSectionHeader() {
           <TooltipTrigger asChild>
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel={newWorkspaceLabel}
+              testID="sidebar-global-new-workspace"
+              style={iconButtonStyle}
+              onPress={handleNewWorkspace}
+            >
+              {({ hovered, pressed }) => <Plus size={14} color={iconColor(hovered, pressed)} />}
+            </Pressable>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="center" offset={8}>
+            <HeaderIconTooltipContent label={newWorkspaceLabel} shortcutKeys={newWorkspaceKeys} />
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={historyLabel}
+              testID="sidebar-sessions"
+              style={iconButtonStyle}
+              onPress={handleHistory}
+            >
+              {({ hovered, pressed }) => <History size={14} color={iconColor(hovered, pressed)} />}
+            </Pressable>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="center" offset={8}>
+            <HeaderIconTooltipContent label={historyLabel} />
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <Pressable
+              accessibilityRole="button"
               accessibilityLabel="Open command center"
               testID="sidebar-command-center-search"
-              style={searchButtonStyle}
+              style={iconButtonStyle}
               onPress={handleSearchPress}
             >
-              {({ hovered, pressed }) => (
-                <Search
-                  size={14}
-                  color={
-                    hovered || pressed ? theme.colors.foreground : theme.colors.foregroundMuted
-                  }
-                />
-              )}
+              {({ hovered, pressed }) => <Search size={14} color={iconColor(hovered, pressed)} />}
             </Pressable>
           </TooltipTrigger>
           <TooltipContent side="bottom" align="center" offset={8}>

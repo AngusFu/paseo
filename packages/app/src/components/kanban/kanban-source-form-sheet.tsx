@@ -706,6 +706,7 @@ export function KanbanSourceFormSheet({
       <Field
         label={t("kanban.sourceForm.promptTemplate")}
         hint={t("kanban.sourceForm.promptTemplateHint")}
+        hintWrap
       >
         {/* AdaptiveTextInput is uncontrolled and discards `value`; initialValue
             seeds it, matching the dispatch-prompt input in the card detail sheet. */}

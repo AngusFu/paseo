@@ -28,11 +28,13 @@ interface FieldProps {
   label: string;
   children: ReactNode;
   hint?: string;
+  /** Let a long hint wrap instead of truncating to one line. */
+  hintWrap?: boolean;
   error?: string | null;
   testID?: string;
 }
 
-export function Field({ label, children, hint, error, testID }: FieldProps) {
+export function Field({ label, children, hint, hintWrap, error, testID }: FieldProps) {
   const hintTestID = useMemo(() => (testID ? `${testID}-hint` : undefined), [testID]);
   const errorTestID = useMemo(() => (testID ? `${testID}-error` : undefined), [testID]);
   const subtext = useMemo(() => {
@@ -45,13 +47,13 @@ export function Field({ label, children, hint, error, testID }: FieldProps) {
     }
     if (hint) {
       return (
-        <Text numberOfLines={1} style={styles.hintText} testID={hintTestID}>
+        <Text numberOfLines={hintWrap ? undefined : 1} style={styles.hintText} testID={hintTestID}>
           {hint}
         </Text>
       );
     }
     return null;
-  }, [error, hint, errorTestID, hintTestID]);
+  }, [error, hint, hintWrap, errorTestID, hintTestID]);
 
   return (
     <View style={styles.container} testID={testID}>

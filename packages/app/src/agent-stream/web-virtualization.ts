@@ -6,7 +6,12 @@ import { estimateAssistantMessageHeightFromCache } from "@/utils/assistant-messa
 // rows, so no measurement/flash/jitter). Kept generous so ordinary sessions stay
 // on the simple path and only genuinely long ones pay for virtualization.
 export const DEFAULT_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD = 300;
-export const DEFAULT_WEB_MOUNTED_RECENT_STREAM_ITEMS = 50;
+// Once a conversation virtualizes (see the threshold above), this many recent
+// items still render mounted in normal flow; only older items virtualize. Kept
+// at roughly half the threshold so crossing it stays smooth — the newest content
+// (which the user is most likely reading/expanding) never lands on the
+// virtualized path.
+export const DEFAULT_WEB_MOUNTED_RECENT_STREAM_ITEMS = 150;
 const COLLAPSED_TOOL_SEQUENCE_ROW_HEIGHT_ESTIMATE = 40;
 
 type BottomAnchorE2ETestGlobals = typeof globalThis & {

@@ -2246,6 +2246,10 @@ export const ru: TranslationResources = {
       baseUrlPlaceholder: "https://ваш-сервер.example.com",
       pollEverySec: "Интервал опроса (секунды)",
       enabled: "Включено",
+      promptTemplate: "Шаблон промпта",
+      promptTemplateHint:
+        "Необязательно. Доступны: {{title}} {{url}} {{description}} {{status}} {{assignee}} {{labels}} {{worktree}}, а также {{issueKey}}/{{contractBranch}} (Jira) или {{mrIid}} (GitLab).",
+      promptTemplatePlaceholder: "Fix {{issueKey}}: {{title}}\n{{url}}",
       save: "Сохранить",
       create: "Создать",
     },

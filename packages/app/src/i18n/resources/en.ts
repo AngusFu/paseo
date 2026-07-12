@@ -2215,6 +2215,10 @@ export const en = {
       baseUrlPlaceholder: "https://your-instance.example.com",
       pollEverySec: "Poll interval (seconds)",
       enabled: "Enabled",
+      promptTemplate: "Prompt template",
+      promptTemplateHint:
+        "Optional. Available: {{title}} {{url}} {{description}} {{status}} {{assignee}} {{labels}} {{worktree}}, plus {{issueKey}}/{{contractBranch}} (Jira) or {{mrIid}} (GitLab).",
+      promptTemplatePlaceholder: "Fix {{issueKey}}: {{title}}\n{{url}}",
       save: "Save",
       create: "Create",
     },

@@ -2238,6 +2238,10 @@ export const ptBR: TranslationResources = {
       baseUrlPlaceholder: "https://sua-instancia.example.com",
       pollEverySec: "Intervalo de verificação (segundos)",
       enabled: "Ativado",
+      promptTemplate: "Modelo de prompt",
+      promptTemplateHint:
+        "Opcional. Disponíveis: {{title}} {{url}} {{description}} {{status}} {{assignee}} {{labels}} {{worktree}}, além de {{issueKey}}/{{contractBranch}} (Jira) ou {{mrIid}} (GitLab).",
+      promptTemplatePlaceholder: "Fix {{issueKey}}: {{title}}\n{{url}}",
       save: "Salvar",
       create: "Criar",
     },

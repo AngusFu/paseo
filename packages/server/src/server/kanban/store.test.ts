@@ -547,6 +547,21 @@ describe("KanbanStore", () => {
       expect(updated?.statusMap).toBeUndefined();
     });
 
+    test("createSource persists promptTemplate and updateSource can clear it", async () => {
+      const created = await store.createSource({
+        kind: "jira",
+        name: "Jira",
+        baseUrl: "https://jira.example.com",
+        query: "project = PROJ",
+        promptTemplate: "Fix {{issueKey}}: {{title}}",
+      });
+
+      expect(created.promptTemplate).toBe("Fix {{issueKey}}: {{title}}");
+
+      const cleared = await store.updateSource({ id: created.id, promptTemplate: null });
+      expect(cleared?.promptTemplate).toBeUndefined();
+    });
+
     test("deleteSource removes the source from disk", async () => {
       const created = await store.createSource({
         kind: "jira",

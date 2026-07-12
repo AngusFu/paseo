@@ -117,6 +117,7 @@ export const KanbanSourceCreateRequestSchema = z.object({
   enabled: z.boolean().optional(),
   statusMap: z.record(z.string(), KanbanStatusSchema).optional(),
   columnMap: z.record(z.string(), z.string()).optional(),
+  promptTemplate: z.string().optional(),
   pollEverySec: z.number().int().positive().optional(),
   auth: KanbanSourceAuthSchema.optional(),
 });
@@ -137,6 +138,7 @@ export const KanbanSourceUpdateRequestSchema = z.object({
   enabled: z.boolean().optional(),
   statusMap: z.record(z.string(), KanbanStatusSchema).nullable().optional(),
   columnMap: z.record(z.string(), z.string()).nullable().optional(),
+  promptTemplate: z.string().nullable().optional(),
   pollEverySec: z.number().int().positive().optional(),
   auth: KanbanSourceAuthSchema.nullable().optional(),
 });

@@ -2181,6 +2181,10 @@ export const zhCN: TranslationResources = {
       baseUrlPlaceholder: "https://your-instance.example.com",
       pollEverySec: "轮询间隔（秒）",
       enabled: "已启用",
+      promptTemplate: "Prompt 模板",
+      promptTemplateHint:
+        "可选。可用变量：{{title}} {{url}} {{description}} {{status}} {{assignee}} {{labels}} {{worktree}}，以及 {{issueKey}}/{{contractBranch}}（Jira）或 {{mrIid}}（GitLab）。",
+      promptTemplatePlaceholder: "Fix {{issueKey}}: {{title}}\n{{url}}",
       save: "保存",
       create: "创建",
     },

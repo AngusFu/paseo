@@ -140,6 +140,10 @@ export const StoredKanbanSourceSchema = z.object({
   // Lets sync target a specific user-created column instead of only the
   // fixed six legacy statuses.
   columnMap: z.record(z.string(), z.string()).optional(),
+  // Mustache-style ({{var}}) dispatch-prompt template for cards from this
+  // source. See renderPromptTemplate (packages/app/src/utils) for the
+  // interpolation and buildDispatchPlan for the variable set.
+  promptTemplate: z.string().optional(),
   pollEverySec: z.number().int().positive(),
   auth: KanbanSourceAuthSchema.optional(),
   lastSyncAt: z.string().nullable(),
@@ -225,6 +229,7 @@ export interface CreateKanbanSourceInput {
   enabled?: boolean;
   statusMap?: Record<string, KanbanStatus>;
   columnMap?: Record<string, string>;
+  promptTemplate?: string;
   pollEverySec?: number;
   auth?: KanbanSourceAuth;
 }
@@ -238,6 +243,7 @@ export interface UpdateKanbanSourceInput {
   enabled?: boolean;
   statusMap?: Record<string, KanbanStatus> | null;
   columnMap?: Record<string, string> | null;
+  promptTemplate?: string | null;
   pollEverySec?: number;
   auth?: KanbanSourceAuth | null;
 }

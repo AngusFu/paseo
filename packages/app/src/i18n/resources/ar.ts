@@ -2205,6 +2205,10 @@ export const ar: TranslationResources = {
       baseUrlPlaceholder: "https://your-instance.example.com",
       pollEverySec: "فترة الاستطلاع (ثوانٍ)",
       enabled: "مفعّل",
+      promptTemplate: "قالب موجّه التنفيذ",
+      promptTemplateHint:
+        "اختياري. المتاح: {{title}} {{url}} {{description}} {{status}} {{assignee}} {{labels}} {{worktree}}، بالإضافة إلى {{issueKey}}/{{contractBranch}} (Jira) أو {{mrIid}} (GitLab).",
+      promptTemplatePlaceholder: "Fix {{issueKey}}: {{title}}\n{{url}}",
       save: "حفظ",
       create: "إنشاء",
     },

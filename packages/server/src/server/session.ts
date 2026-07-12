@@ -1944,6 +1944,7 @@ export class Session {
       enabled: msg.enabled,
       statusMap: msg.statusMap,
       columnMap: msg.columnMap,
+      promptTemplate: msg.promptTemplate,
       pollEverySec: msg.pollEverySec,
       auth: msg.auth,
     });
@@ -1975,6 +1976,7 @@ export class Session {
       enabled: msg.enabled,
       statusMap: msg.statusMap,
       columnMap: msg.columnMap,
+      promptTemplate: msg.promptTemplate,
       pollEverySec: msg.pollEverySec,
       auth: msg.auth,
     });

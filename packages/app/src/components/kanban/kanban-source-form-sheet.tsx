@@ -66,6 +66,7 @@ interface SourceFormValues {
   connectionId: string | null;
   enabled: boolean;
   columnMap: Record<string, string> | undefined;
+  promptTemplate: string;
 }
 
 function buildCreateInput(v: SourceFormValues): CreateKanbanSourceInput {
@@ -76,6 +77,7 @@ function buildCreateInput(v: SourceFormValues): CreateKanbanSourceInput {
     enabled: v.enabled,
     ...(v.poll !== null ? { pollEverySec: v.poll } : {}),
     ...(v.connectionId ? { connectionId: v.connectionId } : {}),
+    ...(v.promptTemplate.trim() ? { promptTemplate: v.promptTemplate.trim() } : {}),
   };
 }
 
@@ -88,6 +90,7 @@ function buildUpdateInput(id: string, v: SourceFormValues): UpdateKanbanSourceIn
     ...(v.poll !== null ? { pollEverySec: v.poll } : {}),
     connectionId: v.connectionId,
     ...(v.columnMap !== undefined ? { columnMap: v.columnMap } : {}),
+    promptTemplate: v.promptTemplate.trim() ? v.promptTemplate.trim() : null,
   };
 }
 
@@ -517,6 +520,7 @@ export function KanbanSourceFormSheet({
   const [connectionId, setConnectionId] = useState<string | null>(source?.connectionId ?? null);
   const [enabled, setEnabled] = useState(source?.enabled ?? true);
   const [columnMap, setColumnMap] = useState<Record<string, string>>(source?.columnMap ?? {});
+  const [promptTemplate, setPromptTemplate] = useState(source?.promptTemplate ?? "");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -563,6 +567,7 @@ export function KanbanSourceFormSheet({
         connectionId: effectiveConnectionId,
         enabled,
         columnMap: Object.keys(columnMap).length > 0 ? columnMap : undefined,
+        promptTemplate,
       };
       if (mode === "edit" && source) {
         await mutations.updateSource(buildUpdateInput(source.id, values));
@@ -586,6 +591,7 @@ export function KanbanSourceFormSheet({
     name,
     onClose,
     pollEverySec,
+    promptTemplate,
     query,
     source,
   ]);
@@ -694,6 +700,27 @@ export function KanbanSourceFormSheet({
           onValueChange={setEnabled}
           accessibilityLabel={t("kanban.sourceForm.enabled")}
           testID="kanban-source-enabled-switch"
+        />
+      </Field>
+
+      <Field
+        label={t("kanban.sourceForm.promptTemplate")}
+        hint={t("kanban.sourceForm.promptTemplateHint")}
+      >
+        {/* AdaptiveTextInput is uncontrolled and discards `value`; initialValue
+            seeds it, matching the dispatch-prompt input in the card detail sheet. */}
+        <FormTextInput
+          size={controlSize}
+          testID="kanban-source-prompt-template-input"
+          accessibilityLabel={t("kanban.sourceForm.promptTemplate")}
+          initialValue={promptTemplate}
+          onChangeText={setPromptTemplate}
+          placeholder={t("kanban.sourceForm.promptTemplatePlaceholder")}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+          autoCapitalize="none"
+          autoCorrect={false}
         />
       </Field>
 

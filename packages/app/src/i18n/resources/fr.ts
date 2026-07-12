@@ -2260,6 +2260,10 @@ export const fr: TranslationResources = {
       baseUrlPlaceholder: "https://votre-instance.example.com",
       pollEverySec: "Intervalle d'interrogation (secondes)",
       enabled: "Activé",
+      promptTemplate: "Modèle de prompt",
+      promptTemplateHint:
+        "Facultatif. Disponibles : {{title}} {{url}} {{description}} {{status}} {{assignee}} {{labels}} {{worktree}}, plus {{issueKey}}/{{contractBranch}} (Jira) ou {{mrIid}} (GitLab).",
+      promptTemplatePlaceholder: "Fix {{issueKey}}: {{title}}\n{{url}}",
       save: "Enregistrer",
       create: "Créer",
     },

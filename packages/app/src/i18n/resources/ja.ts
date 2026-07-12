@@ -2232,6 +2232,10 @@ export const ja: TranslationResources = {
       baseUrlPlaceholder: "https://your-instance.example.com",
       pollEverySec: "ポーリング間隔（秒）",
       enabled: "有効",
+      promptTemplate: "プロンプトテンプレート",
+      promptTemplateHint:
+        "任意。使用可能: {{title}} {{url}} {{description}} {{status}} {{assignee}} {{labels}} {{worktree}}、ほか {{issueKey}}/{{contractBranch}}（Jira）や {{mrIid}}（GitLab）。",
+      promptTemplatePlaceholder: "Fix {{issueKey}}: {{title}}\n{{url}}",
       save: "保存",
       create: "作成",
     },

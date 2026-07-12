@@ -475,6 +475,7 @@ export class KanbanStore {
         query: input.query,
         statusMap: input.statusMap,
         columnMap: input.columnMap,
+        promptTemplate: input.promptTemplate,
         pollEverySec: input.pollEverySec ?? 300,
         auth: input.auth,
         lastSyncAt: null,
@@ -504,6 +505,10 @@ export class KanbanStore {
         enabled: input.enabled ?? current.enabled,
         statusMap: input.statusMap === null ? undefined : (input.statusMap ?? current.statusMap),
         columnMap: input.columnMap === null ? undefined : (input.columnMap ?? current.columnMap),
+        promptTemplate:
+          input.promptTemplate === null
+            ? undefined
+            : (input.promptTemplate ?? current.promptTemplate),
         pollEverySec: input.pollEverySec ?? current.pollEverySec,
         auth: input.auth === null ? undefined : (input.auth ?? current.auth),
         updatedAt: new Date().toISOString(),

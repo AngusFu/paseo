@@ -12,7 +12,9 @@ import type {
   KanbanCardDetailAttachment,
   KanbanCardDetailComment,
   KanbanCardSource,
+  KanbanSourceKind,
   StoredKanbanCard,
+  StoredKanbanSource,
 } from "@getpaseo/protocol/kanban/types";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { resolveKanbanCardTheme } from "@/components/kanban/kanban-card-theme";
@@ -27,6 +29,7 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
 import { useFormPreferences } from "@/hooks/use-form-preferences";
 import { useKanbanCardComments, useKanbanCardDetail } from "@/hooks/use-kanban-card-detail";
+import { useKanbanSources } from "@/hooks/use-kanban-sources";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { resolveDefaultModelId } from "@/provider-selection/resolve-agent-form";
 import { useHostRuntimeClient, useHosts } from "@/runtime/host-runtime";
@@ -34,6 +37,7 @@ import { useSessionStore } from "@/stores/session-store";
 import type { HostProfile } from "@/types/host-connection";
 import { buildDaemonWebSocketUrl } from "@/utils/daemon-endpoints";
 import { toErrorMessage } from "@/utils/error-messages";
+import { renderPromptTemplate } from "@/utils/kanban-prompt-template";
 import { formatTimeAgo } from "@/utils/time";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { requireWorkspaceDirectory } from "@/utils/workspace-directory";
@@ -184,7 +188,44 @@ interface DispatchPlan {
   prompt: string;
 }
 
-function buildDispatchPlan(card: StoredKanbanCard, detail: KanbanCardDetail | null): DispatchPlan {
+// First same-kind source with a configured promptTemplate. Cards don't carry
+// a sourceId, so kind is the same matching heuristic the detail service uses
+// elsewhere to pick a source for a card.
+function findPromptTemplate(
+  kind: KanbanSourceKind,
+  sources: readonly StoredKanbanSource[],
+): string | null {
+  return (
+    sources.find((source) => source.kind === kind && source.promptTemplate)?.promptTemplate ?? null
+  );
+}
+
+// Variables shared by every kind's template; kind-specific ones (issueKey,
+// contractBranch, mrIid) are added by the caller.
+function buildCommonTemplateVars(
+  card: StoredKanbanCard,
+  detail: KanbanCardDetail | null,
+  title: string,
+  url: string | null,
+  worktree: string | null,
+): Record<string, string> {
+  const labels = detail?.labels ?? card.labels ?? [];
+  return {
+    title,
+    url: url ?? "",
+    description: detail?.descriptionMarkdown ?? "",
+    status: detail?.externalStatus ?? "",
+    assignee: detail?.assignee ?? card.assignee ?? "",
+    labels: labels.join(", "),
+    worktree: worktree ?? "",
+  };
+}
+
+function buildDispatchPlan(
+  card: StoredKanbanCard,
+  detail: KanbanCardDetail | null,
+  sources: readonly StoredKanbanSource[],
+): DispatchPlan {
   const title = detail?.title ?? card.title;
   const url = detail?.url ?? card.url;
 
@@ -199,6 +240,15 @@ function buildDispatchPlan(card: StoredKanbanCard, detail: KanbanCardDetail | nu
     const worktree = slug
       ? `fix-${issueKey.toLowerCase()}-${slug}`
       : `fix-${issueKey.toLowerCase()}`;
+    const template = findPromptTemplate("jira", sources);
+    if (template) {
+      const prompt = renderPromptTemplate(template, {
+        ...buildCommonTemplateVars(card, detail, title, url, worktree),
+        issueKey,
+        contractBranch,
+      });
+      return { worktree, title: issueKey, prompt };
+    }
     const prefix = `Fix ${issueKey}: ${title}`;
     const rename = `First rename the worktree branch to match the repo's branch contract: git branch -m "${contractBranch}".`;
     const prompt = url ? `${prefix}\n${url}\n${rename}` : `${prefix}\n${rename}`;
@@ -213,6 +263,14 @@ function buildDispatchPlan(card: StoredKanbanCard, detail: KanbanCardDetail | nu
     // title mentions an issue key, plain review-mr-<iid> slug otherwise.
     const issueKey = issueKeyFromTitle(title);
     const worktree = issueKey ? `chore/${issueKey}_review-mr-${mrIid}` : `chore/review-mr-${mrIid}`;
+    const template = findPromptTemplate("gitlab", sources);
+    if (template) {
+      const prompt = renderPromptTemplate(template, {
+        ...buildCommonTemplateVars(card, detail, title, url, worktree),
+        mrIid,
+      });
+      return { worktree, title: titleArg, prompt };
+    }
     const prefix = `Review merge request !${mrIid}: ${title}`;
     const prompt = url
       ? `${prefix}\n${url}\nCheck out the MR source branch in this worktree before reviewing.`
@@ -727,12 +785,14 @@ function DispatchSection({
     setSelectedWorkspaceId(value);
   }, []);
 
-  const plan = useMemo(() => buildDispatchPlan(card, detail), [card, detail]);
+  const { sources, isLoading: isSourcesLoading } = useKanbanSources(serverId);
+  const plan = useMemo(() => buildDispatchPlan(card, detail, sources), [card, detail, sources]);
   // Remounts DispatchActions (and its editable-prompt draft) whenever the card
-  // changes, or once detail finishes loading for a card — so a freshly
-  // fetched title/url regenerates the prefilled prompt exactly once, while
-  // further re-renders (e.g. comments loading) don't clobber user edits.
-  const promptResetKey = `${card.id}:${detail ? "loaded" : "pending"}`;
+  // changes, or once detail and sources finish loading for a card — so a
+  // freshly fetched title/url/promptTemplate regenerates the prefilled prompt
+  // exactly once, while further re-renders (e.g. comments loading) don't
+  // clobber user edits.
+  const promptResetKey = `${card.id}:${detail ? "loaded" : "pending"}:${isSourcesLoading ? "pending" : "loaded"}`;
 
   return (
     <View style={styles.section}>
@@ -826,9 +886,11 @@ function DispatchActions({
   return (
     <>
       <Field label={t("kanban.cardDetail.dispatchPromptLabel")}>
+        {/* AdaptiveTextInput is intentionally uncontrolled and discards `value`;
+            initialValue + the parent's key-based remount seed the template. */}
         <FormTextInput
           size="sm"
-          value={prompt}
+          initialValue={plan.prompt}
           onChangeText={setPrompt}
           multiline
           numberOfLines={4}

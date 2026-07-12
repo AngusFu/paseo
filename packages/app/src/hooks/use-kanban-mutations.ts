@@ -109,21 +109,27 @@ export function useKanbanMutations({ serverId }: { serverId: string }): UseKanba
     onMutate: async (input): Promise<CardListSnapshot> => {
       await queryClient.cancelQueries({ queryKey: kanbanCardsQueryBaseKey });
       const snapshot = snapshotCards(queryClient);
-      updateCardsData(queryClient, (cards) =>
-        cards.map((card) =>
+      updateCardsData(queryClient, (cards) => {
+        // Append to the end of the target column to match the server's append
+        // semantics (max(order)+1), so the card doesn't jump when the fetch
+        // reconciles. An explicit order (drop between cards) wins.
+        const maxOrder = cards.reduce(
+          (max, card) =>
+            card.status === input.status && card.id !== input.id ? Math.max(max, card.order) : max,
+          Number.NEGATIVE_INFINITY,
+        );
+        const nextOrder = input.order ?? (Number.isFinite(maxOrder) ? maxOrder + 1 : 0);
+        return cards.map((card) =>
           card.id === input.id
             ? {
                 ...card,
                 status: input.status,
                 statusPinnedByUser: true,
-                // Append to the end of the target column to match the server's
-                // append semantics, so the card doesn't jump when the fetch
-                // reconciles. An explicit order (drop between cards) wins.
-                order: input.order ?? Number.MAX_SAFE_INTEGER,
+                order: nextOrder,
               }
             : card,
-        ),
-      );
+        );
+      });
       return snapshot;
     },
     onError: (_error, _input, context) => {

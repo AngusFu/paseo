@@ -45,6 +45,11 @@ export function useKanbanCards(serverId: string | null): UseKanbanCardsResult {
     },
     dataShape: "list",
     staleTimeMs: 5_000,
+    // Daemon polls the source (e.g. Jira) in the background and writes cards to
+    // disk without pushing an event to the client, so poll here too. Only while
+    // the window is focused (react-query's refetchIntervalInBackground default
+    // is false).
+    refetchInterval: 30_000,
   });
 
   return {

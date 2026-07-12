@@ -1,4 +1,4 @@
-import { useCallback, useRef, type ReactElement } from "react";
+import { memo, useCallback, useRef, type ReactElement } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
@@ -39,7 +39,7 @@ interface KanbanCardProps {
  * long-press opens the status picker (the native path to change columns). On
  * web the whole card is a pointer-drag handle for cross-column moves.
  */
-export function KanbanCard({
+export const KanbanCard = memo(function KanbanCard({
   card,
   onPress,
   onLongPress,
@@ -178,7 +178,7 @@ export function KanbanCard({
       </Animated.View>
     </GestureDetector>
   );
-}
+});
 
 const styles = StyleSheet.create((theme) => ({
   // Static color holder for the default (unthemed) card glyph.

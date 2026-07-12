@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactElement } from "react";
+import { memo, useCallback, useMemo, type ReactElement } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import type { StoredKanbanCard, KanbanStatus } from "@getpaseo/protocol/kanban/types";
@@ -45,7 +45,7 @@ interface KanbanColumnProps {
  * so the two don't fight. The drop hit-test is on the outer column View's X
  * bounds, which the inner scroll doesn't change.
  */
-export function KanbanColumn({
+export const KanbanColumn = memo(function KanbanColumn({
   status,
   label,
   cards,
@@ -120,7 +120,7 @@ export function KanbanColumn({
       </ScrollView>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create((theme) => ({
   column: {

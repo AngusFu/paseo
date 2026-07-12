@@ -2204,6 +2204,8 @@ export const es: TranslationResources = {
       confirmDelete: '¿Eliminar "{{name}}"? Esta acción no se puede deshacer.',
     },
     connectionForm: {
+      baseUrlPlaceholderJira: "https://your-org.atlassian.net",
+      baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "Nueva conexión",
       editTitle: "Editar conexión",
       kind: "Tipo",

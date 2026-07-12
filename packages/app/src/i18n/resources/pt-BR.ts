@@ -2190,6 +2190,8 @@ export const ptBR: TranslationResources = {
       confirmDelete: 'Excluir "{{name}}"? Isso não pode ser desfeito.',
     },
     connectionForm: {
+      baseUrlPlaceholderJira: "https://your-org.atlassian.net",
+      baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "Nova conexão",
       editTitle: "Editar conexão",
       kind: "Tipo",

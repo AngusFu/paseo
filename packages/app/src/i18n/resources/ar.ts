@@ -2157,6 +2157,8 @@ export const ar: TranslationResources = {
       confirmDelete: 'حذف "{{name}}"؟ لا يمكن التراجع عن ذلك.',
     },
     connectionForm: {
+      baseUrlPlaceholderJira: "https://your-org.atlassian.net",
+      baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "اتصال جديد",
       editTitle: "تعديل الاتصال",
       kind: "النوع",

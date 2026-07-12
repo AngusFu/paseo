@@ -2212,6 +2212,8 @@ export const fr: TranslationResources = {
       confirmDelete: "Supprimer « {{name}} » ? Cette action est irréversible.",
     },
     connectionForm: {
+      baseUrlPlaceholderJira: "https://your-org.atlassian.net",
+      baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "Nouvelle connexion",
       editTitle: "Modifier la connexion",
       kind: "Type",

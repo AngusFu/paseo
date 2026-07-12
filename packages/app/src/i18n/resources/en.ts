@@ -2167,6 +2167,8 @@ export const en = {
       confirmDelete: 'Delete "{{name}}"? This cannot be undone.',
     },
     connectionForm: {
+      baseUrlPlaceholderJira: "https://your-org.atlassian.net",
+      baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "New connection",
       editTitle: "Edit connection",
       kind: "Type",

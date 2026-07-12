@@ -2198,6 +2198,8 @@ export const ru: TranslationResources = {
       confirmDelete: "Удалить «{{name}}»? Это действие нельзя отменить.",
     },
     connectionForm: {
+      baseUrlPlaceholderJira: "https://your-org.atlassian.net",
+      baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "Новое подключение",
       editTitle: "Изменить подключение",
       kind: "Тип",

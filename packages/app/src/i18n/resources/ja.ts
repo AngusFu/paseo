@@ -2184,6 +2184,8 @@ export const ja: TranslationResources = {
       confirmDelete: "「{{name}}」を削除しますか？この操作は取り消せません。",
     },
     connectionForm: {
+      baseUrlPlaceholderJira: "https://your-org.atlassian.net",
+      baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "新しい接続",
       editTitle: "接続を編集",
       kind: "種類",

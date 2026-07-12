@@ -356,7 +356,11 @@ export function KanbanConnectionFormSheet({
           initialValue={baseUrl}
           value={baseUrl}
           onChangeText={setBaseUrl}
-          placeholder={t("kanban.connectionForm.baseUrlPlaceholder")}
+          placeholder={t(
+            kind === "gitlab"
+              ? "kanban.connectionForm.baseUrlPlaceholderGitlab"
+              : "kanban.connectionForm.baseUrlPlaceholderJira",
+          )}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"

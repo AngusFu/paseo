@@ -2133,6 +2133,8 @@ export const zhCN: TranslationResources = {
       confirmDelete: "删除“{{name}}”？此操作无法撤销。",
     },
     connectionForm: {
+      baseUrlPlaceholderJira: "https://your-org.atlassian.net",
+      baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "新建连接",
       editTitle: "编辑连接",
       kind: "类型",

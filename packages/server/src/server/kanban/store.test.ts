@@ -1,11 +1,48 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { KanbanStore } from "./store.js";
-import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
+import type { KanbanColumn, KanbanStatus, StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 
 const numericAsc = (x: number, y: number): number => x - y;
+
+// Named top-level helpers rather than inline arrows in .map/.find chains
+// inside tests — describe > describe > test already nests three deep, and
+// an inline arrow there trips max-nested-callbacks.
+function titleOf(column: KanbanColumn): string {
+  return column.title;
+}
+function legacyStatusOf(column: KanbanColumn): KanbanStatus {
+  return column.legacyStatus;
+}
+function isNotHidden(column: KanbanColumn): boolean {
+  return !column.hidden;
+}
+function orderOf(column: KanbanColumn): number {
+  return column.order;
+}
+function hasLegacyStatus(status: KanbanStatus) {
+  return (column: KanbanColumn): boolean => column.legacyStatus === status;
+}
+function hasId(id: string) {
+  return (item: { id: string }): boolean => item.id === id;
+}
+function toIdEntry(card: StoredKanbanCard): [string, StoredKanbanCard] {
+  return [card.id, card];
+}
+
+// upsertCardBySource is a low-level store API — sync.ts always resolves a
+// real columnId before calling it, so these direct-call tests need one too.
+// The three default columns map 1:1 to pending/wip/done.
+async function columnIdForStatus(store: KanbanStore, status: KanbanStatus): Promise<string> {
+  const columns = await store.listColumns();
+  const match = columns.find((column) => column.legacyStatus === status);
+  if (!match) {
+    throw new Error(`No default column for status: ${status}`);
+  }
+  return match.id;
+}
 
 function cardsByExternalId(cards: StoredKanbanCard[]): Map<string | null, StoredKanbanCard> {
   const byExternalId = new Map<string | null, StoredKanbanCard>();
@@ -98,6 +135,7 @@ describe("KanbanStore", () => {
         title: "Initial title",
         url: "https://jira.example.com/browse/PROJ-1",
         status: "pending",
+        columnId: await columnIdForStatus(store, "pending"),
         theme: "jira",
       });
 
@@ -105,6 +143,7 @@ describe("KanbanStore", () => {
         title: "Updated title",
         url: "https://jira.example.com/browse/PROJ-1",
         status: "wip",
+        columnId: await columnIdForStatus(store, "wip"),
         theme: "jira",
       });
 
@@ -122,6 +161,7 @@ describe("KanbanStore", () => {
         title: "Pinned card",
         url: null,
         status: "pending",
+        columnId: await columnIdForStatus(store, "pending"),
         theme: "jira",
       });
 
@@ -132,6 +172,7 @@ describe("KanbanStore", () => {
         title: "Pinned card (renamed upstream)",
         url: null,
         status: "wip",
+        columnId: await columnIdForStatus(store, "wip"),
         theme: "jira",
       });
 
@@ -151,17 +192,20 @@ describe("KanbanStore", () => {
         mrIid: "2",
       };
 
+      const pendingColumnId = await columnIdForStatus(store, "pending");
       const [a, b] = await Promise.all([
         store.upsertCardBySource(source, {
           title: "Concurrent A",
           url: null,
           status: "pending",
+          columnId: pendingColumnId,
           theme: "gitlab-mr",
         }),
         store.upsertCardBySource(source, {
           title: "Concurrent B",
           url: null,
           status: "pending",
+          columnId: pendingColumnId,
           theme: "gitlab-mr",
         }),
       ]);
@@ -176,6 +220,7 @@ describe("KanbanStore", () => {
         title: "Synced",
         url: null,
         status: "pending",
+        columnId: await columnIdForStatus(store, "pending"),
         theme: "jira",
       });
       expect(created.statusPinnedByUser).toBe(false);
@@ -187,6 +232,7 @@ describe("KanbanStore", () => {
         title: "Synced",
         url: null,
         status: "wip",
+        columnId: await columnIdForStatus(store, "wip"),
         theme: "jira",
       });
       expect(synced.status).toBe("done");
@@ -194,10 +240,12 @@ describe("KanbanStore", () => {
 
     test("upsertCardBySource clears assignee when the upstream ticket becomes unassigned", async () => {
       const source = { kind: "jira" as const, externalId: "jira:PROJ-10", issueKey: "PROJ-10" };
+      const pendingColumnId = await columnIdForStatus(store, "pending");
       const withAssignee = await store.upsertCardBySource(source, {
         title: "Assigned",
         url: null,
         status: "pending",
+        columnId: pendingColumnId,
         theme: "jira",
         assignee: "Ada",
       });
@@ -207,6 +255,7 @@ describe("KanbanStore", () => {
         title: "Assigned",
         url: null,
         status: "pending",
+        columnId: pendingColumnId,
         theme: "jira",
         assignee: null,
       });
@@ -214,17 +263,19 @@ describe("KanbanStore", () => {
     });
 
     test("listCards reflects upserts served from the in-memory cache, and a fresh store instance recovers from disk", async () => {
+      const pendingColumnId = await columnIdForStatus(store, "pending");
+      const wipColumnId = await columnIdForStatus(store, "wip");
       await store.upsertCardBySource(
         { kind: "jira", externalId: "jira:PROJ-20", issueKey: "PROJ-20" },
-        { title: "Card A", url: null, status: "pending", theme: "jira" },
+        { title: "Card A", url: null, status: "pending", columnId: pendingColumnId, theme: "jira" },
       );
       const second = await store.upsertCardBySource(
         { kind: "jira", externalId: "jira:PROJ-21", issueKey: "PROJ-21" },
-        { title: "Card B", url: null, status: "pending", theme: "jira" },
+        { title: "Card B", url: null, status: "pending", columnId: pendingColumnId, theme: "jira" },
       );
       const updated = await store.upsertCardBySource(
         { kind: "jira", externalId: "jira:PROJ-20", issueKey: "PROJ-20" },
-        { title: "Card A renamed", url: null, status: "wip", theme: "jira" },
+        { title: "Card A renamed", url: null, status: "wip", columnId: wipColumnId, theme: "jira" },
       );
 
       const cached = await store.listCards();
@@ -266,6 +317,161 @@ describe("KanbanStore", () => {
       const orders = [a.order, b.order, c.order].sort(numericAsc);
       expect(new Set(orders).size).toBe(3);
       expect(orders).toEqual([0, 1, 2]);
+    });
+  });
+
+  describe("columns", () => {
+    test("lazily migrates three default status-category columns (To Do/In Progress/Done)", async () => {
+      const columns = await store.listColumns();
+
+      expect(columns).toHaveLength(3);
+      expect(columns.map(titleOf)).toEqual(["To Do", "In Progress", "Done"]);
+      expect(columns.map(legacyStatusOf)).toEqual(["pending", "wip", "done"]);
+      expect(columns.every(isNotHidden)).toBe(true);
+      expect(columns.map(orderOf)).toEqual([0, 1, 2]);
+
+      // Migration only ever runs once: a fresh store instance sees the same
+      // columns (same ids), not a second freshly-generated set.
+      const reloaded = new KanbanStore(tempDir);
+      const reloadedColumns = await reloaded.listColumns();
+      expect(reloadedColumns).toEqual(columns);
+    });
+
+    test("migration is idempotent under concurrent first reads", async () => {
+      const [a, b, c] = await Promise.all([
+        store.listColumns(),
+        store.listColumns(),
+        store.listColumns(),
+      ]);
+      expect(a).toEqual(b);
+      expect(b).toEqual(c);
+      expect(a).toHaveLength(3);
+    });
+
+    test("createColumn appends after the current max order by default", async () => {
+      await store.listColumns(); // triggers migration (orders 0,1,2)
+      const created = await store.createColumn({ title: "Blocked", legacyStatus: "fail" });
+
+      expect(created.order).toBe(3);
+      expect(created.hidden).toBe(false);
+      expect(created.id).toMatch(/^kbcol_[0-9a-f]{8}$/);
+
+      const columns = await store.listColumns();
+      expect(columns.map(titleOf)).toContain("Blocked");
+    });
+
+    test("updateColumn renames, hides, and changes legacyStatus", async () => {
+      const created = await store.createColumn({ title: "Review", legacyStatus: "wip" });
+
+      const updated = await store.updateColumn({
+        id: created.id,
+        title: "In Review",
+        hidden: true,
+        legacyStatus: "pending",
+      });
+
+      expect(updated).toMatchObject({
+        id: created.id,
+        title: "In Review",
+        hidden: true,
+        legacyStatus: "pending",
+      });
+    });
+
+    test("updateColumn returns null for a missing column", async () => {
+      expect(await store.updateColumn({ id: "kbcol_deadbeef", title: "x" })).toBeNull();
+    });
+
+    test("reorderColumn sets a new order value", async () => {
+      const created = await store.createColumn({ title: "Review", legacyStatus: "wip" });
+      const reordered = await store.reorderColumn({ id: created.id, order: 0.5 });
+      expect(reordered?.order).toBe(0.5);
+    });
+
+    test("deleteColumn moves its cards to moveCardsToColumnId and removes the column", async () => {
+      const columns = await store.listColumns();
+      const done = columns.find(hasLegacyStatus("done"))!;
+      const review = await store.createColumn({ title: "Review", legacyStatus: "wip" });
+
+      const card = await store.createCard({ title: "In review", status: "wip" });
+      const moved = await store.moveCard({ id: card.id, columnId: review.id, status: "wip" });
+      expect(moved?.columnId).toBe(review.id);
+
+      const deleted = await store.deleteColumn({ id: review.id, moveCardsToColumnId: done.id });
+      expect(deleted).toBe(true);
+
+      const remainingColumns = await store.listColumns();
+      expect(remainingColumns.find(hasId(review.id))).toBeUndefined();
+
+      const reloadedCard = await store.getCard(card.id);
+      expect(reloadedCard?.columnId).toBe(done.id);
+      expect(reloadedCard?.status).toBe("done");
+    });
+
+    test("deleteColumn returns false for a missing column", async () => {
+      const columns = await store.listColumns();
+      expect(
+        await store.deleteColumn({ id: "kbcol_deadbeef", moveCardsToColumnId: columns[0].id }),
+      ).toBe(false);
+    });
+
+    test("deleteColumn throws when moveCardsToColumnId does not exist", async () => {
+      const columns = await store.listColumns();
+      await expect(
+        store.deleteColumn({ id: columns[0].id, moveCardsToColumnId: "kbcol_deadbeef" }),
+      ).rejects.toThrow(/not found/);
+    });
+
+    test("backfills columnId for pre-existing cards lazily, bucketing skip/fail/abort into Done", async () => {
+      // Migrate columns first so the raw card files below can't race the
+      // migration inside listCards().
+      const columns = await store.listColumns();
+      const toDo = columns.find(hasLegacyStatus("pending"))!;
+      const inProgress = columns.find(hasLegacyStatus("wip"))!;
+      const done = columns.find(hasLegacyStatus("done"))!;
+
+      // Simulate cards persisted before columnId existed: write raw card JSON
+      // with no columnId field at all, bypassing the store's write path.
+      const cardsDir = join(tempDir, "cards");
+      await mkdir(cardsDir, { recursive: true });
+      const now = new Date().toISOString();
+      function legacyCard(id: string, status: KanbanStatus): StoredKanbanCard {
+        return {
+          id,
+          title: id,
+          url: null,
+          status,
+          theme: "manual",
+          source: { kind: "manual" },
+          externalId: null,
+          order: 0,
+          statusPinnedByUser: false,
+          createdAt: now,
+          updatedAt: now,
+        };
+      }
+      await writeFile(
+        join(cardsDir, "kbc_00000001.json"),
+        JSON.stringify(legacyCard("kbc_00000001", "pending")),
+      );
+      await writeFile(
+        join(cardsDir, "kbc_00000002.json"),
+        JSON.stringify(legacyCard("kbc_00000002", "wip")),
+      );
+      await writeFile(
+        join(cardsDir, "kbc_00000003.json"),
+        JSON.stringify(legacyCard("kbc_00000003", "skip")),
+      );
+
+      const cards = await store.listCards();
+      const byId = new Map(cards.map(toIdEntry));
+      expect(byId.get("kbc_00000001")?.columnId).toBe(toDo.id);
+      expect(byId.get("kbc_00000002")?.columnId).toBe(inProgress.id);
+      // skip/fail/abort are terminal outcomes and bucket into Done, the same
+      // as the three default columns' status-category grouping.
+      expect(byId.get("kbc_00000003")?.columnId).toBe(done.id);
+      // status itself is left untouched by the lazy backfill.
+      expect(byId.get("kbc_00000003")?.status).toBe("skip");
     });
   });
 

@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   KanbanCardSourceSchema,
   KanbanCardTriggerSchema,
+  KanbanColumnSchema,
+  KanbanExternalStatusSchema,
   KanbanPrioritySchema,
   KanbanSourceAuthSchema,
   KanbanSourceKindSchema,
@@ -62,11 +64,14 @@ export const KanbanCardUpdateRequestSchema = z.object({
 });
 
 // Drag-to-column: sets status + pins statusPinnedByUser so sync won't override.
+// columnId takes priority over status when both are present; status is kept
+// for old clients that only know the six fixed statuses.
 export const KanbanCardMoveRequestSchema = z.object({
   type: z.literal("kanban.card.move.request"),
   requestId: z.string(),
   cardId: z.string(),
   status: KanbanStatusSchema,
+  columnId: z.string().optional(),
   order: z.number().optional(),
 });
 
@@ -92,6 +97,7 @@ export const KanbanSourceCreateRequestSchema = z.object({
   baseUrl: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   statusMap: z.record(z.string(), KanbanStatusSchema).optional(),
+  columnMap: z.record(z.string(), z.string()).optional(),
   pollEverySec: z.number().int().positive().optional(),
   auth: KanbanSourceAuthSchema.optional(),
 });
@@ -111,6 +117,7 @@ export const KanbanSourceUpdateRequestSchema = z.object({
   baseUrl: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   statusMap: z.record(z.string(), KanbanStatusSchema).nullable().optional(),
+  columnMap: z.record(z.string(), z.string()).nullable().optional(),
   pollEverySec: z.number().int().positive().optional(),
   auth: KanbanSourceAuthSchema.nullable().optional(),
 });
@@ -125,6 +132,17 @@ export const KanbanSourceSyncRequestSchema = z.object({
   type: z.literal("kanban.source.sync.request"),
   requestId: z.string(),
   sourceId: z.string(),
+});
+
+// Live-fetches the external tracker's status list for a column-mapping UI —
+// not the cached statusMap/columnMap override tables. projectKey narrows a
+// Jira lookup to one project's workflow; omitted, it queries every status
+// visible to the credential instead.
+export const KanbanSourceListExternalStatusesRequestSchema = z.object({
+  type: z.literal("kanban.source.list_external_statuses.request"),
+  requestId: z.string(),
+  sourceId: z.string(),
+  projectKey: z.string().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -174,6 +192,49 @@ export const KanbanConnectionOauthStartRequestSchema = z.object({
   type: z.literal("kanban.connection.oauth.start.request"),
   requestId: z.string(),
   connectionId: z.string(),
+});
+
+// ---------------------------------------------------------------------------
+// Column requests (Jira-style configurable board columns)
+// ---------------------------------------------------------------------------
+
+export const KanbanColumnListRequestSchema = z.object({
+  type: z.literal("kanban.column.list.request"),
+  requestId: z.string(),
+});
+
+export const KanbanColumnCreateRequestSchema = z.object({
+  type: z.literal("kanban.column.create.request"),
+  requestId: z.string(),
+  title: z.string().min(1),
+  legacyStatus: KanbanStatusSchema,
+  order: z.number().optional(),
+  hidden: z.boolean().optional(),
+});
+
+export const KanbanColumnUpdateRequestSchema = z.object({
+  type: z.literal("kanban.column.update.request"),
+  requestId: z.string(),
+  columnId: z.string(),
+  title: z.string().min(1).optional(),
+  hidden: z.boolean().optional(),
+  legacyStatus: KanbanStatusSchema.optional(),
+});
+
+export const KanbanColumnReorderRequestSchema = z.object({
+  type: z.literal("kanban.column.reorder.request"),
+  requestId: z.string(),
+  columnId: z.string(),
+  order: z.number(),
+});
+
+// Deleting a column requires moving its cards somewhere; the caller must name
+// the destination column explicitly rather than the daemon guessing one.
+export const KanbanColumnDeleteRequestSchema = z.object({
+  type: z.literal("kanban.column.delete.request"),
+  requestId: z.string(),
+  columnId: z.string(),
+  moveCardsToColumnId: z.string(),
 });
 
 // ---------------------------------------------------------------------------
@@ -286,6 +347,15 @@ export const KanbanSourceSyncResponseSchema = z.object({
   }),
 });
 
+export const KanbanSourceListExternalStatusesResponseSchema = z.object({
+  type: z.literal("kanban.source.list_external_statuses.response"),
+  payload: z.object({
+    requestId: z.string(),
+    statuses: z.array(KanbanExternalStatusSchema),
+    error: z.string().nullable(),
+  }),
+});
+
 // ---------------------------------------------------------------------------
 // Connection responses
 // ---------------------------------------------------------------------------
@@ -331,6 +401,55 @@ export const KanbanConnectionOauthStartResponseSchema = z.object({
   payload: z.object({
     requestId: z.string(),
     authorizeUrl: z.string().nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+// ---------------------------------------------------------------------------
+// Column responses
+// ---------------------------------------------------------------------------
+
+export const KanbanColumnListResponseSchema = z.object({
+  type: z.literal("kanban.column.list.response"),
+  payload: z.object({
+    requestId: z.string(),
+    columns: z.array(KanbanColumnSchema),
+    error: z.string().nullable(),
+  }),
+});
+
+export const KanbanColumnCreateResponseSchema = z.object({
+  type: z.literal("kanban.column.create.response"),
+  payload: z.object({
+    requestId: z.string(),
+    column: KanbanColumnSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const KanbanColumnUpdateResponseSchema = z.object({
+  type: z.literal("kanban.column.update.response"),
+  payload: z.object({
+    requestId: z.string(),
+    column: KanbanColumnSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const KanbanColumnReorderResponseSchema = z.object({
+  type: z.literal("kanban.column.reorder.response"),
+  payload: z.object({
+    requestId: z.string(),
+    column: KanbanColumnSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const KanbanColumnDeleteResponseSchema = z.object({
+  type: z.literal("kanban.column.delete.response"),
+  payload: z.object({
+    requestId: z.string(),
+    columnId: z.string(),
     error: z.string().nullable(),
   }),
 });

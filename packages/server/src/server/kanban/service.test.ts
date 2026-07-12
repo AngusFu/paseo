@@ -84,6 +84,43 @@ describe("KanbanService connection secret handling", () => {
     expect(await secrets.get(credentialRefForConnection(created.connection!.id))).toBeNull();
   });
 
+  test("listColumns returns the three lazily-migrated default columns", async () => {
+    const result = await service.listColumns();
+    expect(result.error).toBeNull();
+    expect(result.columns.map((column) => column.title)).toEqual(["To Do", "In Progress", "Done"]);
+  });
+
+  test("createColumn/updateColumn/reorderColumn/deleteColumn delegate to the store", async () => {
+    const created = await service.createColumn({ title: "Blocked", legacyStatus: "fail" });
+    expect(created.error).toBeNull();
+    expect(created.column?.title).toBe("Blocked");
+
+    const updated = await service.updateColumn({ id: created.column!.id, hidden: true });
+    expect(updated.column?.hidden).toBe(true);
+
+    const reordered = await service.reorderColumn({ id: created.column!.id, order: 0.5 });
+    expect(reordered.column?.order).toBe(0.5);
+
+    const done = (await service.listColumns()).columns.find((c) => c.legacyStatus === "done")!;
+    const deleted = await service.deleteColumn({
+      id: created.column!.id,
+      moveCardsToColumnId: done.id,
+    });
+    expect(deleted.error).toBeNull();
+
+    const remaining = await service.listColumns();
+    expect(remaining.columns.find((c) => c.id === created.column!.id)).toBeUndefined();
+  });
+
+  test("deleteColumn reports an error for a missing column id", async () => {
+    const done = (await service.listColumns()).columns.find((c) => c.legacyStatus === "done")!;
+    const result = await service.deleteColumn({
+      id: "kbcol_deadbeef",
+      moveCardsToColumnId: done.id,
+    });
+    expect(result.error).toContain("not found");
+  });
+
   test("a source referencing a connected connection syncs using its credential", async () => {
     const connection = await service.createConnection({
       kind: "jira",

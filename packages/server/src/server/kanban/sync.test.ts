@@ -28,7 +28,7 @@ describe("KanbanSyncService", () => {
           key: "PROJ-1",
           fields: {
             summary: "Fix the thing",
-            status: { name: "In Progress" },
+            status: { name: "In Progress", statusCategory: { key: "indeterminate" } },
             assignee: { displayName: "Ada Lovelace" },
             labels: ["bug"],
           },
@@ -37,7 +37,7 @@ describe("KanbanSyncService", () => {
           key: "PROJ-2",
           fields: {
             summary: "Ship the feature",
-            status: { name: "To Do" },
+            status: { name: "To Do", statusCategory: { key: "new" } },
             assignee: null,
             labels: [],
           },
@@ -113,7 +113,7 @@ describe("KanbanSyncService", () => {
     expect(result.source?.lastSyncError).toContain("500");
   });
 
-  test("syncs a GitLab source and maps default statuses", async () => {
+  test("syncs a GitLab source and maps statuses by category (opened incl. draft -> wip, merged -> done)", async () => {
     const gitlabResponse = [
       {
         iid: 5,
@@ -158,8 +158,285 @@ describe("KanbanSyncService", () => {
 
     const byExternalId = new Map(result.cards.map((card) => [card.externalId, card]));
     expect(byExternalId.get("gitlab:42!5")?.status).toBe("wip");
-    expect(byExternalId.get("gitlab:42!6")?.status).toBe("pending");
+    expect(byExternalId.get("gitlab:42!6")?.status).toBe("wip");
     expect(byExternalId.get("gitlab:42!7")?.status).toBe("done");
+  });
+
+  test("does not auto-create a column for an unmapped Jira status name — never more than the default 3 columns", async () => {
+    const jiraResponse = {
+      issues: Array.from({ length: 5 }, (_, i) => ({
+        key: `PROJ-${i + 1}`,
+        fields: {
+          summary: `Issue ${i + 1}`,
+          status: { name: `Custom Status ${i + 1}`, statusCategory: { key: "indeterminate" } },
+        },
+      })),
+    };
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => jiraResponse,
+    })) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "project = PROJ",
+    });
+
+    const result = await syncService.sync(source);
+    expect(result.error).toBeNull();
+    expect(result.cards).toHaveLength(5);
+    expect(result.cards.every((card) => card.status === "wip")).toBe(true);
+
+    const columns = await store.listColumns();
+    expect(columns).toHaveLength(3);
+  });
+
+  test("source.columnMap targets a specific column, overriding the statusCategory bucket", async () => {
+    const jiraResponse = {
+      issues: [
+        {
+          key: "PROJ-1",
+          fields: {
+            summary: "Needs review",
+            status: { name: "In Review", statusCategory: { key: "indeterminate" } },
+          },
+        },
+      ],
+    };
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => jiraResponse,
+    })) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const doneColumn = (await store.listColumns()).find(
+      (column) => column.legacyStatus === "done",
+    )!;
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "project = PROJ",
+      columnMap: { "In Review": doneColumn.id },
+    });
+
+    const result = await syncService.sync(source);
+    const card = result.cards[0];
+    expect(card.columnId).toBe(doneColumn.id);
+    expect(card.status).toBe("done");
+  });
+
+  test("source.statusMap (legacy) picks a column by legacyStatus when columnMap has no entry", async () => {
+    const jiraResponse = {
+      issues: [
+        {
+          key: "PROJ-1",
+          fields: {
+            summary: "Blocked ticket",
+            status: { name: "Blocked", statusCategory: { key: "indeterminate" } },
+          },
+        },
+      ],
+    };
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => jiraResponse,
+    })) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "project = PROJ",
+      // statusMap still uses the old KanbanStatus value type; "Blocked" would
+      // otherwise land in In Progress via statusCategory "indeterminate".
+      statusMap: { Blocked: "pending" },
+    });
+
+    const result = await syncService.sync(source);
+    const card = result.cards[0];
+    expect(card.status).toBe("pending");
+  });
+
+  test("falls back to the first non-hidden column when nothing matches the statusCategory bucket", async () => {
+    const columns = await store.listColumns();
+    const wipColumn = columns.find((column) => column.legacyStatus === "wip")!;
+    // Simulate a user deleting the "In Progress" column, moving its cards to
+    // "Done" and hiding "To Do" — nothing left has legacyStatus "wip".
+    const doneColumn = columns.find((column) => column.legacyStatus === "done")!;
+    await store.deleteColumn({ id: wipColumn.id, moveCardsToColumnId: doneColumn.id });
+    const toDoColumn = columns.find((column) => column.legacyStatus === "pending")!;
+    await store.updateColumn({ id: toDoColumn.id, hidden: true });
+
+    const jiraResponse = {
+      issues: [
+        {
+          key: "PROJ-1",
+          fields: {
+            summary: "In flight",
+            status: { name: "In Progress", statusCategory: { key: "indeterminate" } },
+          },
+        },
+      ],
+    };
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => jiraResponse,
+    })) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "project = PROJ",
+    });
+
+    const result = await syncService.sync(source);
+    const card = result.cards[0];
+    // Falls back to the first non-hidden column rather than throwing —
+    // Done is the only remaining non-hidden column.
+    expect(card.columnId).toBe(doneColumn.id);
+  });
+
+  test("does not move a statusPinnedByUser card's columnId or status on sync", async () => {
+    const source = { kind: "jira" as const, externalId: "jira:PROJ-5", issueKey: "PROJ-5" };
+    const pendingColumnId = (await store.listColumns()).find(
+      (c) => c.legacyStatus === "pending",
+    )!.id;
+    const created = await store.upsertCardBySource(source, {
+      title: "Pinned",
+      url: null,
+      status: "pending",
+      columnId: pendingColumnId,
+      theme: "jira",
+    });
+    const moved = await store.moveCard({ id: created.id, status: "done" });
+    expect(moved?.statusPinnedByUser).toBe(true);
+    const doneColumnId = moved!.columnId!;
+
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({
+        issues: [
+          {
+            key: "PROJ-5",
+            fields: {
+              summary: "Pinned",
+              status: { name: "In Progress", statusCategory: { key: "indeterminate" } },
+            },
+          },
+        ],
+      }),
+    })) as unknown as typeof fetch;
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const syncSource = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "project = PROJ",
+    });
+
+    await syncService.sync({ ...syncSource, id: syncSource.id });
+    const card = await store.getCard(created.id);
+    expect(card?.status).toBe("done");
+    expect(card?.columnId).toBe(doneColumnId);
+  });
+
+  test("listExternalStatuses returns GitLab's fixed status vocabulary without a fetch", async () => {
+    const fetchImpl = vi.fn();
+    const syncService = new KanbanSyncService({
+      store,
+      secrets,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const source = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+      query: "state=opened",
+    });
+
+    const statuses = await syncService.listExternalStatuses(source);
+    expect(statuses).toEqual([
+      { name: "opened", category: "opened" },
+      { name: "merged", category: "merged" },
+      { name: "closed", category: "closed" },
+    ]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test("listExternalStatuses queries the global Jira status list and dedupes by name", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => [
+        { name: "To Do", statusCategory: { key: "new" } },
+        { name: "In Progress", statusCategory: { key: "indeterminate" } },
+        { name: "To Do", statusCategory: { key: "new" } },
+      ],
+    })) as unknown as typeof fetch;
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "project = PROJ",
+    });
+
+    const statuses = await syncService.listExternalStatuses(source);
+    expect(statuses).toEqual([
+      { name: "To Do", category: "new" },
+      { name: "In Progress", category: "indeterminate" },
+    ]);
+    const [url] = fetchImpl.mock.calls[0];
+    expect(url).toContain("/rest/api/3/status");
+  });
+
+  test("listExternalStatuses queries the project workflow when projectKey is given, flattening grouped statuses", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => [
+        {
+          statuses: [
+            { name: "Backlog", statusCategory: { key: "new" } },
+            { name: "In Progress", statusCategory: { key: "indeterminate" } },
+          ],
+        },
+      ],
+    })) as unknown as typeof fetch;
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "project = PROJ",
+    });
+
+    const statuses = await syncService.listExternalStatuses(source, "PROJ");
+    expect(statuses).toEqual([
+      { name: "Backlog", category: "new" },
+      { name: "In Progress", category: "indeterminate" },
+    ]);
+    const [url] = fetchImpl.mock.calls[0];
+    expect(url).toContain("/rest/api/3/project/PROJ/statuses");
   });
 
   test("resolves a token secret via source.auth (legacy, no connection) and sends it as a bearer/PAT header", async () => {

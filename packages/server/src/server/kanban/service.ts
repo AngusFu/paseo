@@ -1,13 +1,19 @@
 import type pino from "pino";
 import type {
   CreateKanbanCardInput,
+  CreateKanbanColumnInput,
   CreateKanbanConnectionInput,
   CreateKanbanSourceInput,
+  DeleteKanbanColumnInput,
+  KanbanColumn,
+  KanbanExternalStatus,
   MoveKanbanCardInput,
+  ReorderKanbanColumnInput,
   StoredKanbanCard,
   StoredKanbanConnection,
   StoredKanbanSource,
   UpdateKanbanCardInput,
+  UpdateKanbanColumnInput,
   UpdateKanbanConnectionInput,
   UpdateKanbanSourceInput,
 } from "@getpaseo/protocol/kanban/types";
@@ -90,6 +96,26 @@ export interface KanbanConnectionDeleteResult {
 
 export interface KanbanConnectionOauthStartResult {
   authorizeUrl: string | null;
+  error: string | null;
+}
+
+export interface KanbanColumnResult {
+  column: KanbanColumn | null;
+  error: string | null;
+}
+
+export interface KanbanColumnListResult {
+  columns: KanbanColumn[];
+  error: string | null;
+}
+
+export interface KanbanColumnDeleteResult {
+  columnId: string;
+  error: string | null;
+}
+
+export interface KanbanSourceListExternalStatusesResult {
+  statuses: KanbanExternalStatus[];
   error: string | null;
 }
 
@@ -267,6 +293,67 @@ export class KanbanService {
       };
     } catch (error) {
       return { source: null, cards: [], upsertedCount: 0, error: errorMessage(error) };
+    }
+  }
+
+  async listExternalStatuses(
+    sourceId: string,
+    projectKey?: string,
+  ): Promise<KanbanSourceListExternalStatusesResult> {
+    try {
+      const source = await this.store.getSource(sourceId);
+      if (!source) {
+        return { statuses: [], error: `Kanban source not found: ${sourceId}` };
+      }
+      const statuses = await this.syncService.listExternalStatuses(source, projectKey);
+      return { statuses, error: null };
+    } catch (error) {
+      return { statuses: [], error: errorMessage(error) };
+    }
+  }
+
+  async listColumns(): Promise<KanbanColumnListResult> {
+    try {
+      const columns = await this.store.listColumns();
+      return { columns, error: null };
+    } catch (error) {
+      return { columns: [], error: errorMessage(error) };
+    }
+  }
+
+  async createColumn(input: CreateKanbanColumnInput): Promise<KanbanColumnResult> {
+    try {
+      const column = await this.store.createColumn(input);
+      return { column, error: null };
+    } catch (error) {
+      return { column: null, error: errorMessage(error) };
+    }
+  }
+
+  async updateColumn(input: UpdateKanbanColumnInput): Promise<KanbanColumnResult> {
+    try {
+      const column = await this.store.updateColumn(input);
+      return { column, error: column ? null : `Kanban column not found: ${input.id}` };
+    } catch (error) {
+      return { column: null, error: errorMessage(error) };
+    }
+  }
+
+  async reorderColumn(input: ReorderKanbanColumnInput): Promise<KanbanColumnResult> {
+    try {
+      const column = await this.store.reorderColumn(input);
+      return { column, error: column ? null : `Kanban column not found: ${input.id}` };
+    } catch (error) {
+      return { column: null, error: errorMessage(error) };
+    }
+  }
+
+  async deleteColumn(input: DeleteKanbanColumnInput): Promise<KanbanColumnDeleteResult> {
+    try {
+      const deleted = await this.store.deleteColumn(input);
+      return { columnId: input.id, error: deleted ? null : `Kanban column not found: ${input.id}` };
+    } catch (error) {
+      return { columnId: input.id, error: errorMessage(error) };
     }
   }
 

@@ -10,6 +10,32 @@ export type KanbanStatus = z.infer<typeof KanbanStatusSchema>;
 // six columns render identically everywhere.
 export const KANBAN_STATUS_ORDER = ["pending", "wip", "done", "skip", "fail", "abort"] as const;
 
+// A user-configurable board column (Jira-style). `legacyStatus` is the fixed
+// KanbanStatus a pre-columns client sees for cards in this column, so the six
+// hardcoded columns keep rendering correctly on old clients regardless of how
+// many real columns exist.
+export const KanbanColumnSchema = z.object({
+  id: z.string(),
+  title: z.string().min(1),
+  // Float sort position, ascending. Same reinsertion-headroom rationale as
+  // StoredKanbanCard.order.
+  order: z.number(),
+  hidden: z.boolean().default(false),
+  legacyStatus: KanbanStatusSchema,
+});
+export type KanbanColumn = z.infer<typeof KanbanColumnSchema>;
+
+// A status name reported by the external tracker itself (Jira status / GitLab
+// MR state), for a future column-mapping UI. `category` is the provider's
+// own bucket key when it has one (Jira statusCategory.key: "new" |
+// "indeterminate" | "done"; GitLab uses its state name directly), null when
+// the provider doesn't report one.
+export const KanbanExternalStatusSchema = z.object({
+  name: z.string(),
+  category: z.string().nullable(),
+});
+export type KanbanExternalStatus = z.infer<typeof KanbanExternalStatusSchema>;
+
 export const KanbanPrioritySchema = z.enum(["low", "med", "high"]);
 export type KanbanPriority = z.infer<typeof KanbanPrioritySchema>;
 
@@ -46,6 +72,12 @@ export const StoredKanbanCardSchema = z.object({
   title: z.string().min(1),
   url: z.string().nullable(),
   status: KanbanStatusSchema,
+  // The board column this card sits in. Optional for back-compat with cards
+  // written before columns existed; the store backfills it from `status` via
+  // the first column whose legacyStatus matches (see KanbanStore migration).
+  // `status` stays authoritative for old clients and is always kept in sync
+  // with columnId's legacyStatus.
+  columnId: z.string().optional(),
   // "jira" | "gitlab-mr" | "#RRGGBB". Render layer resolves to {icon, color};
   // an unrecognized value falls back to the default grey accent.
   theme: z.string(),
@@ -101,8 +133,13 @@ export const StoredKanbanSourceSchema = z.object({
   // jira = JQL; gitlab = MR filter string.
   query: z.string(),
   // externalStatus → kanbanStatus override table. Missing keys fall back to the
-  // built-in default map in the sync mapper.
+  // built-in default map in the sync mapper. Superseded by columnMap for new
+  // configuration, kept for existing sources and as a fallback.
   statusMap: z.record(z.string(), KanbanStatusSchema).optional(),
+  // externalStatus → columnId override table. Takes priority over statusMap.
+  // Lets sync target a specific user-created column instead of only the
+  // fixed six legacy statuses.
+  columnMap: z.record(z.string(), z.string()).optional(),
   pollEverySec: z.number().int().positive(),
   auth: KanbanSourceAuthSchema.optional(),
   lastSyncAt: z.string().nullable(),
@@ -171,6 +208,11 @@ export interface UpdateKanbanCardInput {
 export interface MoveKanbanCardInput {
   id: string;
   status: KanbanStatus;
+  // When set, takes priority over `status` — the card moves to this column
+  // and `status` is derived from the column's legacyStatus. Old clients that
+  // only send `status` still work: the store finds the first column whose
+  // legacyStatus matches.
+  columnId?: string;
   order?: number;
 }
 
@@ -182,6 +224,7 @@ export interface CreateKanbanSourceInput {
   baseUrl?: string;
   enabled?: boolean;
   statusMap?: Record<string, KanbanStatus>;
+  columnMap?: Record<string, string>;
   pollEverySec?: number;
   auth?: KanbanSourceAuth;
 }
@@ -194,6 +237,7 @@ export interface UpdateKanbanSourceInput {
   baseUrl?: string;
   enabled?: boolean;
   statusMap?: Record<string, KanbanStatus> | null;
+  columnMap?: Record<string, string> | null;
   pollEverySec?: number;
   auth?: KanbanSourceAuth | null;
 }
@@ -218,4 +262,28 @@ export interface UpdateKanbanConnectionInput {
   oauthClientId?: string | null;
   oauthClientSecret?: string | null;
   tokenValue?: string | null;
+}
+
+export interface CreateKanbanColumnInput {
+  title: string;
+  legacyStatus: KanbanStatus;
+  order?: number;
+  hidden?: boolean;
+}
+
+export interface UpdateKanbanColumnInput {
+  id: string;
+  title?: string;
+  hidden?: boolean;
+  legacyStatus?: KanbanStatus;
+}
+
+export interface ReorderKanbanColumnInput {
+  id: string;
+  order: number;
+}
+
+export interface DeleteKanbanColumnInput {
+  id: string;
+  moveCardsToColumnId: string;
 }

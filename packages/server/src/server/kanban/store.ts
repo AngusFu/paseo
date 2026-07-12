@@ -2,20 +2,26 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  KanbanColumnSchema,
   StoredKanbanCardSchema,
   StoredKanbanConnectionSchema,
   StoredKanbanSourceSchema,
   type CreateKanbanCardInput,
+  type CreateKanbanColumnInput,
   type CreateKanbanConnectionInput,
   type CreateKanbanSourceInput,
+  type DeleteKanbanColumnInput,
   type KanbanCardSource,
+  type KanbanColumn,
   type KanbanPriority,
   type KanbanStatus,
   type MoveKanbanCardInput,
+  type ReorderKanbanColumnInput,
   type StoredKanbanCard,
   type StoredKanbanConnection,
   type StoredKanbanSource,
   type UpdateKanbanCardInput,
+  type UpdateKanbanColumnInput,
   type UpdateKanbanConnectionInput,
   type UpdateKanbanSourceInput,
 } from "@getpaseo/protocol/kanban/types";
@@ -33,6 +39,31 @@ function generateConnectionId(): string {
   return `kbn_${randomBytes(4).toString("hex")}`;
 }
 
+function generateColumnId(): string {
+  return `kbcol_${randomBytes(4).toString("hex")}`;
+}
+
+// Lazily-created default columns: three status-category buckets (Jira-style
+// To Do / In Progress / Done) rather than one column per legacy status — a
+// real Jira project can have a dozen-plus statuses, and mirroring the
+// category rather than every status name keeps the default board usable.
+const DEFAULT_COLUMNS: ReadonlyArray<{ title: string; legacyStatus: KanbanStatus }> = [
+  { title: "To Do", legacyStatus: "pending" },
+  { title: "In Progress", legacyStatus: "wip" },
+  { title: "Done", legacyStatus: "done" },
+];
+
+// Buckets a legacy status down to the status-category column it belongs to
+// when no column has that exact legacyStatus (the common case once the
+// board only has the three default columns): skip/fail/abort are terminal
+// outcomes, same as done.
+function bucketLegacyStatus(status: KanbanStatus): KanbanStatus {
+  if (status === "pending" || status === "wip") {
+    return status;
+  }
+  return "done";
+}
+
 // Externally-sourced card, keyed on (source.kind, externalId) for idempotent upsert.
 type ExternalKanbanCardSource = Extract<KanbanCardSource, { externalId: string }>;
 
@@ -40,6 +71,7 @@ export interface UpsertKanbanCardBySourcePayload {
   title: string;
   url: string | null;
   status: KanbanStatus;
+  columnId: string;
   theme: string;
   labels?: string[];
   assignee?: string | null;
@@ -52,8 +84,10 @@ export class KanbanStore {
   private readonly identityMutations = new Map<string, Promise<unknown>>();
   private readonly sourcesMutations = new Map<string, Promise<unknown>>();
   private readonly connectionsMutations = new Map<string, Promise<unknown>>();
+  private readonly columnsMutations = new Map<string, Promise<unknown>>();
   private static readonly SOURCES_LOCK = "sources";
   private static readonly CONNECTIONS_LOCK = "connections";
+  private static readonly COLUMNS_LOCK = "columns";
   // In-memory mirror of the cards directory, keyed by card id. This process is
   // the sole writer of these files (CLI/clients go through RPC to this
   // daemon), so the cache and disk never diverge outside of this class.
@@ -73,6 +107,10 @@ export class KanbanStore {
 
   private get connectionsFile(): string {
     return join(this.dir, "connections.json");
+  }
+
+  private get columnsFile(): string {
+    return join(this.dir, "columns.json");
   }
 
   private cardFilePath(id: string): string {
@@ -137,7 +175,43 @@ export class KanbanStore {
           cache.set(card.id, card);
         }),
     );
+    await this.backfillMissingColumnIds(cache);
     return cache;
+  }
+
+  // Lazily fills in columnId for cards persisted before columns existed, by
+  // matching the card's status to a column (see columnMatchForStatus). Only
+  // updates the in-memory cache — the next write to a given card (move/
+  // update) is what actually persists the backfilled value. The `status`
+  // field itself is left untouched, so old clients keep seeing the exact
+  // status this card was written with.
+  private async backfillMissingColumnIds(cache: Map<string, StoredKanbanCard>): Promise<void> {
+    const missing = [...cache.values()].filter((card) => !card.columnId);
+    if (missing.length === 0) {
+      return;
+    }
+    const columns = [...(await this.listColumns())].sort((left, right) => left.order - right.order);
+    for (const card of missing) {
+      const match = this.columnMatchForStatus(columns, card.status);
+      if (match) {
+        cache.set(card.id, { ...card, columnId: match.id });
+      }
+    }
+  }
+
+  // First column (by order) whose legacyStatus exactly matches; else the
+  // first column matching the status-category bucket (skip/fail/abort ->
+  // done); else the first non-hidden column; else the first column overall.
+  private columnMatchForStatus(
+    columnsByOrder: KanbanColumn[],
+    status: KanbanStatus,
+  ): KanbanColumn | undefined {
+    return (
+      columnsByOrder.find((column) => column.legacyStatus === status) ??
+      columnsByOrder.find((column) => column.legacyStatus === bucketLegacyStatus(status)) ??
+      columnsByOrder.find((column) => !column.hidden) ??
+      columnsByOrder[0]
+    );
   }
 
   async createCard(input: CreateKanbanCardInput): Promise<StoredKanbanCard> {
@@ -147,16 +221,18 @@ export class KanbanStore {
     // card list and never compute a duplicate `order` for the same status.
     return this.serializeIdentityMutation(`create:${status}`, async () => {
       const now = new Date().toISOString();
+      const columnId = await this.columnIdForStatus(status);
       const cards = await this.listCards();
       const card = StoredKanbanCardSchema.parse({
         id: generateCardId(),
         title: input.title,
         url: input.url ?? null,
         status,
+        columnId,
         theme: input.theme ?? this.defaultThemeForSource(source),
         source,
         externalId: input.externalId ?? null,
-        order: this.nextOrderForStatus(cards, status),
+        order: this.nextOrderForColumn(cards, columnId),
         statusPinnedByUser: false,
         labels: input.labels,
         assignee: input.assignee ?? null,
@@ -177,11 +253,16 @@ export class KanbanStore {
       if (!current) {
         return null;
       }
+      const statusChanged = input.status !== undefined && input.status !== current.status;
+      const columnId = statusChanged
+        ? await this.columnIdForStatus(input.status!)
+        : current.columnId;
       const next = StoredKanbanCardSchema.parse({
         ...current,
         title: input.title ?? current.title,
         url: input.url === undefined ? current.url : input.url,
         status: input.status ?? current.status,
+        columnId,
         theme: input.theme ?? current.theme,
         order: input.order ?? current.order,
         labels: input.labels ?? current.labels,
@@ -191,10 +272,7 @@ export class KanbanStore {
         metadata: input.metadata ?? current.metadata,
         // An explicit status change here is a deliberate user action, so pin it
         // the same way a drag does — otherwise the next source sync reverts it.
-        statusPinnedByUser:
-          input.status !== undefined && input.status !== current.status
-            ? true
-            : current.statusPinnedByUser,
+        statusPinnedByUser: statusChanged ? true : current.statusPinnedByUser,
         updatedAt: new Date().toISOString(),
       });
       await this.writeCard(next);
@@ -203,23 +281,28 @@ export class KanbanStore {
   }
 
   // Drag-to-column move. Always pins statusPinnedByUser so source sync stops
-  // overwriting status for this card.
+  // overwriting status for this card. When input.columnId is given it takes
+  // priority and status is derived from that column's legacyStatus; otherwise
+  // (old clients) status alone picks the first column with a matching
+  // legacyStatus.
   async moveCard(input: MoveKanbanCardInput): Promise<StoredKanbanCard | null> {
     return this.serializeCardMutation(input.id, async () => {
       const current = await this.getCard(input.id);
       if (!current) {
         return null;
       }
+      const { status, columnId } = await this.resolveMoveTarget(input);
       const cards = await this.listCards();
       const order =
         input.order ??
-        this.nextOrderForStatus(
+        this.nextOrderForColumn(
           cards.filter((card) => card.id !== current.id),
-          input.status,
+          columnId,
         );
       const next = StoredKanbanCardSchema.parse({
         ...current,
-        status: input.status,
+        status,
+        columnId,
         order,
         statusPinnedByUser: true,
         updatedAt: new Date().toISOString(),
@@ -227,6 +310,31 @@ export class KanbanStore {
       await this.writeCard(next);
       return next;
     });
+  }
+
+  private async resolveMoveTarget(
+    input: MoveKanbanCardInput,
+  ): Promise<{ status: KanbanStatus; columnId: string }> {
+    if (input.columnId) {
+      const column = await this.getColumn(input.columnId);
+      if (!column) {
+        throw new Error(`Kanban column not found: ${input.columnId}`);
+      }
+      return { status: column.legacyStatus, columnId: column.id };
+    }
+    return { status: input.status, columnId: await this.columnIdForStatus(input.status) };
+  }
+
+  // Resolves a column for callers that only know the six fixed statuses (old
+  // clients, manual card creation, updateCard status changes) — see
+  // columnMatchForStatus for the match/bucket/fallback order.
+  private async columnIdForStatus(status: KanbanStatus): Promise<string> {
+    const columns = [...(await this.listColumns())].sort((left, right) => left.order - right.order);
+    const match = this.columnMatchForStatus(columns, status);
+    if (!match) {
+      throw new Error(`No kanban column configured for status: ${status}`);
+    }
+    return match.id;
   }
 
   async deleteCard(id: string): Promise<boolean> {
@@ -262,10 +370,11 @@ export class KanbanStore {
           title: payload.title,
           url: payload.url,
           status: payload.status,
+          columnId: payload.columnId,
           theme: payload.theme,
           source,
           externalId: source.externalId,
-          order: this.nextOrderForStatus(cards, payload.status),
+          order: this.nextOrderForColumn(cards, payload.columnId),
           statusPinnedByUser: false,
           labels: payload.labels,
           assignee: payload.assignee ?? null,
@@ -284,8 +393,9 @@ export class KanbanStore {
         url: payload.url,
         theme: payload.theme,
         source,
-        // Once the user drags the card, sync stops overwriting status.
+        // Once the user drags the card, sync stops overwriting status/column.
         status: existing.statusPinnedByUser ? existing.status : payload.status,
+        columnId: existing.statusPinnedByUser ? existing.columnId : payload.columnId,
         labels: payload.labels ?? existing.labels,
         // The source is authoritative for synced fields: when it reports the
         // ticket as unassigned (payload.assignee === null) clear the card too,
@@ -307,12 +417,14 @@ export class KanbanStore {
     return "manual";
   }
 
-  private nextOrderForStatus(cards: StoredKanbanCard[], status: KanbanStatus): number {
-    const inStatus = cards.filter((card) => card.status === status);
-    if (inStatus.length === 0) {
+  // Cards are ordered within a column, not within a legacy status — several
+  // columns can share one legacyStatus, and each needs its own order space.
+  private nextOrderForColumn(cards: StoredKanbanCard[], columnId: string): number {
+    const inColumn = cards.filter((card) => card.columnId === columnId);
+    if (inColumn.length === 0) {
       return 0;
     }
-    return Math.max(...inStatus.map((card) => card.order)) + 1;
+    return Math.max(...inColumn.map((card) => card.order)) + 1;
   }
 
   private async writeCard(card: StoredKanbanCard): Promise<void> {
@@ -362,6 +474,7 @@ export class KanbanStore {
         baseUrl: input.baseUrl,
         query: input.query,
         statusMap: input.statusMap,
+        columnMap: input.columnMap,
         pollEverySec: input.pollEverySec ?? 300,
         auth: input.auth,
         lastSyncAt: null,
@@ -390,6 +503,7 @@ export class KanbanStore {
         query: input.query ?? current.query,
         enabled: input.enabled ?? current.enabled,
         statusMap: input.statusMap === null ? undefined : (input.statusMap ?? current.statusMap),
+        columnMap: input.columnMap === null ? undefined : (input.columnMap ?? current.columnMap),
         pollEverySec: input.pollEverySec ?? current.pollEverySec,
         auth: input.auth === null ? undefined : (input.auth ?? current.auth),
         updatedAt: new Date().toISOString(),
@@ -560,6 +674,219 @@ export class KanbanStore {
   }
 
   // -------------------------------------------------------------------------
+  // Columns — Jira-style configurable board columns. columns.json is
+  // migrated lazily: the first read of a $PASEO_HOME without the file
+  // generates the three default status-category columns (see DEFAULT_COLUMNS)
+  // and persists them immediately, under COLUMNS_LOCK so concurrent
+  // first-reads can't race into duplicate migrations.
+  // -------------------------------------------------------------------------
+
+  async listColumns(): Promise<KanbanColumn[]> {
+    await this.ensureDir();
+    try {
+      return await this.readColumnsFile();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return this.serializeColumnsMutation(() => this.migrateDefaultColumns());
+      }
+      throw error;
+    }
+  }
+
+  async getColumn(id: string): Promise<KanbanColumn | null> {
+    const columns = await this.listColumns();
+    return columns.find((column) => column.id === id) ?? null;
+  }
+
+  async createColumn(input: CreateKanbanColumnInput): Promise<KanbanColumn> {
+    return this.serializeColumnsMutation(async () => {
+      const columns = await this.readColumnsUnderLock();
+      const maxOrder = columns.length > 0 ? Math.max(...columns.map((column) => column.order)) : -1;
+      const created = KanbanColumnSchema.parse({
+        id: generateColumnId(),
+        title: input.title,
+        order: input.order ?? maxOrder + 1,
+        hidden: input.hidden ?? false,
+        legacyStatus: input.legacyStatus,
+      });
+      await this.writeColumns([...columns, created]);
+      return created;
+    });
+  }
+
+  async updateColumn(input: UpdateKanbanColumnInput): Promise<KanbanColumn | null> {
+    return this.serializeColumnsMutation(async () => {
+      const columns = await this.readColumnsUnderLock();
+      const index = columns.findIndex((column) => column.id === input.id);
+      if (index === -1) {
+        return null;
+      }
+      const current = columns[index];
+      const updated = KanbanColumnSchema.parse({
+        ...current,
+        title: input.title ?? current.title,
+        hidden: input.hidden ?? current.hidden,
+        legacyStatus: input.legacyStatus ?? current.legacyStatus,
+      });
+      const next = [...columns];
+      next[index] = updated;
+      await this.writeColumns(next);
+      return updated;
+    });
+  }
+
+  async reorderColumn(input: ReorderKanbanColumnInput): Promise<KanbanColumn | null> {
+    return this.serializeColumnsMutation(async () => {
+      const columns = await this.readColumnsUnderLock();
+      const index = columns.findIndex((column) => column.id === input.id);
+      if (index === -1) {
+        return null;
+      }
+      const updated = KanbanColumnSchema.parse({ ...columns[index], order: input.order });
+      const next = [...columns];
+      next[index] = updated;
+      await this.writeColumns(next);
+      return updated;
+    });
+  }
+
+  // Removes a column, moving every card currently in it to
+  // moveCardsToColumnId first. Card reassignment goes through
+  // serializeCardMutation per card (not moveCard, which would try to
+  // re-acquire COLUMNS_LOCK via getColumn and deadlock against the lock this
+  // method already holds).
+  async deleteColumn(input: DeleteKanbanColumnInput): Promise<boolean> {
+    if (input.id === input.moveCardsToColumnId) {
+      throw new Error("moveCardsToColumnId must differ from the column being deleted");
+    }
+    return this.serializeColumnsMutation(async () => {
+      const columns = await this.readColumnsUnderLock();
+      if (!columns.some((column) => column.id === input.id)) {
+        return false;
+      }
+      const target = columns.find((column) => column.id === input.moveCardsToColumnId);
+      if (!target) {
+        throw new Error(`Kanban column not found: ${input.moveCardsToColumnId}`);
+      }
+      const affected = (await this.listCards()).filter((card) => card.columnId === input.id);
+      for (const card of affected) {
+        await this.reassignCardToColumn(card.id, target);
+      }
+      await this.writeColumns(columns.filter((column) => column.id !== input.id));
+      return true;
+    });
+  }
+
+  private async reassignCardToColumn(cardId: string, target: KanbanColumn): Promise<void> {
+    await this.serializeCardMutation(cardId, async () => {
+      const current = await this.getCard(cardId);
+      if (!current) {
+        return;
+      }
+      const siblings = (await this.listCards()).filter((card) => card.id !== current.id);
+      const next = StoredKanbanCardSchema.parse({
+        ...current,
+        status: target.legacyStatus,
+        columnId: target.id,
+        order: this.nextOrderForColumn(siblings, target.id),
+        updatedAt: new Date().toISOString(),
+      });
+      await this.writeCard(next);
+    });
+  }
+
+  // Resolves the column a sync upsert should land a card in. Never creates a
+  // column — a real Jira project can report a dozen-plus distinct status
+  // names, so sync targets the status-category bucket instead of minting a
+  // column per unmapped name. Priority: columnIdOverride (source.columnMap)
+  // > a legacy KanbanStatus override (source.statusMap, matched to the first
+  // column with that exact legacyStatus) > categoryLegacyStatus (the
+  // Jira/GitLab status-category bucket, same matching) > the first
+  // non-hidden column > the first column overall.
+  async resolveColumnForSync(input: {
+    columnIdOverride?: string;
+    legacyStatusOverride?: KanbanStatus;
+    categoryLegacyStatus: KanbanStatus;
+  }): Promise<KanbanColumn> {
+    const columns = [...(await this.listColumns())].sort((left, right) => left.order - right.order);
+    if (input.columnIdOverride) {
+      const direct = columns.find((column) => column.id === input.columnIdOverride);
+      if (direct) {
+        return direct;
+      }
+    }
+    if (input.legacyStatusOverride) {
+      const byLegacyStatus = columns.find(
+        (column) => column.legacyStatus === input.legacyStatusOverride,
+      );
+      if (byLegacyStatus) {
+        return byLegacyStatus;
+      }
+    }
+    const byCategory = columns.find((column) => column.legacyStatus === input.categoryLegacyStatus);
+    if (byCategory) {
+      return byCategory;
+    }
+    const fallback = columns.find((column) => !column.hidden) ?? columns[0];
+    if (!fallback) {
+      throw new Error("No kanban columns configured");
+    }
+    return fallback;
+  }
+
+  private async readColumnsFile(): Promise<KanbanColumn[]> {
+    const content = await readFile(this.columnsFile, "utf-8");
+    const parsed = JSON.parse(content) as unknown[];
+    return parsed
+      .map((entry) => KanbanColumnSchema.parse(entry))
+      .sort((left, right) => left.order - right.order);
+  }
+
+  // Assumes COLUMNS_LOCK is already held by the caller (create/update/reorder/
+  // delete bodies). Never re-acquires the lock itself, so it can safely run
+  // the ENOENT migration inline instead of calling the public listColumns(),
+  // which would deadlock.
+  private async readColumnsUnderLock(): Promise<KanbanColumn[]> {
+    try {
+      return await this.readColumnsFile();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+    return this.migrateDefaultColumns();
+  }
+
+  // Assumes COLUMNS_LOCK is already held by the caller.
+  private async migrateDefaultColumns(): Promise<KanbanColumn[]> {
+    // Re-check: another concurrent caller may have migrated already while we
+    // were waiting for the lock.
+    try {
+      return await this.readColumnsFile();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+    const columns = DEFAULT_COLUMNS.map((def, index) =>
+      KanbanColumnSchema.parse({
+        id: generateColumnId(),
+        title: def.title,
+        order: index,
+        hidden: false,
+        legacyStatus: def.legacyStatus,
+      }),
+    );
+    await this.writeColumns(columns);
+    return columns;
+  }
+
+  private async writeColumns(columns: KanbanColumn[]): Promise<void> {
+    await this.ensureDir();
+    await writeJsonFileAtomic(this.columnsFile, columns);
+  }
+
+  // -------------------------------------------------------------------------
   // Mutation serialization
   // -------------------------------------------------------------------------
 
@@ -584,6 +911,10 @@ export class KanbanStore {
       KanbanStore.CONNECTIONS_LOCK,
       mutation,
     );
+  }
+
+  private async serializeColumnsMutation<T>(mutation: () => Promise<T>): Promise<T> {
+    return this.serializeMutation(this.columnsMutations, KanbanStore.COLUMNS_LOCK, mutation);
   }
 
   private async serializeMutation<T>(

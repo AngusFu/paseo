@@ -1404,6 +1404,7 @@ export class Session {
       this.dispatchTerminalMessage(msg) ??
       this.dispatchChatScheduleLoopMessage(msg) ??
       this.dispatchKanbanMessage(msg) ??
+      this.dispatchKanbanColumnMessage(msg) ??
       this.dispatchMiscMessage(msg);
     if (promise) await promise;
   }
@@ -1782,6 +1783,8 @@ export class Session {
         return this.handleKanbanSourceDeleteRequest(msg);
       case "kanban.source.sync.request":
         return this.handleKanbanSourceSyncRequest(msg);
+      case "kanban.source.list_external_statuses.request":
+        return this.handleKanbanSourceListExternalStatusesRequest(msg);
       case "kanban.connection.create.request":
         return this.handleKanbanConnectionCreateRequest(msg);
       case "kanban.connection.list.request":
@@ -1792,6 +1795,25 @@ export class Session {
         return this.handleKanbanConnectionDeleteRequest(msg);
       case "kanban.connection.oauth.start.request":
         return this.handleKanbanConnectionOauthStartRequest(msg);
+      default:
+        return undefined;
+    }
+  }
+
+  // Split out of dispatchKanbanMessage to keep cyclomatic complexity under
+  // the lint threshold — same domain, just the column-CRUD RPCs.
+  private dispatchKanbanColumnMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "kanban.column.list.request":
+        return this.handleKanbanColumnListRequest(msg);
+      case "kanban.column.create.request":
+        return this.handleKanbanColumnCreateRequest(msg);
+      case "kanban.column.update.request":
+        return this.handleKanbanColumnUpdateRequest(msg);
+      case "kanban.column.reorder.request":
+        return this.handleKanbanColumnReorderRequest(msg);
+      case "kanban.column.delete.request":
+        return this.handleKanbanColumnDeleteRequest(msg);
       default:
         return undefined;
     }
@@ -1867,6 +1889,7 @@ export class Session {
     const result = await this.kanbanService.moveCard({
       id: msg.cardId,
       status: msg.status,
+      columnId: msg.columnId,
       order: msg.order,
     });
     this.emit({
@@ -1896,6 +1919,7 @@ export class Session {
       query: msg.query,
       enabled: msg.enabled,
       statusMap: msg.statusMap,
+      columnMap: msg.columnMap,
       pollEverySec: msg.pollEverySec,
       auth: msg.auth,
     });
@@ -1926,6 +1950,7 @@ export class Session {
       query: msg.query,
       enabled: msg.enabled,
       statusMap: msg.statusMap,
+      columnMap: msg.columnMap,
       pollEverySec: msg.pollEverySec,
       auth: msg.auth,
     });
@@ -1958,6 +1983,82 @@ export class Session {
         upsertedCount: result.upsertedCount,
         error: result.error,
       },
+    });
+  }
+
+  private async handleKanbanSourceListExternalStatusesRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.source.list_external_statuses.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.listExternalStatuses(msg.sourceId, msg.projectKey);
+    this.emit({
+      type: "kanban.source.list_external_statuses.response",
+      payload: { requestId: msg.requestId, statuses: result.statuses, error: result.error },
+    });
+  }
+
+  private async handleKanbanColumnListRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.column.list.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.listColumns();
+    this.emit({
+      type: "kanban.column.list.response",
+      payload: { requestId: msg.requestId, columns: result.columns, error: result.error },
+    });
+  }
+
+  private async handleKanbanColumnCreateRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.column.create.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.createColumn({
+      title: msg.title,
+      legacyStatus: msg.legacyStatus,
+      order: msg.order,
+      hidden: msg.hidden,
+    });
+    this.emit({
+      type: "kanban.column.create.response",
+      payload: { requestId: msg.requestId, column: result.column, error: result.error },
+    });
+  }
+
+  private async handleKanbanColumnUpdateRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.column.update.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.updateColumn({
+      id: msg.columnId,
+      title: msg.title,
+      hidden: msg.hidden,
+      legacyStatus: msg.legacyStatus,
+    });
+    this.emit({
+      type: "kanban.column.update.response",
+      payload: { requestId: msg.requestId, column: result.column, error: result.error },
+    });
+  }
+
+  private async handleKanbanColumnReorderRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.column.reorder.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.reorderColumn({
+      id: msg.columnId,
+      order: msg.order,
+    });
+    this.emit({
+      type: "kanban.column.reorder.response",
+      payload: { requestId: msg.requestId, column: result.column, error: result.error },
+    });
+  }
+
+  private async handleKanbanColumnDeleteRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.column.delete.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.deleteColumn({
+      id: msg.columnId,
+      moveCardsToColumnId: msg.moveCardsToColumnId,
+    });
+    this.emit({
+      type: "kanban.column.delete.response",
+      payload: { requestId: msg.requestId, columnId: result.columnId, error: result.error },
     });
   }
 

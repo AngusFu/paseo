@@ -1,6 +1,7 @@
 import type pino from "pino";
 import type {
   KanbanCardSource,
+  KanbanExternalStatus,
   KanbanStatus,
   StoredKanbanCard,
   StoredKanbanConnection,
@@ -14,7 +15,10 @@ interface JiraIssue {
   key: string;
   fields?: {
     summary?: string;
-    status?: { name?: string };
+    // statusCategory.key is Jira's stable 3-bucket classification ("new" |
+    // "indeterminate" | "done"), always nested in the status object Jira
+    // returns — no extra `fields` param needed to fetch it.
+    status?: { name?: string; statusCategory?: { key?: string } };
     assignee?: { displayName?: string } | null;
     labels?: string[];
     [key: string]: unknown;
@@ -44,35 +48,9 @@ interface GitlabMergeRequest {
   head_pipeline?: { status?: string } | null;
 }
 
-const JIRA_DEFAULT_STATUS_MAP: Record<string, KanbanStatus> = {
-  "To Do": "pending",
-  Open: "pending",
-  Backlog: "pending",
-  "In Progress": "wip",
-  Done: "done",
-  Closed: "done",
-  "Won't Do": "skip",
-  Blocked: "fail",
-};
-
-const GITLAB_DEFAULT_STATUS_MAP: Record<string, KanbanStatus> = {
-  opened_draft: "pending",
-  opened: "wip",
-  merged: "done",
-  closed: "skip",
-  pipeline_failed: "fail",
-};
-
-function mapExternalStatus(
-  externalStatusKey: string,
-  defaultMap: Record<string, KanbanStatus>,
-  override: Record<string, KanbanStatus> | undefined,
-): KanbanStatus {
-  return override?.[externalStatusKey] ?? defaultMap[externalStatusKey] ?? "pending";
-}
-
 // GitLab MR list responses don't carry one canonical "status" field the way
 // Jira does — derive an override-table key from state/draft/pipeline instead.
+// Used only as the lookup key for source.columnMap/statusMap overrides.
 function gitlabExternalStatusKey(mr: GitlabMergeRequest): string {
   if (mr.state === "merged") return "merged";
   if (mr.state === "closed") return "closed";
@@ -81,8 +59,60 @@ function gitlabExternalStatusKey(mr: GitlabMergeRequest): string {
   return "opened";
 }
 
+// Jira's 3-value statusCategory bucket, mapped to the matching default
+// column's legacyStatus. Unknown/missing category falls back to "pending"
+// ("new"), the least surprising default for a status Paseo hasn't seen.
+function jiraCategoryLegacyStatus(categoryKey: string | undefined): KanbanStatus {
+  if (categoryKey === "done") return "done";
+  if (categoryKey === "indeterminate") return "wip";
+  return "pending";
+}
+
+// GitLab MRs only ever have two board-relevant buckets: still open (including
+// draft) is in progress, merged or closed is done.
+function gitlabCategoryLegacyStatus(mr: GitlabMergeRequest): KanbanStatus {
+  return mr.state === "merged" || mr.state === "closed" ? "done" : "wip";
+}
+
 function trimTrailingSlash(url: string): string {
   return url.endsWith("/") ? url.slice(0, -1) : url;
+}
+
+// GitLab MR state has a fixed, small vocabulary — no API call needed to list it.
+const GITLAB_EXTERNAL_STATUSES: KanbanExternalStatus[] = [
+  { name: "opened", category: "opened" },
+  { name: "merged", category: "merged" },
+  { name: "closed", category: "closed" },
+];
+
+// Jira status entry as returned by both endpoints listExternalStatuses uses:
+// GET /rest/api/3/status (flat array) and GET /rest/api/3/project/{key}/statuses
+// (array grouped by issue type, each with its own `statuses` array).
+interface JiraStatusEntry {
+  name?: string;
+  statusCategory?: { key?: string };
+  statuses?: JiraStatusEntry[];
+}
+
+function parseJiraStatusesResponse(body: unknown): KanbanExternalStatus[] {
+  if (!Array.isArray(body)) {
+    return [];
+  }
+  const flat: JiraStatusEntry[] = [];
+  for (const entry of body as JiraStatusEntry[]) {
+    if (Array.isArray(entry.statuses)) {
+      flat.push(...entry.statuses);
+    } else {
+      flat.push(entry);
+    }
+  }
+  const byName = new Map<string, KanbanExternalStatus>();
+  for (const entry of flat) {
+    if (typeof entry.name === "string" && !byName.has(entry.name)) {
+      byName.set(entry.name, { name: entry.name, category: entry.statusCategory?.key ?? null });
+    }
+  }
+  return [...byName.values()];
 }
 
 export interface KanbanSyncResult {
@@ -139,18 +169,24 @@ export class KanbanSyncService {
       }
 
       const token = await this.resolveToken(source, connection);
-      const upserts =
-        source.kind === "jira"
-          ? (
-              await this.fetchJiraIssues(baseUrl, source.query, token, connection?.email ?? null)
-            ).map((issue) => this.buildJiraUpsert(baseUrl, source, issue))
-          : (await this.fetchGitlabMergeRequests(baseUrl, source.query, token)).map((mr) =>
-              this.buildGitlabUpsert(baseUrl, source, mr),
-            );
-
       const cards: StoredKanbanCard[] = [];
-      for (const { cardSource, payload } of upserts) {
-        cards.push(await this.store.upsertCardBySource(cardSource, payload));
+      if (source.kind === "jira") {
+        const issues = await this.fetchJiraIssues(
+          baseUrl,
+          source.query,
+          token,
+          connection?.email ?? null,
+        );
+        for (const issue of issues) {
+          const { cardSource, payload } = await this.buildJiraUpsert(baseUrl, source, issue);
+          cards.push(await this.store.upsertCardBySource(cardSource, payload));
+        }
+      } else {
+        const mergeRequests = await this.fetchGitlabMergeRequests(baseUrl, source.query, token);
+        for (const mr of mergeRequests) {
+          const { cardSource, payload } = await this.buildGitlabUpsert(baseUrl, source, mr);
+          cards.push(await this.store.upsertCardBySource(cardSource, payload));
+        }
       }
 
       const updatedSource = await this.store.recordSourceSync(source.id, {
@@ -215,6 +251,53 @@ export class KanbanSyncService {
     return secret.accessToken;
   }
 
+  // Jira Cloud REST auth is HTTP Basic base64(email:apiToken). Jira Server/DC
+  // Personal Access Tokens use Bearer, so fall back to Bearer without an email.
+  private jiraAuthHeaders(token: string | null, email: string | null): Record<string, string> {
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (token) {
+      headers.Authorization = email
+        ? `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`
+        : `Bearer ${token}`;
+    }
+    return headers;
+  }
+
+  // Live-fetches the external tracker's status list for a column-mapping UI
+  // (not the cached statusMap/columnMap override tables). GitLab's vocabulary
+  // is fixed and returned without a request; Jira queries either a project's
+  // workflow statuses (projectKey given) or the whole instance's status list.
+  async listExternalStatuses(
+    source: StoredKanbanSource,
+    projectKey?: string,
+  ): Promise<KanbanExternalStatus[]> {
+    if (source.kind === "gitlab") {
+      return GITLAB_EXTERNAL_STATUSES;
+    }
+    const connection = source.connectionId
+      ? await this.store.getConnection(source.connectionId)
+      : null;
+    if (source.connectionId && !connection) {
+      throw new Error(`Kanban connection not found: ${source.connectionId}`);
+    }
+    const baseUrl = connection?.baseUrl ?? source.baseUrl;
+    if (!baseUrl) {
+      throw new Error("Kanban source has no connection and no baseUrl configured");
+    }
+    const token = await this.resolveToken(source, connection);
+    const headers = this.jiraAuthHeaders(token, connection?.email ?? null);
+    const base = trimTrailingSlash(baseUrl);
+    const url = projectKey
+      ? `${base}/rest/api/3/project/${encodeURIComponent(projectKey)}/statuses`
+      : `${base}/rest/api/3/status`;
+    const response = await this.fetchImpl(url, { headers });
+    if (!response.ok) {
+      throw new Error(`Jira status list request failed: ${response.status} ${response.statusText}`);
+    }
+    const body = (await response.json()) as unknown;
+    return parseJiraStatusesResponse(body);
+  }
+
   private async fetchJiraIssues(
     baseUrl: string,
     query: string,
@@ -222,14 +305,7 @@ export class KanbanSyncService {
     email: string | null,
   ): Promise<JiraIssue[]> {
     const base = trimTrailingSlash(baseUrl);
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (token) {
-      // Jira Cloud REST auth is HTTP Basic base64(email:apiToken). Jira Server/DC
-      // Personal Access Tokens use Bearer, so fall back to Bearer without an email.
-      headers.Authorization = email
-        ? `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`
-        : `Bearer ${token}`;
-    }
+    const headers = this.jiraAuthHeaders(token, email);
     // An email means Jira Cloud (HTTP Basic auth). Jira Cloud removed the old
     // GET /rest/api/2/search (returns 410 Gone) in favour of the enhanced-JQL
     // /rest/api/3/search/jql, which returns only id/key unless `fields` is given.
@@ -325,16 +401,21 @@ export class KanbanSyncService {
     return mergeRequests;
   }
 
-  private buildJiraUpsert(
+  private async buildJiraUpsert(
     baseUrl: string,
     source: StoredKanbanSource,
     issue: JiraIssue,
-  ): {
+  ): Promise<{
     cardSource: Extract<KanbanCardSource, { kind: "jira" }>;
     payload: UpsertKanbanCardBySourcePayload;
-  } {
+  }> {
     const externalId = `jira:${issue.key}`;
     const externalStatus = issue.fields?.status?.name ?? "";
+    const column = await this.store.resolveColumnForSync({
+      columnIdOverride: source.columnMap?.[externalStatus],
+      legacyStatusOverride: source.statusMap?.[externalStatus],
+      categoryLegacyStatus: jiraCategoryLegacyStatus(issue.fields?.status?.statusCategory?.key),
+    });
     return {
       cardSource: {
         kind: "jira",
@@ -345,7 +426,8 @@ export class KanbanSyncService {
       payload: {
         title: issue.fields?.summary ?? issue.key,
         url: `${trimTrailingSlash(baseUrl)}/browse/${issue.key}`,
-        status: mapExternalStatus(externalStatus, JIRA_DEFAULT_STATUS_MAP, source.statusMap),
+        status: column.legacyStatus,
+        columnId: column.id,
         theme: "jira",
         labels: issue.fields?.labels,
         assignee: issue.fields?.assignee?.displayName ?? null,
@@ -354,18 +436,23 @@ export class KanbanSyncService {
     };
   }
 
-  private buildGitlabUpsert(
+  private async buildGitlabUpsert(
     baseUrl: string,
     source: StoredKanbanSource,
     mr: GitlabMergeRequest,
-  ): {
+  ): Promise<{
     cardSource: Extract<KanbanCardSource, { kind: "gitlab" }>;
     payload: UpsertKanbanCardBySourcePayload;
-  } {
+  }> {
     const projectId = String(mr.project_id);
     const mrIid = String(mr.iid);
     const externalId = `gitlab:${projectId}!${mrIid}`;
     const externalStatusKey = gitlabExternalStatusKey(mr);
+    const column = await this.store.resolveColumnForSync({
+      columnIdOverride: source.columnMap?.[externalStatusKey],
+      legacyStatusOverride: source.statusMap?.[externalStatusKey],
+      categoryLegacyStatus: gitlabCategoryLegacyStatus(mr),
+    });
     return {
       cardSource: {
         kind: "gitlab",
@@ -376,7 +463,8 @@ export class KanbanSyncService {
       payload: {
         title: mr.title,
         url: mr.web_url ?? `${trimTrailingSlash(baseUrl)}/-/merge_requests/${mrIid}`,
-        status: mapExternalStatus(externalStatusKey, GITLAB_DEFAULT_STATUS_MAP, source.statusMap),
+        status: column.legacyStatus,
+        columnId: column.id,
         theme: "gitlab-mr",
         labels: mr.labels,
         assignee: mr.assignee?.name ?? null,

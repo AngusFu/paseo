@@ -48,7 +48,7 @@ All fields optional. Unknown keys are preserved — never drop keys you didn't t
 ```
 
 - `worktree.setup` / `teardown`: bootstrap/cleanup commands. Keep them idempotent.
-- `scripts`: `type: "service"` for anything long-running (dev server, watcher). Give services a `port` when they bind one — Paseo hands it to the process as `$PASEO_PORT`.
+- `scripts`: `type: "service"` for anything long-running (dev server, watcher). Prefer letting Paseo assign the port and passing it through — `"command": "PORT=$PASEO_PORT npm run dev"` — instead of hardcoding `port`; a fixed port collides across parallel worktrees.
 - `metadataGeneration.<key>.instructions`: replaces the default prompt for that artifact wholesale (not appended). Only add when the project has real naming/format conventions.
 
 ## Which file to write
@@ -71,9 +71,20 @@ When unsure between "shared" and "personal", state your pick and why in one line
 2. **Inspect the project** to derive real values — don't guess:
    - package manager + scripts: `package.json`, lockfile (`package-lock.json` / `pnpm-lock.yaml` / `yarn.lock` / `bun.lockb`), or the equivalent for non-JS stacks (`Cargo.toml`, `pyproject.toml`, `go.mod`, `Makefile`, `docker-compose.yml`).
    - the dev/build/test commands and any service ports actually used.
+   - **agent knowledge bases** (`.claude/knowledge/`, `.claude/CONVENTIONS.md`, or similar): teams that run agents often record dev-server flags, worktree pitfalls, and process-cleanup incidents there — each note usually maps 1:1 to a config line (e.g. a Nuxt fork-mode incident → `npm run dev -- --no-fork` in the service command).
+   - **git hooks** (`.husky/*` + the scripts they call, commitlint config, MR/PR templates in `.gitlab/merge_request_templates/` or `.github/`): read the actual validation scripts, not just their names — they define the branch/commit/PR contracts that belong in `metadataGeneration` instructions verbatim (regex, allowed prefixes, worked example, squash-vs-merge policy).
 3. **Draft** the minimal config that serves the request. Minimal beats exhaustive — only fields that matter.
 4. **Pick the file and confirm** per the rules above — show the user the config and target file so they can adjust.
-5. **Write** valid JSON, 2-space indent, trailing newline. If you wrote `paseo.local.json`, confirm it's git-ignored (add a `.gitignore` entry if the project lacks one).
+5. **Write** valid JSON, 2-space indent, trailing newline. If you wrote `paseo.local.json`, confirm it's git-ignored — prefer the project's `.gitignore` if the team already ignores it; otherwise use `.git/info/exclude` (local-only, doesn't touch team files uninvited).
+
+## Field lessons for worktree setup/teardown
+
+- **A fresh worktree has no gitignored files.** Symlink every gitignored `.env*` from the source checkout before installing — profile files (`.env.staging.local`) matter too, and copying just `.env` silently breaks them:
+  `for f in $(git -C "$PASEO_SOURCE_CHECKOUT_PATH" ls-files --others --ignored --exclude-standard -- '.env*'); do ln -sf "$PASEO_SOURCE_CHECKOUT_PATH/$f" "./$f"; done`
+- **`npm install --prefer-offline`** — worktrees reinstall the same tree repeatedly; exploit the cache.
+- **Lockfile-name churn**: if `package.json` has no `name` field, npm writes the worktree's directory basename into `package-lock.json`'s root `name` on install. Add `git checkout -- package-lock.json` after the install step.
+- **Teardown is usually unnecessary.** On archive/delete Paseo already: kills all workspace terminals (services die there) → runs teardown → `git worktree remove --force` → `rm -rf` fallback → `prune`. Untracked files can't block deletion, so `git clean` in teardown is pointless. Teardown is for external resources (test DBs, tunnels) plus one cheap orphan-process insurance line: `pkill -f "$PWD" || true` (path-scoped, pkill never matches itself).
+- **Branch names get slugified.** Paseo lowercases/kebab-cases worktree branch names (they feed service-proxy hostnames), so an uppercase/underscore branch contract (`fix/KEY_slug`) cannot be produced at creation; if the repo enforces one via pre-push hook, the agent must `git branch -m` after landing in the worktree.
 
 ## Pitfalls
 

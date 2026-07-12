@@ -2359,6 +2359,22 @@ test("importProviderSession imports the selected session without listing and pub
             item: { type: "assistant_message" as const, text: "Done" },
             timestamp: "2026-01-02T00:00:01.000Z",
           },
+          {
+            item: {
+              type: "tool_call" as const,
+              callId: "large-shell-result",
+              name: "shell",
+              status: "completed" as const,
+              error: null,
+              detail: {
+                type: "shell" as const,
+                command: "print output",
+                output: "x".repeat(1024 * 1024),
+                exitCode: 0,
+              },
+            },
+            timestamp: "2026-01-02T00:00:02.000Z",
+          },
         ],
         providerSubagentEvents: [
           {
@@ -2409,6 +2425,19 @@ test("importProviderSession imports the selected session without listing and pub
   expect(manager.getTimeline(imported.id)).toEqual([
     { type: "user_message", text: "Trace provider imports" },
     { type: "assistant_message", text: "Done" },
+    {
+      type: "tool_call",
+      callId: "large-shell-result",
+      name: "shell",
+      status: "completed",
+      error: null,
+      detail: {
+        type: "shell",
+        command: "print output",
+        output: "x".repeat(64 * 1024),
+        exitCode: 0,
+      },
+    },
   ]);
   expect(manager.listProviderSubagents(imported.id)).toEqual([
     expect.objectContaining({ id: "thread-child", title: "Imported child", status: "completed" }),

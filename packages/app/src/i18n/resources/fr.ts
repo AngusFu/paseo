@@ -2315,8 +2315,15 @@ export const fr: TranslationResources = {
       noDescription: "Aucune description",
       comments: "Commentaires",
       noComments: "Aucun commentaire",
+      loadComments: "Charger les commentaires",
+      loadCommentsWithCount: "Charger les commentaires ({{count}})",
+      commentsLoadError: "Impossible de charger les commentaires",
       unknownAuthor: "Inconnu",
       dispatch: "Envoyer via CLI",
+      dispatchWorkspaceLabel: "Espace de travail",
+      dispatchWorkspacePlaceholder: "Sélectionner un espace de travail",
+      dispatchNoWorkspaces:
+        "Aucun espace de travail disponible — ajoutez-en un pour inclure --cwd.",
     },
   },
   schedule: {

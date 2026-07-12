@@ -6,6 +6,7 @@ import type {
   CreateKanbanSourceInput,
   DeleteKanbanColumnInput,
   KanbanCardDetail,
+  KanbanCardDetailComment,
   KanbanColumn,
   KanbanExternalStatus,
   MoveKanbanCardInput,
@@ -20,7 +21,7 @@ import type {
 } from "@getpaseo/protocol/kanban/types";
 import { KanbanStore } from "./store.js";
 import { KanbanSyncService } from "./sync.js";
-import { KanbanCardDetailService } from "./detail.js";
+import { KanbanCardDetailService, type KanbanAttachmentFetchResult } from "./detail.js";
 import { KanbanSecretsStore, type KanbanOauthSecret, type KanbanSecret } from "./secrets-store.js";
 import { credentialRefForConnection, KanbanOauthService } from "./oauth.js";
 import { KanbanPollService } from "./poll.js";
@@ -61,6 +62,11 @@ export interface KanbanCardDeleteResult {
 
 export interface KanbanCardDetailResult {
   detail: KanbanCardDetail | null;
+  error: string | null;
+}
+
+export interface KanbanCardCommentsResult {
+  comments: KanbanCardDetailComment[] | null;
   error: string | null;
 }
 
@@ -227,6 +233,14 @@ export class KanbanService {
 
   async detailCard(cardId: string): Promise<KanbanCardDetailResult> {
     return this.detailService.getDetail(cardId);
+  }
+
+  async cardComments(cardId: string): Promise<KanbanCardCommentsResult> {
+    return this.detailService.getComments(cardId);
+  }
+
+  async fetchAttachment(token: string): Promise<KanbanAttachmentFetchResult> {
+    return this.detailService.fetchAttachment(token);
   }
 
   async updateCard(input: UpdateKanbanCardInput): Promise<KanbanCardResult> {

@@ -1775,6 +1775,8 @@ export class Session {
         return this.handleKanbanCardDeleteRequest(msg);
       case "kanban.card.detail.request":
         return this.handleKanbanCardDetailRequest(msg);
+      case "kanban.card.comments.request":
+        return this.handleKanbanCardCommentsRequest(msg);
       case "kanban.source.create.request":
         return this.handleKanbanSourceCreateRequest(msg);
       case "kanban.source.list.request":
@@ -1917,6 +1919,16 @@ export class Session {
     this.emit({
       type: "kanban.card.detail.response",
       payload: { requestId: msg.requestId, detail: result.detail, error: result.error },
+    });
+  }
+
+  private async handleKanbanCardCommentsRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.card.comments.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.cardComments(msg.cardId);
+    this.emit({
+      type: "kanban.card.comments.response",
+      payload: { requestId: msg.requestId, comments: result.comments, error: result.error },
     });
   }
 

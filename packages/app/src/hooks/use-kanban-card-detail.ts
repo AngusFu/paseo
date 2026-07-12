@@ -1,11 +1,16 @@
-import type { KanbanCardDetail } from "@getpaseo/protocol/kanban/types";
+import type { KanbanCardDetail, KanbanCardDetailComment } from "@getpaseo/protocol/kanban/types";
 import { useFetchQuery } from "@/data/query";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
 
 export const kanbanCardDetailQueryBaseKey = ["kanban", "card-detail"] as const;
+export const kanbanCardCommentsQueryBaseKey = ["kanban", "card-comments"] as const;
 
 export function kanbanCardDetailQueryKey(serverId: string, cardId: string) {
   return [...kanbanCardDetailQueryBaseKey, serverId, cardId] as const;
+}
+
+export function kanbanCardCommentsQueryKey(serverId: string, cardId: string) {
+  return [...kanbanCardCommentsQueryBaseKey, serverId, cardId] as const;
 }
 
 export interface UseKanbanCardDetailResult {
@@ -52,6 +57,51 @@ export function useKanbanCardDetail(
     isLoading: queryEnabled && query.isPending,
     isError: query.isError,
     error: query.error,
+    refetch: () => {
+      void query.refetch();
+    },
+  };
+}
+
+export interface UseKanbanCardCommentsResult {
+  comments: readonly KanbanCardDetailComment[] | null;
+  isLoading: boolean;
+  isError: boolean;
+  refetch: () => void;
+}
+
+// Lazily fetches the full comment list for a card once the detail sheet's
+// comments section is expanded — `enabled` stays false until the user taps
+// "Load comments", so opening the sheet never pays for comment bodies.
+export function useKanbanCardComments(
+  serverId: string | null,
+  cardId: string | null,
+  enabled: boolean,
+): UseKanbanCardCommentsResult {
+  const client = useHostRuntimeClient(serverId ?? "");
+  const queryEnabled = Boolean(serverId && cardId && client && enabled);
+
+  const query = useFetchQuery({
+    queryKey: kanbanCardCommentsQueryKey(serverId ?? "none", cardId ?? "none"),
+    enabled: queryEnabled,
+    queryFn: async () => {
+      if (!client || !cardId) {
+        throw new Error("Kanban host client unavailable");
+      }
+      const payload = await client.kanbanCardComments(cardId);
+      if (payload.error) {
+        throw new Error(payload.error);
+      }
+      return payload.comments ?? [];
+    },
+    dataShape: "value",
+    staleTimeMs: 0,
+  });
+
+  return {
+    comments: query.data ?? null,
+    isLoading: queryEnabled && query.isPending,
+    isError: query.isError,
     refetch: () => {
       void query.refetch();
     },

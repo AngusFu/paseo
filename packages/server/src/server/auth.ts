@@ -153,8 +153,26 @@ const BEARER_AUTH_BYPASS_PATHS = new Set([
   "/kanban/oauth/callback",
 ]);
 
+// Path prefix for the Jira attachment image proxy — parameterized by a
+// single-use-issuance, multi-read capability token (crypto-random UUID,
+// 10-minute TTL; see kanban/attachment-token-store.ts), so it can't be
+// expressed as a literal entry in BEARER_AUTH_BYPASS_PATHS above. The token
+// IS the capability: it is only ever minted server-side while building a
+// kanban.card.detail.response/kanban.card.comments.response over the
+// already-authenticated WebSocket, and it authorizes fetching exactly the one
+// Jira attachment it was issued for. An <img> tag renders this URL directly
+// and cannot attach an `Authorization` header, which is why this route (like
+// /api/files/download above) must bypass the daemon password rather than
+// require it in addition to the token. Unknown/expired tokens are rejected
+// with 404, so dropping the bearer here does not make the route
+// unauthenticated.
+const KANBAN_ATTACHMENT_PATH_PREFIX = "/kanban/attachment/";
+
 export function shouldBypassBearerAuth(method: string, path: string): boolean {
   if (method === "OPTIONS") {
+    return true;
+  }
+  if (path.startsWith(KANBAN_ATTACHMENT_PATH_PREFIX)) {
     return true;
   }
   return BEARER_AUTH_BYPASS_PATHS.has(path);

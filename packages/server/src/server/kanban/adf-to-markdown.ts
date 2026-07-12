@@ -25,16 +25,21 @@ function stringAttr(node: AdfNode, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
-export function adfToMarkdown(doc: unknown): string {
+// Resolves a media node's id/alt to a URL the client can actually load
+// (e.g. the daemon's Jira attachment proxy path). Returns null to keep the
+// existing placeholder rendering when nothing matches.
+export type AdfMediaResolver = (idOrAlt: string) => string | null;
+
+export function adfToMarkdown(doc: unknown, resolveMedia?: AdfMediaResolver): string {
   if (!isAdfNode(doc)) {
     return "";
   }
-  return renderBlock(doc, 0).trim();
+  return renderBlock(doc, 0, resolveMedia).trim();
 }
 
-function renderChildren(node: AdfNode, indent: number): string {
+function renderChildren(node: AdfNode, indent: number, resolveMedia?: AdfMediaResolver): string {
   return (node.content ?? [])
-    .map((child) => renderBlock(child, indent))
+    .map((child) => renderBlock(child, indent, resolveMedia))
     .filter((rendered) => rendered.length > 0)
     .join("\n\n");
 }
@@ -86,33 +91,43 @@ function renderInline(node: AdfNode): string {
   }
 }
 
-function renderListItem(item: AdfNode, indent: number, marker: string): string {
+function renderListItem(
+  item: AdfNode,
+  indent: number,
+  marker: string,
+  resolveMedia?: AdfMediaResolver,
+): string {
   const pad = "  ".repeat(indent);
   const lines: string[] = [];
   (item.content ?? []).forEach((child, index) => {
     if (child.type === "bulletList" || child.type === "orderedList") {
-      lines.push(renderBlock(child, indent + 1));
+      lines.push(renderBlock(child, indent + 1, resolveMedia));
       return;
     }
-    const rendered = renderBlock(child, indent);
+    const rendered = renderBlock(child, indent, resolveMedia);
     lines.push(index === 0 ? `${pad}${marker} ${rendered}` : `${pad}  ${rendered}`);
   });
   return lines.join("\n");
 }
 
-function renderList(node: AdfNode, indent: number, marker: (index: number) => string): string {
+function renderList(
+  node: AdfNode,
+  indent: number,
+  marker: (index: number) => string,
+  resolveMedia?: AdfMediaResolver,
+): string {
   return (node.content ?? [])
-    .map((item, index) => renderListItem(item, indent, marker(index)))
+    .map((item, index) => renderListItem(item, indent, marker(index), resolveMedia))
     .join("\n");
 }
 
-function renderTable(node: AdfNode): string {
+function renderTable(node: AdfNode, resolveMedia?: AdfMediaResolver): string {
   const rows = (node.content ?? []).filter((row) => row.type === "tableRow");
   if (rows.length === 0) {
     return "";
   }
   const cellsOf = (row: AdfNode) =>
-    (row.content ?? []).map((cell) => renderChildren(cell, 0).replace(/\n/g, " "));
+    (row.content ?? []).map((cell) => renderChildren(cell, 0, resolveMedia).replace(/\n/g, " "));
   const [header, ...body] = rows.map(cellsOf);
   const separator = header.map(() => "---");
   const lines = [
@@ -123,11 +138,20 @@ function renderTable(node: AdfNode): string {
   return lines.join("\n");
 }
 
-function renderBlock(node: AdfNode, indent: number): string {
+// Split out of renderBlock's "media" case to keep its cyclomatic complexity
+// under the lint threshold.
+function renderMedia(node: AdfNode, resolveMedia?: AdfMediaResolver): string {
+  const alt = stringAttr(node, "alt") || stringAttr(node, "id") || "attachment";
+  const id = stringAttr(node, "id");
+  const resolved = resolveMedia?.(alt) ?? (id ? resolveMedia?.(id) : null) ?? null;
+  return `![${alt}](${resolved ?? alt})`;
+}
+
+function renderBlock(node: AdfNode, indent: number, resolveMedia?: AdfMediaResolver): string {
   switch (node.type) {
     case "doc":
     case "mediaSingle":
-      return renderChildren(node, indent);
+      return renderChildren(node, indent, resolveMedia);
     case "paragraph":
       return renderInlineChildren(node);
     case "heading": {
@@ -136,28 +160,26 @@ function renderBlock(node: AdfNode, indent: number): string {
       return `${hashes} ${renderInlineChildren(node)}`;
     }
     case "bulletList":
-      return renderList(node, indent, () => "-");
+      return renderList(node, indent, () => "-", resolveMedia);
     case "orderedList":
-      return renderList(node, indent, (index) => `${index + 1}.`);
+      return renderList(node, indent, (index) => `${index + 1}.`, resolveMedia);
     case "codeBlock": {
       const language = stringAttr(node, "language");
       const code = (node.content ?? []).map((child) => child.text ?? "").join("");
       return `\`\`\`${language}\n${code}\n\`\`\``;
     }
     case "blockquote":
-      return renderChildren(node, indent)
+      return renderChildren(node, indent, resolveMedia)
         .split("\n")
         .map((line) => `> ${line}`)
         .join("\n");
     case "rule":
       return "---";
     case "table":
-      return renderTable(node);
-    case "media": {
-      const alt = stringAttr(node, "alt") || stringAttr(node, "id") || "attachment";
-      return `![${alt}](${alt})`;
-    }
+      return renderTable(node, resolveMedia);
+    case "media":
+      return renderMedia(node, resolveMedia);
     default:
-      return node.content ? renderChildren(node, indent) : "";
+      return node.content ? renderChildren(node, indent, resolveMedia) : "";
   }
 }

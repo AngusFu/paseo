@@ -2293,8 +2293,15 @@ export const ptBR: TranslationResources = {
       noDescription: "Sem descrição",
       comments: "Comentários",
       noComments: "Sem comentários",
+      loadComments: "Carregar comentários",
+      loadCommentsWithCount: "Carregar comentários ({{count}})",
+      commentsLoadError: "Não foi possível carregar os comentários",
       unknownAuthor: "Desconhecido",
       dispatch: "Executar via CLI",
+      dispatchWorkspaceLabel: "Espaço de trabalho",
+      dispatchWorkspacePlaceholder: "Selecionar espaço de trabalho",
+      dispatchNoWorkspaces:
+        "Nenhum espaço de trabalho disponível — adicione um para incluir --cwd.",
     },
   },
   schedule: {

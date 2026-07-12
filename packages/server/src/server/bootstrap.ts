@@ -5,6 +5,7 @@ import { open } from "fs/promises";
 import { randomUUID } from "node:crypto";
 import { hostname as getHostname } from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Logger } from "pino";
 import { z } from "zod";
@@ -651,6 +652,73 @@ export async function createPaseoDaemon(
             "<html><body>Kanban connection failed. You can close this window and retry.</body></html>",
           );
       }
+    })();
+  });
+
+  // Jira attachment image proxy — registered here (not with the other kanban
+  // wiring below) for the same reason as the OAuth callback: it must run
+  // before mountWebUi's SPA catch-all and the daemon-password middleware.
+  // Its own capability is the single-use-issuance, multi-read token minted
+  // while building a kanban.card.detail.response/kanban.card.comments.response
+  // — see the KANBAN_ATTACHMENT_PATH_PREFIX comment in auth.ts. The client
+  // never sees Jira credentials or the raw Jira download URL, only this path.
+  const KANBAN_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
+  app.get("/kanban/attachment/:token", (req, res) => {
+    void (async () => {
+      const result = await kanbanService.fetchAttachment(req.params.token);
+      if (result.status === "not_found") {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+      if (result.status === "upstream_error") {
+        logger.warn({ err: result.message }, "Kanban attachment fetch failed");
+        res.status(502).json({ error: "Failed to fetch attachment" });
+        return;
+      }
+
+      const upstream = result.response;
+      const contentLengthHeader = upstream.headers.get("content-length");
+      if (contentLengthHeader && Number(contentLengthHeader) > KANBAN_ATTACHMENT_MAX_BYTES) {
+        res.status(413).json({ error: "Attachment too large" });
+        return;
+      }
+      if (!upstream.body) {
+        res.status(502).json({ error: "Empty attachment body" });
+        return;
+      }
+
+      const mimeType = upstream.headers.get("content-type") ?? result.mimeType;
+      res.setHeader("Content-Type", mimeType);
+
+      const nodeStream = Readable.fromWeb(
+        upstream.body as unknown as import("stream/web").ReadableStream,
+      );
+      let bytes = 0;
+      let aborted = false;
+      nodeStream.on("data", (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > KANBAN_ATTACHMENT_MAX_BYTES && !aborted) {
+          aborted = true;
+          nodeStream.destroy();
+          if (!res.headersSent) {
+            res.status(413).json({ error: "Attachment too large" });
+          } else {
+            res.end();
+          }
+        }
+      });
+      nodeStream.on("error", (err) => {
+        if (aborted) {
+          return;
+        }
+        logger.error({ err }, "Kanban attachment stream failed");
+        if (!res.headersSent) {
+          res.status(502).json({ error: "Failed to stream attachment" });
+        } else {
+          res.end();
+        }
+      });
+      nodeStream.pipe(res);
     })();
   });
 

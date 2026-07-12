@@ -515,6 +515,10 @@ type KanbanCardDetailPayload = Extract<
   SessionOutboundMessage,
   { type: "kanban.card.detail.response" }
 >["payload"];
+type KanbanCardCommentsPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.card.comments.response" }
+>["payload"];
 type KanbanSourceCreatePayload = Extract<
   SessionOutboundMessage,
   { type: "kanban.source.create.response" }
@@ -4808,6 +4812,13 @@ export class DaemonClient {
     return this.sendNamespacedCorrelatedSessionRequest({
       requestId,
       message: { type: "kanban.card.detail.request", cardId },
+    });
+  }
+
+  async kanbanCardComments(cardId: string, requestId?: string): Promise<KanbanCardCommentsPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.card.comments.request", cardId },
     });
   }
 

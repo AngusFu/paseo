@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  KanbanCardDetailCommentSchema,
   KanbanCardDetailSchema,
   KanbanCardSourceSchema,
   KanbanCardTriggerSchema,
@@ -86,6 +87,15 @@ export const KanbanCardDeleteRequestSchema = z.object({
 // from its external source, on demand — not part of the cached card list.
 export const KanbanCardDetailRequestSchema = z.object({
   type: z.literal("kanban.card.detail.request"),
+  requestId: z.string(),
+  cardId: z.string(),
+});
+
+// Lazily fetches the full comment list for one card, separate from detail so
+// opening the detail sheet doesn't have to wait on (or pay for) every
+// comment body up front. See KanbanCardDetail.commentCount.
+export const KanbanCardCommentsRequestSchema = z.object({
+  type: z.literal("kanban.card.comments.request"),
   requestId: z.string(),
   cardId: z.string(),
 });
@@ -309,6 +319,15 @@ export const KanbanCardDetailResponseSchema = z.object({
   payload: z.object({
     requestId: z.string(),
     detail: KanbanCardDetailSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const KanbanCardCommentsResponseSchema = z.object({
+  type: z.literal("kanban.card.comments.response"),
+  payload: z.object({
+    requestId: z.string(),
+    comments: z.array(KanbanCardDetailCommentSchema).nullable(),
     error: z.string().nullable(),
   }),
 });

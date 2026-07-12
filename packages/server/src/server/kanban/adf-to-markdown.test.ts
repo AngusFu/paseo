@@ -161,6 +161,50 @@ describe("adfToMarkdown", () => {
     expect(adfToMarkdown(doc)).toBe("![screenshot.png](screenshot.png)");
   });
 
+  test("resolves a media node's alt through resolveMedia when a match exists", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "mediaSingle",
+          content: [{ type: "media", attrs: { alt: "screenshot.png" } }],
+        },
+      ],
+    };
+    const resolveMedia = (idOrAlt: string) =>
+      idOrAlt === "screenshot.png" ? "/kanban/attachment/tok123" : null;
+    expect(adfToMarkdown(doc, resolveMedia)).toBe("![screenshot.png](/kanban/attachment/tok123)");
+  });
+
+  test("falls back to the placeholder when resolveMedia has no match", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "mediaSingle",
+          content: [{ type: "media", attrs: { alt: "unresolved.png" } }],
+        },
+      ],
+    };
+    const resolveMedia = () => null;
+    expect(adfToMarkdown(doc, resolveMedia)).toBe("![unresolved.png](unresolved.png)");
+  });
+
+  test("resolves a media node by id when alt is absent", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "mediaSingle",
+          content: [{ type: "media", attrs: { id: "file-123" } }],
+        },
+      ],
+    };
+    const resolveMedia = (idOrAlt: string) =>
+      idOrAlt === "file-123" ? "/kanban/attachment/tok456" : null;
+    expect(adfToMarkdown(doc, resolveMedia)).toBe("![file-123](/kanban/attachment/tok456)");
+  });
+
   test("renders a simple table with a header row", () => {
     const doc = {
       type: "doc",

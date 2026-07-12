@@ -65,6 +65,9 @@ describe("daemon bearer validator", () => {
     // Guarded by its own per-daemon-run capability token (see
     // isAgentMcpRequestAuthorized), not the daemon password.
     expect(shouldBypassBearerAuth("POST", "/mcp/agents")).toBe(true);
+    // Guarded by its own single-use-issuance, multi-read capability token
+    // (see kanban/attachment-token-store.ts), not the daemon password.
+    expect(shouldBypassBearerAuth("GET", "/kanban/attachment/some-token-value")).toBe(true);
     // Everything else stays behind the daemon password.
     expect(shouldBypassBearerAuth("GET", "/api/status")).toBe(false);
     expect(shouldBypassBearerAuth("POST", "/api/files/upload")).toBe(false);

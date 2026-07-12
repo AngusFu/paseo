@@ -302,6 +302,19 @@ export const KanbanCardDetailCommentSchema = z.object({
 });
 export type KanbanCardDetailComment = z.infer<typeof KanbanCardDetailCommentSchema>;
 
+// A Jira attachment surfaced through the daemon's own attachment proxy
+// (see kanban/attachment-token-store.ts) rather than the tracker's
+// authenticated download URL directly — the client never sees Jira
+// credentials or the raw Jira URL.
+export const KanbanCardDetailAttachmentSchema = z.object({
+  filename: z.string(),
+  mimeType: z.string(),
+  // e.g. "/kanban/attachment/<token>" — the client joins this with the
+  // daemon base URL itself.
+  proxyPath: z.string(),
+});
+export type KanbanCardDetailAttachment = z.infer<typeof KanbanCardDetailAttachmentSchema>;
+
 export const KanbanCardDetailSchema = z.object({
   title: z.string(),
   url: z.string().nullable(),
@@ -314,6 +327,17 @@ export const KanbanCardDetailSchema = z.object({
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
   descriptionMarkdown: z.string().nullable(),
-  comments: z.array(KanbanCardDetailCommentSchema),
+  // COMPAT(kanbanCommentLazyLoad): comments used to be inlined here. Kept
+  // optional (never sent by a current daemon) so an old client's schema
+  // expectations still parse a new daemon's response. Fetch comments via
+  // kanban.card.comments.request instead; commentCount below is the summary
+  // a new client renders before the user opens the comments list.
+  comments: z.array(KanbanCardDetailCommentSchema).optional(),
+  // Total comment count from the tracker, when cheaply available (Jira
+  // reports it on the same paginated comments endpoint; GitLab would need an
+  // extra request per note page, so it's left null there for now). Null also
+  // covers manual cards, which have no external comment count.
+  commentCount: z.number().nullable().optional(),
+  attachments: z.array(KanbanCardDetailAttachmentSchema).optional(),
 });
 export type KanbanCardDetail = z.infer<typeof KanbanCardDetailSchema>;

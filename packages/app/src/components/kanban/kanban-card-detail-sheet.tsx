@@ -22,6 +22,7 @@ import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { Button } from "@/components/ui/button";
 import type { FieldControlSize } from "@/components/ui/control-geometry";
 import { Field, FormTextInput } from "@/components/ui/form-field";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { SelectField, type SelectFieldOption } from "@/components/ui/select-field";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -391,17 +392,40 @@ export function KanbanCardDetailSheet({
       title: t("kanban.cardDetail.title"),
       actions: (
         <>
-          <Button
-            size="sm"
-            variant="ghost"
-            leftIcon={Rocket}
-            onPress={onDispatch}
-            accessibilityLabel={t("kanban.cardDetail.dispatch")}
-            testID="kanban-card-detail-dispatch"
-          />
-          <Button size="sm" variant="ghost" leftIcon={Pencil} onPress={onEdit}>
-            {t("kanban.card.edit")}
-          </Button>
+          <Tooltip delayDuration={300}>
+            <TooltipTrigger asChild>
+              <View>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  leftIcon={Rocket}
+                  onPress={onDispatch}
+                  accessibilityLabel={t("kanban.cardDetail.dispatch")}
+                  testID="kanban-card-detail-dispatch"
+                />
+              </View>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="center" offset={8}>
+              <Text style={styles.tooltipText}>{t("kanban.cardDetail.dispatch")}</Text>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip delayDuration={300}>
+            <TooltipTrigger asChild>
+              <View>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  leftIcon={Pencil}
+                  onPress={onEdit}
+                  accessibilityLabel={t("kanban.card.edit")}
+                  testID="kanban-card-detail-edit"
+                />
+              </View>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="center" offset={8}>
+              <Text style={styles.tooltipText}>{t("kanban.card.edit")}</Text>
+            </TooltipContent>
+          </Tooltip>
         </>
       ),
     }),
@@ -1191,6 +1215,10 @@ const styles = StyleSheet.create((theme) => ({
   },
   mutedText: {
     color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+  },
+  tooltipText: {
+    color: theme.colors.popoverForeground,
     fontSize: theme.fontSize.sm,
   },
   attachmentsRow: {

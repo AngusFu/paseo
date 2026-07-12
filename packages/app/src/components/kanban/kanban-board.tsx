@@ -8,6 +8,7 @@ import type {
 import { KanbanColumn, type KanbanColumnBounds } from "@/components/kanban/kanban-column";
 import { KanbanAddColumn } from "@/components/kanban/kanban-add-column";
 import { KanbanCardDetailSheet } from "@/components/kanban/kanban-card-detail-sheet";
+import { KanbanCardDispatchSheet } from "@/components/kanban/kanban-card-dispatch-sheet";
 import { KanbanCardSheet } from "@/components/kanban/kanban-card-sheet";
 import { KanbanColumnDeleteSheet } from "@/components/kanban/kanban-column-delete-sheet";
 import { KanbanColumnRenameSheet } from "@/components/kanban/kanban-column-rename-sheet";
@@ -84,6 +85,7 @@ export function KanbanBoard({
   // Tapping a card opens the read-only detail sheet; its Edit action hands off
   // to the existing edit-form sheet below.
   const [detailCard, setDetailCard] = useState<StoredKanbanCard | null>(null);
+  const [dispatchCard, setDispatchCard] = useState<StoredKanbanCard | null>(null);
   const [editCard, setEditCard] = useState<StoredKanbanCard | null>(null);
   const [pickerCard, setPickerCard] = useState<StoredKanbanCard | null>(null);
   const [renameTarget, setRenameTarget] = useState<KanbanColumnData | null>(null);
@@ -192,6 +194,10 @@ export function KanbanBoard({
     setPickerCard(card);
   }, []);
 
+  const handleCardDispatch = useCallback((card: StoredKanbanCard) => {
+    setDispatchCard(card);
+  }, []);
+
   const handlePickColumn = useCallback(
     (column: KanbanColumnData) => {
       if (pickerCard && resolveCardColumn(pickerCard, columns)?.id !== column.id) {
@@ -202,6 +208,7 @@ export function KanbanBoard({
   );
 
   const closeDetail = useCallback(() => setDetailCard(null), []);
+  const closeDispatch = useCallback(() => setDispatchCard(null), []);
   const handleEditFromDetail = useCallback(() => {
     setEditCard(detailCard);
     setDetailCard(null);
@@ -304,6 +311,7 @@ export function KanbanBoard({
             onCardDragEnd={handleCardDragEnd}
             onCardPress={handleCardPress}
             onCardLongPress={handleCardLongPress}
+            onCardDispatch={handleCardDispatch}
             onCardDrop={handleCardDrop}
             dragEnabled={dragEnabled}
             onRenameColumn={columnsSupported ? setRenameTarget : undefined}
@@ -327,6 +335,14 @@ export function KanbanBoard({
         detailSupported={cardDetailSupported}
         onClose={closeDetail}
         onEdit={handleEditFromDetail}
+      />
+
+      <KanbanCardDispatchSheet
+        key={dispatchCard ? `dispatch:${dispatchCard.id}` : "dispatch:none"}
+        visible={dispatchCard !== null}
+        card={dispatchCard}
+        serverId={serverId}
+        onClose={closeDispatch}
       />
 
       <KanbanCardSheet

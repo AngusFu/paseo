@@ -1,12 +1,14 @@
-import { memo, useCallback, useMemo, useRef, type ReactElement } from "react";
+import { memo, useCallback, useMemo, useRef, useState, type ReactElement } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight, ChevronUp, ChevronsUp } from "lucide-react-native";
+import { ArrowUpRight, ChevronUp, ChevronsUp, Rocket } from "lucide-react-native";
 import type { KanbanCardSource, StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 import { resolveKanbanCardTheme } from "@/components/kanban/kanban-card-theme";
+import { useIsCompactFormFactor } from "@/constants/layout";
+import { isNative } from "@/constants/platform";
 import { openExternalUrl } from "@/utils/open-external-url";
 
 const THEME_ICON_SIZE = 16;
@@ -38,6 +40,8 @@ interface KanbanCardProps {
   columnId: string;
   onPress: (card: StoredKanbanCard) => void;
   onLongPress: (card: StoredKanbanCard) => void;
+  /** Hover quick-launch: open the dispatch panel straight from the card. */
+  onDispatch: (card: StoredKanbanCard) => void;
   /** Touch-down: board re-measures column bounds before any movement. */
   onDragBegin: () => void;
   /** Drag activated: board raises this card's column above its siblings. */
@@ -63,6 +67,7 @@ export const KanbanCard = memo(function KanbanCard({
   columnId,
   onPress,
   onLongPress,
+  onDispatch,
   onDragBegin,
   onDragStart,
   onDragUpdate,
@@ -71,6 +76,13 @@ export const KanbanCard = memo(function KanbanCard({
   dragEnabled,
 }: KanbanCardProps): ReactElement {
   const { t } = useTranslation();
+  const isCompact = useIsCompactFormFactor();
+  const [hovered, setHovered] = useState(false);
+  // Hover-to-reveal on web; always visible where hover can't fire (native/compact).
+  const showQuickActions = hovered || isNative || isCompact;
+  const handleHoverIn = useCallback(() => setHovered(true), []);
+  const handleHoverOut = useCallback(() => setHovered(false), []);
+  const handleDispatch = useCallback(() => onDispatch(card), [onDispatch, card]);
   const themeVisual = resolveKanbanCardTheme(card.theme);
   const iconColor = themeVisual.color ?? styles.defaultGlyph.color;
   const issueKey = cardIssueKey(card.source);
@@ -179,6 +191,8 @@ export const KanbanCard = memo(function KanbanCard({
           style={cardStyle}
           onPress={handlePress}
           onLongPress={handleLongPress}
+          onHoverIn={handleHoverIn}
+          onHoverOut={handleHoverOut}
           accessibilityRole="button"
           accessibilityLabel={card.title}
           testID={`kanban-card-${card.id}`}
@@ -191,6 +205,17 @@ export const KanbanCard = memo(function KanbanCard({
               </View>
             ) : null}
             <View style={styles.headerSpacer} />
+            {showQuickActions ? (
+              <Pressable
+                onPress={handleDispatch}
+                accessibilityRole="button"
+                accessibilityLabel={t("kanban.cardDetail.dispatch")}
+                testID={`kanban-card-dispatch-${card.id}`}
+                hitSlop={6}
+              >
+                <Rocket size={LINK_ICON_SIZE} color={styles.linkButton.color} />
+              </Pressable>
+            ) : null}
             {card.url ? (
               <Pressable
                 onPress={handleOpenUrl}

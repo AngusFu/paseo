@@ -34,6 +34,7 @@ interface KanbanColumnProps {
   onCardDragEnd: () => void;
   onCardPress: (card: StoredKanbanCard) => void;
   onCardLongPress: (card: StoredKanbanCard) => void;
+  onCardDispatch: (card: StoredKanbanCard) => void;
   onCardDrop: KanbanCardDropHandler;
   dragEnabled: boolean;
   /** Column management (kebab menu) is only shown when the host supports the
@@ -74,6 +75,7 @@ export const KanbanColumn = memo(function KanbanColumn({
   onCardDragEnd,
   onCardPress,
   onCardLongPress,
+  onCardDispatch,
   onCardDrop,
   dragEnabled,
   onRenameColumn,
@@ -166,6 +168,7 @@ export const KanbanColumn = memo(function KanbanColumn({
             columnId={column.id}
             onPress={onCardPress}
             onLongPress={onCardLongPress}
+            onDispatch={onCardDispatch}
             onDragBegin={onCardDragBegin}
             onDragStart={onCardDragStart}
             onDragUpdate={onCardDragUpdate}

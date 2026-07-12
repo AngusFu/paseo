@@ -511,6 +511,10 @@ type KanbanCardDeletePayload = Extract<
   SessionOutboundMessage,
   { type: "kanban.card.delete.response" }
 >["payload"];
+type KanbanCardDetailPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.card.detail.response" }
+>["payload"];
 type KanbanSourceCreatePayload = Extract<
   SessionOutboundMessage,
   { type: "kanban.source.create.response" }
@@ -4797,6 +4801,13 @@ export class DaemonClient {
     return this.sendNamespacedCorrelatedSessionRequest({
       requestId,
       message: { type: "kanban.card.delete.request", cardId },
+    });
+  }
+
+  async kanbanCardDetail(cardId: string, requestId?: string): Promise<KanbanCardDetailPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.card.detail.request", cardId },
     });
   }
 

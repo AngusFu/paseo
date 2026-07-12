@@ -2,6 +2,7 @@ import type pino from "pino";
 import type {
   KanbanCardSource,
   KanbanExternalStatus,
+  KanbanPriority,
   KanbanStatus,
   StoredKanbanCard,
   StoredKanbanConnection,
@@ -21,8 +22,28 @@ interface JiraIssue {
     status?: { name?: string; statusCategory?: { key?: string } };
     assignee?: { displayName?: string } | null;
     labels?: string[];
+    priority?: { name?: string } | null;
     [key: string]: unknown;
   };
+}
+
+// Jira's priority names ("Highest" | "High" | "Medium" | "Low" | "Lowest" on
+// the default scheme) collapse onto Paseo's 3-value KanbanPriority. Unknown
+// or custom priority names (e.g. a self-hosted custom scheme) map to null
+// rather than guessing.
+const JIRA_PRIORITY_MAP: Record<string, KanbanPriority> = {
+  highest: "high",
+  high: "high",
+  medium: "med",
+  low: "low",
+  lowest: "low",
+};
+
+function mapJiraPriority(name: string | undefined): KanbanPriority | null {
+  if (!name) {
+    return null;
+  }
+  return JIRA_PRIORITY_MAP[name.toLowerCase()] ?? null;
 }
 
 interface JiraSearchResponse {
@@ -323,7 +344,7 @@ export class KanbanSyncService {
     headers: Record<string, string>,
   ): Promise<JiraIssue[]> {
     const jql = encodeURIComponent(query);
-    const fields = encodeURIComponent("summary,status,assignee,labels");
+    const fields = encodeURIComponent("summary,status,assignee,labels,priority");
     const issues: JiraIssue[] = [];
     let nextPageToken: string | undefined;
     for (let page = 0; page < MAX_SYNC_PAGES; page++) {
@@ -431,6 +452,7 @@ export class KanbanSyncService {
         theme: "jira",
         labels: issue.fields?.labels,
         assignee: issue.fields?.assignee?.displayName ?? null,
+        priority: mapJiraPriority(issue.fields?.priority?.name),
         metadata: issue.fields as Record<string, unknown> | undefined,
       },
     };

@@ -48,6 +48,7 @@ import {
   KanbanCardUpdateRequestSchema,
   KanbanCardMoveRequestSchema,
   KanbanCardDeleteRequestSchema,
+  KanbanCardDetailRequestSchema,
   KanbanSourceCreateRequestSchema,
   KanbanSourceListRequestSchema,
   KanbanSourceUpdateRequestSchema,
@@ -70,6 +71,7 @@ import {
   KanbanCardUpdateResponseSchema,
   KanbanCardMoveResponseSchema,
   KanbanCardDeleteResponseSchema,
+  KanbanCardDetailResponseSchema,
   KanbanSourceCreateResponseSchema,
   KanbanSourceListResponseSchema,
   KanbanSourceUpdateResponseSchema,
@@ -2259,6 +2261,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   KanbanCardUpdateRequestSchema,
   KanbanCardMoveRequestSchema,
   KanbanCardDeleteRequestSchema,
+  KanbanCardDetailRequestSchema,
   KanbanSourceCreateRequestSchema,
   KanbanSourceListRequestSchema,
   KanbanSourceUpdateRequestSchema,
@@ -2494,6 +2497,8 @@ export const ServerInfoStatusPayloadSchema = z
         kanban: z.boolean().optional(),
         // COMPAT(kanbanColumns): added in v0.1.108, drop the gate when floor >= v0.1.108.
         kanbanColumns: z.boolean().optional(),
+        // COMPAT(kanbanCardDetail): added in v0.1.109, drop the gate when floor >= v0.1.109.
+        kanbanCardDetail: z.boolean().optional(),
       })
       .optional(),
   })
@@ -4461,6 +4466,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   KanbanCardUpdateResponseSchema,
   KanbanCardMoveResponseSchema,
   KanbanCardDeleteResponseSchema,
+  KanbanCardDetailResponseSchema,
   KanbanSourceCreateResponseSchema,
   KanbanSourceListResponseSchema,
   KanbanSourceUpdateResponseSchema,
@@ -4682,6 +4688,7 @@ export type KanbanCardInspectRequest = z.infer<typeof KanbanCardInspectRequestSc
 export type KanbanCardUpdateRequest = z.infer<typeof KanbanCardUpdateRequestSchema>;
 export type KanbanCardMoveRequest = z.infer<typeof KanbanCardMoveRequestSchema>;
 export type KanbanCardDeleteRequest = z.infer<typeof KanbanCardDeleteRequestSchema>;
+export type KanbanCardDetailRequest = z.infer<typeof KanbanCardDetailRequestSchema>;
 export type KanbanSourceCreateRequest = z.infer<typeof KanbanSourceCreateRequestSchema>;
 export type KanbanSourceListRequest = z.infer<typeof KanbanSourceListRequestSchema>;
 export type KanbanSourceUpdateRequest = z.infer<typeof KanbanSourceUpdateRequestSchema>;
@@ -4708,6 +4715,7 @@ export type KanbanCardInspectResponse = z.infer<typeof KanbanCardInspectResponse
 export type KanbanCardUpdateResponse = z.infer<typeof KanbanCardUpdateResponseSchema>;
 export type KanbanCardMoveResponse = z.infer<typeof KanbanCardMoveResponseSchema>;
 export type KanbanCardDeleteResponse = z.infer<typeof KanbanCardDeleteResponseSchema>;
+export type KanbanCardDetailResponse = z.infer<typeof KanbanCardDetailResponseSchema>;
 export type KanbanSourceCreateResponse = z.infer<typeof KanbanSourceCreateResponseSchema>;
 export type KanbanSourceListResponse = z.infer<typeof KanbanSourceListResponseSchema>;
 export type KanbanSourceUpdateResponse = z.infer<typeof KanbanSourceUpdateResponseSchema>;

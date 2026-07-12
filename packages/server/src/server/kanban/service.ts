@@ -5,6 +5,7 @@ import type {
   CreateKanbanConnectionInput,
   CreateKanbanSourceInput,
   DeleteKanbanColumnInput,
+  KanbanCardDetail,
   KanbanColumn,
   KanbanExternalStatus,
   MoveKanbanCardInput,
@@ -19,6 +20,7 @@ import type {
 } from "@getpaseo/protocol/kanban/types";
 import { KanbanStore } from "./store.js";
 import { KanbanSyncService } from "./sync.js";
+import { KanbanCardDetailService } from "./detail.js";
 import { KanbanSecretsStore, type KanbanOauthSecret, type KanbanSecret } from "./secrets-store.js";
 import { credentialRefForConnection, KanbanOauthService } from "./oauth.js";
 import { KanbanPollService } from "./poll.js";
@@ -54,6 +56,11 @@ export interface KanbanCardListResult {
 
 export interface KanbanCardDeleteResult {
   cardId: string;
+  error: string | null;
+}
+
+export interface KanbanCardDetailResult {
+  detail: KanbanCardDetail | null;
   error: string | null;
 }
 
@@ -146,6 +153,7 @@ export class KanbanService {
   private readonly store: KanbanStore;
   private readonly secretsStore: KanbanSecretsStore;
   private readonly syncService: KanbanSyncService;
+  private readonly detailService: KanbanCardDetailService;
   private readonly oauthService: KanbanOauthService;
   private readonly pollService: KanbanPollService;
 
@@ -160,6 +168,13 @@ export class KanbanService {
       logger: options.logger,
     });
     this.syncService = new KanbanSyncService({
+      store: this.store,
+      secrets: this.secretsStore,
+      fetchImpl,
+      oauthService: this.oauthService,
+      logger: options.logger,
+    });
+    this.detailService = new KanbanCardDetailService({
       store: this.store,
       secrets: this.secretsStore,
       fetchImpl,
@@ -208,6 +223,10 @@ export class KanbanService {
     } catch (error) {
       return { card: null, error: errorMessage(error) };
     }
+  }
+
+  async detailCard(cardId: string): Promise<KanbanCardDetailResult> {
+    return this.detailService.getDetail(cardId);
   }
 
   async updateCard(input: UpdateKanbanCardInput): Promise<KanbanCardResult> {

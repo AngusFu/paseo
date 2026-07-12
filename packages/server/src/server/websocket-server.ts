@@ -1280,6 +1280,8 @@ export class VoiceAssistantWebSocketServer {
         kanban: true,
         // COMPAT(kanbanColumns): added in v0.1.108, drop the gate when floor >= v0.1.108.
         kanbanColumns: true,
+        // COMPAT(kanbanCardDetail): added in v0.1.109, drop the gate when floor >= v0.1.109.
+        kanbanCardDetail: true,
       },
     };
   }

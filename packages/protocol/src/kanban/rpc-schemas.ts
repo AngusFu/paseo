@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  KanbanCardDetailSchema,
   KanbanCardSourceSchema,
   KanbanCardTriggerSchema,
   KanbanColumnSchema,
@@ -77,6 +78,14 @@ export const KanbanCardMoveRequestSchema = z.object({
 
 export const KanbanCardDeleteRequestSchema = z.object({
   type: z.literal("kanban.card.delete.request"),
+  requestId: z.string(),
+  cardId: z.string(),
+});
+
+// Fetches full detail (description, comments, tracker metadata) for one card
+// from its external source, on demand — not part of the cached card list.
+export const KanbanCardDetailRequestSchema = z.object({
+  type: z.literal("kanban.card.detail.request"),
   requestId: z.string(),
   cardId: z.string(),
 });
@@ -291,6 +300,15 @@ export const KanbanCardDeleteResponseSchema = z.object({
   payload: z.object({
     requestId: z.string(),
     cardId: z.string(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const KanbanCardDetailResponseSchema = z.object({
+  type: z.literal("kanban.card.detail.response"),
+  payload: z.object({
+    requestId: z.string(),
+    detail: KanbanCardDetailSchema.nullable(),
     error: z.string().nullable(),
   }),
 });

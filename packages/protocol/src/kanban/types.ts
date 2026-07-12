@@ -287,3 +287,33 @@ export interface DeleteKanbanColumnInput {
   id: string;
   moveCardsToColumnId: string;
 }
+
+// ---------------------------------------------------------------------------
+// Card detail (on-demand fetch from the external tracker, not cached in
+// StoredKanbanCard). Normalizes Jira issues and GitLab merge requests to one
+// shape; fields are loosely typed (nullable/optional) because the two
+// sources don't report the same set of metadata.
+// ---------------------------------------------------------------------------
+
+export const KanbanCardDetailCommentSchema = z.object({
+  author: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  bodyMarkdown: z.string(),
+});
+export type KanbanCardDetailComment = z.infer<typeof KanbanCardDetailCommentSchema>;
+
+export const KanbanCardDetailSchema = z.object({
+  title: z.string(),
+  url: z.string().nullable(),
+  // Raw tracker status name (e.g. "In Code Review"), not a KanbanStatus.
+  externalStatus: z.string().nullable(),
+  assignee: z.string().nullable(),
+  reporter: z.string().nullable(),
+  labels: z.array(z.string()),
+  priority: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  descriptionMarkdown: z.string().nullable(),
+  comments: z.array(KanbanCardDetailCommentSchema),
+});
+export type KanbanCardDetail = z.infer<typeof KanbanCardDetailSchema>;

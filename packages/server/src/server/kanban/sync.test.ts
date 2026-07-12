@@ -91,6 +91,75 @@ describe("KanbanSyncService", () => {
     expect(await store.listCards()).toHaveLength(2);
   });
 
+  test("maps Jira priority.name onto KanbanPriority, falling back to null for unknown names", async () => {
+    const jiraResponse = {
+      issues: [
+        {
+          key: "PROJ-10",
+          fields: {
+            summary: "Fix outage",
+            status: { name: "To Do", statusCategory: { key: "new" } },
+            priority: { name: "Highest" },
+          },
+        },
+        {
+          key: "PROJ-11",
+          fields: {
+            summary: "Polish copy",
+            status: { name: "To Do", statusCategory: { key: "new" } },
+            priority: { name: "Medium" },
+          },
+        },
+        {
+          key: "PROJ-12",
+          fields: {
+            summary: "Someday",
+            status: { name: "To Do", statusCategory: { key: "new" } },
+            priority: { name: "Lowest" },
+          },
+        },
+        {
+          key: "PROJ-13",
+          fields: {
+            summary: "No priority set",
+            status: { name: "To Do", statusCategory: { key: "new" } },
+          },
+        },
+        {
+          key: "PROJ-14",
+          fields: {
+            summary: "Custom scheme",
+            status: { name: "To Do", statusCategory: { key: "new" } },
+            priority: { name: "Blocker" },
+          },
+        },
+      ],
+    };
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => jiraResponse,
+    })) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "project = PROJ",
+    });
+
+    const result = await syncService.sync(source);
+    const byKey = (key: string) => result.cards.find((card) => card.externalId === `jira:${key}`);
+
+    expect(byKey("PROJ-10")?.priority).toBe("high");
+    expect(byKey("PROJ-11")?.priority).toBe("med");
+    expect(byKey("PROJ-12")?.priority).toBe("low");
+    expect(byKey("PROJ-13")?.priority).toBeNull();
+    expect(byKey("PROJ-14")?.priority).toBeNull();
+  });
+
   test("records lastSyncError and does not throw when the request fails", async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: false,

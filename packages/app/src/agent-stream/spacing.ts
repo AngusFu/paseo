@@ -44,9 +44,15 @@ export function getGapBetweenStreamItems(
   // A user message already carries its own bottom margin and the block below it
   // (assistant or tool) carries its own top padding, so the inter-item gap here
   // stays tight — otherwise the space under a user message triple-stacks and
-  // reads as an abnormally large "下" gap.
+  // reads as an abnormally large "下" gap. (Checked first so user -> user stays
+  // tight too, before the turn-boundary rule below.)
   if (isUserMessageItem(item)) {
     return SPACING[1];
+  }
+  // Turn boundary: a new user message follows a previous turn's assistant/tool
+  // output. Give the rounds extra breathing room so they read as separate turns.
+  if (isUserMessageItem(belowItem)) {
+    return SPACING[6];
   }
   if (isToolSequenceItem(item) && isToolSequenceItem(belowItem)) {
     return SPACING[1];

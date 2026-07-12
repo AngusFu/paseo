@@ -1127,13 +1127,15 @@ export class PiRpcAgentSession implements AgentSession {
     this.activeAssistantMessageId = null;
 
     void this.runtimeSession.prompt(payload.text, payload.images).catch((error) => {
-      const failedTurnId = this.activeTurnId ?? turnId;
+      if (this.activeTurnId !== turnId) {
+        return;
+      }
       this.activeTurnId = null;
       if (isPiRequestAbortError(error)) {
         this.emit({
           type: "turn_canceled",
           provider: PI_PROVIDER,
-          turnId: failedTurnId,
+          turnId,
           reason: toDiagnosticErrorMessage(error),
         });
         return;
@@ -1141,7 +1143,7 @@ export class PiRpcAgentSession implements AgentSession {
       this.emit({
         type: "turn_failed",
         provider: PI_PROVIDER,
-        turnId: failedTurnId,
+        turnId,
         error: toDiagnosticErrorMessage(error),
       });
     });
@@ -1236,7 +1238,12 @@ export class PiRpcAgentSession implements AgentSession {
   }
 
   async interrupt(): Promise<void> {
+    const turnId = this.activeTurnId;
     await this.runtimeSession.abort();
+    if (turnId && this.activeTurnId === turnId) {
+      this.activeTurnId = null;
+      this.emit({ type: "turn_canceled", provider: PI_PROVIDER, reason: "interrupted", turnId });
+    }
   }
 
   async revertConversation(input: { messageId: string }): Promise<void> {

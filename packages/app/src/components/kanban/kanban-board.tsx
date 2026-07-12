@@ -213,6 +213,10 @@ export function KanbanBoard({
     setEditCard(detailCard);
     setDetailCard(null);
   }, [detailCard]);
+  const handleDispatchFromDetail = useCallback(() => {
+    setDispatchCard(detailCard);
+    setDetailCard(null);
+  }, [detailCard]);
   const closeEdit = useCallback(() => setEditCard(null), []);
   const closePicker = useCallback(() => setPickerCard(null), []);
   const closeRename = useCallback(() => setRenameTarget(null), []);
@@ -335,6 +339,7 @@ export function KanbanBoard({
         detailSupported={cardDetailSupported}
         onClose={closeDetail}
         onEdit={handleEditFromDetail}
+        onDispatch={handleDispatchFromDetail}
       />
 
       <KanbanCardDispatchSheet

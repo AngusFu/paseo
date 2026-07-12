@@ -1,5 +1,11 @@
 import { memo, useCallback, useMemo, useRef, useState, type ReactElement } from "react";
-import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
+import {
+  Pressable,
+  Text,
+  View,
+  type GestureResponderEvent,
+  type PressableStateCallbackType,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
@@ -80,9 +86,19 @@ export const KanbanCard = memo(function KanbanCard({
   const [hovered, setHovered] = useState(false);
   // Hover-to-reveal on web; always visible where hover can't fire (native/compact).
   const showQuickActions = hovered || isNative || isCompact;
-  const handleHoverIn = useCallback(() => setHovered(true), []);
-  const handleHoverOut = useCallback(() => setHovered(false), []);
-  const handleDispatch = useCallback(() => onDispatch(card), [onDispatch, card]);
+  // Hover tracked on a plain wrapper View via pointerenter/leave (non-bubbling),
+  // NOT on the card Pressable — moving onto the nested action buttons must not
+  // fire hover-out. See docs/hover.md (failure mode 1).
+  const handlePointerEnter = useCallback(() => setHovered(true), []);
+  const handlePointerLeave = useCallback(() => setHovered(false), []);
+  const handleDispatch = useCallback(
+    (event: GestureResponderEvent) => {
+      // Stop the press from bubbling to the card Pressable (which opens detail).
+      event?.stopPropagation?.();
+      onDispatch(card);
+    },
+    [onDispatch, card],
+  );
   const themeVisual = resolveKanbanCardTheme(card.theme);
   const iconColor = themeVisual.color ?? styles.defaultGlyph.color;
   const issueKey = cardIssueKey(card.source);
@@ -187,77 +203,77 @@ export const KanbanCard = memo(function KanbanCard({
   return (
     <GestureDetector gesture={panGesture}>
       <Animated.View style={animatedStyle}>
-        <Pressable
-          style={cardStyle}
-          onPress={handlePress}
-          onLongPress={handleLongPress}
-          onHoverIn={handleHoverIn}
-          onHoverOut={handleHoverOut}
-          accessibilityRole="button"
-          accessibilityLabel={card.title}
-          testID={`kanban-card-${card.id}`}
-        >
-          <View style={styles.header}>
-            <themeVisual.icon size={THEME_ICON_SIZE} color={iconColor} />
-            {issueKey ? (
-              <View style={styles.issueKeyChip}>
-                <Text style={styles.issueKeyText}>{issueKey}</Text>
-              </View>
-            ) : null}
-            <View style={styles.headerSpacer} />
-            {showQuickActions ? (
-              <Pressable
-                onPress={handleDispatch}
-                accessibilityRole="button"
-                accessibilityLabel={t("kanban.cardDetail.dispatch")}
-                testID={`kanban-card-dispatch-${card.id}`}
-                hitSlop={6}
-              >
-                <Rocket size={LINK_ICON_SIZE} color={styles.linkButton.color} />
-              </Pressable>
-            ) : null}
-            {card.url ? (
-              <Pressable
-                onPress={handleOpenUrl}
-                accessibilityRole="link"
-                accessibilityLabel={t("kanban.card.open")}
-                testID={`kanban-card-url-${card.id}`}
-                hitSlop={6}
-              >
-                <ArrowUpRight size={LINK_ICON_SIZE} color={styles.linkButton.color} />
-              </Pressable>
-            ) : null}
-          </View>
-          <Text style={styles.title} numberOfLines={2}>
-            {card.title}
-          </Text>
-          {hasMeta ? (
-            <View style={styles.metaRow}>
-              {card.assignee ? (
-                <Text style={styles.assignee} numberOfLines={1}>
-                  {card.assignee}
-                </Text>
-              ) : null}
-              {visibleLabels.map((label) => (
-                <View key={label} style={styles.labelChip}>
-                  <Text style={styles.labelText} numberOfLines={1}>
-                    {label}
-                  </Text>
-                </View>
-              ))}
-              {hiddenLabelCount > 0 ? (
-                <View style={styles.labelChip}>
-                  <Text style={styles.labelText}>
-                    {t("kanban.card.moreLabels", { count: hiddenLabelCount })}
-                  </Text>
+        <View onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
+          <Pressable
+            style={cardStyle}
+            onPress={handlePress}
+            onLongPress={handleLongPress}
+            accessibilityRole="button"
+            accessibilityLabel={card.title}
+            testID={`kanban-card-${card.id}`}
+          >
+            <View style={styles.header}>
+              <themeVisual.icon size={THEME_ICON_SIZE} color={iconColor} />
+              {issueKey ? (
+                <View style={styles.issueKeyChip}>
+                  <Text style={styles.issueKeyText}>{issueKey}</Text>
                 </View>
               ) : null}
-              {priorityVisual ? (
-                <priorityVisual.icon size={PRIORITY_ICON_SIZE} color={priorityVisual.color} />
+              <View style={styles.headerSpacer} />
+              {showQuickActions ? (
+                <Pressable
+                  onPress={handleDispatch}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("kanban.cardDetail.dispatch")}
+                  testID={`kanban-card-dispatch-${card.id}`}
+                  hitSlop={6}
+                >
+                  <Rocket size={LINK_ICON_SIZE} color={styles.linkButton.color} />
+                </Pressable>
+              ) : null}
+              {card.url ? (
+                <Pressable
+                  onPress={handleOpenUrl}
+                  accessibilityRole="link"
+                  accessibilityLabel={t("kanban.card.open")}
+                  testID={`kanban-card-url-${card.id}`}
+                  hitSlop={6}
+                >
+                  <ArrowUpRight size={LINK_ICON_SIZE} color={styles.linkButton.color} />
+                </Pressable>
               ) : null}
             </View>
-          ) : null}
-        </Pressable>
+            <Text style={styles.title} numberOfLines={2}>
+              {card.title}
+            </Text>
+            {hasMeta ? (
+              <View style={styles.metaRow}>
+                {card.assignee ? (
+                  <Text style={styles.assignee} numberOfLines={1}>
+                    {card.assignee}
+                  </Text>
+                ) : null}
+                {visibleLabels.map((label) => (
+                  <View key={label} style={styles.labelChip}>
+                    <Text style={styles.labelText} numberOfLines={1}>
+                      {label}
+                    </Text>
+                  </View>
+                ))}
+                {hiddenLabelCount > 0 ? (
+                  <View style={styles.labelChip}>
+                    <Text style={styles.labelText}>
+                      {t("kanban.card.moreLabels", { count: hiddenLabelCount })}
+                    </Text>
+                  </View>
+                ) : null}
+                {priorityVisual ? (
+                  <priorityVisual.icon size={PRIORITY_ICON_SIZE} color={priorityVisual.color} />
+                ) : null}
+              </View>
+            ) : null}
+          </Pressable>
+        </View>
       </Animated.View>
     </GestureDetector>
   );

@@ -3,7 +3,7 @@ import { Pressable, Text, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight, Copy, Pencil, Play } from "lucide-react-native";
+import { ArrowUpRight, Copy, Pencil, Play, Rocket } from "lucide-react-native";
 import equal from "fast-deep-equal";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import type { ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
@@ -361,6 +361,8 @@ export interface KanbanCardDetailSheetProps {
   detailSupported: boolean;
   onClose: () => void;
   onEdit: () => void;
+  /** Open the standalone dispatch panel (same action as the card's rocket). */
+  onDispatch: () => void;
 }
 
 /**
@@ -375,6 +377,7 @@ export function KanbanCardDetailSheet({
   detailSupported,
   onClose,
   onEdit,
+  onDispatch,
 }: KanbanCardDetailSheetProps): ReactElement {
   const { t } = useTranslation();
   const { detail, isLoading, isError, refetch } = useKanbanCardDetail(
@@ -387,12 +390,22 @@ export function KanbanCardDetailSheet({
     () => ({
       title: t("kanban.cardDetail.title"),
       actions: (
-        <Button size="sm" variant="ghost" leftIcon={Pencil} onPress={onEdit}>
-          {t("kanban.card.edit")}
-        </Button>
+        <>
+          <Button
+            size="sm"
+            variant="ghost"
+            leftIcon={Rocket}
+            onPress={onDispatch}
+            accessibilityLabel={t("kanban.cardDetail.dispatch")}
+            testID="kanban-card-detail-dispatch"
+          />
+          <Button size="sm" variant="ghost" leftIcon={Pencil} onPress={onEdit}>
+            {t("kanban.card.edit")}
+          </Button>
+        </>
       ),
     }),
-    [onEdit, t],
+    [onDispatch, onEdit, t],
   );
 
   if (!card) {
@@ -570,8 +583,6 @@ function LoadedBody({
         fallbackAttachments={fallbackAttachments}
         attachmentBaseUrl={attachmentBaseUrl}
       />
-
-      <DispatchSection card={card} detail={detail} serverId={serverId} />
 
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>{t("kanban.cardDetail.comments")}</Text>

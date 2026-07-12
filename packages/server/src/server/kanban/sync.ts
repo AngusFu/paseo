@@ -130,9 +130,9 @@ export class KanbanSyncService {
       const token = await this.resolveToken(source, connection);
       const upserts =
         source.kind === "jira"
-          ? (await this.fetchJiraIssues(baseUrl, source.query, token)).map((issue) =>
-              this.buildJiraUpsert(baseUrl, source, issue),
-            )
+          ? (
+              await this.fetchJiraIssues(baseUrl, source.query, token, connection?.email ?? null)
+            ).map((issue) => this.buildJiraUpsert(baseUrl, source, issue))
           : (await this.fetchGitlabMergeRequests(baseUrl, source.query, token)).map((mr) =>
               this.buildGitlabUpsert(baseUrl, source, mr),
             );
@@ -208,11 +208,16 @@ export class KanbanSyncService {
     baseUrl: string,
     query: string,
     token: string | null,
+    email: string | null,
   ): Promise<JiraIssue[]> {
     const url = `${trimTrailingSlash(baseUrl)}/rest/api/2/search?jql=${encodeURIComponent(query)}`;
     const headers: Record<string, string> = { Accept: "application/json" };
     if (token) {
-      headers.Authorization = `Bearer ${token}`;
+      // Jira Cloud REST auth is HTTP Basic base64(email:apiToken). Jira Server/DC
+      // Personal Access Tokens use Bearer, so fall back to Bearer without an email.
+      headers.Authorization = email
+        ? `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`
+        : `Bearer ${token}`;
     }
     const response = await this.fetchImpl(url, { headers });
     if (!response.ok) {

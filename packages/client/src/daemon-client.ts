@@ -4823,6 +4823,7 @@ export class DaemonClient {
         kind: options.kind,
         name: options.name,
         baseUrl: options.baseUrl,
+        ...(options.email !== undefined ? { email: options.email } : {}),
         ...(options.oauthClientId !== undefined ? { oauthClientId: options.oauthClientId } : {}),
         ...(options.oauthClientSecret !== undefined
           ? { oauthClientSecret: options.oauthClientSecret }
@@ -4849,6 +4850,7 @@ export class DaemonClient {
         connectionId: options.id,
         ...(options.name !== undefined ? { name: options.name } : {}),
         ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
+        ...(options.email !== undefined ? { email: options.email } : {}),
         ...(options.oauthClientId !== undefined ? { oauthClientId: options.oauthClientId } : {}),
         ...(options.oauthClientSecret !== undefined
           ? { oauthClientSecret: options.oauthClientSecret }

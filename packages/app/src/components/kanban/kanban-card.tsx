@@ -124,6 +124,9 @@ export function KanbanCard({
     });
 
   const animatedStyle = useAnimatedStyle(() => ({
+    // position:relative so the zIndex is honoured on web (RN Web only stacks
+    // positioned elements), letting the lifted card sit above sibling cards.
+    position: "relative",
     transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
     zIndex: dragging.value ? 10 : 0,
     opacity: dragging.value ? 0.92 : 1,

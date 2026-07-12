@@ -128,7 +128,9 @@ export function KanbanSourcesSheet({
 
   const handleSync = useCallback(
     (id: string) => {
-      void mutations.syncSource(id);
+      // Swallow the rejection so a failed sync doesn't crash the app; the error
+      // lands in this source's row via lastSyncError after the refetch.
+      void mutations.syncSource(id).catch(() => undefined);
     },
     [mutations],
   );

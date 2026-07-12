@@ -79,6 +79,15 @@ export function KanbanColumn({
     [isDragging, isDropTarget],
   );
 
+  // While a card in this column is being dragged (web only), stop the list
+  // ScrollView from clipping it — otherwise the lifted card gets cut at the
+  // column edge and hidden under the neighbouring column. No scroll happens
+  // during a drag, so dropping the clip is safe; it restores on drag end.
+  const cardScrollStyle = useMemo(
+    () => [styles.cardScroll, isDragging && styles.scrollDragging],
+    [isDragging],
+  );
+
   return (
     <View ref={handleRef} style={columnStyle} testID={`kanban-column-${status}`}>
       <View style={styles.header}>
@@ -90,7 +99,7 @@ export function KanbanColumn({
         </Text>
       </View>
       <ScrollView
-        style={styles.cardScroll}
+        style={cardScrollStyle}
         contentContainerStyle={styles.cardList}
         showsVerticalScrollIndicator
       >
@@ -165,6 +174,11 @@ const styles = StyleSheet.create((theme) => ({
   cardScroll: {
     flex: 1,
     minHeight: 0,
+  },
+  // Applied only during a drag: let the lifted card escape the column bounds so
+  // the column's raised zIndex can paint it above the neighbouring column.
+  scrollDragging: {
+    overflow: "visible",
   },
   cardList: {
     gap: theme.spacing[2],

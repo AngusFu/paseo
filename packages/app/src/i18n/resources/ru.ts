@@ -2198,6 +2198,8 @@ export const ru: TranslationResources = {
       confirmDelete: "Удалить «{{name}}»? Это действие нельзя отменить.",
     },
     connectionForm: {
+      emailLabel: "Эл. почта",
+      emailHint: "Email вашей учётной записи Jira — обязательно для Jira Cloud.",
       tokenLabel: "Личный токен доступа",
       tokenHintJira: "Создайте его на id.atlassian.com → API-токены.",
       tokenHintGitlab: "Создайте его в Настройки → Токены доступа (со scope `api`).",

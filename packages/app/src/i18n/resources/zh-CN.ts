@@ -2133,6 +2133,8 @@ export const zhCN: TranslationResources = {
       confirmDelete: "删除“{{name}}”？此操作无法撤销。",
     },
     connectionForm: {
+      emailLabel: "邮箱",
+      emailHint: "你的 Jira 账号邮箱，Jira Cloud 必填。",
       tokenLabel: "个人访问令牌",
       tokenHintJira: "在 id.atlassian.com → API 令牌 处创建。",
       tokenHintGitlab: "在 设置 → 访问令牌（勾选 `api` 权限）处创建。",

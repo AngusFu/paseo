@@ -2157,6 +2157,8 @@ export const ar: TranslationResources = {
       confirmDelete: 'حذف "{{name}}"؟ لا يمكن التراجع عن ذلك.',
     },
     connectionForm: {
+      emailLabel: "البريد الإلكتروني",
+      emailHint: "بريد حساب Jira الخاص بك — مطلوب لـ Jira Cloud.",
       tokenLabel: "رمز الوصول الشخصي",
       tokenHintJira: "أنشئ واحدًا من id.atlassian.com ← رموز API.",
       tokenHintGitlab: "أنشئ واحدًا من الإعدادات ← رموز الوصول (بنطاق `api`).",

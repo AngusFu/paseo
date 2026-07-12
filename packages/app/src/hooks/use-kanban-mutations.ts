@@ -163,26 +163,20 @@ export function useKanbanMutations({ serverId }: { serverId: string }): UseKanba
       if (listPayload.error) {
         throw new Error(listPayload.error);
       }
-      // Sync every enabled source; one bad source must not block the rest.
-      // Collect failures and surface them together after all have run.
-      const failures: string[] = [];
+      // Sync every enabled source; one bad source must not block the rest — and
+      // a per-source failure must NOT reject this mutation. The daemon records
+      // each failure in that source's `lastSyncError`, which the sources list
+      // surfaces per-row after the invalidate below. Rejecting here would bubble
+      // up as an uncaught error and crash the app.
       for (const source of listPayload.sources) {
         if (!source.enabled) {
           continue;
         }
         try {
-          const syncPayload = await client.kanbanSourceSync(source.id);
-          if (syncPayload.error) {
-            failures.push(`${source.name}: ${syncPayload.error}`);
-          }
-        } catch (error) {
-          failures.push(
-            `${source.name}: ${error instanceof Error ? error.message : String(error)}`,
-          );
+          await client.kanbanSourceSync(source.id);
+        } catch {
+          // Ignored: recorded server-side, shown per-row after invalidation.
         }
-      }
-      if (failures.length > 0) {
-        throw new Error(failures.join("\n"));
       }
     },
     onSettled: invalidate,

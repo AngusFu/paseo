@@ -2167,6 +2167,8 @@ export const en = {
       confirmDelete: 'Delete "{{name}}"? This cannot be undone.',
     },
     connectionForm: {
+      emailLabel: "Email",
+      emailHint: "Your Jira account email — required for Jira Cloud.",
       tokenLabel: "Personal Access Token",
       tokenHintJira: "Create one at id.atlassian.com → API tokens.",
       tokenHintGitlab: "Create one at Settings → Access Tokens (with the `api` scope).",

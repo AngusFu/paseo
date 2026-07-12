@@ -447,6 +447,7 @@ export class KanbanStore {
         kind: input.kind,
         name: input.name,
         baseUrl: input.baseUrl,
+        email: input.email ?? null,
         oauthClientId: input.oauthClientId ?? null,
         // Secret material (tokenValue/oauthClientSecret) is never persisted here —
         // KanbanService writes it to secrets.json and calls setConnectionAuthConnected.
@@ -473,6 +474,7 @@ export class KanbanStore {
         ...current,
         name: input.name ?? current.name,
         baseUrl: input.baseUrl ?? current.baseUrl,
+        email: input.email === undefined ? current.email : input.email,
         oauthClientId:
           input.oauthClientId === undefined ? current.oauthClientId : input.oauthClientId,
         updatedAt: new Date().toISOString(),

@@ -224,6 +224,72 @@ describe("KanbanSyncService", () => {
     expect((init as RequestInit).headers).toMatchObject({ "PRIVATE-TOKEN": "glpat-secret" });
   });
 
+  test("uses HTTP Basic auth for a Jira connection that has an email (Jira Cloud)", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ issues: [] }),
+    })) as unknown as typeof fetch;
+
+    const { credentialRefForConnection } = await import("./oauth.js");
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const connection = await store.createConnection({
+      kind: "jira",
+      name: "Jira Cloud",
+      baseUrl: "https://x.atlassian.net",
+      email: "me@corp.com",
+    });
+    await secrets.set(credentialRefForConnection(connection.id), {
+      method: "token",
+      token: "jira-api-token",
+    });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "My todos",
+      connectionId: connection.id,
+      query: "assignee = currentUser()",
+    });
+
+    await syncService.sync(source);
+
+    const [, init] = fetchImpl.mock.calls[0];
+    const expected = `Basic ${Buffer.from("me@corp.com:jira-api-token").toString("base64")}`;
+    expect((init as RequestInit).headers).toMatchObject({ Authorization: expected });
+  });
+
+  test("uses Bearer for a Jira connection without an email (Jira Server/DC PAT)", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ issues: [] }),
+    })) as unknown as typeof fetch;
+
+    const { credentialRefForConnection } = await import("./oauth.js");
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const connection = await store.createConnection({
+      kind: "jira",
+      name: "Jira Server",
+      baseUrl: "https://jira.corp.com",
+    });
+    await secrets.set(credentialRefForConnection(connection.id), {
+      method: "token",
+      token: "jira-pat",
+    });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "My todos",
+      connectionId: connection.id,
+      query: "assignee = currentUser()",
+    });
+
+    await syncService.sync(source);
+
+    const [, init] = fetchImpl.mock.calls[0];
+    expect((init as RequestInit).headers).toMatchObject({ Authorization: "Bearer jira-pat" });
+  });
+
   test("refreshes an expiring OAuth access token before syncing", async () => {
     const fetchCalls: string[] = [];
     const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {

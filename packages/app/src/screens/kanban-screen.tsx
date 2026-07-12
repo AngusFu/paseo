@@ -56,7 +56,9 @@ function KanbanScreenContent(): ReactElement {
   }, []);
   const closeCreate = useCallback(() => setCreateOpen(false), []);
   const handleSync = useCallback(() => {
-    void mutations.syncSources();
+    // Never let a sync failure bubble up as an uncaught rejection (would crash
+    // the app). Per-source errors are shown in the sources list instead.
+    void mutations.syncSources().catch(() => undefined);
   }, [mutations]);
 
   const [sourcesOpen, setSourcesOpen] = useState(false);

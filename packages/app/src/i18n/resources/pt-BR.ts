@@ -2190,6 +2190,8 @@ export const ptBR: TranslationResources = {
       confirmDelete: 'Excluir "{{name}}"? Isso não pode ser desfeito.',
     },
     connectionForm: {
+      emailLabel: "E-mail",
+      emailHint: "O e-mail da sua conta Jira — obrigatório para o Jira Cloud.",
       tokenLabel: "Token de acesso pessoal",
       tokenHintJira: "Crie um em id.atlassian.com → Tokens de API.",
       tokenHintGitlab: "Crie um em Configurações → Tokens de acesso (com o escopo `api`).",

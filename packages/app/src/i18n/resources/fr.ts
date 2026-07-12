@@ -2212,6 +2212,8 @@ export const fr: TranslationResources = {
       confirmDelete: "Supprimer « {{name}} » ? Cette action est irréversible.",
     },
     connectionForm: {
+      emailLabel: "E-mail",
+      emailHint: "L'e-mail de votre compte Jira — requis pour Jira Cloud.",
       tokenLabel: "Jeton d'accès personnel",
       tokenHintJira: "Créez-en un sur id.atlassian.com → Jetons API.",
       tokenHintGitlab: "Créez-en un dans Paramètres → Jetons d'accès (avec la portée `api`).",

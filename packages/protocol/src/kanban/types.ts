@@ -122,6 +122,10 @@ export const StoredKanbanConnectionSchema = z.object({
   name: z.string(),
   // Instance base URL. NEVER hardcode gitlab.com / atlassian.net.
   baseUrl: z.string(),
+  // Jira Cloud account email. Jira Cloud REST auth is HTTP Basic with
+  // base64(email:apiToken), so the email is required alongside the API token.
+  // Unused for GitLab and Jira Server/DC (which use Bearer PATs).
+  email: z.string().nullable().optional(),
   // OAuth application client id (public). Self-hosted GitLab / Jira Server require
   // the user to register an OAuth app on their instance and supply this.
   oauthClientId: z.string().nullable().optional(),
@@ -198,6 +202,7 @@ export interface CreateKanbanConnectionInput {
   kind: KanbanSourceKind;
   name: string;
   baseUrl: string;
+  email?: string | null;
   oauthClientId?: string | null;
   // Secret material passed on create/update. The daemon writes these to
   // kanban/secrets.json keyed by connection id and never echoes them back.
@@ -209,6 +214,7 @@ export interface UpdateKanbanConnectionInput {
   id: string;
   name?: string;
   baseUrl?: string;
+  email?: string | null;
   oauthClientId?: string | null;
   oauthClientSecret?: string | null;
   tokenValue?: string | null;

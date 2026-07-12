@@ -33,18 +33,21 @@ interface ConnectionFormValues {
   kind: KanbanSourceKind;
   name: string;
   baseUrl: string;
+  email: string;
   clientId: string;
   secret: string;
   token: string;
 }
 
 // Only send secret material the user actually typed, so a blank field never
-// wipes a stored token/secret.
+// wipes a stored token/secret. Email is Jira-only (Jira Cloud Basic auth =
+// email + token); GitLab never sends it.
 function buildCreateInput(v: ConnectionFormValues): CreateKanbanConnectionInput {
   return {
     kind: v.kind,
     name: v.name,
     baseUrl: v.baseUrl,
+    ...(v.kind === "jira" && v.email ? { email: v.email } : {}),
     ...(v.clientId ? { oauthClientId: v.clientId } : {}),
     ...(v.secret ? { oauthClientSecret: v.secret } : {}),
     ...(v.token ? { tokenValue: v.token } : {}),
@@ -56,6 +59,7 @@ function buildUpdateInput(id: string, v: ConnectionFormValues): UpdateKanbanConn
     id,
     name: v.name,
     baseUrl: v.baseUrl,
+    email: v.kind === "jira" ? v.email || null : null,
     oauthClientId: v.clientId || null,
     ...(v.secret ? { oauthClientSecret: v.secret } : {}),
     ...(v.token ? { tokenValue: v.token } : {}),
@@ -91,6 +95,44 @@ function ConnectionKindField({
           {kind === "gitlab" ? t("kanban.connectionForm.gitlab") : t("kanban.connectionForm.jira")}
         </Text>
       )}
+    </Field>
+  );
+}
+
+// Jira Cloud authenticates with email + token (Basic auth); GitLab uses just a
+// token. So the email field only appears for Jira.
+function ConnectionEmailField({
+  kind,
+  email,
+  onChange,
+  size,
+}: {
+  kind: KanbanSourceKind;
+  email: string;
+  onChange: (value: string) => void;
+  size: FieldControlSize;
+}): ReactElement | null {
+  const { t } = useTranslation();
+  if (kind !== "jira") {
+    return null;
+  }
+  return (
+    <Field
+      label={t("kanban.connectionForm.emailLabel")}
+      hint={t("kanban.connectionForm.emailHint")}
+    >
+      <FormTextInput
+        size={size}
+        testID="kanban-connection-email-input"
+        accessibilityLabel={t("kanban.connectionForm.emailLabel")}
+        initialValue={email}
+        value={email}
+        onChangeText={onChange}
+        placeholder="you@example.com"
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="email-address"
+      />
     </Field>
   );
 }
@@ -161,6 +203,7 @@ export function KanbanConnectionFormSheet({
       return current;
     });
   }, []);
+  const [email, setEmail] = useState(connection?.email ?? "");
   const [oauthClientId, setOauthClientId] = useState(connection?.oauthClientId ?? "");
   const [oauthClientSecret, setOauthClientSecret] = useState("");
   const [token, setToken] = useState("");
@@ -215,6 +258,7 @@ export function KanbanConnectionFormSheet({
         kind,
         name: name.trim(),
         baseUrl: baseUrl.trim(),
+        email: email.trim(),
         clientId: oauthClientId.trim(),
         secret: oauthClientSecret.trim(),
         token: token.trim(),
@@ -234,6 +278,7 @@ export function KanbanConnectionFormSheet({
     baseUrl,
     canSubmit,
     connection,
+    email,
     kind,
     mode,
     mutations,
@@ -363,6 +408,8 @@ export function KanbanConnectionFormSheet({
           keyboardType="url"
         />
       </Field>
+
+      <ConnectionEmailField kind={kind} email={email} onChange={setEmail} size={controlSize} />
 
       <Field
         label={t("kanban.connectionForm.tokenLabel")}

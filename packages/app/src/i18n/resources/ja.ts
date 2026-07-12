@@ -2184,6 +2184,8 @@ export const ja: TranslationResources = {
       confirmDelete: "「{{name}}」を削除しますか？この操作は取り消せません。",
     },
     connectionForm: {
+      emailLabel: "メール",
+      emailHint: "Jira アカウントのメールアドレス。Jira Cloud では必須です。",
       tokenLabel: "個人アクセストークン",
       tokenHintJira: "id.atlassian.com → API トークンで作成します。",
       tokenHintGitlab: "設定 → アクセストークン（`api` スコープ付き）で作成します。",

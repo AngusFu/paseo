@@ -37,7 +37,7 @@ import { useSessionStore } from "@/stores/session-store";
 import type { HostProfile } from "@/types/host-connection";
 import { buildDaemonWebSocketUrl } from "@/utils/daemon-endpoints";
 import { toErrorMessage } from "@/utils/error-messages";
-import { renderPromptTemplate } from "@/utils/kanban-prompt-template";
+import { renderDefaultPrompt, renderPromptTemplate } from "@/utils/kanban-prompt-template";
 import { formatTimeAgo } from "@/utils/time";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { requireWorkspaceDirectory } from "@/utils/workspace-directory";
@@ -240,18 +240,15 @@ function buildDispatchPlan(
     const worktree = slug
       ? `fix-${issueKey.toLowerCase()}-${slug}`
       : `fix-${issueKey.toLowerCase()}`;
+    const vars = {
+      ...buildCommonTemplateVars(card, detail, title, url, worktree),
+      issueKey,
+      contractBranch,
+    };
     const template = findPromptTemplate("jira", sources);
-    if (template) {
-      const prompt = renderPromptTemplate(template, {
-        ...buildCommonTemplateVars(card, detail, title, url, worktree),
-        issueKey,
-        contractBranch,
-      });
-      return { worktree, title: issueKey, prompt };
-    }
-    const prefix = `Fix ${issueKey}: ${title}`;
-    const rename = `First rename the worktree branch to match the repo's branch contract: git branch -m "${contractBranch}".`;
-    const prompt = url ? `${prefix}\n${url}\n${rename}` : `${prefix}\n${rename}`;
+    const prompt = template
+      ? renderPromptTemplate(template, vars)
+      : renderDefaultPrompt("jira", vars);
     return { worktree, title: issueKey, prompt };
   }
   if (card.source.kind === "gitlab") {
@@ -263,21 +260,20 @@ function buildDispatchPlan(
     // title mentions an issue key, plain review-mr-<iid> slug otherwise.
     const issueKey = issueKeyFromTitle(title);
     const worktree = issueKey ? `chore/${issueKey}_review-mr-${mrIid}` : `chore/review-mr-${mrIid}`;
+    const vars = {
+      ...buildCommonTemplateVars(card, detail, title, url, worktree),
+      mrIid,
+    };
     const template = findPromptTemplate("gitlab", sources);
-    if (template) {
-      const prompt = renderPromptTemplate(template, {
-        ...buildCommonTemplateVars(card, detail, title, url, worktree),
-        mrIid,
-      });
-      return { worktree, title: titleArg, prompt };
-    }
-    const prefix = `Review merge request !${mrIid}: ${title}`;
-    const prompt = url
-      ? `${prefix}\n${url}\nCheck out the MR source branch in this worktree before reviewing.`
-      : `${prefix}\nCheck out the MR source branch in this worktree before reviewing.`;
+    const prompt = template
+      ? renderPromptTemplate(template, vars)
+      : renderDefaultPrompt("gitlab", vars);
     return { worktree, title: titleArg, prompt };
   }
-  const prompt = url ? `${title}\n${url}` : title;
+  const prompt = renderDefaultPrompt(
+    "manual",
+    buildCommonTemplateVars(card, detail, title, url, null),
+  );
   return { worktree: null, title: null, prompt };
 }
 
@@ -753,7 +749,10 @@ function AttachmentLink({
   );
 }
 
-function DispatchSection({
+// Exported so the standalone dispatch sheet (opened from a card's hover
+// quick-launch) can reuse the exact panel — it works from just the base card
+// with detail={null}. See kanban-card-dispatch-sheet.tsx.
+export function DispatchSection({
   card,
   detail,
   serverId,

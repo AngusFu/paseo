@@ -29,6 +29,7 @@ import {
 import { useHostFeature } from "@/runtime/host-features";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { toErrorMessage } from "@/utils/error-messages";
+import { DEFAULT_KANBAN_PROMPT_TEMPLATES } from "@/utils/kanban-prompt-template";
 
 export interface KanbanSourceFormSheetProps {
   serverId: string;
@@ -502,14 +503,25 @@ export function KanbanSourceFormSheet({
   const [name, setName] = useState(source?.name ?? "");
   const [query, setQuery] = useState(source?.query ?? DEFAULT_QUERY[source?.kind ?? "jira"]);
 
-  // Selecting a kind swaps in that kind's default query, but only when the user
-  // hasn't typed their own (empty, or still one of the two defaults).
+  // Selecting a kind swaps in that kind's default query/template, but only
+  // when the user hasn't typed their own (empty, or still one of the defaults).
   const handleKindChange = useCallback((nextKind: KanbanSourceKind) => {
     setKind(nextKind);
     setQuery((current) => {
       const trimmed = current.trim();
       if (trimmed === "" || trimmed === DEFAULT_QUERY.jira || trimmed === DEFAULT_QUERY.gitlab) {
         return DEFAULT_QUERY[nextKind];
+      }
+      return current;
+    });
+    setPromptTemplate((current) => {
+      const trimmed = current.trim();
+      if (
+        trimmed === "" ||
+        trimmed === DEFAULT_KANBAN_PROMPT_TEMPLATES.jira.trim() ||
+        trimmed === DEFAULT_KANBAN_PROMPT_TEMPLATES.gitlab.trim()
+      ) {
+        return DEFAULT_KANBAN_PROMPT_TEMPLATES[nextKind];
       }
       return current;
     });
@@ -520,7 +532,12 @@ export function KanbanSourceFormSheet({
   const [connectionId, setConnectionId] = useState<string | null>(source?.connectionId ?? null);
   const [enabled, setEnabled] = useState(source?.enabled ?? true);
   const [columnMap, setColumnMap] = useState<Record<string, string>>(source?.columnMap ?? {});
-  const [promptTemplate, setPromptTemplate] = useState(source?.promptTemplate ?? "");
+  // Pre-filled with the built-in template so users can see and tweak the real
+  // default. An unmodified value is saved as "no template" (see handleSubmit)
+  // so unedited sources keep tracking future built-in improvements.
+  const [promptTemplate, setPromptTemplate] = useState(
+    source?.promptTemplate ?? DEFAULT_KANBAN_PROMPT_TEMPLATES[source?.kind ?? "jira"],
+  );
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -567,7 +584,12 @@ export function KanbanSourceFormSheet({
         connectionId: effectiveConnectionId,
         enabled,
         columnMap: Object.keys(columnMap).length > 0 ? columnMap : undefined,
-        promptTemplate,
+        // An unmodified built-in template counts as "no template" so the
+        // source keeps following default-template improvements.
+        promptTemplate:
+          promptTemplate.trim() === DEFAULT_KANBAN_PROMPT_TEMPLATES[kind].trim()
+            ? ""
+            : promptTemplate,
       };
       if (mode === "edit" && source) {
         await mutations.updateSource(buildUpdateInput(source.id, values));
@@ -711,6 +733,8 @@ export function KanbanSourceFormSheet({
         {/* AdaptiveTextInput is uncontrolled and discards `value`; initialValue
             seeds it, matching the dispatch-prompt input in the card detail sheet. */}
         <FormTextInput
+          // Remount on kind change so the swapped-in default template shows.
+          key={`prompt-template-${kind}`}
           size={controlSize}
           testID="kanban-source-prompt-template-input"
           accessibilityLabel={t("kanban.sourceForm.promptTemplate")}

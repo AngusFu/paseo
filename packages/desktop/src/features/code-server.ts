@@ -1,5 +1,4 @@
-import type { ChildProcess } from "node:child_process";
-import { spawn as nodeSpawn } from "node:child_process";
+import { execFileSync, spawn as nodeSpawn } from "node:child_process";
 import { existsSync as nodeExistsSync } from "node:fs";
 import { connect as netConnect } from "node:net";
 import { ipcMain } from "electron";
@@ -13,6 +12,7 @@ const CODE_SERVER_PORT = 19490;
 const CODE_SERVER_URL = `http://${CODE_SERVER_HOST}:${CODE_SERVER_PORT}`;
 const READY_TIMEOUT_MS = 20_000;
 const READY_POLL_INTERVAL_MS = 250;
+const STOP_TIMEOUT_MS = 3_000;
 
 export interface CodeServerStatus {
   running: boolean;
@@ -31,9 +31,12 @@ interface IpcHandlerRegistry {
   handle(channel: string, listener: (event: unknown, ...args: unknown[]) => unknown): void;
 }
 
-// The process we spawned, if any. We can only stop what we own; an externally
-// launched serve-web on the same port still reads as "running" via port probe.
-let managedProcess: ChildProcess | null = null;
+// Whether we started serve-web this session — gates the kill-on-quit cleanup so
+// we never tear down a serve-web the user launched independently of the app.
+// We stop by killing whatever holds the port (see stopByPort), never by a saved
+// child handle: the `code` launcher reparents serve-web into its own process
+// group, so a process-group kill misses it, and an orphan can outlive a restart.
+let spawnedByUs = false;
 
 function probePort(port: number, host: string): Promise<boolean> {
   return new Promise((resolve) => {
@@ -49,7 +52,49 @@ function probePort(port: number, host: string): Promise<boolean> {
   });
 }
 
-async function waitForReady(child: ChildProcess): Promise<void> {
+// PIDs listening on the port. Authoritative for stop: the port is the resource
+// we own, regardless of which process (ours, an orphan, external) holds it.
+function findPortListenerPids(port: number, platform: NodeJS.Platform): number[] {
+  try {
+    if (platform === "win32") {
+      const out = execFileSync("netstat", ["-ano", "-p", "tcp"], { encoding: "utf8" });
+      const pids = new Set<number>();
+      for (const line of out.split(/\r?\n/)) {
+        const match = line.match(/:(\d+)\s+\S+\s+LISTENING\s+(\d+)/);
+        if (match && Number(match[1]) === port) {
+          pids.add(Number(match[2]));
+        }
+      }
+      return [...pids];
+    }
+    const out = execFileSync("lsof", ["-nP", `-tiTCP:${port}`, "-sTCP:LISTEN"], {
+      encoding: "utf8",
+    });
+    return out
+      .split(/\s+/)
+      .map((value) => Number(value))
+      .filter((pid) => Number.isInteger(pid) && pid > 0);
+  } catch {
+    // lsof/netstat exit non-zero when nothing matches.
+    return [];
+  }
+}
+
+function killPids(pids: readonly number[], platform: NodeJS.Platform, force: boolean): void {
+  for (const pid of pids) {
+    try {
+      if (platform === "win32") {
+        execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"]);
+      } else {
+        process.kill(pid, force ? "SIGKILL" : "SIGTERM");
+      }
+    } catch {
+      // Already gone.
+    }
+  }
+}
+
+async function waitForReady(child: ReturnType<typeof nodeSpawn>): Promise<void> {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   let exited = false;
   child.once("exit", () => {
@@ -102,55 +147,48 @@ export async function startCodeServer(
       "--accept-server-license-terms",
     ],
     {
-      // Own process group so we can tree-kill it on stop, and so a crash in the
-      // Electron main process does not SIGHUP it mid-session.
+      // Detach so a crash in the Electron main process does not SIGHUP serve-web
+      // mid-session; we clean it up explicitly by port on stop/quit.
       detached: platform !== "win32",
       env: createExternalProcessEnv(env),
       stdio: "ignore",
     },
   );
-  managedProcess = child;
-  child.once("exit", () => {
-    if (managedProcess === child) {
-      managedProcess = null;
-    }
-  });
+  spawnedByUs = true;
 
   try {
     await waitForReady(child);
   } catch (error) {
-    stopManagedProcess(platform);
+    await stopByPort(platform);
     throw error;
   }
   return { running: true, url: CODE_SERVER_URL, port: CODE_SERVER_PORT };
 }
 
-function stopManagedProcess(platform: NodeJS.Platform): void {
-  const child = managedProcess;
-  if (!child) {
+async function stopByPort(platform: NodeJS.Platform): Promise<void> {
+  spawnedByUs = false;
+  const pids = findPortListenerPids(CODE_SERVER_PORT, platform);
+  if (pids.length === 0) {
     return;
   }
-  managedProcess = null;
-  if (child.pid === undefined) {
-    return;
-  }
-  try {
-    if (platform === "win32") {
-      child.kill();
-    } else {
-      // Negative pid targets the whole process group (see `detached` above).
-      process.kill(-child.pid, "SIGTERM");
+  killPids(pids, platform, false);
+
+  const deadline = Date.now() + STOP_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (!(await probePort(CODE_SERVER_PORT, CODE_SERVER_HOST))) {
+      return;
     }
-  } catch {
-    // Already gone.
+    await new Promise((resolve) => setTimeout(resolve, READY_POLL_INTERVAL_MS));
   }
+  // Escalate to SIGKILL for anything that ignored SIGTERM.
+  killPids(findPortListenerPids(CODE_SERVER_PORT, platform), platform, true);
 }
 
 export async function stopCodeServer(
   dependencies: CodeServerDependencies = {},
 ): Promise<CodeServerStatus> {
   const platform = dependencies.platform ?? process.platform;
-  stopManagedProcess(platform);
+  await stopByPort(platform);
   return await getCodeServerStatus();
 }
 
@@ -164,8 +202,14 @@ export function registerCodeServerHandlers(
   ipc.handle("paseo:code-server:stop", () => stopCodeServer(dependencies));
 }
 
-// Kill the serve-web process we own when the desktop app quits, so we do not
-// leak an orphaned server the user can no longer see or control.
+// Kill the serve-web we started when the desktop app quits, so we do not leak an
+// orphan the user can no longer see or control. Synchronous + best-effort: the
+// quit path cannot await. Only fires if we started it (never touches a serve-web
+// the user launched independently).
 export function shutdownCodeServer(): void {
-  stopManagedProcess(process.platform);
+  if (!spawnedByUs) {
+    return;
+  }
+  spawnedByUs = false;
+  killPids(findPortListenerPids(CODE_SERVER_PORT, process.platform), process.platform, false);
 }

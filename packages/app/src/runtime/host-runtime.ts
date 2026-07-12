@@ -2259,26 +2259,37 @@ export function useHostRuntimeConnectionStatus(serverId: string): HostRuntimeCon
   );
 }
 
+function serializeConnectionStatuses(
+  store: HostRuntimeStore,
+  serverIds: readonly string[],
+): string {
+  // Pipe-joined statuses in serverIds order. Status values are a fixed enum
+  // with no "|", so a positional split reverses this without ambiguity.
+  return serverIds
+    .map((serverId) => store.getSnapshot(serverId)?.connectionStatus ?? "connecting")
+    .join("|");
+}
+
 export function useHostRuntimeConnectionStatuses(
   serverIds: readonly string[],
 ): ReadonlyMap<string, HostRuntimeConnectionStatus> {
   const store = getHostRuntimeStore();
-  const version = useSyncExternalStore(
+  // The reactive snapshot must BE the status data, not a bare version counter.
+  // Under the React Compiler a `void version` "dependency" is dead-code-
+  // eliminated, so the derived Map would cache the first (usually "connecting")
+  // value and never recompute when a host comes online. Serializing the
+  // statuses makes the tick a genuine, compiler-tracked input.
+  const serialized = useSyncExternalStore(
     (onStoreChange) => store.subscribeAll(onStoreChange),
-    () => store.getVersion(),
-    () => store.getVersion(),
+    () => serializeConnectionStatuses(store, serverIds),
+    () => serializeConnectionStatuses(store, serverIds),
   );
 
   return useMemo(() => {
-    // The aggregate version is the reactivity trigger; re-read snapshots on every host tick.
-    void version;
-    return new Map(
-      serverIds.map(
-        (serverId) =>
-          [serverId, store.getSnapshot(serverId)?.connectionStatus ?? "connecting"] as const,
-      ),
-    );
-  }, [serverIds, store, version]);
+    const statuses =
+      serialized.length > 0 ? (serialized.split("|") as HostRuntimeConnectionStatus[]) : [];
+    return new Map(serverIds.map((serverId, index) => [serverId, statuses[index] ?? "connecting"]));
+  }, [serverIds, serialized]);
 }
 
 export function useHostRuntimeLastError(serverId: string): string | null {

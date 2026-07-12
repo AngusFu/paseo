@@ -166,7 +166,13 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       return row ? estimateStreamItemHeight(row) : 120;
     },
     measureElement: measureVirtualElement,
-    useAnimationFrameWithResizeObserver: true,
+    // Measure resized rows synchronously in the ResizeObserver callback (which
+    // fires after layout, before paint) instead of deferring to the next frame.
+    // Deferring left the absolutely-positioned sibling rows at stale translateY
+    // offsets for a frame when a row grew (e.g. expanding a tool-run summary),
+    // which read as a visible flash. Synchronous measurement repositions them in
+    // the same frame.
+    useAnimationFrameWithResizeObserver: false,
     overscan: 8,
   });
   useEffect(() => {

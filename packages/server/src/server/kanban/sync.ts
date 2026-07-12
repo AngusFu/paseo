@@ -210,7 +210,15 @@ export class KanbanSyncService {
     token: string | null,
     email: string | null,
   ): Promise<JiraIssue[]> {
-    const url = `${trimTrailingSlash(baseUrl)}/rest/api/2/search?jql=${encodeURIComponent(query)}`;
+    const base = trimTrailingSlash(baseUrl);
+    // An email means Jira Cloud (HTTP Basic auth). Jira Cloud removed the old
+    // GET /rest/api/2/search (returns 410 Gone) in favour of the enhanced-JQL
+    // /rest/api/3/search/jql, which returns only id/key unless `fields` is given.
+    // Jira Server/DC (Bearer PAT, no email) still uses /rest/api/2/search.
+    const jql = encodeURIComponent(query);
+    const url = email
+      ? `${base}/rest/api/3/search/jql?jql=${jql}&fields=${encodeURIComponent("summary,status,assignee,labels")}&maxResults=100`
+      : `${base}/rest/api/2/search?jql=${jql}`;
     const headers: Record<string, string> = { Accept: "application/json" };
     if (token) {
       // Jira Cloud REST auth is HTTP Basic base64(email:apiToken). Jira Server/DC

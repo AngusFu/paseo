@@ -253,9 +253,12 @@ describe("KanbanSyncService", () => {
 
     await syncService.sync(source);
 
-    const [, init] = fetchImpl.mock.calls[0];
+    const [url, init] = fetchImpl.mock.calls[0];
     const expected = `Basic ${Buffer.from("me@corp.com:jira-api-token").toString("base64")}`;
     expect((init as RequestInit).headers).toMatchObject({ Authorization: expected });
+    // Jira Cloud uses the enhanced-JQL endpoint; the old /search returns 410 Gone.
+    expect(url).toContain("/rest/api/3/search/jql");
+    expect(url).toContain("fields=");
   });
 
   test("uses Bearer for a Jira connection without an email (Jira Server/DC PAT)", async () => {
@@ -286,8 +289,10 @@ describe("KanbanSyncService", () => {
 
     await syncService.sync(source);
 
-    const [, init] = fetchImpl.mock.calls[0];
+    const [url, init] = fetchImpl.mock.calls[0];
     expect((init as RequestInit).headers).toMatchObject({ Authorization: "Bearer jira-pat" });
+    // Jira Server/DC keeps the classic search endpoint.
+    expect(url).toContain("/rest/api/2/search");
   });
 
   test("refreshes an expiring OAuth access token before syncing", async () => {

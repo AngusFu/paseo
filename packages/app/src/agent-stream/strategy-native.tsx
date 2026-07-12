@@ -212,6 +212,9 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       // Native keeps position via maintainVisibleContentPosition and does not
       // auto-pin on content-size change, so inline expand needs no handling here.
       suppressAutoStickForContentChange: () => {},
+      // Native rows use normal flow (no absolute translateY), so there are no
+      // sibling offsets to flush after an inline expand.
+      flushRowMeasurements: () => {},
     };
     viewportRef.current = handle;
     return () => {

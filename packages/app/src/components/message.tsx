@@ -17,6 +17,7 @@ import * as React from "react";
 import {
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   memo,
   useMemo,
@@ -3316,6 +3317,10 @@ interface ToolRunSummaryProps {
   // Fired on a user tap (not the initial mount) so the host can keep the summary
   // row anchored across the resulting content-height change.
   onUserToggle?: () => void;
+  // Fired in the layout phase after an expand/collapse commits (before paint), so
+  // the host can synchronously reposition virtualized sibling rows and avoid the
+  // one-frame flash from a deferred re-measure.
+  onExpandedLayoutChange?: () => void;
 }
 
 export const ToolRunSummary = memo(function ToolRunSummary({
@@ -3323,6 +3328,7 @@ export const ToolRunSummary = memo(function ToolRunSummary({
   defaultExpanded = false,
   renderChild,
   onUserToggle,
+  onExpandedLayoutChange,
 }: ToolRunSummaryProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const label = useToolRunSummaryLabel(childItems);
@@ -3330,6 +3336,16 @@ export const ToolRunSummary = memo(function ToolRunSummary({
     onUserToggle?.();
     setIsExpanded((prev) => !prev);
   }, [onUserToggle]);
+
+  const isFirstLayoutRef = useRef(true);
+  useLayoutEffect(() => {
+    // Skip the initial mount; only flush after an actual expand/collapse.
+    if (isFirstLayoutRef.current) {
+      isFirstLayoutRef.current = false;
+      return;
+    }
+    onExpandedLayoutChange?.();
+  }, [isExpanded, onExpandedLayoutChange]);
 
   return (
     <View>

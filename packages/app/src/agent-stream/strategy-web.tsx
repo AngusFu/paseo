@@ -504,6 +504,28 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         suppressAutoStickUntilRef.current = performance.now() + WEB_EXPAND_ANCHOR_SUPPRESS_MS;
         cancelPendingStickToBottom();
       },
+      flushRowMeasurements: () => {
+        const scrollContainer = scrollContainerRef.current;
+        if (!scrollContainer) {
+          return;
+        }
+        const rowNodes = scrollContainer.querySelectorAll<HTMLElement>("[data-index]");
+        if (rowNodes.length === 0) {
+          return;
+        }
+        // Re-measure the just-resized virtualized row(s) now. This runs from the
+        // toggling row's layout effect (before paint), so the virtualizer's
+        // resulting reposition re-render is flushed by React before the browser
+        // paints — the absolutely-positioned siblings never show their stale
+        // translateY offsets. (flushSync is intentionally NOT used: it both warns
+        // and no-ops inside a commit-phase layout effect.) measureElement is a
+        // no-op for rows whose size is unchanged, so this stays cheap.
+        for (const node of rowNodes) {
+          if (node.isConnected) {
+            rowVirtualizer.measureElement(node);
+          }
+        }
+      },
     };
     viewportRef.current = handle;
     return () => {
@@ -512,7 +534,13 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       }
       cancelPendingStickToBottom();
     };
-  }, [cancelPendingStickToBottom, forceStickToBottom, scheduleStickToBottom, viewportRef]);
+  }, [
+    cancelPendingStickToBottom,
+    forceStickToBottom,
+    rowVirtualizer,
+    scheduleStickToBottom,
+    viewportRef,
+  ]);
 
   const contentContainerStyle = useMemo((): CSSProperties => {
     return {

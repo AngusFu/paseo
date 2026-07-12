@@ -570,6 +570,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       viewportRef.current?.suppressAutoStickForContentChange();
     });
 
+    // After the expand/collapse commits (layout phase), flush the virtualizer so
+    // sibling rows reposition before paint instead of one frame late.
+    const handleToolRunLayoutChange = useStableEvent(() => {
+      viewportRef.current?.flushRowMeasurements();
+    });
+
     const setInlineDetailsExpanded = useCallback(
       (itemId: string, expanded: boolean) => {
         if (!streamRenderStrategy.shouldDisableParentScrollOnInlineDetailsExpansion()) {
@@ -734,6 +740,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               defaultExpanded={toolRunGroup.isActive}
               renderChild={renderToolRunChild}
               onUserToggle={handleToolRunToggle}
+              onExpandedLayoutChange={handleToolRunLayoutChange}
             />
           );
         }
@@ -784,6 +791,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         renderToolCallItem,
         renderToolRunChild,
         handleToolRunToggle,
+        handleToolRunLayoutChange,
       ],
     );
 

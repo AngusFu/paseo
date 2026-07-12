@@ -46,6 +46,11 @@ export interface StreamViewportHandle {
   // keep the toggled row anchored instead of re-pinning to the bottom. No-op on
   // strategies that don't auto-pin on content-size change (native).
   suppressAutoStickForContentChange: () => void;
+  // Called in the layout phase after an inline expand/collapse commits so the
+  // viewport can synchronously re-measure and reposition virtualized rows before
+  // paint (avoids a one-frame flash). No-op where rows aren't absolutely
+  // positioned by a virtualizer (native).
+  flushRowMeasurements: () => void;
 }
 
 export interface StreamSegmentRenderers {

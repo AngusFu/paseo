@@ -39,6 +39,13 @@ function buildCodeServerFolderUrl(baseUrl: string, cwd: string): string {
 }
 
 const CODE_SERVER_STATUS_QUERY_KEY = ["code-server-status"];
+// Stopping frees the port in ~100ms, so the toggle's pending state would flash
+// too briefly to see. Hold it a beat so the spinner/disabled feedback registers.
+const MIN_TOGGLE_FEEDBACK_MS = 450;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export function useCodeServer(input: { isLocalExecution: boolean }) {
   const isAvailable = hasCodeServerBridge() && input.isLocalExecution;
@@ -67,7 +74,11 @@ export function useCodeServer(input: { isLocalExecution: boolean }) {
     mutationFn: async (): Promise<DesktopCodeServerStatus> => {
       const bridge = requireCodeServerBridge();
       const current = await bridge.getStatus();
-      return current.running ? bridge.stop() : bridge.start();
+      const [status] = await Promise.all([
+        current.running ? bridge.stop() : bridge.start(),
+        delay(MIN_TOGGLE_FEEDBACK_MS),
+      ]);
+      return status;
     },
     onSuccess: setStatus,
   });

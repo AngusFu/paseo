@@ -1514,7 +1514,7 @@ export const ar: TranslationResources = {
       agents: "Agents",
       workspaces: "Workspaces",
       providers: "مقدمي الخدمات",
-      integrations: "التكاملات",
+      integrations: "Jira & GitLab",
       usage: "الاستخدام",
       terminals: "Terminals",
       host: "نظرة عامة",

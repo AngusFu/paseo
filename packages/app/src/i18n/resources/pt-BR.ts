@@ -1539,7 +1539,7 @@ export const ptBR: TranslationResources = {
       agents: "Agentes",
       workspaces: "Workspaces",
       providers: "Provedores",
-      integrations: "Integrações",
+      integrations: "Jira & GitLab",
       usage: "Uso",
       terminals: "Terminais",
       host: "Visão geral",

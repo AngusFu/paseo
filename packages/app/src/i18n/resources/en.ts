@@ -1522,7 +1522,7 @@ export const en = {
       agents: "Agents",
       workspaces: "Workspaces",
       providers: "Providers",
-      integrations: "Integrations",
+      integrations: "Jira & GitLab",
       usage: "Usage",
       terminals: "Terminals",
       host: "Overview",

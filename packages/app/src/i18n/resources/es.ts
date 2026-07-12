@@ -1553,7 +1553,7 @@ export const es: TranslationResources = {
       agents: "Agents",
       workspaces: "Workspaces",
       providers: "Proveedores",
-      integrations: "Integraciones",
+      integrations: "Jira & GitLab",
       usage: "Uso",
       terminals: "Terminals",
       host: "Resumen",

@@ -1496,7 +1496,7 @@ export const zhCN: TranslationResources = {
       agents: "Agents",
       workspaces: "Workspaces",
       providers: "Providers",
-      integrations: "集成",
+      integrations: "Jira & GitLab",
       usage: "使用情况",
       terminals: "Terminals",
       host: "概览",

@@ -1534,7 +1534,7 @@ export const ja: TranslationResources = {
       agents: "エージェント",
       workspaces: "ワークスペース",
       providers: "プロバイダー",
-      integrations: "連携",
+      integrations: "Jira & GitLab",
       usage: "使用状況",
       terminals: "ターミナル",
       host: "概要",

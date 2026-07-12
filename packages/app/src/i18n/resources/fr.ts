@@ -1557,7 +1557,7 @@ export const fr: TranslationResources = {
       agents: "Agents",
       workspaces: "Workspaces",
       providers: "Fournisseurs",
-      integrations: "Intégrations",
+      integrations: "Jira & GitLab",
       usage: "Utilisation",
       terminals: "Terminals",
       host: "Aperçu",

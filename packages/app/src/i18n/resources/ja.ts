@@ -211,6 +211,15 @@ export const ja: TranslationResources = {
   sessions: {
     title: "履歴",
     empty: "セッションがまだありません",
+    search: {
+      label: "セッションを検索",
+      placeholder: "セッションを検索",
+      clear: "検索をクリア",
+    },
+    searchEmpty: {
+      title: "一致するセッションがありません",
+      onlyLoaded: "読み込み済みの{{count}}件のセッションのみを検索しています",
+    },
     actions: {
       loadMore: "さらに読み込む",
     },

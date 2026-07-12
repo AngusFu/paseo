@@ -211,6 +211,15 @@ export const ptBR: TranslationResources = {
   sessions: {
     title: "Histórico de agentes",
     empty: "Nenhuma sessão ainda",
+    search: {
+      label: "Buscar sessões",
+      placeholder: "Buscar sessões",
+      clear: "Limpar busca",
+    },
+    searchEmpty: {
+      title: "Nenhuma sessão encontrada",
+      onlyLoaded: "Buscando apenas nas {{count}} sessões já carregadas",
+    },
     actions: {
       loadMore: "Carregar mais",
     },

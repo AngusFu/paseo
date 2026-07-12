@@ -208,6 +208,15 @@ export const zhCN: TranslationResources = {
   sessions: {
     title: "历史",
     empty: "还没有会话",
+    search: {
+      label: "搜索会话",
+      placeholder: "搜索会话",
+      clear: "清除搜索",
+    },
+    searchEmpty: {
+      title: "没有匹配的会话",
+      onlyLoaded: "仅搜索已加载的 {{count}} 条会话",
+    },
     actions: {
       loadMore: "加载更多",
     },

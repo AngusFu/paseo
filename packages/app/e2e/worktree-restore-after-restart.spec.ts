@@ -90,14 +90,13 @@ test.describe("Worktree restore after daemon restart", () => {
     await expectSessionRowArchived(page, agent.title);
 
     // KEY ASSERTION: reproduce the screenshot state. Right after the daemon
-    // restart, with NO restore and NO row click, the rendered History table cells
-    // (fed by each agent row's projectPlacement via fetch_agent_history) must read
-    // the worktree branch and the worktree workspace name — never "main".
-    const branchCell = page.getByTestId(`agent-row-branch-${serverId}-${agent.id}`);
-    const workspaceCell = page.getByTestId(`agent-row-workspace-${serverId}-${agent.id}`);
+    // restart, with NO restore and NO row click, the rendered History row's meta
+    // line (fed by each agent row's projectPlacement via fetch_agent_history) must
+    // read the worktree branch and the worktree workspace name — never "main".
+    const metaCell = page.getByTestId(`agent-row-meta-${serverId}-${agent.id}`);
 
-    await expect(branchCell).toBeVisible({ timeout: 60_000 });
-    await expect(branchCell).toHaveText(worktreeSlug, { timeout: 60_000 });
-    await expect(workspaceCell).toHaveText(worktree.workspaceName, { timeout: 60_000 });
+    await expect(metaCell).toBeVisible({ timeout: 60_000 });
+    await expect(metaCell).toContainText(worktreeSlug, { timeout: 60_000 });
+    await expect(metaCell).toContainText(worktree.workspaceName, { timeout: 60_000 });
   });
 });

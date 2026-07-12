@@ -207,6 +207,15 @@ export const en = {
   sessions: {
     title: "History",
     empty: "No sessions yet",
+    search: {
+      label: "Search sessions",
+      placeholder: "Search sessions",
+      clear: "Clear search",
+    },
+    searchEmpty: {
+      title: "No matching sessions",
+      onlyLoaded: "Only searching the {{count}} sessions loaded so far",
+    },
     actions: {
       loadMore: "Load more",
     },

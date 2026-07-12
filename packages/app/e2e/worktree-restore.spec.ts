@@ -6,6 +6,7 @@ import {
   archiveAgentFromDaemon,
   createIdleAgent,
   expectSessionRowArchived,
+  expectSessionRowNotArchived,
   fetchAgentArchivedAt,
   openSessions,
 } from "./helpers/archive-tab";
@@ -86,12 +87,7 @@ test.describe("Worktree restore", () => {
     await page.reload();
     await waitForSidebarHydration(page);
     await openSessions(page);
-    const row = page
-      .locator('[data-testid^="agent-row-"]')
-      .filter({ hasText: agent.title })
-      .first();
-    await expect(row).toBeVisible({ timeout: 30_000 });
-    await expect(row).not.toContainText("Archived", { timeout: 30_000 });
+    await expectSessionRowNotArchived(page, agent.title);
   });
 
   test("archiving a worktree (dir deleted), then clicking its agent in History recreates the worktree", async ({

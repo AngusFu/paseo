@@ -239,11 +239,17 @@ export async function expectSessionRowVisible(page: Page, title: string): Promis
 }
 
 export async function expectSessionRowArchived(page: Page, title: string): Promise<void> {
-  await expect(getSessionRowByTitle(page, title)).toContainText("Archived", { timeout: 30_000 });
+  const row = getSessionRowByTitle(page, title);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await expect(row.getByTestId("session-row-archived-indicator")).toBeVisible({
+    timeout: 30_000,
+  });
 }
 
 export async function expectSessionRowNotArchived(page: Page, title: string): Promise<void> {
-  await expect(getSessionRowByTitle(page, title)).not.toContainText("Archived", {
+  const row = getSessionRowByTitle(page, title);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await expect(row.getByTestId("session-row-archived-indicator")).toHaveCount(0, {
     timeout: 30_000,
   });
 }

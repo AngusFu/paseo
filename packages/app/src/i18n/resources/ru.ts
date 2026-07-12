@@ -210,6 +210,15 @@ export const ru: TranslationResources = {
   sessions: {
     title: "История",
     empty: "Сеансов пока нет",
+    search: {
+      label: "Поиск сеансов",
+      placeholder: "Поиск сеансов",
+      clear: "Очистить поиск",
+    },
+    searchEmpty: {
+      title: "Нет подходящих сеансов",
+      onlyLoaded: "Поиск выполняется только среди {{count}} уже загруженных сеансов",
+    },
     actions: {
       loadMore: "Загрузить больше",
     },

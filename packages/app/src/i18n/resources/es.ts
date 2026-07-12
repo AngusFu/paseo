@@ -2316,6 +2316,17 @@ export const es: TranslationResources = {
       dispatchWorkspacePlaceholder: "Seleccionar espacio de trabajo",
       dispatchNoWorkspaces:
         "No hay espacios de trabajo disponibles — agrega uno para incluir --cwd.",
+      dispatchPromptLabel: "Prompt",
+      dispatchRun: "Ejecutar",
+      dispatchRunNoWorkspace: "Selecciona un proyecto para despachar un agente.",
+      dispatchRunNoProvider: "No hay proveedor disponible",
+      dispatchRunConfirmTitle: "¿Ejecutar agente?",
+      dispatchRunConfirmProject: "Proyecto",
+      dispatchRunConfirmWorktree: "Worktree",
+      dispatchRunConfirmProvider: "Proveedor",
+      dispatchRunConfirmPrompt: "Prompt",
+      dispatchRunConfirmConfirm: "Ejecutar",
+      dispatchRunSuccess: "Agente despachado",
     },
   },
   schedule: {

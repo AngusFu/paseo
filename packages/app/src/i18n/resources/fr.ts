@@ -2324,6 +2324,17 @@ export const fr: TranslationResources = {
       dispatchWorkspacePlaceholder: "Sélectionner un espace de travail",
       dispatchNoWorkspaces:
         "Aucun espace de travail disponible — ajoutez-en un pour inclure --cwd.",
+      dispatchPromptLabel: "Invite",
+      dispatchRun: "Exécuter",
+      dispatchRunNoWorkspace: "Sélectionnez un projet pour envoyer un agent.",
+      dispatchRunNoProvider: "Aucun fournisseur disponible",
+      dispatchRunConfirmTitle: "Exécuter l'agent ?",
+      dispatchRunConfirmProject: "Projet",
+      dispatchRunConfirmWorktree: "Worktree",
+      dispatchRunConfirmProvider: "Fournisseur",
+      dispatchRunConfirmPrompt: "Invite",
+      dispatchRunConfirmConfirm: "Exécuter",
+      dispatchRunSuccess: "Agent envoyé",
     },
   },
   schedule: {

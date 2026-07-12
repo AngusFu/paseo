@@ -3,9 +3,10 @@ import { Pressable, Text, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight, Copy, Pencil } from "lucide-react-native";
+import { ArrowUpRight, Copy, Pencil, Play } from "lucide-react-native";
 import equal from "fast-deep-equal";
 import { useStoreWithEqualityFn } from "zustand/traditional";
+import type { ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
 import type {
   KanbanCardDetail,
   KanbanCardDetailAttachment,
@@ -17,17 +18,25 @@ import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-moda
 import { resolveKanbanCardTheme } from "@/components/kanban/kanban-card-theme";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { Button } from "@/components/ui/button";
+import type { FieldControlSize } from "@/components/ui/control-geometry";
+import { Field, FormTextInput } from "@/components/ui/form-field";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { SelectField, type SelectFieldOption } from "@/components/ui/select-field";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
+import { useFormPreferences } from "@/hooks/use-form-preferences";
 import { useKanbanCardComments, useKanbanCardDetail } from "@/hooks/use-kanban-card-detail";
-import { useHosts } from "@/runtime/host-runtime";
+import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
+import { resolveDefaultModelId } from "@/provider-selection/resolve-agent-form";
+import { useHostRuntimeClient, useHosts } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 import type { HostProfile } from "@/types/host-connection";
 import { buildDaemonWebSocketUrl } from "@/utils/daemon-endpoints";
+import { toErrorMessage } from "@/utils/error-messages";
 import { formatTimeAgo } from "@/utils/time";
 import { openExternalUrl } from "@/utils/open-external-url";
+import { requireWorkspaceDirectory } from "@/utils/workspace-directory";
 
 const THEME_ICON_SIZE = 16;
 const LINK_ICON_SIZE = 14;
@@ -80,6 +89,50 @@ function useDispatchWorkspaces(serverId: string | null): readonly DispatchWorksp
   );
 }
 
+interface DispatchProviderDefault {
+  provider: string;
+  model: string;
+  label: string | null;
+}
+
+// Mirrors the new-workspace flow's provider default: prefer the user's last-used
+// provider (from form preferences) if it's still ready on this host, otherwise
+// the first ready provider; model defaults to that provider's isDefault model
+// (see resolveDefaultModelId in provider-selection/resolve-agent-form.ts).
+function resolveDispatchProviderDefault(
+  preferredProvider: string | undefined,
+  entries: readonly ProviderSnapshotEntry[] | undefined,
+): DispatchProviderDefault | null {
+  if (!entries || entries.length === 0) {
+    return null;
+  }
+  const ready = entries.filter((entry) => entry.status === "ready");
+  const preferred = preferredProvider
+    ? ready.find((entry) => entry.provider === preferredProvider)
+    : undefined;
+  const entry = preferred ?? ready[0];
+  if (!entry) {
+    return null;
+  }
+  return {
+    provider: entry.provider,
+    model: resolveDefaultModelId(entry.models ?? null),
+    label: entry.label ?? null,
+  };
+}
+
+function useDispatchProviderDefault(
+  serverId: string | null,
+  cwd: string | null,
+): DispatchProviderDefault | null {
+  const { preferences } = useFormPreferences();
+  const snapshot = useProvidersSnapshot(serverId, { enabled: Boolean(serverId && cwd), cwd });
+  return useMemo(
+    () => resolveDispatchProviderDefault(preferences.provider, snapshot.entries),
+    [preferences.provider, snapshot.entries],
+  );
+}
+
 // Mirrors kanban-card.tsx's cardIssueKey — kept local rather than exported to
 // avoid coupling into a file another change is currently polishing.
 function cardIssueKey(source: KanbanCardSource): string | null {
@@ -118,28 +171,38 @@ function issueKeyFromTitle(title: string): string | null {
   return match ? match[0] : null;
 }
 
-// The `paseo run` command a user pastes into a shell to dispatch an agent
-// against this card. Jira cards get a fix/<issueKey> worktree and a --title of
-// just the issue key; GitLab MRs get a review/mr-<iid> worktree plus a
+// The dispatch plan for a card: the default prompt text (editable by the
+// user before dispatch), the worktree name (null for manual cards, which
+// dispatch straight into the project checkout), and the --title arg (null
+// alongside worktree). Jira cards get a fix/<issueKey> worktree and a title
+// of just the issue key; GitLab MRs get a review/mr-<iid> worktree plus a
 // check-out-the-source-branch reminder; manual cards fall back to a plain
-// title+url prompt. `cwd` (a project's main checkout) becomes --cwd when a
-// project is selected, omitted otherwise.
-function buildDispatchCommand(
-  card: StoredKanbanCard,
-  detail: KanbanCardDetail | null,
-  cwd: string | null,
-): string {
+// title+url prompt.
+interface DispatchPlan {
+  worktree: string | null;
+  title: string | null;
+  prompt: string;
+}
+
+function buildDispatchPlan(card: StoredKanbanCard, detail: KanbanCardDetail | null): DispatchPlan {
   const title = detail?.title ?? card.title;
   const url = detail?.url ?? card.url;
-  const cwdArg = cwd ? `--cwd "${escapeCommandQuotes(cwd)}" ` : "";
 
   if (card.source.kind === "jira") {
     const issueKey = card.source.issueKey;
     const slug = branchSlug(title);
-    const worktree = slug ? `fix/${issueKey}_${slug}` : `fix/${issueKey}`;
+    // Paseo slugifies worktree branch names to DNS-safe kebab-case (they feed
+    // service-proxy hostnames), so a <prefix>/<KEY>_<slug> branch contract
+    // can't survive creation. The prompt tells the agent to rename the branch
+    // to the contract form as its first step instead.
+    const contractBranch = slug ? `fix/${issueKey}_${slug}` : `fix/${issueKey}`;
+    const worktree = slug
+      ? `fix-${issueKey.toLowerCase()}-${slug}`
+      : `fix-${issueKey.toLowerCase()}`;
     const prefix = `Fix ${issueKey}: ${title}`;
-    const prompt = url ? `${prefix}\n${url}` : prefix;
-    return `paseo run ${cwdArg}--worktree "${worktree}" --title "${escapeCommandQuotes(issueKey)}" "${escapeCommandQuotes(prompt)}"`;
+    const rename = `First rename the worktree branch to match the repo's branch contract: git branch -m "${contractBranch}".`;
+    const prompt = url ? `${prefix}\n${url}\n${rename}` : `${prefix}\n${rename}`;
+    return { worktree, title: issueKey, prompt };
   }
   if (card.source.kind === "gitlab") {
     const mrIid = card.source.mrIid;
@@ -154,10 +217,21 @@ function buildDispatchCommand(
     const prompt = url
       ? `${prefix}\n${url}\nCheck out the MR source branch in this worktree before reviewing.`
       : `${prefix}\nCheck out the MR source branch in this worktree before reviewing.`;
-    return `paseo run ${cwdArg}--worktree "${worktree}" --title "${escapeCommandQuotes(titleArg)}" "${escapeCommandQuotes(prompt)}"`;
+    return { worktree, title: titleArg, prompt };
   }
   const prompt = url ? `${title}\n${url}` : title;
-  return `paseo run ${cwdArg}"${escapeCommandQuotes(prompt)}"`;
+  return { worktree: null, title: null, prompt };
+}
+
+// The `paseo run` command a user pastes into a shell to dispatch an agent
+// against this card, built from the plan plus a (possibly user-edited)
+// prompt. `cwd` (a project's main checkout) becomes --cwd when a project is
+// selected, omitted otherwise.
+function buildDispatchCommand(plan: DispatchPlan, cwd: string | null, prompt: string): string {
+  const cwdArg = cwd ? `--cwd "${escapeCommandQuotes(cwd)}" ` : "";
+  const worktreeArg = plan.worktree ? `--worktree "${escapeCommandQuotes(plan.worktree)}" ` : "";
+  const titleArg = plan.title ? `--title "${escapeCommandQuotes(plan.title)}" ` : "";
+  return `paseo run ${cwdArg}${worktreeArg}${titleArg}"${escapeCommandQuotes(prompt)}"`;
 }
 
 function sortCommentsAscending(
@@ -631,7 +705,6 @@ function DispatchSection({
   serverId: string | null;
 }): ReactElement {
   const { t } = useTranslation();
-  const toast = useToast();
 
   const workspaces = useDispatchWorkspaces(serverId);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
@@ -654,15 +727,12 @@ function DispatchSection({
     setSelectedWorkspaceId(value);
   }, []);
 
-  const dispatchCommand = useMemo(
-    () => buildDispatchCommand(card, detail, selectedWorkspace?.cwd ?? null),
-    [card, detail, selectedWorkspace],
-  );
-
-  const handleCopyDispatch = useCallback(() => {
-    void Clipboard.setStringAsync(dispatchCommand);
-    toast.copied();
-  }, [dispatchCommand, toast]);
+  const plan = useMemo(() => buildDispatchPlan(card, detail), [card, detail]);
+  // Remounts DispatchActions (and its editable-prompt draft) whenever the card
+  // changes, or once detail finishes loading for a card — so a freshly
+  // fetched title/url regenerates the prefilled prompt exactly once, while
+  // further re-renders (e.g. comments loading) don't clobber user edits.
+  const promptResetKey = `${card.id}:${detail ? "loaded" : "pending"}`;
 
   return (
     <View style={styles.section}>
@@ -683,21 +753,233 @@ function DispatchSection({
       ) : (
         <Text style={styles.mutedText}>{t("kanban.cardDetail.dispatchNoWorkspaces")}</Text>
       )}
+      <DispatchActions
+        key={promptResetKey}
+        plan={plan}
+        workspace={selectedWorkspace}
+        serverId={serverId}
+      />
+    </View>
+  );
+}
+
+function DispatchActions({
+  plan,
+  workspace,
+  serverId,
+}: {
+  plan: DispatchPlan;
+  workspace: DispatchWorkspaceOption | null;
+  serverId: string | null;
+}): ReactElement {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const client = useHostRuntimeClient(serverId ?? "");
+  const providerDefault = useDispatchProviderDefault(serverId, workspace?.cwd ?? null);
+
+  const [prompt, setPrompt] = useState(plan.prompt);
+  const [isRunSheetVisible, setIsRunSheetVisible] = useState(false);
+
+  const dispatchCommand = useMemo(
+    () => buildDispatchCommand(plan, workspace?.cwd ?? null, prompt),
+    [plan, workspace, prompt],
+  );
+
+  const handleCopyDispatch = useCallback(() => {
+    void Clipboard.setStringAsync(dispatchCommand);
+    toast.copied();
+  }, [dispatchCommand, toast]);
+
+  const handleOpenRunSheet = useCallback(() => setIsRunSheetVisible(true), []);
+  const handleCloseRunSheet = useCallback(() => setIsRunSheetVisible(false), []);
+
+  const handleConfirmRun = useCallback(async () => {
+    if (!client || !workspace) {
+      throw new Error(t("kanban.cardDetail.dispatchRunNoWorkspace"));
+    }
+    if (!providerDefault) {
+      throw new Error(t("kanban.cardDetail.dispatchRunNoProvider"));
+    }
+    const workspacePayload = plan.worktree
+      ? await client.createWorkspace({
+          source: { kind: "worktree", cwd: workspace.cwd, worktreeSlug: plan.worktree },
+        })
+      : await client.createWorkspace({ source: { kind: "directory", path: workspace.cwd } });
+    if (workspacePayload.error || !workspacePayload.workspace) {
+      throw new Error(workspacePayload.error ?? t("kanban.cardDetail.dispatchRunNoWorkspace"));
+    }
+    const workspaceDirectory = requireWorkspaceDirectory({
+      workspaceId: workspacePayload.workspace.id,
+      workspaceDirectory: workspacePayload.workspace.workspaceDirectory,
+    });
+    await client.createAgent({
+      provider: providerDefault.provider,
+      model: providerDefault.model || undefined,
+      cwd: workspaceDirectory,
+      workspaceId: workspacePayload.workspace.id,
+      ...(plan.title ? { title: plan.title } : {}),
+      initialPrompt: prompt,
+    });
+    toast.show(t("kanban.cardDetail.dispatchRunSuccess"), { variant: "success" });
+  }, [client, plan, prompt, providerDefault, t, toast, workspace]);
+
+  return (
+    <>
+      <Field label={t("kanban.cardDetail.dispatchPromptLabel")}>
+        <FormTextInput
+          size="sm"
+          value={prompt}
+          onChangeText={setPrompt}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+          style={styles.promptInput}
+          testID="kanban-card-detail-dispatch-prompt"
+        />
+      </Field>
       <View style={styles.dispatchBlock}>
         <Text style={styles.dispatchCommand} testID="kanban-card-detail-dispatch-command">
           {dispatchCommand}
         </Text>
+        <View style={styles.dispatchButtonRow}>
+          <Button
+            size="xs"
+            variant="secondary"
+            leftIcon={Copy}
+            onPress={handleCopyDispatch}
+            testID="kanban-card-detail-dispatch-copy"
+          >
+            {t("common.actions.copy")}
+          </Button>
+          <Button
+            size="xs"
+            variant="default"
+            leftIcon={Play}
+            onPress={handleOpenRunSheet}
+            disabled={!workspace}
+            testID="kanban-card-detail-dispatch-run"
+          >
+            {t("kanban.cardDetail.dispatchRun")}
+          </Button>
+        </View>
+      </View>
+      {workspace ? (
+        <DispatchRunConfirmSheet
+          visible={isRunSheetVisible}
+          onClose={handleCloseRunSheet}
+          projectPath={workspace.cwd}
+          worktree={plan.worktree}
+          providerLabel={providerDefault?.label ?? providerDefault?.provider ?? null}
+          promptPreview={prompt.slice(0, 100)}
+          onConfirm={handleConfirmRun}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function DispatchRunConfirmSheet({
+  visible,
+  onClose,
+  projectPath,
+  worktree,
+  providerLabel,
+  promptPreview,
+  onConfirm,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  projectPath: string;
+  worktree: string | null;
+  providerLabel: string | null;
+  promptPreview: string;
+  onConfirm: () => Promise<void>;
+}): ReactElement {
+  const { t } = useTranslation();
+  const controlSize: FieldControlSize = useIsCompactFormFactor() ? "md" : "sm";
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const header = useMemo<SheetHeader>(
+    () => ({ title: t("kanban.cardDetail.dispatchRunConfirmTitle") }),
+    [t],
+  );
+
+  const handleConfirm = useCallback(async () => {
+    setSubmitError(null);
+    setIsSubmitting(true);
+    try {
+      await onConfirm();
+      onClose();
+    } catch (error) {
+      setSubmitError(toErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [onClose, onConfirm]);
+
+  const handleConfirmPress = useCallback(() => {
+    void handleConfirm();
+  }, [handleConfirm]);
+
+  const footer = useMemo(
+    () => (
+      <View style={styles.footer}>
         <Button
-          size="xs"
+          size={controlSize}
+          style={styles.footerButton}
           variant="secondary"
-          leftIcon={Copy}
-          onPress={handleCopyDispatch}
-          testID="kanban-card-detail-dispatch-copy"
+          onPress={onClose}
+          disabled={isSubmitting}
         >
-          {t("common.actions.copy")}
+          {t("common.actions.cancel")}
+        </Button>
+        <Button
+          size={controlSize}
+          style={styles.footerButton}
+          variant="default"
+          onPress={handleConfirmPress}
+          disabled={isSubmitting}
+          loading={isSubmitting}
+          testID="kanban-card-detail-dispatch-run-confirm"
+        >
+          {t("kanban.cardDetail.dispatchRunConfirmConfirm")}
         </Button>
       </View>
-    </View>
+    ),
+    [controlSize, handleConfirmPress, isSubmitting, onClose, t],
+  );
+
+  return (
+    <AdaptiveModalSheet
+      header={header}
+      visible={visible}
+      onClose={onClose}
+      footer={footer}
+      testID="kanban-card-detail-dispatch-run-confirm-sheet"
+    >
+      <View style={styles.confirmRow}>
+        <Text style={styles.confirmLabel}>{t("kanban.cardDetail.dispatchRunConfirmProject")}</Text>
+        <Text style={styles.confirmValue}>{projectPath}</Text>
+      </View>
+      {worktree ? (
+        <View style={styles.confirmRow}>
+          <Text style={styles.confirmLabel}>
+            {t("kanban.cardDetail.dispatchRunConfirmWorktree")}
+          </Text>
+          <Text style={styles.confirmValue}>{worktree}</Text>
+        </View>
+      ) : null}
+      <View style={styles.confirmRow}>
+        <Text style={styles.confirmLabel}>{t("kanban.cardDetail.dispatchRunConfirmProvider")}</Text>
+        <Text style={styles.confirmValue}>
+          {providerLabel ?? t("kanban.cardDetail.dispatchRunNoProvider")}
+        </Text>
+      </View>
+      <Text style={styles.confirmLabel}>{t("kanban.cardDetail.dispatchRunConfirmPrompt")}</Text>
+      <Text style={styles.confirmValue}>{promptPreview}</Text>
+      {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
+    </AdaptiveModalSheet>
   );
 }
 
@@ -861,6 +1143,42 @@ const styles = StyleSheet.create((theme) => ({
   dispatchCommand: {
     color: theme.colors.foreground,
     fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+  },
+  dispatchButtonRow: {
+    flexDirection: "row",
+    gap: theme.spacing[2],
+  },
+  promptInput: {
+    minHeight: 88,
+  },
+  footer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[3],
+  },
+  footerButton: {
+    flex: 1,
+  },
+  confirmRow: {
+    flexDirection: "row",
+    gap: theme.spacing[2],
+    marginBottom: theme.spacing[2],
+  },
+  confirmLabel: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    width: 80,
+  },
+  confirmValue: {
+    flex: 1,
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    marginBottom: theme.spacing[2],
+  },
+  submitError: {
+    color: theme.colors.palette.red[300],
     fontSize: theme.fontSize.xs,
   },
   commentList: {

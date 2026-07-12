@@ -46,9 +46,10 @@ interface DispatchWorkspaceOption {
   cwd: string;
 }
 
-// Reads the daemon's known workspaces for `serverId` (same data the sidebar
-// renders) so the dispatch command can target one with `--cwd`. Workspaces
-// without a resolved directory (older daemons) are filtered out.
+// Offers the daemon's known *projects* (one entry per projectRootPath) rather
+// than individual workspaces: `paseo run --worktree` creates a worktree off
+// --cwd, so the base must be the project's main checkout — dispatching from a
+// workspace that is itself a worktree would nest worktrees.
 function useDispatchWorkspaces(serverId: string | null): readonly DispatchWorkspaceOption[] {
   return useStoreWithEqualityFn(
     useSessionStore,
@@ -57,14 +58,23 @@ function useDispatchWorkspaces(serverId: string | null): readonly DispatchWorksp
       if (!session) {
         return EMPTY_DISPATCH_WORKSPACES;
       }
-      const options = Array.from(session.workspaces.values())
-        .filter((workspace) => workspace.workspaceDirectory.length > 0)
-        .map((workspace) => ({
-          id: workspace.id,
-          label: workspace.title ?? workspace.name,
-          cwd: workspace.workspaceDirectory,
-        }));
-      return options.length > 0 ? options : EMPTY_DISPATCH_WORKSPACES;
+      const byRoot = new Map<string, DispatchWorkspaceOption>();
+      for (const workspace of session.workspaces.values()) {
+        const root = workspace.projectRootPath;
+        if (!root || byRoot.has(root)) {
+          continue;
+        }
+        const segments = root.split("/");
+        let label = root;
+        for (let i = segments.length - 1; i >= 0; i--) {
+          if (segments[i]) {
+            label = segments[i];
+            break;
+          }
+        }
+        byRoot.set(root, { id: root, label, cwd: root });
+      }
+      return byRoot.size > 0 ? [...byRoot.values()] : EMPTY_DISPATCH_WORKSPACES;
     },
     equal,
   );

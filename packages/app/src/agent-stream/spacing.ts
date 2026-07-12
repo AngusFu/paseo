@@ -41,14 +41,15 @@ export function getGapBetweenStreamItems(
     return 0;
   }
 
-  if (isUserMessageItem(item) && isUserMessageItem(belowItem)) {
+  // A user message already carries its own bottom margin and the block below it
+  // (assistant or tool) carries its own top padding, so the inter-item gap here
+  // stays tight — otherwise the space under a user message triple-stacks and
+  // reads as an abnormally large "下" gap.
+  if (isUserMessageItem(item)) {
     return SPACING[1];
   }
   if (isToolSequenceItem(item) && isToolSequenceItem(belowItem)) {
     return SPACING[1];
-  }
-  if (item.kind === "user_message" && isToolSequenceItem(belowItem)) {
-    return SPACING[4];
   }
   if (item.kind === "assistant_message" && isToolSequenceItem(belowItem)) {
     return SPACING[1];

@@ -347,4 +347,95 @@ describe("KanbanSyncService", () => {
     const refreshed = await secrets.get(credentialRef);
     expect(refreshed).toMatchObject({ accessToken: "fresh-token", refreshToken: "refresh-2" });
   });
+
+  test("paginates Jira Cloud enhanced-JQL search via nextPageToken until the last page", async () => {
+    const { credentialRefForConnection } = await import("./oauth.js");
+    const pages = [
+      { issues: [{ key: "PROJ-1", fields: { summary: "One" } }], nextPageToken: "page-2" },
+      { issues: [{ key: "PROJ-2", fields: { summary: "Two" } }], isLast: true },
+    ];
+    let call = 0;
+    const fetchImpl = vi.fn(async (url: string) => {
+      const response = pages[call];
+      call += 1;
+      if (call === 2) {
+        expect(url).toContain("nextPageToken=page-2");
+      }
+      return { ok: true, status: 200, statusText: "OK", json: async () => response };
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const connection = await store.createConnection({
+      kind: "jira",
+      name: "Jira Cloud",
+      baseUrl: "https://x.atlassian.net",
+      email: "me@corp.com",
+    });
+    await secrets.set(credentialRefForConnection(connection.id), {
+      method: "token",
+      token: "jira-api-token",
+    });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "My todos",
+      connectionId: connection.id,
+      query: "assignee = currentUser()",
+    });
+
+    const result = await syncService.sync(source);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.cards.map((card) => card.externalId).sort()).toEqual([
+      "jira:PROJ-1",
+      "jira:PROJ-2",
+    ]);
+  });
+
+  test("paginates Jira Server/DC search via startAt until a short page ends it", async () => {
+    const { credentialRefForConnection } = await import("./oauth.js");
+    const firstPage = {
+      issues: Array.from({ length: 100 }, (_, i) => ({
+        key: `PROJ-${i + 1}`,
+        fields: { summary: `Issue ${i + 1}` },
+      })),
+      startAt: 0,
+      total: 101,
+    };
+    const secondPage = {
+      issues: [{ key: "PROJ-101", fields: { summary: "Issue 101" } }],
+      startAt: 100,
+      total: 101,
+    };
+    let call = 0;
+    const fetchImpl = vi.fn(async (url: string) => {
+      const response = call === 0 ? firstPage : secondPage;
+      if (call === 1) {
+        expect(url).toContain("startAt=100");
+      }
+      call += 1;
+      return { ok: true, status: 200, statusText: "OK", json: async () => response };
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const connection = await store.createConnection({
+      kind: "jira",
+      name: "Jira Server",
+      baseUrl: "https://jira.corp.com",
+    });
+    await secrets.set(credentialRefForConnection(connection.id), {
+      method: "token",
+      token: "jira-pat",
+    });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "My todos",
+      connectionId: connection.id,
+      query: "assignee = currentUser()",
+    });
+
+    const result = await syncService.sync(source);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.cards).toHaveLength(101);
+  });
 });

@@ -3,8 +3,17 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { KanbanStore } from "./store.js";
+import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 
 const numericAsc = (x: number, y: number): number => x - y;
+
+function cardsByExternalId(cards: StoredKanbanCard[]): Map<string | null, StoredKanbanCard> {
+  const byExternalId = new Map<string | null, StoredKanbanCard>();
+  for (const card of cards) {
+    byExternalId.set(card.externalId, card);
+  }
+  return byExternalId;
+}
 
 describe("KanbanStore", () => {
   let tempDir: string;
@@ -202,6 +211,50 @@ describe("KanbanStore", () => {
         assignee: null,
       });
       expect(unassigned.assignee).toBeNull();
+    });
+
+    test("listCards reflects upserts served from the in-memory cache, and a fresh store instance recovers from disk", async () => {
+      await store.upsertCardBySource(
+        { kind: "jira", externalId: "jira:PROJ-20", issueKey: "PROJ-20" },
+        { title: "Card A", url: null, status: "pending", theme: "jira" },
+      );
+      const second = await store.upsertCardBySource(
+        { kind: "jira", externalId: "jira:PROJ-21", issueKey: "PROJ-21" },
+        { title: "Card B", url: null, status: "pending", theme: "jira" },
+      );
+      const updated = await store.upsertCardBySource(
+        { kind: "jira", externalId: "jira:PROJ-20", issueKey: "PROJ-20" },
+        { title: "Card A renamed", url: null, status: "wip", theme: "jira" },
+      );
+
+      const cached = await store.listCards();
+      expect(cached).toHaveLength(2);
+      const byExternalId = cardsByExternalId(cached);
+      expect(byExternalId.get("jira:PROJ-20")).toMatchObject({
+        id: updated.id,
+        title: "Card A renamed",
+        status: "wip",
+      });
+      expect(byExternalId.get("jira:PROJ-21")).toMatchObject({ id: second.id, title: "Card B" });
+
+      // A brand new store instance has no cache yet, so it must rebuild it
+      // from what's actually on disk rather than trusting stale state.
+      const reloaded = new KanbanStore(tempDir);
+      const fromDisk = await reloaded.listCards();
+      const fromDiskByExternalId = cardsByExternalId(fromDisk);
+      expect(fromDisk).toHaveLength(2);
+      expect(fromDiskByExternalId.get("jira:PROJ-20")).toEqual(updated);
+      expect(fromDiskByExternalId.get("jira:PROJ-21")).toEqual(second);
+    });
+
+    test("deleteCard removes the card from the cache too, not just disk", async () => {
+      const created = await store.createCard({ title: "Doomed" });
+      await store.listCards();
+
+      expect(await store.deleteCard(created.id)).toBe(true);
+
+      expect(await store.listCards()).toEqual([]);
+      expect(await store.getCard(created.id)).toBeNull();
     });
 
     test("concurrent createCard in the same column assigns distinct order values", async () => {

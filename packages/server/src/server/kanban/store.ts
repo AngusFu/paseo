@@ -54,6 +54,12 @@ export class KanbanStore {
   private readonly connectionsMutations = new Map<string, Promise<unknown>>();
   private static readonly SOURCES_LOCK = "sources";
   private static readonly CONNECTIONS_LOCK = "connections";
+  // In-memory mirror of the cards directory, keyed by card id. This process is
+  // the sole writer of these files (CLI/clients go through RPC to this
+  // daemon), so the cache and disk never diverge outside of this class.
+  // Populated lazily on first read, kept in sync by every write path.
+  private cardsCache: Map<string, StoredKanbanCard> | null = null;
+  private cardsCacheLoading: Promise<Map<string, StoredKanbanCard>> | null = null;
 
   constructor(private readonly dir: string) {}
 
@@ -86,30 +92,52 @@ export class KanbanStore {
   // -------------------------------------------------------------------------
 
   async listCards(): Promise<StoredKanbanCard[]> {
+    const cache = await this.loadCardsCache();
+    return [...cache.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  }
+
+  async getCard(id: string): Promise<StoredKanbanCard | null> {
+    const cache = await this.loadCardsCache();
+    return cache.get(id) ?? null;
+  }
+
+  // Loads the cards directory into cardsCache on first call; every later
+  // call (including concurrent ones mid-load) reuses the same cache/promise.
+  private async loadCardsCache(): Promise<Map<string, StoredKanbanCard>> {
+    if (this.cardsCache) {
+      return this.cardsCache;
+    }
+    if (!this.cardsCacheLoading) {
+      this.cardsCacheLoading = this.readCardsFromDisk().then(
+        (cache) => {
+          this.cardsCache = cache;
+          return cache;
+        },
+        (error: unknown) => {
+          // Don't cache a rejected load — a transient read failure would
+          // otherwise brick every card operation until the daemon restarts.
+          this.cardsCacheLoading = null;
+          throw error;
+        },
+      );
+    }
+    return this.cardsCacheLoading;
+  }
+
+  private async readCardsFromDisk(): Promise<Map<string, StoredKanbanCard>> {
     await this.ensureCardsDir();
     const entries = await readdir(this.cardsDir, { withFileTypes: true });
-    const cards = await Promise.all(
+    const cache = new Map<string, StoredKanbanCard>();
+    await Promise.all(
       entries
         .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
         .map(async (entry) => {
           const content = await readFile(join(this.cardsDir, entry.name), "utf-8");
-          return StoredKanbanCardSchema.parse(JSON.parse(content));
+          const card = StoredKanbanCardSchema.parse(JSON.parse(content));
+          cache.set(card.id, card);
         }),
     );
-    return cards.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-  }
-
-  async getCard(id: string): Promise<StoredKanbanCard | null> {
-    await this.ensureCardsDir();
-    try {
-      const content = await readFile(this.cardFilePath(id), "utf-8");
-      return StoredKanbanCardSchema.parse(JSON.parse(content));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return null;
-      }
-      throw error;
-    }
+    return cache;
   }
 
   async createCard(input: CreateKanbanCardInput): Promise<StoredKanbanCard> {
@@ -209,6 +237,8 @@ export class KanbanStore {
       }
       await this.ensureCardsDir();
       await rm(this.cardFilePath(id), { force: true });
+      const cache = await this.loadCardsCache();
+      cache.delete(id);
       return true;
     });
   }
@@ -288,6 +318,8 @@ export class KanbanStore {
   private async writeCard(card: StoredKanbanCard): Promise<void> {
     await this.ensureCardsDir();
     await writeJsonFileAtomic(this.cardFilePath(card.id), card);
+    const cache = await this.loadCardsCache();
+    cache.set(card.id, card);
   }
 
   // -------------------------------------------------------------------------

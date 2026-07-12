@@ -23,6 +23,12 @@ interface JiraIssue {
 
 interface JiraSearchResponse {
   issues?: JiraIssue[];
+  // Cloud enhanced-JQL pagination (rest/api/3/search/jql).
+  nextPageToken?: string;
+  isLast?: boolean;
+  // Server/DC classic pagination (rest/api/2/search).
+  startAt?: number;
+  total?: number;
 }
 
 interface GitlabMergeRequest {
@@ -98,6 +104,11 @@ export interface KanbanSyncServiceOptions {
 // An access token is refreshed once it's within this window of expiring,
 // rather than waiting for the provider to reject an already-stale request.
 const TOKEN_REFRESH_SKEW_MS = 60_000;
+
+// Safety cap on pagination loops (Jira and GitLab) so a runaway JQL/filter
+// can't make a single sync fetch unbounded pages. 20 pages * 100 per page.
+const MAX_SYNC_PAGES = 20;
+const SYNC_PAGE_SIZE = 100;
 
 export class KanbanSyncService {
   private readonly store: KanbanStore;
@@ -211,14 +222,6 @@ export class KanbanSyncService {
     email: string | null,
   ): Promise<JiraIssue[]> {
     const base = trimTrailingSlash(baseUrl);
-    // An email means Jira Cloud (HTTP Basic auth). Jira Cloud removed the old
-    // GET /rest/api/2/search (returns 410 Gone) in favour of the enhanced-JQL
-    // /rest/api/3/search/jql, which returns only id/key unless `fields` is given.
-    // Jira Server/DC (Bearer PAT, no email) still uses /rest/api/2/search.
-    const jql = encodeURIComponent(query);
-    const url = email
-      ? `${base}/rest/api/3/search/jql?jql=${jql}&fields=${encodeURIComponent("summary,status,assignee,labels")}&maxResults=100`
-      : `${base}/rest/api/2/search?jql=${jql}`;
     const headers: Record<string, string> = { Accept: "application/json" };
     if (token) {
       // Jira Cloud REST auth is HTTP Basic base64(email:apiToken). Jira Server/DC
@@ -227,12 +230,69 @@ export class KanbanSyncService {
         ? `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`
         : `Bearer ${token}`;
     }
-    const response = await this.fetchImpl(url, { headers });
-    if (!response.ok) {
-      throw new Error(`Jira sync request failed: ${response.status} ${response.statusText}`);
+    // An email means Jira Cloud (HTTP Basic auth). Jira Cloud removed the old
+    // GET /rest/api/2/search (returns 410 Gone) in favour of the enhanced-JQL
+    // /rest/api/3/search/jql, which returns only id/key unless `fields` is given.
+    // Jira Server/DC (Bearer PAT, no email) still uses /rest/api/2/search.
+    return email
+      ? this.fetchJiraCloudIssues(base, query, headers)
+      : this.fetchJiraServerIssues(base, query, headers);
+  }
+
+  // Cloud enhanced-JQL search pages via an opaque nextPageToken rather than
+  // startAt/total, so it has to be threaded through from the previous response.
+  private async fetchJiraCloudIssues(
+    base: string,
+    query: string,
+    headers: Record<string, string>,
+  ): Promise<JiraIssue[]> {
+    const jql = encodeURIComponent(query);
+    const fields = encodeURIComponent("summary,status,assignee,labels");
+    const issues: JiraIssue[] = [];
+    let nextPageToken: string | undefined;
+    for (let page = 0; page < MAX_SYNC_PAGES; page++) {
+      const pageTokenParam = nextPageToken
+        ? `&nextPageToken=${encodeURIComponent(nextPageToken)}`
+        : "";
+      const url = `${base}/rest/api/3/search/jql?jql=${jql}&fields=${fields}&maxResults=${SYNC_PAGE_SIZE}${pageTokenParam}`;
+      const response = await this.fetchImpl(url, { headers });
+      if (!response.ok) {
+        throw new Error(`Jira sync request failed: ${response.status} ${response.statusText}`);
+      }
+      const body = (await response.json()) as JiraSearchResponse;
+      issues.push(...(body.issues ?? []));
+      if (!body.nextPageToken || body.isLast) {
+        break;
+      }
+      nextPageToken = body.nextPageToken;
     }
-    const body = (await response.json()) as JiraSearchResponse;
-    return body.issues ?? [];
+    return issues;
+  }
+
+  private async fetchJiraServerIssues(
+    base: string,
+    query: string,
+    headers: Record<string, string>,
+  ): Promise<JiraIssue[]> {
+    const jql = encodeURIComponent(query);
+    const issues: JiraIssue[] = [];
+    let startAt = 0;
+    for (let page = 0; page < MAX_SYNC_PAGES; page++) {
+      const url = `${base}/rest/api/2/search?jql=${jql}&maxResults=${SYNC_PAGE_SIZE}&startAt=${startAt}`;
+      const response = await this.fetchImpl(url, { headers });
+      if (!response.ok) {
+        throw new Error(`Jira sync request failed: ${response.status} ${response.statusText}`);
+      }
+      const body = (await response.json()) as JiraSearchResponse;
+      const pageIssues = body.issues ?? [];
+      issues.push(...pageIssues);
+      startAt += pageIssues.length;
+      const reachedTotal = body.total !== undefined && startAt >= body.total;
+      if (pageIssues.length < SYNC_PAGE_SIZE || reachedTotal) {
+        break;
+      }
+    }
+    return issues;
   }
 
   private async fetchGitlabMergeRequests(
@@ -240,17 +300,29 @@ export class KanbanSyncService {
     query: string,
     token: string | null,
   ): Promise<GitlabMergeRequest[]> {
-    const url = `${trimTrailingSlash(baseUrl)}/api/v4/merge_requests?${query}`;
+    const base = trimTrailingSlash(baseUrl);
     const headers: Record<string, string> = { Accept: "application/json" };
     if (token) {
       headers["PRIVATE-TOKEN"] = token;
     }
-    const response = await this.fetchImpl(url, { headers });
-    if (!response.ok) {
-      throw new Error(`GitLab sync request failed: ${response.status} ${response.statusText}`);
+    const params = new URLSearchParams(query);
+    const perPage = Number(params.get("per_page")) || SYNC_PAGE_SIZE;
+    params.set("per_page", String(perPage));
+    const mergeRequests: GitlabMergeRequest[] = [];
+    for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
+      params.set("page", String(page));
+      const url = `${base}/api/v4/merge_requests?${params.toString()}`;
+      const response = await this.fetchImpl(url, { headers });
+      if (!response.ok) {
+        throw new Error(`GitLab sync request failed: ${response.status} ${response.statusText}`);
+      }
+      const body = (await response.json()) as GitlabMergeRequest[];
+      mergeRequests.push(...(body ?? []));
+      if (!body || body.length < perPage) {
+        break;
+      }
     }
-    const body = (await response.json()) as GitlabMergeRequest[];
-    return body ?? [];
+    return mergeRequests;
   }
 
   private buildJiraUpsert(

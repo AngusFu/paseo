@@ -1,5 +1,5 @@
 import { useCallback, useMemo, type ReactElement } from "react";
-import { Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import type { StoredKanbanCard, KanbanStatus } from "@getpaseo/protocol/kanban/types";
 import { KanbanCard, type KanbanCardDropHandler } from "@/components/kanban/kanban-card";
@@ -34,10 +34,16 @@ interface KanbanColumnProps {
 }
 
 /**
- * One board column: a full-height lane with a localized status header + live
- * count and a vertical stack of cards. Registers its View with the board (for
- * drag hit-testing), raises above siblings while its own card drags, and shows
- * a drop highlight when a drag hovers over it.
+ * One board column: a full-height lane with a pinned status header + live count
+ * and a vertically-scrolling card list (so tall columns don't overflow the
+ * board). Registers its View with the board (for drag hit-testing), raises above
+ * siblings while its own card drags, and shows a drop highlight when hovered.
+ *
+ * Scroll vs drag: on native the card Pan is disabled (drag is web-only), so the
+ * ScrollView scrolls freely. On web, wheel/trackpad scrolls the list while the
+ * card's long-press-activated Pan (activateAfterLongPress) only starts on hold,
+ * so the two don't fight. The drop hit-test is on the outer column View's X
+ * bounds, which the inner scroll doesn't change.
  */
 export function KanbanColumn({
   status,
@@ -83,7 +89,11 @@ export function KanbanColumn({
           {cards.length}
         </Text>
       </View>
-      <View style={styles.cardList}>
+      <ScrollView
+        style={styles.cardScroll}
+        contentContainerStyle={styles.cardList}
+        showsVerticalScrollIndicator
+      >
         {cards.map((card) => (
           <KanbanCard
             key={card.id}
@@ -98,7 +108,7 @@ export function KanbanColumn({
             dragEnabled={dragEnabled}
           />
         ))}
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -150,7 +160,14 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
   },
+  // Bounded, scrollable region below the pinned header. minHeight:0 lets it
+  // shrink inside the column's flex layout on web so it actually scrolls.
+  cardScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
   cardList: {
     gap: theme.spacing[2],
+    paddingBottom: theme.spacing[2],
   },
 }));

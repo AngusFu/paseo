@@ -1,4 +1,4 @@
-import { useCallback, type ReactElement } from "react";
+import { useCallback, useRef, type ReactElement } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
@@ -58,7 +58,25 @@ export function KanbanCard({
   const translateY = useSharedValue(0);
   const dragging = useSharedValue(false);
 
-  const handlePress = useCallback(() => onPress(card), [onPress, card]);
+  // True once a drag actually activated during the current touch. Set on the
+  // Pan's onStart, cleared at every touch-down (onBegin). A release after a drag
+  // still fires the Pressable's onPress, so we swallow it here — otherwise
+  // dropping a card would also open its edit sheet.
+  const draggedRef = useRef(false);
+  const markDragged = useCallback(() => {
+    draggedRef.current = true;
+  }, []);
+  const clearDragged = useCallback(() => {
+    draggedRef.current = false;
+  }, []);
+
+  const handlePress = useCallback(() => {
+    if (draggedRef.current) {
+      draggedRef.current = false;
+      return;
+    }
+    onPress(card);
+  }, [onPress, card]);
   const handleLongPress = useCallback(() => onLongPress(card), [onLongPress, card]);
   const handleOpenUrl = useCallback(() => {
     if (card.url) {
@@ -74,10 +92,13 @@ export function KanbanCard({
     // Measure columns at touch-down, before any movement, so drop hit-testing
     // uses fresh window bounds (no scroll happens during the drag).
     .onBegin(() => {
+      // Fresh touch: clear the drag flag so a genuine tap opens the sheet.
+      runOnJS(clearDragged)();
       runOnJS(onDragBegin)();
     })
     .onStart(() => {
       dragging.value = true;
+      runOnJS(markDragged)();
       runOnJS(onDragStart)(card.status);
     })
     .onUpdate((event) => {

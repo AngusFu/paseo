@@ -341,12 +341,14 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[1.5],
     flexGrow: 1,
     minWidth: 160,
+    // Fixed height so the field doesn't jump when the clear button (taller
+    // than a text line) appears once a query is typed.
+    height: 32,
     backgroundColor: theme.colors.surface1,
     borderRadius: theme.borderRadius.md,
     borderWidth: theme.borderWidth[1],
     borderColor: theme.colors.border,
     paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[1.5],
   },
   searchFieldActive: {
     borderColor: theme.colors.borderAccent,

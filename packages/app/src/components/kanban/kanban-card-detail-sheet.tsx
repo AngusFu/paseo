@@ -97,11 +97,11 @@ function escapeCommandQuotes(value: string): string {
 }
 
 // The `paseo run` command a user pastes into a shell to dispatch an agent
-// against this card. Jira cards get a worktree named after the issue key and
-// a --title of just the issue key; GitLab MRs get a review prompt with an
-// explicit "check out the source branch" reminder; manual cards fall back to
-// a plain title+url prompt. `cwd` (a workspace's directory) becomes --cwd
-// when a workspace is selected, omitted otherwise.
+// against this card. Jira cards get a fix/<issueKey> worktree and a --title of
+// just the issue key; GitLab MRs get a review/mr-<iid> worktree plus a
+// check-out-the-source-branch reminder; manual cards fall back to a plain
+// title+url prompt. `cwd` (a project's main checkout) becomes --cwd when a
+// project is selected, omitted otherwise.
 function buildDispatchCommand(
   card: StoredKanbanCard,
   detail: KanbanCardDetail | null,
@@ -121,10 +121,12 @@ function buildDispatchCommand(
     const mrIid = card.source.mrIid;
     const titleArg = `Review !${mrIid}`;
     const prefix = `Review merge request !${mrIid}: ${title}`;
+    // The review runs in its own worktree too — checking out the MR source
+    // branch in the main checkout would clobber whatever branch is there.
     const prompt = url
-      ? `${prefix}\n${url}\nCheck out the MR source branch before reviewing.`
-      : `${prefix}\nCheck out the MR source branch before reviewing.`;
-    return `paseo run ${cwdArg}--title "${escapeCommandQuotes(titleArg)}" "${escapeCommandQuotes(prompt)}"`;
+      ? `${prefix}\n${url}\nCheck out the MR source branch in this worktree before reviewing.`
+      : `${prefix}\nCheck out the MR source branch in this worktree before reviewing.`;
+    return `paseo run ${cwdArg}--worktree "review/mr-${mrIid}" --title "${escapeCommandQuotes(titleArg)}" "${escapeCommandQuotes(prompt)}"`;
   }
   const prompt = url ? `${title}\n${url}` : title;
   return `paseo run ${cwdArg}"${escapeCommandQuotes(prompt)}"`;

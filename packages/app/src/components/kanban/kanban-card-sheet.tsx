@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import type { FieldControlSize } from "@/components/ui/control-geometry";
+import { useFrozenWhileHidden } from "@/hooks/use-frozen-while-hidden";
 import type { CreateKanbanCardInput, UpdateKanbanCardInput } from "@/hooks/use-kanban-mutations";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { toErrorMessage } from "@/utils/error-messages";
@@ -246,15 +247,20 @@ export function KanbanCardSheet({
     })();
   }, [card, onClose, onDelete, t]);
 
+  // Freeze the edit/create decision while the sheet fades out — the parent nulls
+  // the card on close but the web sheet stays mounted for its exit animation, so
+  // recomputing would flash the footer to the create-mode layout.
+  const isEdit = useFrozenWhileHidden(visible, mode === "edit" && card !== undefined);
+
   const footer = useMemo(() => {
     // Jira-style: destructive Delete on the far left, a spring, then the
     // Cancel/Save pair on the right. Create mode has no Delete and the two
     // buttons split the row.
-    const isEdit = mode === "edit" && card !== undefined;
     return (
       <View style={styles.footer}>
         {isEdit ? (
           <Button
+            size={controlSize}
             variant="destructive"
             onPress={handleDelete}
             disabled={isSubmitting}
@@ -265,6 +271,7 @@ export function KanbanCardSheet({
         ) : null}
         {isEdit ? <View style={styles.footerSpring} /> : null}
         <Button
+          size={controlSize}
           style={isEdit ? undefined : styles.footerButton}
           variant="secondary"
           onPress={onClose}
@@ -273,6 +280,7 @@ export function KanbanCardSheet({
           {t("common.actions.cancel")}
         </Button>
         <Button
+          size={controlSize}
           style={isEdit ? undefined : styles.footerButton}
           variant="default"
           onPress={handleSubmitPress}
@@ -280,11 +288,11 @@ export function KanbanCardSheet({
           loading={isSubmitting}
           testID="kanban-card-submit"
         >
-          {mode === "edit" ? t("kanban.form.save") : t("kanban.form.create")}
+          {isEdit ? t("kanban.form.save") : t("kanban.form.create")}
         </Button>
       </View>
     );
-  }, [canSubmit, card, handleDelete, handleSubmitPress, isSubmitting, mode, onClose, t]);
+  }, [canSubmit, controlSize, handleDelete, handleSubmitPress, isEdit, isSubmitting, onClose, t]);
 
   return (
     <AdaptiveModalSheet

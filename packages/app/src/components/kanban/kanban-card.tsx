@@ -1,15 +1,32 @@
-import { memo, useCallback, useRef, type ReactElement } from "react";
+import { memo, useCallback, useMemo, useRef, type ReactElement } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight, GripVertical } from "lucide-react-native";
-import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
+import { ArrowUpRight, ChevronUp, ChevronsUp, GripVertical } from "lucide-react-native";
+import type { KanbanCardSource, StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 import { resolveKanbanCardTheme } from "@/components/kanban/kanban-card-theme";
 import { openExternalUrl } from "@/utils/open-external-url";
 
 const THEME_ICON_SIZE = 16;
+const LINK_ICON_SIZE = 12;
+const PRIORITY_ICON_SIZE = 12;
+
+// Max labels rendered as chips before collapsing the rest into a "+N" chip.
+const MAX_VISIBLE_LABELS = 2;
+
+// The ticket/MR number chip shown in the header. Jira = issue key
+// ("SCIF-4990"), GitLab = the MR iid ("!1742"), manual cards have neither.
+function cardIssueKey(source: KanbanCardSource): string | null {
+  if (source.kind === "jira") {
+    return source.issueKey;
+  }
+  if (source.kind === "gitlab") {
+    return `!${source.mrIid}`;
+  }
+  return null;
+}
 
 export interface KanbanCardDropHandler {
   (params: { cardId: string; fromColumnId: string; absoluteX: number }): void;
@@ -56,6 +73,20 @@ export const KanbanCard = memo(function KanbanCard({
   const { t } = useTranslation();
   const themeVisual = resolveKanbanCardTheme(card.theme);
   const iconColor = themeVisual.color ?? styles.defaultGlyph.color;
+  const issueKey = cardIssueKey(card.source);
+  const labels = card.labels ?? [];
+  const visibleLabels = labels.slice(0, MAX_VISIBLE_LABELS);
+  const hiddenLabelCount = labels.length - visibleLabels.length;
+  const hasMeta = Boolean(card.assignee) || labels.length > 0 || Boolean(card.priority);
+  const priorityVisual = useMemo(() => {
+    if (card.priority === "high") {
+      return { icon: ChevronsUp, color: styles.priorityHigh.color };
+    }
+    if (card.priority === "med") {
+      return { icon: ChevronUp, color: styles.priorityMed.color };
+    }
+    return null;
+  }, [card.priority]);
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -89,9 +120,10 @@ export const KanbanCard = memo(function KanbanCard({
 
   const panGesture = Gesture.Pan()
     .enabled(dragEnabled)
-    // Hold briefly before dragging so quick taps still open the sheet and
-    // vertical list scrolling is not hijacked.
-    .activateAfterLongPress(150)
+    // Drag is web-only (mouse/trackpad): activate on a small movement so
+    // grab-and-drag works immediately, while a motionless click still opens
+    // the sheet. No long-press hold — that made pointer drags feel dead.
+    .minDistance(4)
     // Measure columns at touch-down, before any movement, so drop hit-testing
     // uses fresh window bounds (no scroll happens during the drag).
     .onBegin(() => {
@@ -158,24 +190,52 @@ export const KanbanCard = memo(function KanbanCard({
               <GripVertical size={14} color={styles.dragHandle.color} testID="kanban-card-grip" />
             ) : null}
             <themeVisual.icon size={THEME_ICON_SIZE} color={iconColor} />
-            <Text style={styles.title} numberOfLines={2}>
-              {card.title}
-            </Text>
+            {issueKey ? (
+              <View style={styles.issueKeyChip}>
+                <Text style={styles.issueKeyText}>{issueKey}</Text>
+              </View>
+            ) : null}
+            <View style={styles.headerSpacer} />
+            {card.url ? (
+              <Pressable
+                onPress={handleOpenUrl}
+                accessibilityRole="link"
+                accessibilityLabel={t("kanban.card.open")}
+                testID={`kanban-card-url-${card.id}`}
+                hitSlop={6}
+              >
+                <ArrowUpRight size={LINK_ICON_SIZE} color={styles.linkButton.color} />
+              </Pressable>
+            ) : null}
           </View>
-          {card.url ? (
-            <Pressable
-              style={styles.urlRow}
-              onPress={handleOpenUrl}
-              accessibilityRole="link"
-              accessibilityLabel={t("kanban.card.open")}
-              testID={`kanban-card-url-${card.id}`}
-              hitSlop={6}
-            >
-              <Text style={styles.urlText} numberOfLines={1}>
-                {card.url}
-              </Text>
-              <ArrowUpRight size={12} color={styles.urlText.color} />
-            </Pressable>
+          <Text style={styles.title} numberOfLines={2}>
+            {card.title}
+          </Text>
+          {hasMeta ? (
+            <View style={styles.metaRow}>
+              {card.assignee ? (
+                <Text style={styles.assignee} numberOfLines={1}>
+                  {card.assignee}
+                </Text>
+              ) : null}
+              {visibleLabels.map((label) => (
+                <View key={label} style={styles.labelChip}>
+                  <Text style={styles.labelText} numberOfLines={1}>
+                    {label}
+                  </Text>
+                </View>
+              ))}
+              {hiddenLabelCount > 0 ? (
+                <View style={styles.labelChip}>
+                  <Text style={styles.labelText}>
+                    {t("kanban.card.moreLabels", { count: hiddenLabelCount })}
+                  </Text>
+                </View>
+              ) : null}
+              {priorityVisual ? (
+                <priorityVisual.icon size={PRIORITY_ICON_SIZE} color={priorityVisual.color} />
+              ) : null}
+            </View>
           ) : null}
         </Pressable>
       </Animated.View>
@@ -198,32 +258,64 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: theme.colors.border,
     borderRadius: theme.borderRadius.lg,
     padding: theme.spacing[3],
-    gap: theme.spacing[2],
+    gap: theme.spacing[1.5],
   },
   cardPressed: {
     backgroundColor: theme.colors.surface3,
   },
   header: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    gap: theme.spacing[2],
+    alignItems: "center",
+    gap: theme.spacing[1.5],
+  },
+  headerSpacer: {
+    flex: 1,
+  },
+  issueKeyChip: {
+    backgroundColor: theme.colors.surface3,
+    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: theme.spacing[1],
+  },
+  issueKeyText: {
+    color: theme.colors.foregroundMuted,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+  },
+  // Static color holder for the external-link icon button.
+  linkButton: {
+    color: theme.colors.foregroundMuted,
   },
   title: {
-    flex: 1,
-    minWidth: 0,
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
-    fontWeight: theme.fontWeight.medium,
+    fontWeight: theme.fontWeight.normal,
   },
-  urlRow: {
+  metaRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[1],
+    flexWrap: "wrap",
+    gap: theme.spacing[1.5],
   },
-  urlText: {
-    flex: 1,
-    minWidth: 0,
+  assignee: {
+    flexShrink: 1,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
+  },
+  labelChip: {
+    backgroundColor: theme.colors.surface3,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: theme.spacing[1.5],
+  },
+  labelText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
+  // Static color holders for priority icons — high is urgent (red), med is
+  // elevated (amber). Low priority renders no icon.
+  priorityHigh: {
+    color: theme.colors.statusDanger,
+  },
+  priorityMed: {
+    color: theme.colors.statusWarning,
   },
 }));

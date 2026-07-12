@@ -379,7 +379,12 @@ function StatusMappingSection({
               autoCorrect={false}
             />
           </View>
-          <Button variant="secondary" onPress={handleLoadPress} testID="kanban-source-status-load">
+          <Button
+            variant="outline"
+            size={controlSize}
+            onPress={handleLoadPress}
+            testID="kanban-source-status-load"
+          >
             {t("kanban.sourceForm.statusMapping.loadButton")}
           </Button>
         </View>
@@ -766,7 +771,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   projectKeyRow: {
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     gap: theme.spacing[2],
   },
   projectKeyInput: {

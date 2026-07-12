@@ -7,6 +7,7 @@ import type {
 } from "@getpaseo/protocol/kanban/types";
 import { KanbanColumn, type KanbanColumnBounds } from "@/components/kanban/kanban-column";
 import { KanbanAddColumn } from "@/components/kanban/kanban-add-column";
+import { KanbanCardDetailSheet } from "@/components/kanban/kanban-card-detail-sheet";
 import { KanbanCardSheet } from "@/components/kanban/kanban-card-sheet";
 import { KanbanColumnDeleteSheet } from "@/components/kanban/kanban-column-delete-sheet";
 import { KanbanColumnRenameSheet } from "@/components/kanban/kanban-column-rename-sheet";
@@ -20,6 +21,8 @@ interface KanbanBoardProps {
   cards: StoredKanbanCard[];
   columns: KanbanColumnData[];
   columnsSupported: boolean;
+  serverId: string | null;
+  cardDetailSupported: boolean;
   mutations: UseKanbanMutationsResult;
   columnMutations: UseKanbanColumnMutationsResult;
 }
@@ -68,6 +71,8 @@ export function KanbanBoard({
   cards,
   columns,
   columnsSupported,
+  serverId,
+  cardDetailSupported,
   mutations,
   columnMutations,
 }: KanbanBoardProps): ReactElement {
@@ -76,7 +81,10 @@ export function KanbanBoard({
   const columnBoundsRef = useRef<Map<string, KanbanColumnBounds>>(new Map());
   const columnRefs = useRef<Map<string, View>>(new Map());
 
+  // Tapping a card opens the read-only detail sheet; its Edit action hands off
+  // to the existing edit-form sheet below.
   const [detailCard, setDetailCard] = useState<StoredKanbanCard | null>(null);
+  const [editCard, setEditCard] = useState<StoredKanbanCard | null>(null);
   const [pickerCard, setPickerCard] = useState<StoredKanbanCard | null>(null);
   const [renameTarget, setRenameTarget] = useState<KanbanColumnData | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<KanbanColumnData | null>(null);
@@ -194,6 +202,11 @@ export function KanbanBoard({
   );
 
   const closeDetail = useCallback(() => setDetailCard(null), []);
+  const handleEditFromDetail = useCallback(() => {
+    setEditCard(detailCard);
+    setDetailCard(null);
+  }, [detailCard]);
+  const closeEdit = useCallback(() => setEditCard(null), []);
   const closePicker = useCallback(() => setPickerCard(null), []);
   const closeRename = useCallback(() => setRenameTarget(null), []);
   const closeDelete = useCallback(() => setDeleteTarget(null), []);
@@ -306,12 +319,22 @@ export function KanbanBoard({
         {columnsSupported ? <KanbanAddColumn onCreate={handleAddColumn} /> : null}
       </ScrollView>
 
-      <KanbanCardSheet
-        key={detailCard ? `edit:${detailCard.id}` : "edit:none"}
+      <KanbanCardDetailSheet
+        key={detailCard ? `detail:${detailCard.id}` : "detail:none"}
         visible={detailCard !== null}
-        mode="edit"
-        card={detailCard ?? undefined}
+        card={detailCard}
+        serverId={serverId}
+        detailSupported={cardDetailSupported}
         onClose={closeDetail}
+        onEdit={handleEditFromDetail}
+      />
+
+      <KanbanCardSheet
+        key={editCard ? `edit:${editCard.id}` : "edit:none"}
+        visible={editCard !== null}
+        mode="edit"
+        card={editCard ?? undefined}
+        onClose={closeEdit}
         onCreate={mutations.createCard}
         onUpdate={mutations.updateCard}
         onDelete={mutations.deleteCard}

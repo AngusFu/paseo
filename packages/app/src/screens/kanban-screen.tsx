@@ -11,12 +11,17 @@ import {
 } from "@getpaseo/protocol/kanban/types";
 import { MenuHeader } from "@/components/headers/menu-header";
 import { KanbanBoard } from "@/components/kanban/kanban-board";
+import { KanbanCardFilters } from "@/components/kanban/kanban-card-filters";
 import { KanbanCardSheet } from "@/components/kanban/kanban-card-sheet";
 import { KanbanHiddenColumnsSheet } from "@/components/kanban/kanban-hidden-columns-sheet";
 import { KanbanSourceFormSheet } from "@/components/kanban/kanban-source-form-sheet";
 import { KanbanSourcesSheet } from "@/components/kanban/kanban-sources-sheet";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import {
+  useKanbanCardFilters,
+  type UseKanbanCardFiltersResult,
+} from "@/hooks/use-kanban-card-filters";
 import { useKanbanCards } from "@/hooks/use-kanban-cards";
 import { useKanbanColumnMutations } from "@/hooks/use-kanban-column-mutations";
 import { useKanbanColumns } from "@/hooks/use-kanban-columns";
@@ -90,9 +95,11 @@ function KanbanScreenContent(): ReactElement {
   // Column capability detection lives here, alongside the base "kanban"
   // capability check above — a single place downstream code reads from.
   const kanbanColumnsSupported = useHostFeature(serverId, "kanbanColumns");
+  const kanbanCardDetailSupported = useHostFeature(serverId, "kanbanCardDetail");
 
   const active = Boolean(serverId && isOnline && kanbanSupported);
   const { cards, isLoading, isError, refetch } = useKanbanCards(active ? serverId : null);
+  const filters = useKanbanCardFilters(cards);
   const mutations = useKanbanMutations({ serverId: serverId ?? "" });
   const columnMutations = useKanbanColumnMutations({ serverId: serverId ?? "" });
   const { visibleColumns, hiddenColumns } = useKanbanBoardColumns(
@@ -150,7 +157,10 @@ function KanbanScreenContent(): ReactElement {
         isConnecting={isConnecting}
         kanbanSupported={kanbanSupported}
         kanbanColumnsSupported={kanbanColumnsSupported}
+        kanbanCardDetailSupported={kanbanCardDetailSupported}
         cards={cards}
+        filteredCards={filters.filteredCards}
+        filters={filters}
         columns={visibleColumns}
         hiddenColumnsCount={hiddenColumns.length}
         isLoading={isLoading}
@@ -210,7 +220,10 @@ interface KanbanScreenBodyProps {
   isConnecting: boolean;
   kanbanSupported: boolean;
   kanbanColumnsSupported: boolean;
+  kanbanCardDetailSupported: boolean;
   cards: ReturnType<typeof useKanbanCards>["cards"];
+  filteredCards: ReturnType<typeof useKanbanCards>["cards"];
+  filters: UseKanbanCardFiltersResult;
   columns: KanbanColumn[];
   hiddenColumnsCount: number;
   isLoading: boolean;
@@ -231,7 +244,10 @@ function KanbanScreenBody({
   isConnecting,
   kanbanSupported,
   kanbanColumnsSupported,
+  kanbanCardDetailSupported,
   cards,
+  filteredCards,
+  filters,
   columns,
   hiddenColumnsCount,
   isLoading,
@@ -315,12 +331,19 @@ function KanbanScreenBody({
             {t("kanban.hiddenColumns.entry")}
           </Button>
         ) : null}
+        {cards.length > 0 ? (
+          <View style={styles.filtersSlot}>
+            <KanbanCardFilters filters={filters} />
+          </View>
+        ) : null}
       </View>
-      {cards.length > 0 ? (
+      {filteredCards.length > 0 ? (
         <KanbanBoard
-          cards={cards}
+          cards={filteredCards}
           columns={columns}
           columnsSupported={kanbanColumnsSupported}
+          serverId={serverId}
+          cardDetailSupported={kanbanCardDetailSupported}
           mutations={mutations}
           columnMutations={columnMutations}
         />
@@ -358,9 +381,13 @@ const styles = StyleSheet.create((theme) => ({
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
     gap: theme.spacing[3],
     paddingHorizontal: { xs: theme.spacing[3], md: theme.spacing[6] },
     paddingTop: theme.spacing[4],
+  },
+  filtersSlot: {
+    marginLeft: "auto",
   },
   emptyState: {
     alignItems: "center",

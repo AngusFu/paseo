@@ -15,6 +15,7 @@ import {
   type CreateKanbanConnectionInput,
   type UpdateKanbanConnectionInput,
 } from "@/hooks/use-kanban-connection-mutations";
+import { useFrozenWhileHidden } from "@/hooks/use-frozen-while-hidden";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { toErrorMessage } from "@/utils/error-messages";
 import { openExternalUrl } from "@/utils/open-external-url";
@@ -333,11 +334,32 @@ export function KanbanConnectionFormSheet({
     })();
   }, [connection, mutations, onClose, t]);
 
-  const footer = useMemo(
-    () => (
+  // Freeze the edit/create decision while the sheet fades out — the parent nulls
+  // the form on close but the web sheet stays mounted for its exit animation, so
+  // recomputing would flash the footer to the create-mode layout.
+  const isEdit = useFrozenWhileHidden(visible, mode === "edit" && connection !== undefined);
+
+  const footer = useMemo(() => {
+    // Jira-style: destructive Delete on the far left, a spring, then the
+    // Cancel/Save pair on the right. Create mode has no Delete and the two
+    // buttons split the row.
+    return (
       <View style={styles.footer}>
+        {isEdit ? (
+          <Button
+            size={controlSize}
+            variant="destructive"
+            onPress={handleDelete}
+            disabled={isSubmitting}
+            testID="kanban-connection-delete"
+          >
+            {t("kanban.connections.delete")}
+          </Button>
+        ) : null}
+        {isEdit ? <View style={styles.footerSpring} /> : null}
         <Button
-          style={styles.footerButton}
+          size={controlSize}
+          style={isEdit ? undefined : styles.footerButton}
           variant="secondary"
           onPress={onClose}
           disabled={isSubmitting}
@@ -345,19 +367,19 @@ export function KanbanConnectionFormSheet({
           {t("common.actions.cancel")}
         </Button>
         <Button
-          style={styles.footerButton}
+          size={controlSize}
+          style={isEdit ? undefined : styles.footerButton}
           variant="default"
           onPress={handleSubmitPress}
           disabled={!canSubmit}
           loading={isSubmitting}
           testID="kanban-connection-submit"
         >
-          {mode === "edit" ? t("kanban.connectionForm.save") : t("kanban.connectionForm.create")}
+          {isEdit ? t("kanban.connectionForm.save") : t("kanban.connectionForm.create")}
         </Button>
       </View>
-    ),
-    [canSubmit, handleSubmitPress, isSubmitting, mode, onClose, t],
-  );
+    );
+  }, [canSubmit, controlSize, handleDelete, handleSubmitPress, isEdit, isSubmitting, onClose, t]);
 
   return (
     <AdaptiveModalSheet
@@ -483,17 +505,6 @@ export function KanbanConnectionFormSheet({
         )}
       </OAuthAdvancedSection>
 
-      {connection ? (
-        <Button
-          variant="ghost"
-          onPress={handleDelete}
-          disabled={isSubmitting}
-          testID="kanban-connection-delete"
-        >
-          {t("kanban.connections.delete")}
-        </Button>
-      ) : null}
-
       {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
     </AdaptiveModalSheet>
   );
@@ -503,7 +514,12 @@ const styles = StyleSheet.create((theme) => ({
   footer: {
     flex: 1,
     flexDirection: "row",
+    alignItems: "center",
     gap: theme.spacing[3],
+  },
+  // Pushes the Cancel/Save pair to the right of the destructive Delete.
+  footerSpring: {
+    flex: 1,
   },
   footerButton: {
     flex: 1,

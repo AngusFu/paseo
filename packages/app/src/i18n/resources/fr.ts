@@ -2212,6 +2212,10 @@ export const fr: TranslationResources = {
       confirmDelete: "Supprimer « {{name}} » ? Cette action est irréversible.",
     },
     connectionForm: {
+      tokenLabel: "Jeton d'accès personnel",
+      tokenHintJira: "Créez-en un sur id.atlassian.com → Jetons API.",
+      tokenHintGitlab: "Créez-en un dans Paramètres → Jetons d'accès (avec la portée `api`).",
+      oauthAdvanced: "Avancé : OAuth (facultatif)",
       baseUrlPlaceholderJira: "https://your-org.atlassian.net",
       baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "Nouvelle connexion",

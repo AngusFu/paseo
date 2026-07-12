@@ -2157,6 +2157,10 @@ export const ar: TranslationResources = {
       confirmDelete: 'حذف "{{name}}"؟ لا يمكن التراجع عن ذلك.',
     },
     connectionForm: {
+      tokenLabel: "رمز الوصول الشخصي",
+      tokenHintJira: "أنشئ واحدًا من id.atlassian.com ← رموز API.",
+      tokenHintGitlab: "أنشئ واحدًا من الإعدادات ← رموز الوصول (بنطاق `api`).",
+      oauthAdvanced: "متقدم: OAuth (اختياري)",
       baseUrlPlaceholderJira: "https://your-org.atlassian.net",
       baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "اتصال جديد",

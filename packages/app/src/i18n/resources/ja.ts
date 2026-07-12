@@ -2184,6 +2184,10 @@ export const ja: TranslationResources = {
       confirmDelete: "「{{name}}」を削除しますか？この操作は取り消せません。",
     },
     connectionForm: {
+      tokenLabel: "個人アクセストークン",
+      tokenHintJira: "id.atlassian.com → API トークンで作成します。",
+      tokenHintGitlab: "設定 → アクセストークン（`api` スコープ付き）で作成します。",
+      oauthAdvanced: "詳細設定: OAuth（任意）",
       baseUrlPlaceholderJira: "https://your-org.atlassian.net",
       baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "新しい接続",

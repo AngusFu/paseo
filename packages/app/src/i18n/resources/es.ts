@@ -2204,6 +2204,10 @@ export const es: TranslationResources = {
       confirmDelete: '¿Eliminar "{{name}}"? Esta acción no se puede deshacer.',
     },
     connectionForm: {
+      tokenLabel: "Token de acceso personal",
+      tokenHintJira: "Crea uno en id.atlassian.com → Tokens de API.",
+      tokenHintGitlab: "Crea uno en Ajustes → Tokens de acceso (con el ámbito `api`).",
+      oauthAdvanced: "Avanzado: OAuth (opcional)",
       baseUrlPlaceholderJira: "https://your-org.atlassian.net",
       baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "Nueva conexión",

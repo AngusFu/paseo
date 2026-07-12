@@ -2190,6 +2190,10 @@ export const ptBR: TranslationResources = {
       confirmDelete: 'Excluir "{{name}}"? Isso não pode ser desfeito.',
     },
     connectionForm: {
+      tokenLabel: "Token de acesso pessoal",
+      tokenHintJira: "Crie um em id.atlassian.com → Tokens de API.",
+      tokenHintGitlab: "Crie um em Configurações → Tokens de acesso (com o escopo `api`).",
+      oauthAdvanced: "Avançado: OAuth (opcional)",
       baseUrlPlaceholderJira: "https://your-org.atlassian.net",
       baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "Nova conexão",

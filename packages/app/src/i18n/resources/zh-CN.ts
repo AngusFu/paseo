@@ -2133,6 +2133,10 @@ export const zhCN: TranslationResources = {
       confirmDelete: "删除“{{name}}”？此操作无法撤销。",
     },
     connectionForm: {
+      tokenLabel: "个人访问令牌",
+      tokenHintJira: "在 id.atlassian.com → API 令牌 处创建。",
+      tokenHintGitlab: "在 设置 → 访问令牌（勾选 `api` 权限）处创建。",
+      oauthAdvanced: "高级：OAuth（可选）",
       baseUrlPlaceholderJira: "https://your-org.atlassian.net",
       baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "新建连接",

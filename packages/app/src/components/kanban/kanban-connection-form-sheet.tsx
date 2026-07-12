@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState, type ReactElement } from "react";
-import { Text, View } from "react-native";
-import { Plug } from "lucide-react-native";
+import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { Pressable, Text, View } from "react-native";
+import { ChevronDown, ChevronRight, Plug } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import type { KanbanSourceKind, StoredKanbanConnection } from "@getpaseo/protocol/kanban/types";
@@ -95,48 +95,36 @@ function ConnectionKindField({
   );
 }
 
-function ConnectionFooterActions({
-  connection,
-  isConnecting,
-  isSubmitting,
-  onConnect,
-  onDelete,
-}: {
-  connection: StoredKanbanConnection | undefined;
-  isConnecting: boolean;
-  isSubmitting: boolean;
-  onConnect: () => void;
-  onDelete: () => void;
-}): ReactElement {
+// Collapsible "Advanced: OAuth (optional)" disclosure — OAuth is the heavy path,
+// so it's hidden by default behind the primary paste-a-token flow. Collapsing
+// only hides the inputs; their values live in the parent's state and survive.
+function OAuthAdvancedSection({ children }: { children: ReactNode }): ReactElement {
   const { t } = useTranslation();
-  // No id yet on create → the OAuth flow needs a saved connection first.
-  if (!connection) {
-    return <Text style={styles.connectHint}>{t("kanban.connectionForm.connectHint")}</Text>;
-  }
+  const [open, setOpen] = useState(false);
+  const toggle = useCallback(() => setOpen((current) => !current), []);
   return (
-    <>
-      <Button
-        variant="outline"
-        leftIcon={Plug}
-        onPress={onConnect}
-        loading={isConnecting}
-        testID="kanban-connection-connect"
+    <View style={styles.advanced}>
+      <Pressable
+        style={styles.advancedHeader}
+        onPress={toggle}
+        accessibilityRole="button"
+        accessibilityState={open ? EXPANDED_STATE : COLLAPSED_STATE}
+        testID="kanban-connection-oauth-toggle"
       >
-        {connection.kind === "gitlab"
-          ? t("kanban.connections.connectGitlab")
-          : t("kanban.connections.connectJira")}
-      </Button>
-      <Button
-        variant="ghost"
-        onPress={onDelete}
-        disabled={isSubmitting}
-        testID="kanban-connection-delete"
-      >
-        {t("kanban.connections.delete")}
-      </Button>
-    </>
+        {open ? (
+          <ChevronDown size={16} color={styles.advancedIcon.color} />
+        ) : (
+          <ChevronRight size={16} color={styles.advancedIcon.color} />
+        )}
+        <Text style={styles.advancedTitle}>{t("kanban.connectionForm.oauthAdvanced")}</Text>
+      </Pressable>
+      {open ? <View style={styles.advancedBody}>{children}</View> : null}
+    </View>
   );
 }
+
+const EXPANDED_STATE = { expanded: true } as const;
+const COLLAPSED_STATE = { expanded: false } as const;
 
 /**
  * Create / edit a Jira or GitLab auth connection: the instance base URL plus
@@ -180,6 +168,15 @@ export function KanbanConnectionFormSheet({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const canSubmit = name.trim().length > 0 && baseUrl.trim().length > 0 && !isSubmitting;
+
+  const connectionStatusLabel = useMemo(() => {
+    if (!connection) {
+      return "";
+    }
+    return connection.authConnected
+      ? t("kanban.connections.connected")
+      : t("kanban.connections.notConnected");
+  }, [connection, t]);
 
   const header = useMemo<SheetHeader>(
     () => ({
@@ -367,11 +364,18 @@ export function KanbanConnectionFormSheet({
         />
       </Field>
 
-      <Field label={t("kanban.connectionForm.token")} hint={t("kanban.connectionForm.authHint")}>
+      <Field
+        label={t("kanban.connectionForm.tokenLabel")}
+        hint={t(
+          kind === "gitlab"
+            ? "kanban.connectionForm.tokenHintGitlab"
+            : "kanban.connectionForm.tokenHintJira",
+        )}
+      >
         <FormTextInput
           size={controlSize}
           testID="kanban-connection-token-input"
-          accessibilityLabel={t("kanban.connectionForm.token")}
+          accessibilityLabel={t("kanban.connectionForm.tokenLabel")}
           initialValue={token}
           value={token}
           onChangeText={setToken}
@@ -382,42 +386,66 @@ export function KanbanConnectionFormSheet({
         />
       </Field>
 
-      <Field label={t("kanban.connectionForm.oauthClientId")}>
-        <FormTextInput
-          size={controlSize}
-          testID="kanban-connection-oauth-client-id-input"
-          accessibilityLabel={t("kanban.connectionForm.oauthClientId")}
-          initialValue={oauthClientId}
-          value={oauthClientId}
-          onChangeText={setOauthClientId}
-          placeholder="client-id"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </Field>
+      <OAuthAdvancedSection>
+        <Field label={t("kanban.connectionForm.oauthClientId")}>
+          <FormTextInput
+            size={controlSize}
+            testID="kanban-connection-oauth-client-id-input"
+            accessibilityLabel={t("kanban.connectionForm.oauthClientId")}
+            initialValue={oauthClientId}
+            value={oauthClientId}
+            onChangeText={setOauthClientId}
+            placeholder="client-id"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </Field>
 
-      <Field label={t("kanban.connectionForm.oauthClientSecret")}>
-        <FormTextInput
-          size={controlSize}
-          testID="kanban-connection-oauth-client-secret-input"
-          accessibilityLabel={t("kanban.connectionForm.oauthClientSecret")}
-          initialValue={oauthClientSecret}
-          value={oauthClientSecret}
-          onChangeText={setOauthClientSecret}
-          placeholder="client-secret"
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-        />
-      </Field>
+        <Field label={t("kanban.connectionForm.oauthClientSecret")}>
+          <FormTextInput
+            size={controlSize}
+            testID="kanban-connection-oauth-client-secret-input"
+            accessibilityLabel={t("kanban.connectionForm.oauthClientSecret")}
+            initialValue={oauthClientSecret}
+            value={oauthClientSecret}
+            onChangeText={setOauthClientSecret}
+            placeholder="client-secret"
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+          />
+        </Field>
 
-      <ConnectionFooterActions
-        connection={connection}
-        isConnecting={mutations.isConnecting}
-        isSubmitting={isSubmitting}
-        onConnect={handleConnect}
-        onDelete={handleDelete}
-      />
+        {connection ? (
+          <>
+            <Text style={styles.statusLine}>{connectionStatusLabel}</Text>
+            <Button
+              variant="outline"
+              leftIcon={Plug}
+              onPress={handleConnect}
+              loading={mutations.isConnecting}
+              testID="kanban-connection-connect"
+            >
+              {connection.kind === "gitlab"
+                ? t("kanban.connections.connectGitlab")
+                : t("kanban.connections.connectJira")}
+            </Button>
+          </>
+        ) : (
+          <Text style={styles.connectHint}>{t("kanban.connectionForm.connectHint")}</Text>
+        )}
+      </OAuthAdvancedSection>
+
+      {connection ? (
+        <Button
+          variant="ghost"
+          onPress={handleDelete}
+          disabled={isSubmitting}
+          testID="kanban-connection-delete"
+        >
+          {t("kanban.connections.delete")}
+        </Button>
+      ) : null}
 
       {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
     </AdaptiveModalSheet>
@@ -438,6 +466,30 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.base,
   },
   connectHint: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
+  advanced: {
+    gap: theme.spacing[3],
+  },
+  advancedHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    paddingVertical: theme.spacing[1],
+  },
+  advancedIcon: {
+    color: theme.colors.foregroundMuted,
+  },
+  advancedTitle: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+  },
+  advancedBody: {
+    gap: theme.spacing[3],
+  },
+  statusLine: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
   },

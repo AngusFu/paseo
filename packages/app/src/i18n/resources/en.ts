@@ -2167,6 +2167,10 @@ export const en = {
       confirmDelete: 'Delete "{{name}}"? This cannot be undone.',
     },
     connectionForm: {
+      tokenLabel: "Personal Access Token",
+      tokenHintJira: "Create one at id.atlassian.com → API tokens.",
+      tokenHintGitlab: "Create one at Settings → Access Tokens (with the `api` scope).",
+      oauthAdvanced: "Advanced: OAuth (optional)",
       baseUrlPlaceholderJira: "https://your-org.atlassian.net",
       baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "New connection",

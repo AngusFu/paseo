@@ -2198,6 +2198,10 @@ export const ru: TranslationResources = {
       confirmDelete: "Удалить «{{name}}»? Это действие нельзя отменить.",
     },
     connectionForm: {
+      tokenLabel: "Личный токен доступа",
+      tokenHintJira: "Создайте его на id.atlassian.com → API-токены.",
+      tokenHintGitlab: "Создайте его в Настройки → Токены доступа (со scope `api`).",
+      oauthAdvanced: "Дополнительно: OAuth (необязательно)",
       baseUrlPlaceholderJira: "https://your-org.atlassian.net",
       baseUrlPlaceholderGitlab: "https://gitlab.com",
       createTitle: "Новое подключение",

@@ -33,6 +33,7 @@ import {
   resolveSystemWindowTheme,
   resolveWindowBounds,
   setupWindowResizeEvents,
+  setupCrossDisplayRasterFix,
   setupWindowStatePersistence,
   setupDefaultContextMenu,
   setupDragDropPrevention,
@@ -857,6 +858,7 @@ async function createWindow(
 
   setupDarwinCompositorWatchdog(mainWindow);
   setupWindowResizeEvents(mainWindow);
+  setupCrossDisplayRasterFix(mainWindow);
   if (windowStateStore) {
     setupWindowStatePersistence(mainWindow, windowStateStore);
   }

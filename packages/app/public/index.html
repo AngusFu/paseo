@@ -27,10 +27,21 @@
         overflow: hidden;
         overscroll-behavior: none;
       }
-      /* These styles smooth text rendering in the app shell. */
+      /*
+       * Text smoothing is density-dependent. Grayscale "antialiased" smoothing
+       * looks great on Retina (>=2x) but renders text thin/blurry on 1x
+       * (non-Retina) external monitors, so only opt into it at >=2x and let the
+       * OS default ("auto") handle 1x. Chromium re-evaluates this query when the
+       * window moves between displays, so it switches live on drag.
+       */
       body {
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
+        -webkit-font-smoothing: auto;
+      }
+      @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+        body {
+          -webkit-font-smoothing: antialiased;
+          -moz-osx-font-smoothing: grayscale;
+        }
       }
       /* Prevent white flash before React mounts */
       @media (prefers-color-scheme: dark) {

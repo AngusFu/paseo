@@ -7,6 +7,7 @@ import {
   clipboard,
   ipcMain,
   nativeTheme,
+  screen,
   shell,
 } from "electron";
 
@@ -253,6 +254,51 @@ export function setupWindowResizeEvents(win: BrowserWindow): void {
   win.on("resize", notifyResized);
   win.on("enter-full-screen", notifyResized);
   win.on("leave-full-screen", notifyResized);
+}
+
+/**
+ * Fix blurry text after the window moves between monitors with different device
+ * scale factors (e.g. a Retina laptop panel at 2x and an external 1x monitor).
+ *
+ * Chromium keeps rasterizing at the *previous* display's scale after such a move,
+ * so text stays soft/blurry on the new monitor until a full re-layout forces a
+ * re-raster — which is exactly why a manual zoom (Cmd +/-) sharpens it. We detect
+ * the scale-factor change on `moved` and trigger that re-raster ourselves with a
+ * net-zero 1px bounds nudge (or, when the window can't be resized, a zoom-factor
+ * round-trip). macOS-only: this is where the mismatched-DPI raster bug shows up.
+ */
+export function setupCrossDisplayRasterFix(win: BrowserWindow): void {
+  if (process.platform !== "darwin") {
+    return;
+  }
+  let lastScaleFactor = screen.getDisplayMatching(win.getBounds()).scaleFactor;
+
+  const forceReraster = () => {
+    if (win.isDestroyed() || win.webContents.isDestroyed()) {
+      return;
+    }
+    if (win.isFullScreen() || win.isMaximized()) {
+      const webContents = win.webContents;
+      const zoom = webContents.getZoomFactor();
+      webContents.setZoomFactor(zoom + 0.001);
+      webContents.setZoomFactor(zoom);
+      return;
+    }
+    const bounds = win.getBounds();
+    win.setBounds({ ...bounds, width: bounds.width + 1 });
+    win.setBounds(bounds);
+  };
+
+  win.on("moved", () => {
+    if (win.isDestroyed()) {
+      return;
+    }
+    const scaleFactor = screen.getDisplayMatching(win.getBounds()).scaleFactor;
+    if (scaleFactor !== lastScaleFactor) {
+      lastScaleFactor = scaleFactor;
+      forceReraster();
+    }
+  });
 }
 
 /**

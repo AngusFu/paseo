@@ -1,4 +1,11 @@
-import { useCallback, useMemo, useState, type ReactElement } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { Pressable, Text, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { StyleSheet } from "react-native-unistyles";
@@ -6,7 +13,9 @@ import { useTranslation } from "react-i18next";
 import { ArrowUpRight, Copy, Pencil, Play, Rocket } from "lucide-react-native";
 import equal from "fast-deep-equal";
 import { useStoreWithEqualityFn } from "zustand/traditional";
-import type { ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
+import type { AgentProvider, ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
+import { CombinedModelSelector } from "@/components/combined-model-selector";
+import { buildSelectableProviderSelectorProviders } from "@/provider-selection/provider-selection";
 import type {
   KanbanCardDetail,
   KanbanCardDetailAttachment,
@@ -24,7 +33,11 @@ import type { FieldControlSize } from "@/components/ui/control-geometry";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { SelectField, type SelectFieldOption } from "@/components/ui/select-field";
+import {
+  SelectField,
+  SelectFieldTrigger,
+  type SelectFieldOption,
+} from "@/components/ui/select-field";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
@@ -128,18 +141,6 @@ function resolveDispatchProviderDefault(
     model: resolveDefaultModelId(entry.models ?? null),
     label: entry.label ?? null,
   };
-}
-
-function useDispatchProviderDefault(
-  serverId: string | null,
-  cwd: string | null,
-): DispatchProviderDefault | null {
-  const { preferences } = useFormPreferences();
-  const snapshot = useProvidersSnapshot(serverId, { enabled: Boolean(serverId && cwd), cwd });
-  return useMemo(
-    () => resolveDispatchProviderDefault(preferences.provider, snapshot.entries),
-    [preferences.provider, snapshot.entries],
-  );
 }
 
 // Mirrors kanban-card.tsx's cardIssueKey — kept local rather than exported to
@@ -286,11 +287,19 @@ function buildDispatchPlan(
 // against this card, built from the plan plus a (possibly user-edited)
 // prompt. `cwd` (a project's main checkout) becomes --cwd when a project is
 // selected, omitted otherwise.
-function buildDispatchCommand(plan: DispatchPlan, cwd: string | null, prompt: string): string {
+function buildDispatchCommand(
+  plan: DispatchPlan,
+  cwd: string | null,
+  prompt: string,
+  provider: string,
+  model: string,
+): string {
   const cwdArg = cwd ? `--cwd "${escapeCommandQuotes(cwd)}" ` : "";
   const worktreeArg = plan.worktree ? `--worktree "${escapeCommandQuotes(plan.worktree)}" ` : "";
   const titleArg = plan.title ? `--title "${escapeCommandQuotes(plan.title)}" ` : "";
-  return `paseo run ${cwdArg}${worktreeArg}${titleArg}"${escapeCommandQuotes(prompt)}"`;
+  const providerArg = provider ? `--provider "${escapeCommandQuotes(provider)}" ` : "";
+  const modelArg = model ? `--model "${escapeCommandQuotes(model)}" ` : "";
+  return `paseo run ${cwdArg}${worktreeArg}${titleArg}${providerArg}${modelArg}"${escapeCommandQuotes(prompt)}"`;
 }
 
 function sortCommentsAscending(
@@ -879,14 +888,74 @@ function DispatchActions({
   const { t } = useTranslation();
   const toast = useToast();
   const client = useHostRuntimeClient(serverId ?? "");
-  const providerDefault = useDispatchProviderDefault(serverId, workspace?.cwd ?? null);
+  const { preferences } = useFormPreferences();
+  const cwd = workspace?.cwd ?? null;
+  const snapshot = useProvidersSnapshot(serverId, { enabled: Boolean(serverId && cwd), cwd });
+  const providerDefault = useMemo(
+    () => resolveDispatchProviderDefault(preferences.provider, snapshot.entries),
+    [preferences.provider, snapshot.entries],
+  );
+  const modelSelectorProviders = useMemo(
+    () => buildSelectableProviderSelectorProviders(snapshot.entries),
+    [snapshot.entries],
+  );
 
   const [prompt, setPrompt] = useState(plan.prompt);
   const [isRunSheetVisible, setIsRunSheetVisible] = useState(false);
+  // Provider/model start from the resolved default and stay wherever the user
+  // moves them. Seed once, when the default first resolves and nothing is chosen.
+  const [selectedProvider, setSelectedProvider] = useState("");
+  const [selectedModel, setSelectedModel] = useState("");
+  useEffect(() => {
+    if (!selectedProvider && providerDefault) {
+      setSelectedProvider(providerDefault.provider);
+      setSelectedModel(providerDefault.model);
+    }
+  }, [providerDefault, selectedProvider]);
+
+  const handleSelectModel = useCallback((provider: AgentProvider, modelId: string) => {
+    setSelectedProvider(provider);
+    setSelectedModel(modelId);
+  }, []);
+
+  // Full-width trigger matching the workspace dropdown above, so the dispatch
+  // controls line up instead of the model chip floating at its own width.
+  const renderModelTrigger = useCallback(
+    (input: {
+      selectedModelLabel: string;
+      disabled: boolean;
+      isOpen: boolean;
+      hovered: boolean;
+      pressed: boolean;
+    }): ReactNode => (
+      <SelectFieldTrigger
+        label={input.selectedModelLabel}
+        isPlaceholder={!selectedModel}
+        placeholder={input.selectedModelLabel}
+        disabled={input.disabled}
+        active={input.hovered || input.pressed || input.isOpen}
+        size="sm"
+        testID="kanban-card-detail-dispatch-provider-trigger"
+      />
+    ),
+    [selectedModel],
+  );
+
+  const selectedProviderLabel = useMemo(() => {
+    const match = modelSelectorProviders.find((entry) => entry.id === selectedProvider);
+    return match?.label ?? (selectedProvider || null);
+  }, [modelSelectorProviders, selectedProvider]);
+
+  const confirmProviderLabel = useMemo(() => {
+    if (!selectedProviderLabel) {
+      return null;
+    }
+    return selectedModel ? `${selectedProviderLabel} · ${selectedModel}` : selectedProviderLabel;
+  }, [selectedProviderLabel, selectedModel]);
 
   const dispatchCommand = useMemo(
-    () => buildDispatchCommand(plan, workspace?.cwd ?? null, prompt),
-    [plan, workspace, prompt],
+    () => buildDispatchCommand(plan, cwd, prompt, selectedProvider, selectedModel),
+    [plan, cwd, prompt, selectedProvider, selectedModel],
   );
 
   const handleCopyDispatch = useCallback(() => {
@@ -901,7 +970,7 @@ function DispatchActions({
     if (!client || !workspace) {
       throw new Error(t("kanban.cardDetail.dispatchRunNoWorkspace"));
     }
-    if (!providerDefault) {
+    if (!selectedProvider) {
       throw new Error(t("kanban.cardDetail.dispatchRunNoProvider"));
     }
     const workspacePayload = plan.worktree
@@ -917,18 +986,30 @@ function DispatchActions({
       workspaceDirectory: workspacePayload.workspace.workspaceDirectory,
     });
     await client.createAgent({
-      provider: providerDefault.provider,
-      model: providerDefault.model || undefined,
+      provider: selectedProvider,
+      model: selectedModel || undefined,
       cwd: workspaceDirectory,
       workspaceId: workspacePayload.workspace.id,
       ...(plan.title ? { title: plan.title } : {}),
       initialPrompt: prompt,
     });
     toast.show(t("kanban.cardDetail.dispatchRunSuccess"), { variant: "success" });
-  }, [client, plan, prompt, providerDefault, t, toast, workspace]);
+  }, [client, plan, prompt, selectedProvider, selectedModel, t, toast, workspace]);
 
   return (
     <>
+      <Field label={t("kanban.cardDetail.dispatchRunConfirmProvider")}>
+        <CombinedModelSelector
+          providers={modelSelectorProviders}
+          selectedProvider={selectedProvider}
+          selectedModel={selectedModel}
+          onSelect={handleSelectModel}
+          isLoading={snapshot.isLoading || snapshot.isFetching}
+          serverId={serverId}
+          renderTrigger={renderModelTrigger}
+          triggerFill
+        />
+      </Field>
       <Field label={t("kanban.cardDetail.dispatchPromptLabel")}>
         {/* AdaptiveTextInput is intentionally uncontrolled and discards `value`;
             initialValue + the parent's key-based remount seed the template. */}
@@ -975,7 +1056,7 @@ function DispatchActions({
           onClose={handleCloseRunSheet}
           projectPath={workspace.cwd}
           worktree={plan.worktree}
-          providerLabel={providerDefault?.label ?? providerDefault?.provider ?? null}
+          providerLabel={confirmProviderLabel}
           promptPreview={prompt}
           onConfirm={handleConfirmRun}
         />

@@ -96,8 +96,10 @@ export function useKanbanCardSummary(
       return summary;
     },
     dataShape: "value",
-    // Deterministic per content+language; only a manual refresh regenerates.
-    staleTimeMs: Number.POSITIVE_INFINITY,
+    // Keyed by content+language, so it never goes stale on its own; only a
+    // manual refresh regenerates. useFetchQuery requires a finite value, so use
+    // a very large one rather than Infinity.
+    staleTimeMs: 24 * 60 * 60 * 1000,
   });
 
   return {

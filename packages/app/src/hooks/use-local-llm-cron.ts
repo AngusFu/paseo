@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { LlmLocalModelState } from "@getpaseo/protocol/llm/rpc-schemas";
 import { useLocalLlmModel } from "@/hooks/use-local-llm-model";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
+import { llmLanguageName } from "@/utils/llm-language";
 import { validateCron } from "@/utils/schedule-format";
 
 const CRON_JSON_SCHEMA = {
@@ -20,23 +21,10 @@ const CRON_JSON_SCHEMA = {
   required: ["expression", "explanation"],
 } as const;
 
-// The model's own language name for the explanation directive, keyed by i18n
-// language code (falls back to English for unknown codes).
-const EXPLANATION_LANGUAGE: Record<string, string> = {
-  en: "English",
-  "zh-CN": "Chinese (Simplified)",
-  ja: "Japanese",
-  es: "Spanish",
-  fr: "French",
-  ru: "Russian",
-  "pt-BR": "Portuguese",
-  ar: "Arabic",
-};
-
 // Few-shot examples matter: small models reliably drop compound syntax like a
 // range with a step (8-17/3) unless they have seen it spelled out.
 function buildSystemPrompt(languageCode: string): string {
-  const language = EXPLANATION_LANGUAGE[languageCode] ?? "English";
+  const language = llmLanguageName(languageCode);
   return `You convert natural-language scheduling requests into standard 5-field cron expressions (minute hour day-of-month month day-of-week). Allowed syntax per field: numbers, * , ranges (a-b), lists (a,b), steps (*/n), and ranges with steps (a-b/n). Days of week: 0=Sunday … 6=Saturday. Respond with JSON only. Always write the "explanation" field in ${language}, regardless of the request's language.
 
 Examples:
@@ -56,7 +44,7 @@ const EXPLAIN_JSON_SCHEMA = {
 } as const;
 
 function buildExplainSystemPrompt(languageCode: string): string {
-  const language = EXPLANATION_LANGUAGE[languageCode] ?? "English";
+  const language = llmLanguageName(languageCode);
   // The strong, repeated language directive is load-bearing: without it the
   // model defaults the explanation to English regardless of the UI language.
   return `You explain 5-field cron expressions (minute hour day-of-month month day-of-week). Respond with JSON only: {"explanation": "..."}. The explanation MUST be one short sentence written in ${language}. Do not use any other language.`;

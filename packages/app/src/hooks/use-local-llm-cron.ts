@@ -47,6 +47,21 @@ Examples:
 "每月1号和15号凌晨2点" -> {"expression": "0 2 1,15 * *"}`;
 }
 
+const EXPLAIN_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    explanation: { type: "string" },
+  },
+  required: ["explanation"],
+} as const;
+
+function buildExplainSystemPrompt(languageCode: string): string {
+  const language = EXPLANATION_LANGUAGE[languageCode] ?? "English";
+  // The strong, repeated language directive is load-bearing: without it the
+  // model defaults the explanation to English regardless of the UI language.
+  return `You explain 5-field cron expressions (minute hour day-of-month month day-of-week). Respond with JSON only: {"explanation": "..."}. The explanation MUST be one short sentence written in ${language}. Do not use any other language.`;
+}
+
 export interface CronGenerationResult {
   expression: string;
   // The model's one-line description, in the request's language. May be empty.
@@ -59,7 +74,10 @@ export interface UseLocalLlmCronResult {
   model: LlmLocalModelState | null;
   startDownload: () => void;
   generate: (text: string) => Promise<CronGenerationResult | null>;
+  // Reverse of generate: describe an existing cron expression in plain language.
+  explain: (expression: string) => Promise<string | null>;
   isGenerating: boolean;
+  isExplaining: boolean;
 }
 
 // Drives the "describe a schedule in natural language → cron" affordance in the
@@ -69,6 +87,7 @@ export function useLocalLlmCron(serverId: string | null | undefined): UseLocalLl
   const { supported, model, startDownload, refreshStatus } = useLocalLlmModel(serverId);
   const client = useHostRuntimeClient(serverId ?? "");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isExplaining, setIsExplaining] = useState(false);
   const languageCode = i18n.language;
 
   // Returns a validated cron expression, or null when generation/parsing
@@ -113,5 +132,37 @@ export function useLocalLlmCron(serverId: string | null | undefined): UseLocalLl
     [client, languageCode, refreshStatus],
   );
 
-  return { supported, model, startDownload, generate, isGenerating };
+  const explain = useCallback(
+    async (expression: string): Promise<string | null> => {
+      if (!client) {
+        return null;
+      }
+      setIsExplaining(true);
+      try {
+        const payload = await client.llmLocalGenerate({
+          prompt: expression,
+          systemPrompt: buildExplainSystemPrompt(languageCode),
+          jsonSchema: EXPLAIN_JSON_SCHEMA as unknown as Record<string, unknown>,
+          maxTokens: 160,
+        });
+        if (payload.error || !payload.text) {
+          return null;
+        }
+        const parsed: unknown = JSON.parse(payload.text);
+        if (typeof parsed !== "object" || parsed === null || !("explanation" in parsed)) {
+          return null;
+        }
+        const explanation = String((parsed as { explanation: unknown }).explanation).trim();
+        return explanation || null;
+      } catch {
+        return null;
+      } finally {
+        setIsExplaining(false);
+        void refreshStatus();
+      }
+    },
+    [client, languageCode, refreshStatus],
+  );
+
+  return { supported, model, startDownload, generate, explain, isGenerating, isExplaining };
 }

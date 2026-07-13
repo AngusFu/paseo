@@ -2408,6 +2408,7 @@ export const ar: TranslationResources = {
       },
       ai: {
         trigger: "إنشاء بالذكاء الاصطناعي",
+        explain: "شرح",
         placeholder: "صِف الجدولة، مثل: كل يوم عمل الساعة 9:30 صباحًا",
         generate: "إنشاء",
         generating: "جارٍ الإنشاء…",

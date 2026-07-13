@@ -2453,6 +2453,7 @@ export const ru: TranslationResources = {
       },
       ai: {
         trigger: "Сгенерировать с ИИ",
+        explain: "Объяснить",
         placeholder: "Опишите расписание, например: каждый будний день в 9:30",
         generate: "Сгенерировать",
         generating: "Генерация…",

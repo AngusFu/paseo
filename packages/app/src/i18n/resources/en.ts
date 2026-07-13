@@ -2421,6 +2421,7 @@ export const en = {
       },
       ai: {
         trigger: "Generate with AI",
+        explain: "Explain",
         placeholder: "Describe the schedule, e.g. every weekday at 9:30",
         generate: "Generate",
         generating: "Generating…",

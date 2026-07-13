@@ -2445,6 +2445,7 @@ export const ptBR: TranslationResources = {
       },
       ai: {
         trigger: "Gerar com IA",
+        explain: "Explicar",
         placeholder: "Descreva o agendamento, p. ex. todo dia útil às 9:30",
         generate: "Gerar",
         generating: "Gerando…",

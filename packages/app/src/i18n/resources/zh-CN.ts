@@ -2387,6 +2387,7 @@ export const zhCN: TranslationResources = {
       },
       ai: {
         trigger: "AI 生成",
+        explain: "解释",
         placeholder: "描述执行频率，如：每个工作日早上 9:30",
         generate: "生成",
         generating: "生成中…",

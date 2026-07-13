@@ -2438,6 +2438,7 @@ export const ja: TranslationResources = {
       },
       ai: {
         trigger: "AI で生成",
+        explain: "説明",
         placeholder: "スケジュールを説明してください（例：平日の朝 9:30）",
         generate: "生成",
         generating: "生成中…",

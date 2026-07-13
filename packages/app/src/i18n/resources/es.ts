@@ -2456,6 +2456,7 @@ export const es: TranslationResources = {
       },
       ai: {
         trigger: "Generar con IA",
+        explain: "Explicar",
         placeholder: "Describe la programación, p. ej. cada día laborable a las 9:30",
         generate: "Generar",
         generating: "Generando…",

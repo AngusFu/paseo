@@ -2467,6 +2467,7 @@ export const fr: TranslationResources = {
       },
       ai: {
         trigger: "Générer avec l'IA",
+        explain: "Expliquer",
         placeholder: "Décrivez la planification, p. ex. chaque jour ouvré à 9 h 30",
         generate: "Générer",
         generating: "Génération…",

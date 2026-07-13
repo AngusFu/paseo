@@ -10,7 +10,12 @@ import {
   buildStringCommandShellInvocation,
   createStringCommandShellEnv,
 } from "./string-command-shell.js";
-import { readMergedPaseoConfigJson, resolvePaseoConfigPath } from "./paseo-config-file.js";
+import {
+  PASEO_CONFIG_FILE_NAME,
+  PASEO_LOCAL_CONFIG_FILE_NAME,
+  readMergedPaseoConfigJson,
+  resolvePaseoConfigPath,
+} from "./paseo-config-file.js";
 export {
   PaseoConfigRawSchema,
   PaseoLifecycleCommandRawSchema,
@@ -1218,17 +1223,22 @@ export const createWorktree = async ({
 
   writePaseoWorktreeMetadata(worktreePath, { baseRefName: sourcePlan.metadataBaseRefName });
 
-  // If paseo.json exists in the main repo but wasn't checked into the worktree
-  // (e.g. uncommitted on first-time setup), seed the worktree with it so setup
-  // commands and scripts pick up the user's intended config.
-  const mainConfigPath = join(cwd, "paseo.json");
-  const worktreeConfigPath = join(worktreePath, "paseo.json");
-  try {
-    await stat(worktreeConfigPath);
-  } catch {
-    await copyFile(mainConfigPath, worktreeConfigPath).catch((err) => {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    });
+  // If paseo.json / paseo.local.json exist in the main repo but weren't checked
+  // into the worktree, seed the worktree with them so setup commands and scripts
+  // pick up the user's intended config. paseo.json can be uncommitted on
+  // first-time setup; paseo.local.json is always git-ignored, so it never rides
+  // along with the checkout and must be seeded here or setup would run with no
+  // config at all.
+  for (const configFileName of [PASEO_CONFIG_FILE_NAME, PASEO_LOCAL_CONFIG_FILE_NAME]) {
+    const mainConfigPath = join(cwd, configFileName);
+    const worktreeConfigPath = join(worktreePath, configFileName);
+    try {
+      await stat(worktreeConfigPath);
+    } catch {
+      await copyFile(mainConfigPath, worktreeConfigPath).catch((err) => {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      });
+    }
   }
 
   if (runSetup) {

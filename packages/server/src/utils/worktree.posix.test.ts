@@ -1033,6 +1033,29 @@ describe.skipIf(isPlatform("win32"))("worktree POSIX-only", () => {
       });
     });
 
+    it("seeds a git-ignored paseo.local.json from the main repo into a new worktree", async () => {
+      // paseo.local.json is always git-ignored, so it never rides along with the
+      // checkout — without seeding, worktree setup would run with no config.
+      writeFileSync(
+        join(repoDir, "paseo.local.json"),
+        JSON.stringify({ worktree: { setup: ["echo local"] } }),
+      );
+
+      const result = await createLegacyWorktreeForTest({
+        cwd: repoDir,
+        worktreeSlug: "seed-local",
+        source: { kind: "branch-off", baseBranch: "main", branchName: "feature/seed-local" },
+        runSetup: false,
+        paseoHome,
+      });
+
+      const worktreeConfigPath = join(result.worktreePath, "paseo.local.json");
+      expect(existsSync(worktreeConfigPath)).toBe(true);
+      expect(JSON.parse(readFileSync(worktreeConfigPath, "utf8"))).toEqual({
+        worktree: { setup: ["echo local"] },
+      });
+    });
+
     it("does not overwrite a committed paseo.json with uncommitted edits in the main repo", async () => {
       writeFileSync(
         join(repoDir, "paseo.json"),

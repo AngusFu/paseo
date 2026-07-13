@@ -1,5 +1,5 @@
 import { useCallback, useMemo, type ReactElement } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { Plus, RotateCw } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
@@ -68,6 +68,13 @@ function KanbanSourceRow({
   const handleSync = useCallback(() => onSync(source.id), [onSync, source.id]);
   const syncStatus = resolveSyncStatusLabel(source, t);
   const connectionLabel = resolveConnectionLabel(connection, t);
+  const syncButtonStyle = useCallback(
+    ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
+      styles.syncButton,
+      !isSyncing && (Boolean(hovered) || pressed) && styles.syncButtonHovered,
+    ],
+    [isSyncing],
+  );
 
   return (
     <Pressable
@@ -89,7 +96,7 @@ function KanbanSourceRow({
         </Text>
       </View>
       <Pressable
-        style={styles.syncButton}
+        style={syncButtonStyle}
         onPress={handleSync}
         disabled={isSyncing}
         accessibilityRole="button"
@@ -97,7 +104,11 @@ function KanbanSourceRow({
         testID={`kanban-source-sync-${source.id}`}
         hitSlop={8}
       >
-        <RotateCw size={16} color={styles.syncIcon.color} />
+        {isSyncing ? (
+          <LoadingSpinner size="small" color={styles.syncIcon.color} />
+        ) : (
+          <RotateCw size={16} color={styles.syncIcon.color} />
+        )}
       </Pressable>
     </Pressable>
   );
@@ -230,6 +241,9 @@ const styles = StyleSheet.create((theme) => ({
   syncButton: {
     padding: theme.spacing[2],
     borderRadius: theme.borderRadius.base,
+  },
+  syncButtonHovered: {
+    backgroundColor: theme.colors.surface2,
   },
   syncIcon: {
     color: theme.colors.foregroundMuted,

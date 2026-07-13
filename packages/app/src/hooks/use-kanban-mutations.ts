@@ -14,6 +14,7 @@ import type {
 } from "@getpaseo/client/internal/daemon-client";
 import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 import { kanbanCardsQueryBaseKey } from "@/hooks/use-kanban-cards";
+import { kanbanSourcesQueryBaseKey } from "@/hooks/use-kanban-sources";
 import { useSessionStore } from "@/stores/session-store";
 
 export type CreateKanbanCardInput = Omit<KanbanCardCreateOptions, "requestId">;
@@ -74,6 +75,14 @@ export function useKanbanMutations({ serverId }: { serverId: string }): UseKanba
 
   const invalidate = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: kanbanCardsQueryBaseKey });
+  }, [queryClient]);
+
+  // A board-wide sync also updates each source's lastSyncAt / lastSyncError, so
+  // refresh the sources list too — otherwise the sources sheet shows stale sync
+  // status (and swallowed per-source errors) until it happens to refetch.
+  const invalidateCardsAndSources = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: kanbanCardsQueryBaseKey });
+    void queryClient.invalidateQueries({ queryKey: kanbanSourcesQueryBaseKey });
   }, [queryClient]);
 
   const createMutation = useMutation({
@@ -193,7 +202,7 @@ export function useKanbanMutations({ serverId }: { serverId: string }): UseKanba
         }
       }
     },
-    onSettled: invalidate,
+    onSettled: invalidateCardsAndSources,
   });
 
   const createCard = useCallback(

@@ -186,7 +186,7 @@ export function ScheduleLogsSheet({
   const header = useMemo<SheetHeader>(
     () => ({
       title: scheduleTitle,
-      subtitle: t("schedule.logs.title"),
+      subtitle: <Text style={styles.subtitle}>{t("schedule.logs.title")}</Text>,
       actions: (
         <Pressable
           onPress={refetch}
@@ -274,6 +274,10 @@ function refreshButtonStyle({
 const styles = StyleSheet.create((theme) => ({
   spinner: {
     color: theme.colors.foregroundMuted,
+  },
+  subtitle: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
   },
   // Keep the modal from collapsing to a thin strip when a schedule has few (or
   // one) runs — a log viewer reads better with vertical room to breathe.

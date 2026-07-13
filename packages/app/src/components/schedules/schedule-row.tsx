@@ -8,7 +8,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react-native";
-import { useCallback, useState, type ReactElement } from "react";
+import { useCallback, useMemo, useState, type ReactElement } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
@@ -179,13 +179,20 @@ export function ScheduleRow({
   const meta = buildMeta(schedule, state, serverName, singleHost ?? false, t);
   const canRun = state === "active" || state === "paused";
 
-  const rowStyle = useCallback(
-    ({ pressed }: PressableStateCallbackType) => [
+  // The edit Pressable wraps only the main content, not the whole row — the run
+  // button and kebab are its siblings, not its children. Nesting a Pressable
+  // inside a Pressable renders <button> inside <button> on web, which is invalid
+  // HTML and throws a hydration error. See docs/hover.md.
+  const mainStyle = useCallback(
+    ({ pressed }: PressableStateCallbackType) => [styles.main, pressed && styles.mainPressed],
+    [],
+  );
+  const containerStyle = useMemo(
+    () => [
       settingsStyles.row,
       styles.row,
       !isFirst && settingsStyles.rowBorder,
       isHovered && !isCompact && styles.rowHovered,
-      pressed && styles.rowPressed,
     ],
     [isFirst, isHovered, isCompact],
   );
@@ -196,14 +203,14 @@ export function ScheduleRow({
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}
     >
-      <Pressable
-        style={rowStyle}
-        onPress={onEdit}
-        accessibilityRole="button"
-        accessibilityLabel={t("schedule.menu.editA11y", { title })}
-        testID={`schedule-row-${schedule.id}`}
-      >
-        <View style={styles.main}>
+      <View style={containerStyle}>
+        <Pressable
+          style={mainStyle}
+          onPress={onEdit}
+          accessibilityRole="button"
+          accessibilityLabel={t("schedule.menu.editA11y", { title })}
+          testID={`schedule-row-${schedule.id}`}
+        >
           <View style={styles.leading}>
             <ProviderGlyph provider={provider} />
           </View>
@@ -218,7 +225,7 @@ export function ScheduleRow({
               {meta}
             </Text>
           </View>
-        </View>
+        </Pressable>
 
         <View style={styles.trailing}>
           <ScheduleRunButton
@@ -240,7 +247,7 @@ export function ScheduleRow({
             onDelete={onDelete}
           />
         </View>
-      </Pressable>
+      </View>
     </View>
   );
 }
@@ -442,15 +449,15 @@ const styles = StyleSheet.create((theme) => ({
   rowHovered: {
     backgroundColor: theme.colors.surface2,
   },
-  rowPressed: {
-    backgroundColor: theme.colors.surface3,
-  },
   main: {
     flex: 1,
     minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[3],
+  },
+  mainPressed: {
+    opacity: theme.opacity[50],
   },
   leading: {
     width: PROVIDER_ICON_SIZE,

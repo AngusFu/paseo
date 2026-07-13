@@ -14,6 +14,7 @@ import type { FileBackedChatService } from "./chat/chat-service.js";
 import type { LoopService } from "./loop-service.js";
 import type { ScheduleService } from "./schedule/service.js";
 import { KanbanService } from "./kanban/service.js";
+import { LlamaService } from "./llm/llama-service.js";
 import type { CheckoutDiffManager, CheckoutDiffMetrics } from "./checkout-diff-manager.js";
 import type { DaemonConfigStore, MutableDaemonConfig } from "./daemon-config-store.js";
 import {
@@ -432,6 +433,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly loopService: LoopService;
   private readonly scheduleService: ScheduleService;
   private readonly kanbanService: KanbanService;
+  private readonly llamaService: LlamaService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: GitHubService;
   private readonly workspaceGitService: WorkspaceGitService;
@@ -530,6 +532,7 @@ export class VoiceAssistantWebSocketServer {
     serviceProxyPublicBaseUrl?: string | null,
     browserToolsBroker?: BrowserToolsBroker | null,
     kanbanService?: KanbanService,
+    llamaService?: LlamaService,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.serverId = serverId;
@@ -553,6 +556,17 @@ export class VoiceAssistantWebSocketServer {
     this.loopService = requiredServices.loopService;
     this.scheduleService = requiredServices.scheduleService;
     this.kanbanService = kanbanService ?? new KanbanService({ dir: join(paseoHome, "kanban") });
+    this.llamaService =
+      llamaService ??
+      new LlamaService({
+        paseoHome,
+        logger,
+        onStatusUpdate: (model) => {
+          this.broadcast(
+            wrapSessionMessage({ type: "llm.local.status.update", payload: { model } }),
+          );
+        },
+      });
     this.checkoutDiffManager = requiredServices.checkoutDiffManager;
     this.github = github ?? createGitHubService();
     this.workspaceGitService = workspaceGitService ?? createFallbackWorkspaceGitService();
@@ -834,6 +848,7 @@ export class VoiceAssistantWebSocketServer {
   }
 
   public async close(): Promise<void> {
+    this.llamaService.stop();
     this.unsubscribeSpeechReadiness?.();
     this.unsubscribeSpeechReadiness = null;
     this.unsubscribeDaemonConfigChange?.();
@@ -1055,6 +1070,7 @@ export class VoiceAssistantWebSocketServer {
       loopService: this.loopService,
       scheduleService: this.scheduleService,
       kanbanService: this.kanbanService,
+      llamaService: this.llamaService,
       checkoutDiffManager: this.checkoutDiffManager,
       github: this.github,
       workspaceGitService: this.workspaceGitService,
@@ -1282,6 +1298,8 @@ export class VoiceAssistantWebSocketServer {
         kanbanColumns: true,
         // COMPAT(kanbanCardDetail): added in v0.1.109, drop the gate when floor >= v0.1.109.
         kanbanCardDetail: true,
+        // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
+        localLlm: true,
       },
     };
   }

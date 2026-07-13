@@ -107,6 +107,18 @@ import {
   BrowserAutomationExecuteRequestSchema,
   BrowserAutomationExecuteResponseSchema,
 } from "./browser-automation/rpc-schemas.js";
+import {
+  LlmLocalStatusRequestSchema,
+  LlmLocalDownloadRequestSchema,
+  LlmLocalGenerateRequestSchema,
+  LlmLocalCancelRequestSchema,
+  LlmLocalStatusResponseSchema,
+  LlmLocalDownloadResponseSchema,
+  LlmLocalStatusUpdateSchema,
+  LlmLocalGenerateChunkSchema,
+  LlmLocalGenerateResponseSchema,
+  LlmLocalCancelResponseSchema,
+} from "./llm/rpc-schemas.js";
 import { BrowserAutomationHostCapabilitySchema } from "./browser-automation/capabilities.js";
 import {
   PaseoConfigRawSchema,
@@ -2286,6 +2298,10 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   LoopInspectRequestSchema,
   LoopLogsRequestSchema,
   LoopStopRequestSchema,
+  LlmLocalStatusRequestSchema,
+  LlmLocalDownloadRequestSchema,
+  LlmLocalGenerateRequestSchema,
+  LlmLocalCancelRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -2502,6 +2518,8 @@ export const ServerInfoStatusPayloadSchema = z
         kanbanColumns: z.boolean().optional(),
         // COMPAT(kanbanCardDetail): added in v0.1.109, drop the gate when floor >= v0.1.109.
         kanbanCardDetail: z.boolean().optional(),
+        // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
+        localLlm: z.boolean().optional(),
       })
       .optional(),
   })
@@ -4492,6 +4510,12 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   LoopInspectResponseSchema,
   LoopLogsResponseSchema,
   LoopStopResponseSchema,
+  LlmLocalStatusResponseSchema,
+  LlmLocalDownloadResponseSchema,
+  LlmLocalStatusUpdateSchema,
+  LlmLocalGenerateChunkSchema,
+  LlmLocalGenerateResponseSchema,
+  LlmLocalCancelResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
   InstallDifftasticProgressMessageSchema,
@@ -4635,6 +4659,16 @@ export type LoopListResponse = z.infer<typeof LoopListResponseSchema>;
 export type LoopInspectResponse = z.infer<typeof LoopInspectResponseSchema>;
 export type LoopLogsResponse = z.infer<typeof LoopLogsResponseSchema>;
 export type LoopStopResponse = z.infer<typeof LoopStopResponseSchema>;
+export type LlmLocalStatusRequest = z.infer<typeof LlmLocalStatusRequestSchema>;
+export type LlmLocalDownloadRequest = z.infer<typeof LlmLocalDownloadRequestSchema>;
+export type LlmLocalGenerateRequest = z.infer<typeof LlmLocalGenerateRequestSchema>;
+export type LlmLocalCancelRequest = z.infer<typeof LlmLocalCancelRequestSchema>;
+export type LlmLocalStatusResponse = z.infer<typeof LlmLocalStatusResponseSchema>;
+export type LlmLocalDownloadResponse = z.infer<typeof LlmLocalDownloadResponseSchema>;
+export type LlmLocalStatusUpdate = z.infer<typeof LlmLocalStatusUpdateSchema>;
+export type LlmLocalGenerateChunk = z.infer<typeof LlmLocalGenerateChunkSchema>;
+export type LlmLocalGenerateResponse = z.infer<typeof LlmLocalGenerateResponseSchema>;
+export type LlmLocalCancelResponse = z.infer<typeof LlmLocalCancelResponseSchema>;
 
 // Type exports for payload types
 export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;

@@ -200,6 +200,7 @@ import { FileBackedChatService } from "./chat/chat-service.js";
 import { LoopService } from "./loop-service.js";
 import { ScheduleService } from "./schedule/service.js";
 import { KanbanService } from "./kanban/service.js";
+import { LlamaService, LlmGenerateError } from "./llm/llama-service.js";
 import { createGitHubService, type GitHubService } from "../services/github-service.js";
 import type { ProviderUsageService } from "../services/quota-fetcher/service.js";
 import {
@@ -443,6 +444,7 @@ export interface SessionOptions {
   chatService: FileBackedChatService;
   scheduleService: ScheduleService;
   kanbanService: KanbanService;
+  llamaService: LlamaService;
   loopService: LoopService;
   checkoutDiffManager: CheckoutDiffManager;
   github?: GitHubService;
@@ -610,6 +612,7 @@ export class Session {
   private readonly checkoutSession: CheckoutSession;
   private readonly chatScheduleLoopSession: ChatScheduleLoopSession;
   private readonly kanbanService: KanbanService;
+  private readonly llamaService: LlamaService;
   private readonly providerCatalogSession: ProviderCatalogSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
   private readonly agentConfigSession: AgentConfigSession;
@@ -640,6 +643,7 @@ export class Session {
       chatService,
       scheduleService,
       kanbanService,
+      llamaService,
       loopService,
       checkoutDiffManager,
       github,
@@ -777,6 +781,7 @@ export class Session {
       logger: this.sessionLogger,
     });
     this.kanbanService = kanbanService;
+    this.llamaService = llamaService;
     this.providerCatalogSession = new ProviderCatalogSession({
       host: {
         emit: (msg) => this.emit(msg),
@@ -1405,6 +1410,7 @@ export class Session {
       this.dispatchChatScheduleLoopMessage(msg) ??
       this.dispatchKanbanMessage(msg) ??
       this.dispatchKanbanColumnMessage(msg) ??
+      this.dispatchLlmMessage(msg) ??
       this.dispatchMiscMessage(msg);
     if (promise) await promise;
   }
@@ -2174,6 +2180,102 @@ export class Session {
         authorizeUrl: result.authorizeUrl,
         error: result.error,
       },
+    });
+  }
+
+  private dispatchLlmMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "llm.local.status.request":
+        return this.handleLlmStatusRequest(msg);
+      case "llm.local.download.request":
+        return this.handleLlmDownloadRequest(msg);
+      case "llm.local.generate.request":
+        return this.handleLlmGenerateRequest(msg);
+      case "llm.local.cancel.request":
+        return this.handleLlmCancelRequest(msg);
+      default:
+        return undefined;
+    }
+  }
+
+  private async handleLlmStatusRequest(
+    msg: Extract<SessionInboundMessage, { type: "llm.local.status.request" }>,
+  ): Promise<void> {
+    const model = await this.llamaService.getStatus();
+    this.emit({
+      type: "llm.local.status.response",
+      payload: { requestId: msg.requestId, model },
+    });
+  }
+
+  private async handleLlmDownloadRequest(
+    msg: Extract<SessionInboundMessage, { type: "llm.local.download.request" }>,
+  ): Promise<void> {
+    try {
+      const model = await this.llamaService.startDownload();
+      this.emit({
+        type: "llm.local.download.response",
+        payload: { requestId: msg.requestId, model, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "llm.local.download.response",
+        payload: {
+          requestId: msg.requestId,
+          model: await this.llamaService.getStatus(),
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleLlmGenerateRequest(
+    msg: Extract<SessionInboundMessage, { type: "llm.local.generate.request" }>,
+  ): Promise<void> {
+    try {
+      const text = await this.llamaService.generate({
+        requestId: msg.requestId,
+        prompt: msg.prompt,
+        systemPrompt: msg.systemPrompt,
+        jsonSchema: msg.jsonSchema,
+        maxTokens: msg.maxTokens,
+        stream: msg.stream,
+        onChunk: msg.stream
+          ? (chunk) => {
+              this.emit({
+                type: "llm.local.generate.chunk",
+                payload: { requestId: msg.requestId, text: chunk },
+              });
+            }
+          : undefined,
+      });
+      this.emit({
+        type: "llm.local.generate.response",
+        payload: { requestId: msg.requestId, text, error: null },
+      });
+    } catch (error) {
+      let message: string;
+      if (error instanceof LlmGenerateError) {
+        message = error.message;
+      } else if (error instanceof Error) {
+        message = `generation failed: ${error.message}`;
+      } else {
+        message = String(error);
+      }
+      this.emit({
+        type: "llm.local.generate.response",
+        payload: { requestId: msg.requestId, text: null, error: message },
+      });
+    }
+  }
+
+  private async handleLlmCancelRequest(
+    msg: Extract<SessionInboundMessage, { type: "llm.local.cancel.request" }>,
+  ): Promise<void> {
+    const cancelled = this.llamaService.cancel(msg.generateRequestId);
+    this.emit({
+      type: "llm.local.cancel.response",
+      payload: { requestId: msg.requestId, cancelled },
     });
   }
 

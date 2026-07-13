@@ -519,6 +519,35 @@ type KanbanCardCommentsPayload = Extract<
   SessionOutboundMessage,
   { type: "kanban.card.comments.response" }
 >["payload"];
+type LlmLocalStatusPayload = Extract<
+  SessionOutboundMessage,
+  { type: "llm.local.status.response" }
+>["payload"];
+type LlmLocalDownloadPayload = Extract<
+  SessionOutboundMessage,
+  { type: "llm.local.download.response" }
+>["payload"];
+type LlmLocalGeneratePayload = Extract<
+  SessionOutboundMessage,
+  { type: "llm.local.generate.response" }
+>["payload"];
+type LlmLocalCancelPayload = Extract<
+  SessionOutboundMessage,
+  { type: "llm.local.cancel.response" }
+>["payload"];
+
+// Cold-start generation loads the model from disk first (tens of seconds).
+const LLM_GENERATE_TIMEOUT_MS = 120_000;
+
+interface LlmLocalGenerateOptions {
+  prompt: string;
+  systemPrompt?: string;
+  jsonSchema?: Record<string, unknown>;
+  maxTokens?: number;
+  requestId?: string;
+  timeoutMs?: number;
+}
+
 type KanbanSourceCreatePayload = Extract<
   SessionOutboundMessage,
   { type: "kanban.source.create.response" }
@@ -4819,6 +4848,46 @@ export class DaemonClient {
     return this.sendNamespacedCorrelatedSessionRequest({
       requestId,
       message: { type: "kanban.card.comments.request", cardId },
+    });
+  }
+
+  async llmLocalStatus(requestId?: string): Promise<LlmLocalStatusPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "llm.local.status.request" },
+    });
+  }
+
+  async llmLocalDownload(requestId?: string): Promise<LlmLocalDownloadPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "llm.local.download.request" },
+    });
+  }
+
+  async llmLocalGenerate(options: LlmLocalGenerateOptions): Promise<LlmLocalGeneratePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      // Cold start loads a ~5GB model before the first token, so the default
+      // RPC timeout is far too tight.
+      timeout: options.timeoutMs ?? LLM_GENERATE_TIMEOUT_MS,
+      message: {
+        type: "llm.local.generate.request",
+        prompt: options.prompt,
+        ...(options.systemPrompt !== undefined ? { systemPrompt: options.systemPrompt } : {}),
+        ...(options.jsonSchema !== undefined ? { jsonSchema: options.jsonSchema } : {}),
+        ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
+      },
+    });
+  }
+
+  async llmLocalCancel(
+    generateRequestId: string,
+    requestId?: string,
+  ): Promise<LlmLocalCancelPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "llm.local.cancel.request", generateRequestId },
     });
   }
 

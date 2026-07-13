@@ -392,13 +392,14 @@ function OpenScheduleFormSheet({
     const hasEnv = Object.keys(env).length > 0;
     const timeoutMs = parseCommandTimeoutMs(state.commandTimeoutSeconds);
     const maxRuns = parseMaxRuns(state.maxRuns);
-    // The daemon runs `target.command`; the required prompt mirrors it so old
-    // clients still have something to show.
+    // The daemon runs `target.command`; the create path mirrors it into prompt
+    // so old clients still have something to show. On update the daemon rejects
+    // a prompt field for command targets (it lives on the command now), so we
+    // must not send one.
     if (mode === "edit" && schedule) {
       await updateSchedule({
         id: schedule.id,
         name: state.name.trim() || null,
-        prompt: command,
         cadence: state.submitCadence,
         commandConfig: {
           command,

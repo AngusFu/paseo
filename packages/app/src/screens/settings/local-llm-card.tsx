@@ -1,7 +1,9 @@
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { useLocalLlmModel } from "@/hooks/use-local-llm-model";
+import { SettingsSection } from "@/screens/settings/settings-section";
 import { settingsStyles } from "@/styles/settings";
 
 function formatGb(bytes: number): string {
@@ -32,11 +34,7 @@ export function LocalLlmCard({ serverId }: { serverId: string }) {
       </Text>
     );
   } else if (model?.status === "ready") {
-    trailing = (
-      <Text style={settingsStyles.rowHint} testID="host-page-local-llm-ready">
-        {t("settings.host.localLlm.ready")}
-      </Text>
-    );
+    trailing = <StatusBadge label={t("settings.host.localLlm.ready")} variant="success" />;
   } else if (model?.status === "error") {
     detail = (
       <Text style={settingsStyles.rowError} testID="host-page-local-llm-error">
@@ -63,15 +61,17 @@ export function LocalLlmCard({ serverId }: { serverId: string }) {
   }
 
   return (
-    <View style={settingsStyles.card} testID="host-page-local-llm-card">
-      <View style={settingsStyles.row}>
-        <View style={settingsStyles.rowContent}>
-          <Text style={settingsStyles.rowTitle}>{t("settings.host.localLlm.title")}</Text>
-          <Text style={settingsStyles.rowHint}>{t("settings.host.localLlm.hint")}</Text>
-          {detail}
+    <SettingsSection title={t("settings.host.localLlm.title")} testID="host-page-local-llm-card">
+      <View style={settingsStyles.card}>
+        <View style={settingsStyles.row}>
+          <View style={settingsStyles.rowContent}>
+            <Text style={settingsStyles.rowTitle}>Gemma 4 E4B</Text>
+            <Text style={settingsStyles.rowHint}>{t("settings.host.localLlm.hint")}</Text>
+            {detail}
+          </View>
+          {trailing}
         </View>
-        {trailing}
       </View>
-    </View>
+    </SettingsSection>
   );
 }

@@ -1819,7 +1819,7 @@ export const ja: TranslationResources = {
       },
       localLlm: {
         title: "ローカル AI モデル",
-        hint: "Gemma 4 E4B（約 4.9 GB）はこのホスト上で動作し、自然言語からの cron 生成などのローカル AI 機能を支えます。",
+        hint: "このホスト上で動作し（ダウンロード約 4.9 GB）、自然言語からの cron 生成などのローカル AI 機能を支えます。",
         download: "ダウンロード",
         downloading: "ダウンロード中… {{received}} / {{total}} GB（{{percent}}%）",
         ready: "準備完了",

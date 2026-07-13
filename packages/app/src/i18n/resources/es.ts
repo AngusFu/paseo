@@ -1840,7 +1840,7 @@ export const es: TranslationResources = {
       },
       localLlm: {
         title: "Modelo de IA local",
-        hint: "Gemma 4 E4B (~4,9 GB) se ejecuta en este host y potencia funciones de IA locales como la generación de cron en lenguaje natural.",
+        hint: "Se ejecuta en este host (descarga de ~4,9 GB) y potencia funciones de IA locales como la generación de cron en lenguaje natural.",
         download: "Descargar",
         downloading: "Descargando… {{received}} / {{total}} GB ({{percent}}%)",
         ready: "Listo",

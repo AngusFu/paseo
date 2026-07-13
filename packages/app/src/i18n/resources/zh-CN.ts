@@ -1777,7 +1777,7 @@ export const zhCN: TranslationResources = {
       },
       localLlm: {
         title: "本地 AI 模型",
-        hint: "Gemma 4 E4B（约 4.9 GB）运行在此主机上，为自然语言生成 cron 等本地 AI 功能提供支持。",
+        hint: "运行在此主机上（下载约 4.9 GB），为自然语言生成 cron 等本地 AI 功能提供支持。",
         download: "下载",
         downloading: "下载中… {{received}} / {{total}} GB（{{percent}}%）",
         ready: "已就绪",

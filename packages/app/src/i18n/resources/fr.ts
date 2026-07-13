@@ -1845,7 +1845,7 @@ export const fr: TranslationResources = {
       },
       localLlm: {
         title: "Modèle d'IA local",
-        hint: "Gemma 4 E4B (~4,9 Go) s'exécute sur cet hôte et alimente les fonctions d'IA locales comme la génération de cron en langage naturel.",
+        hint: "S'exécute sur cet hôte (téléchargement d'environ 4,9 Go) et alimente les fonctions d'IA locales comme la génération de cron en langage naturel.",
         download: "Télécharger",
         downloading: "Téléchargement… {{received}} / {{total}} Go ({{percent}} %)",
         ready: "Prêt",

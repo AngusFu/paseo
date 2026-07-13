@@ -1825,7 +1825,7 @@ export const ptBR: TranslationResources = {
       },
       localLlm: {
         title: "Modelo de IA local",
-        hint: "O Gemma 4 E4B (~4,9 GB) roda neste host e alimenta recursos de IA locais como a geração de cron em linguagem natural.",
+        hint: "Roda neste host (download de ~4,9 GB) e alimenta recursos de IA locais como a geração de cron em linguagem natural.",
         download: "Baixar",
         downloading: "Baixando… {{received}} / {{total}} GB ({{percent}}%)",
         ready: "Pronto",

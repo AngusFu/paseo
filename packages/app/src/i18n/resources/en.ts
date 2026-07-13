@@ -1805,7 +1805,7 @@ export const en = {
       },
       localLlm: {
         title: "Local AI model",
-        hint: "Gemma 4 E4B (~4.9 GB) runs on this host and powers on-device AI features like natural-language cron generation.",
+        hint: "Runs on this host (~4.9 GB download) and powers on-device AI features like natural-language cron generation.",
         download: "Download",
         downloading: "Downloading… {{received}} / {{total}} GB ({{percent}}%)",
         ready: "Ready",

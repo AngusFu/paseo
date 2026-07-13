@@ -45,6 +45,10 @@ import { requireWorkspaceDirectory } from "@/utils/workspace-directory";
 
 const THEME_ICON_SIZE = 16;
 const LINK_ICON_SIZE = 14;
+// Card detail carries a description, comments and attachments, so it earns far
+// more room than the default sheet. The card still fills 100% of the (padded)
+// viewport below this cap, so it stays responsive on narrower windows.
+const CARD_DETAIL_MAX_WIDTH = 960;
 
 // Stable empty reference so a label-less card doesn't create a new array on
 // every render (react-perf/jsx-no-new-array-as-prop).
@@ -434,7 +438,12 @@ export function KanbanCardDetailSheet({
 
   if (!card) {
     return (
-      <AdaptiveModalSheet header={header} visible={visible} onClose={onClose}>
+      <AdaptiveModalSheet
+        header={header}
+        visible={visible}
+        onClose={onClose}
+        desktopMaxWidth={CARD_DETAIL_MAX_WIDTH}
+      >
         <View />
       </AdaptiveModalSheet>
     );
@@ -449,6 +458,7 @@ export function KanbanCardDetailSheet({
       header={header}
       visible={visible}
       onClose={onClose}
+      desktopMaxWidth={CARD_DETAIL_MAX_WIDTH}
       webScrollbar
       testID="kanban-card-detail-sheet"
     >

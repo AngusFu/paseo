@@ -1,13 +1,20 @@
-import { useCallback, useMemo, type ReactElement } from "react";
+import { useCallback, useMemo, useState, type ReactElement } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { Plus, RotateCw } from "lucide-react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { StoredKanbanConnection, StoredKanbanSource } from "@getpaseo/protocol/kanban/types";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import type { Theme } from "@/styles/theme";
+
+const ThemedRotateCw = withUnistyles(RotateCw);
+// Icon brightens on hover so the sync button reads as interactive even though it
+// sits on the same surface as the row.
+const syncIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const syncIconHoverMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 import { useKanbanConnections } from "@/hooks/use-kanban-connections";
 import { useKanbanSourceMutations } from "@/hooks/use-kanban-source-mutations";
 import { useKanbanSources } from "@/hooks/use-kanban-sources";
@@ -75,6 +82,15 @@ function KanbanSourceRow({
     ],
     [isSyncing],
   );
+  const renderSyncIcon = useCallback(
+    ({ hovered }: { hovered?: boolean }): ReactElement =>
+      isSyncing ? (
+        <LoadingSpinner size="small" color={styles.syncIcon.color} />
+      ) : (
+        <ThemedRotateCw size={16} uniProps={hovered ? syncIconHoverMapping : syncIconMapping} />
+      ),
+    [isSyncing],
+  );
 
   return (
     <Pressable
@@ -104,11 +120,7 @@ function KanbanSourceRow({
         testID={`kanban-source-sync-${source.id}`}
         hitSlop={8}
       >
-        {isSyncing ? (
-          <LoadingSpinner size="small" color={styles.syncIcon.color} />
-        ) : (
-          <RotateCw size={16} color={styles.syncIcon.color} />
-        )}
+        {renderSyncIcon}
       </Pressable>
     </Pressable>
   );
@@ -137,11 +149,19 @@ export function KanbanSourcesSheet({
     [connections],
   );
 
+  // Track the specific source being synced. The mutation hook only exposes a
+  // single global isPending, so keying loading off it would spin every row's
+  // button when one is synced.
+  const [syncingId, setSyncingId] = useState<string | null>(null);
   const handleSync = useCallback(
     (id: string) => {
+      setSyncingId(id);
       // Swallow the rejection so a failed sync doesn't crash the app; the error
       // lands in this source's row via lastSyncError after the refetch.
-      void mutations.syncSource(id).catch(() => undefined);
+      void mutations
+        .syncSource(id)
+        .catch(() => undefined)
+        .finally(() => setSyncingId((current) => (current === id ? null : current)));
     },
     [mutations],
   );
@@ -168,14 +188,14 @@ export function KanbanSourcesSheet({
             key={source.id}
             source={source}
             connection={source.connectionId ? connectionsById.get(source.connectionId) : undefined}
-            isSyncing={mutations.isSyncing}
+            isSyncing={syncingId === source.id}
             onEdit={onEditSource}
             onSync={handleSync}
           />
         ))}
       </View>
     );
-  }, [connectionsById, handleSync, isLoading, mutations.isSyncing, onEditSource, sources, t]);
+  }, [connectionsById, handleSync, isLoading, syncingId, onEditSource, sources, t]);
 
   return (
     <AdaptiveModalSheet
@@ -243,7 +263,7 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.borderRadius.base,
   },
   syncButtonHovered: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surface4,
   },
   syncIcon: {
     color: theme.colors.foregroundMuted,

@@ -276,6 +276,22 @@ function ScheduleRunButton({
     }
   }, [disabled, onRunNow]);
 
+  // Icon stays muted at rest and brightens to full foreground on hover, so the
+  // button visibly reacts even though its hover background sits close to the
+  // row's own hover tint.
+  const renderIcon = useCallback(
+    ({ hovered }: { hovered?: boolean }): ReactElement =>
+      pending ? (
+        <LoadingSpinner size="small" color={styles.runIcon.color} />
+      ) : (
+        <ThemedZap
+          size={RUN_BUTTON_ICON_SIZE}
+          uniProps={!disabled && hovered ? runIconEnabledMapping : runIconDisabledMapping}
+        />
+      ),
+    [pending, disabled],
+  );
+
   return (
     <Pressable
       onPress={handlePress}
@@ -286,14 +302,7 @@ function ScheduleRunButton({
       accessibilityLabel={t("schedule.menu.runNow")}
       testID={`schedule-run-${scheduleId}`}
     >
-      {pending ? (
-        <LoadingSpinner size="small" color={styles.runIcon.color} />
-      ) : (
-        <ThemedZap
-          size={RUN_BUTTON_ICON_SIZE}
-          uniProps={disabled ? runIconDisabledMapping : runIconEnabledMapping}
-        />
-      )}
+      {renderIcon}
     </Pressable>
   );
 }
@@ -481,6 +490,6 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
   },
   runButtonHovered: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surface4,
   },
 }));

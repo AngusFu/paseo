@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
@@ -178,6 +178,19 @@ export function ScheduleLogsSheet({
   const orderedRuns = useMemo(() => runs.toReversed().slice(0, MAX_VISIBLE_RUNS), [runs]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
 
+  // Auto-expand the newest run once per schedule, as a convenience — but never
+  // re-force it: the user must be able to collapse everything and have it stay
+  // collapsed. Seeding is keyed to the schedule so opening logs for a different
+  // schedule expands its newest run instead.
+  const newestRunId = orderedRuns[0]?.id ?? null;
+  const seededScheduleRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (newestRunId && seededScheduleRef.current !== scheduleId) {
+      seededScheduleRef.current = scheduleId;
+      setExpandedIds(new Set([newestRunId]));
+    }
+  }, [newestRunId, scheduleId]);
+
   const toggleRun = useCallback((id: string) => {
     setExpandedIds((current) => {
       const next = new Set(current);
@@ -210,11 +223,6 @@ export function ScheduleLogsSheet({
     [scheduleTitle, refetch, t],
   );
 
-  // The newest run is the one users almost always want, so open it by default
-  // whenever the fetched set changes and nothing is expanded yet.
-  const newestRunId = orderedRuns[0]?.id ?? null;
-  const shouldAutoExpand = newestRunId !== null && expandedIds.size === 0;
-
   let body: ReactElement;
   if (isLoading) {
     body = (
@@ -245,7 +253,7 @@ export function ScheduleLogsSheet({
             key={run.id}
             run={run}
             isFirst={index === 0}
-            expanded={expandedIds.has(run.id) || (shouldAutoExpand && run.id === newestRunId)}
+            expanded={expandedIds.has(run.id)}
             onToggle={toggleRun}
           />
         ))}

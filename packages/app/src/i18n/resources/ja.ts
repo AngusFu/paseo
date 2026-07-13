@@ -1054,10 +1054,6 @@ export const ja: TranslationResources = {
       loadFailed: "デスクトップデーモンのステータスを読み込めません。",
     },
     updates: {
-      trigger: {
-        manual: "手動",
-        scheduled: "自動",
-      },
       status: {
         checking: "アプリの更新を確認中...",
         installing: "アプリの更新をインストール中...",
@@ -2519,6 +2515,10 @@ export const ja: TranslationResources = {
       noOutput: "出力なし。",
       running: "実行中",
       exitCode: "終了コード {{code}}",
+      trigger: {
+        manual: "手動",
+        scheduled: "自動",
+      },
       status: {
         succeeded: "成功",
         failed: "失敗",

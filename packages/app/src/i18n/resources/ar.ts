@@ -1039,10 +1039,6 @@ export const ar: TranslationResources = {
       loadFailed: "غير قادر على تحميل حالة البرنامج الخفي لسطح المكتب.",
     },
     updates: {
-      trigger: {
-        manual: "يدوي",
-        scheduled: "مجدول",
-      },
       status: {
         checking: "جارٍ التحقق من وجود تحديثات للتطبيق...",
         installing: "جارٍ تثبيت تحديث التطبيق...",
@@ -2489,6 +2485,10 @@ export const ar: TranslationResources = {
       noOutput: "لا يوجد إخراج.",
       running: "قيد التشغيل",
       exitCode: "رمز الخروج {{code}}",
+      trigger: {
+        manual: "يدوي",
+        scheduled: "مجدول",
+      },
       status: {
         succeeded: "نجح",
         failed: "فشل",

@@ -1058,10 +1058,6 @@ export const ru: TranslationResources = {
       loadFailed: "Невозможно загрузить статус демона рабочего стола.",
     },
     updates: {
-      trigger: {
-        manual: "Вручную",
-        scheduled: "По расписанию",
-      },
       status: {
         checking: "Проверка обновлений приложения...",
         installing: "Установка обновления приложения...",
@@ -2534,6 +2530,10 @@ export const ru: TranslationResources = {
       noOutput: "Нет вывода.",
       running: "Выполняется",
       exitCode: "код выхода {{code}}",
+      trigger: {
+        manual: "Вручную",
+        scheduled: "По расписанию",
+      },
       status: {
         succeeded: "Успешно",
         failed: "Ошибка",

@@ -130,10 +130,13 @@ export function CadenceEditor({
     [cronTimeZone, onChange],
   );
 
+  // When the expression matches a named preset, the dropdown above already says
+  // what it does — a preview would just repeat it. Only describe custom crons.
+  const isCustomCron = selectedPresetId === CUSTOM_CRON_PRESET_ID;
   let feedback: ReactNode = null;
   if (effectiveError) {
     feedback = <Text style={styles.error}>{effectiveError}</Text>;
-  } else if (preview) {
+  } else if (preview && isCustomCron) {
     feedback = <Text style={styles.preview}>{preview}</Text>;
   }
 

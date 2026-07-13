@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, type ReactElement, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type RefObject,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -282,9 +290,13 @@ export function FileExplorerPane({
   const { directories, pendingRequest, isExplorerLoading, error, selectedEntryPath } =
     explorerDerived;
 
+  // Only reveal a row's loading spinner once its listing has been pending past a
+  // short threshold. Local listings usually resolve in a few ms, and showing the
+  // spinner for that blink just makes the chevron flicker on every expand.
+  const delayedLoadingPath = useDelayedPendingListPath({ isExplorerLoading, pendingRequest });
   const isDirectoryLoading = useCallback(
-    (path: string) => isPendingListForPath({ isExplorerLoading, pendingRequest, path }),
-    [isExplorerLoading, pendingRequest],
+    (path: string) => path === delayedLoadingPath,
+    [delayedLoadingPath],
   );
 
   const treeListRef = useRef<FlatList<TreeRow>>(null);
@@ -741,18 +753,36 @@ function deriveExplorerFields(state: AgentFileExplorerState | undefined) {
   };
 }
 
-function isPendingListForPath({
+// Show-spinner-after-delay: returns the directory path whose listing has been
+// pending longer than `delayMs`, or null. A listing that resolves before the
+// timer fires never flips the row to loading, so fast expands don't flash.
+const SHOW_ROW_LOADING_DELAY_MS = 200;
+
+function useDelayedPendingListPath({
   isExplorerLoading,
   pendingRequest,
-  path,
+  delayMs = SHOW_ROW_LOADING_DELAY_MS,
 }: {
   isExplorerLoading: boolean;
   pendingRequest: AgentFileExplorerState["pendingRequest"] | null;
-  path: string;
-}): boolean {
-  return Boolean(
-    isExplorerLoading && pendingRequest?.mode === "list" && pendingRequest?.path === path,
-  );
+  delayMs?: number;
+}): string | null {
+  const activePath =
+    isExplorerLoading && pendingRequest?.mode === "list" ? (pendingRequest?.path ?? null) : null;
+  const [shownPath, setShownPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activePath === null) {
+      setShownPath(null);
+      return;
+    }
+    // New pending listing: hold off until it has been slow enough to warrant UI.
+    setShownPath(null);
+    const timer = setTimeout(() => setShownPath(activePath), delayMs);
+    return () => clearTimeout(timer);
+  }, [activePath, delayMs]);
+
+  return shownPath;
 }
 
 function resolveShowInitialLoading({

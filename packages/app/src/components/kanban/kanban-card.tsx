@@ -203,7 +203,11 @@ export const KanbanCard = memo(function KanbanCard({
   return (
     <GestureDetector gesture={panGesture}>
       <Animated.View style={animatedStyle}>
-        <View onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
+        <View
+          style={styles.cardContainer}
+          onPointerEnter={handlePointerEnter}
+          onPointerLeave={handlePointerLeave}
+        >
           <Pressable
             style={cardStyle}
             onPress={handlePress}
@@ -218,29 +222,6 @@ export const KanbanCard = memo(function KanbanCard({
                 <View style={styles.issueKeyChip}>
                   <Text style={styles.issueKeyText}>{issueKey}</Text>
                 </View>
-              ) : null}
-              <View style={styles.headerSpacer} />
-              {showQuickActions ? (
-                <Pressable
-                  onPress={handleDispatch}
-                  accessibilityRole="button"
-                  accessibilityLabel={t("kanban.cardDetail.dispatch")}
-                  testID={`kanban-card-dispatch-${card.id}`}
-                  hitSlop={6}
-                >
-                  <Rocket size={LINK_ICON_SIZE} color={styles.linkButton.color} />
-                </Pressable>
-              ) : null}
-              {card.url ? (
-                <Pressable
-                  onPress={handleOpenUrl}
-                  accessibilityRole="link"
-                  accessibilityLabel={t("kanban.card.open")}
-                  testID={`kanban-card-url-${card.id}`}
-                  hitSlop={6}
-                >
-                  <ArrowUpRight size={LINK_ICON_SIZE} color={styles.linkButton.color} />
-                </Pressable>
               ) : null}
             </View>
             <Text style={styles.title} numberOfLines={2}>
@@ -273,6 +254,35 @@ export const KanbanCard = memo(function KanbanCard({
               </View>
             ) : null}
           </Pressable>
+          {/* Action buttons live OUTSIDE the card Pressable — nesting a
+              <button>/<a> inside the card's <button> is invalid HTML and throws
+              a web hydration error. Absolute overlay keeps them top-right. */}
+          {showQuickActions || card.url ? (
+            <View style={styles.cardActions} pointerEvents="box-none">
+              {showQuickActions ? (
+                <Pressable
+                  onPress={handleDispatch}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("kanban.cardDetail.dispatch")}
+                  testID={`kanban-card-dispatch-${card.id}`}
+                  hitSlop={6}
+                >
+                  <Rocket size={LINK_ICON_SIZE} color={styles.linkButton.color} />
+                </Pressable>
+              ) : null}
+              {card.url ? (
+                <Pressable
+                  onPress={handleOpenUrl}
+                  accessibilityRole="link"
+                  accessibilityLabel={t("kanban.card.open")}
+                  testID={`kanban-card-url-${card.id}`}
+                  hitSlop={6}
+                >
+                  <ArrowUpRight size={LINK_ICON_SIZE} color={styles.linkButton.color} />
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       </Animated.View>
     </GestureDetector>
@@ -295,13 +305,21 @@ const styles = StyleSheet.create((theme) => ({
   cardPressed: {
     backgroundColor: theme.colors.surface3,
   },
+  cardContainer: {
+    position: "relative",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1.5],
   },
-  headerSpacer: {
-    flex: 1,
+  cardActions: {
+    position: "absolute",
+    top: theme.spacing[3],
+    right: theme.spacing[3],
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1.5],
   },
   // Matches the StatusBadge pill shell (rounded, bordered) so the ticket key
   // and the status tag read as one family — only the mono font differs. Kept in

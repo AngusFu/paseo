@@ -873,10 +873,14 @@ export function DispatchSection({
   card,
   detail,
   serverId,
+  onDispatched,
 }: {
   card: StoredKanbanCard;
   detail: KanbanCardDetail | null;
   serverId: string | null;
+  // Called after an agent is successfully dispatched (with its id), so the host
+  // sheet can close and navigate to it.
+  onDispatched?: (agentId: string) => void;
 }): ReactElement {
   const { t } = useTranslation();
 
@@ -934,6 +938,7 @@ export function DispatchSection({
         plan={plan}
         workspace={selectedWorkspace}
         serverId={serverId}
+        onDispatched={onDispatched}
       />
     </View>
   );
@@ -943,10 +948,12 @@ function DispatchActions({
   plan,
   workspace,
   serverId,
+  onDispatched,
 }: {
   plan: DispatchPlan;
   workspace: DispatchWorkspaceOption | null;
   serverId: string | null;
+  onDispatched?: (agentId: string) => void;
 }): ReactElement {
   const { t } = useTranslation();
   const toast = useToast();
@@ -1048,7 +1055,7 @@ function DispatchActions({
       workspaceId: workspacePayload.workspace.id,
       workspaceDirectory: workspacePayload.workspace.workspaceDirectory,
     });
-    await client.createAgent({
+    const created = await client.createAgent({
       provider: selectedProvider,
       model: selectedModel || undefined,
       cwd: workspaceDirectory,
@@ -1057,7 +1064,8 @@ function DispatchActions({
       initialPrompt: prompt,
     });
     toast.show(t("kanban.cardDetail.dispatchRunSuccess"), { variant: "success" });
-  }, [client, plan, prompt, selectedProvider, selectedModel, t, toast, workspace]);
+    onDispatched?.(created.id);
+  }, [client, onDispatched, plan, prompt, selectedProvider, selectedModel, t, toast, workspace]);
 
   return (
     <>

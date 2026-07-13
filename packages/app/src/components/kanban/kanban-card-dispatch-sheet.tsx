@@ -1,9 +1,10 @@
-import { useMemo, type ReactElement } from "react";
+import { useCallback, useMemo, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { DispatchSection } from "@/components/kanban/kanban-card-detail-sheet";
 import { useFrozenWhileHidden } from "@/hooks/use-frozen-while-hidden";
+import { navigateToAgent } from "@/utils/navigate-to-agent";
 
 export interface KanbanCardDispatchSheetProps {
   visible: boolean;
@@ -32,6 +33,17 @@ export function KanbanCardDispatchSheet({
     [frozenCard?.title, t],
   );
 
+  // On dispatch, close this panel and jump the user to the new agent.
+  const handleDispatched = useCallback(
+    (agentId: string) => {
+      onClose();
+      if (serverId) {
+        navigateToAgent({ serverId, agentId, pin: true });
+      }
+    },
+    [onClose, serverId],
+  );
+
   return (
     <AdaptiveModalSheet
       header={header}
@@ -40,7 +52,14 @@ export function KanbanCardDispatchSheet({
       webScrollbar
       testID="kanban-card-dispatch-sheet"
     >
-      {frozenCard ? <DispatchSection card={frozenCard} detail={null} serverId={serverId} /> : null}
+      {frozenCard ? (
+        <DispatchSection
+          card={frozenCard}
+          detail={null}
+          serverId={serverId}
+          onDispatched={handleDispatched}
+        />
+      ) : null}
     </AdaptiveModalSheet>
   );
 }

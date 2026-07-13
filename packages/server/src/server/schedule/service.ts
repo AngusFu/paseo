@@ -771,6 +771,10 @@ export class ScheduleService {
       error: null,
       trigger: manual ? "manual" : "scheduled",
     };
+    this.logger.info(
+      { scheduleId: schedule.id, runId, manual, trigger: runningRun.trigger },
+      "schedule run started",
+    );
     const scheduleWithRun = await this.appendRunningRun(schedule.id, runningRun);
 
     try {

@@ -1843,6 +1843,13 @@ export const fr: TranslationResources = {
         relay: "Relais",
         local: "Locale",
       },
+      localLlm: {
+        title: "Modèle d'IA local",
+        hint: "Gemma 4 E4B (~4,9 Go) s'exécute sur cet hôte et alimente les fonctions d'IA locales comme la génération de cron en langage naturel.",
+        download: "Télécharger",
+        downloading: "Téléchargement… {{received}} / {{total}} Go ({{percent}} %)",
+        ready: "Prêt",
+      },
       connections: {
         title: "Relations",
         removeTitle: "Supprimer la connexion",
@@ -2457,6 +2464,15 @@ export const fr: TranslationResources = {
         weekdays9: "En semaine à 9:00",
         mondays9: "Les lundis à 9:00",
         custom: "Cron personnalisé",
+      },
+      ai: {
+        trigger: "Générer avec l'IA",
+        placeholder: "Décrivez la planification, p. ex. chaque jour ouvré à 9 h 30",
+        generate: "Générer",
+        generating: "Génération…",
+        download: "Télécharger le modèle local (~4,9 Go)",
+        downloading: "Téléchargement du modèle… {{percent}} %",
+        failed: "Impossible de générer une expression cron. Essayez de reformuler.",
       },
       describe: {
         everyHourAt: "Chaque heure à :{{minute}}",

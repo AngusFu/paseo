@@ -1775,6 +1775,13 @@ export const zhCN: TranslationResources = {
         relay: "Relay",
         local: "本地",
       },
+      localLlm: {
+        title: "本地 AI 模型",
+        hint: "Gemma 4 E4B（约 4.9 GB）运行在此主机上，为自然语言生成 cron 等本地 AI 功能提供支持。",
+        download: "下载",
+        downloading: "下载中… {{received}} / {{total}} GB（{{percent}}%）",
+        ready: "已就绪",
+      },
       connections: {
         title: "连接",
         removeTitle: "移除连接",
@@ -2377,6 +2384,15 @@ export const zhCN: TranslationResources = {
         weekdays9: "工作日 9:00",
         mondays9: "每周一 9:00",
         custom: "自定义 Cron",
+      },
+      ai: {
+        trigger: "AI 生成",
+        placeholder: "描述执行频率，如：每个工作日早上 9:30",
+        generate: "生成",
+        generating: "生成中…",
+        download: "下载本地模型（约 4.9 GB）",
+        downloading: "模型下载中… {{percent}}%",
+        failed: "未能生成 cron 表达式，请换个说法。",
       },
       describe: {
         everyHourAt: "每小时第 {{minute}} 分",

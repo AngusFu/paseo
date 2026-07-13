@@ -1803,6 +1803,13 @@ export const en = {
         relay: "Relay",
         local: "Local",
       },
+      localLlm: {
+        title: "Local AI model",
+        hint: "Gemma 4 E4B (~4.9 GB) runs on this host and powers on-device AI features like natural-language cron generation.",
+        download: "Download",
+        downloading: "Downloading… {{received}} / {{total}} GB ({{percent}}%)",
+        ready: "Ready",
+      },
       connections: {
         title: "Connections",
         removeTitle: "Remove connection",
@@ -2411,6 +2418,15 @@ export const en = {
         weekdays9: "Weekdays 9:00",
         mondays9: "Mondays 9:00",
         custom: "Custom cron",
+      },
+      ai: {
+        trigger: "Generate with AI",
+        placeholder: "Describe the schedule, e.g. every weekday at 9:30",
+        generate: "Generate",
+        generating: "Generating…",
+        download: "Download local model (~4.9 GB)",
+        downloading: "Downloading model… {{percent}}%",
+        failed: "Couldn't generate a cron expression. Try rephrasing.",
       },
       describe: {
         everyHourAt: "Every hour at :{{minute}}",

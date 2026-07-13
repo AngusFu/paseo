@@ -584,6 +584,7 @@ function ScheduleFormFields({
         onChange={model.setCadence}
         error={cadenceError ?? undefined}
         size={controlSize}
+        serverId={mutationServerId}
       />
 
       <Field label={t("schedule.form.maxRuns.label")}>

@@ -1795,6 +1795,13 @@ export const ar: TranslationResources = {
         relay: "تتابع",
         local: "محلي",
       },
+      localLlm: {
+        title: "نموذج ذكاء اصطناعي محلي",
+        hint: "يعمل Gemma 4 E4B (~4.9 غيغابايت) على هذا المضيف ويشغّل ميزات الذكاء الاصطناعي المحلية مثل إنشاء cron باللغة الطبيعية.",
+        download: "تنزيل",
+        downloading: "جارٍ التنزيل… {{received}} / {{total}} غيغابايت ({{percent}}%)",
+        ready: "جاهز",
+      },
       connections: {
         title: "اتصالات",
         removeTitle: "إزالة الاتصال",
@@ -2398,6 +2405,15 @@ export const ar: TranslationResources = {
         weekdays9: "أيام الأسبوع 9:00",
         mondays9: "أيام الاثنين 9:00",
         custom: "Cron مخصص",
+      },
+      ai: {
+        trigger: "إنشاء بالذكاء الاصطناعي",
+        placeholder: "صِف الجدولة، مثل: كل يوم عمل الساعة 9:30 صباحًا",
+        generate: "إنشاء",
+        generating: "جارٍ الإنشاء…",
+        download: "تنزيل النموذج المحلي (~4.9 غيغابايت)",
+        downloading: "جارٍ تنزيل النموذج… {{percent}}%",
+        failed: "تعذّر إنشاء تعبير cron. جرّب إعادة الصياغة.",
       },
       describe: {
         everyHourAt: "كل ساعة عند :{{minute}}",

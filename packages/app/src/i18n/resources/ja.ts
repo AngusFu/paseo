@@ -1817,6 +1817,13 @@ export const ja: TranslationResources = {
         relay: "リレー",
         local: "ローカル",
       },
+      localLlm: {
+        title: "ローカル AI モデル",
+        hint: "Gemma 4 E4B（約 4.9 GB）はこのホスト上で動作し、自然言語からの cron 生成などのローカル AI 機能を支えます。",
+        download: "ダウンロード",
+        downloading: "ダウンロード中… {{received}} / {{total}} GB（{{percent}}%）",
+        ready: "準備完了",
+      },
       connections: {
         title: "接続",
         removeTitle: "接続を削除",
@@ -2428,6 +2435,15 @@ export const ja: TranslationResources = {
         weekdays9: "平日 9:00",
         mondays9: "毎週月曜 9:00",
         custom: "カスタム Cron",
+      },
+      ai: {
+        trigger: "AI で生成",
+        placeholder: "スケジュールを説明してください（例：平日の朝 9:30）",
+        generate: "生成",
+        generating: "生成中…",
+        download: "ローカルモデルをダウンロード（約 4.9 GB）",
+        downloading: "モデルをダウンロード中… {{percent}}%",
+        failed: "cron 式を生成できませんでした。言い換えてみてください。",
       },
       describe: {
         everyHourAt: "毎時 :{{minute}}",

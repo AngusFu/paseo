@@ -1829,6 +1829,13 @@ export const ru: TranslationResources = {
         relay: "Реле",
         local: "Местный",
       },
+      localLlm: {
+        title: "Локальная ИИ-модель",
+        hint: "Gemma 4 E4B (~4,9 ГБ) работает на этом хосте и обеспечивает локальные ИИ-функции, например генерацию cron из естественного языка.",
+        download: "Скачать",
+        downloading: "Загрузка… {{received}} / {{total}} ГБ ({{percent}}%)",
+        ready: "Готово",
+      },
       connections: {
         title: "Соединения",
         removeTitle: "Удалить соединение",
@@ -2443,6 +2450,15 @@ export const ru: TranslationResources = {
         weekdays9: "По будням в 9:00",
         mondays9: "По понедельникам в 9:00",
         custom: "Своё Cron-выражение",
+      },
+      ai: {
+        trigger: "Сгенерировать с ИИ",
+        placeholder: "Опишите расписание, например: каждый будний день в 9:30",
+        generate: "Сгенерировать",
+        generating: "Генерация…",
+        download: "Скачать локальную модель (~4,9 ГБ)",
+        downloading: "Загрузка модели… {{percent}}%",
+        failed: "Не удалось сгенерировать cron-выражение. Попробуйте переформулировать.",
       },
       describe: {
         everyHourAt: "Каждый час в :{{minute}}",

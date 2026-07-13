@@ -101,6 +101,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   isCreating = false,
   shortcutNumber = null,
   showShortcutBadge = false,
+  reserveIdleStatusIndicatorSpace = true,
   children,
 }: {
   workspace: SidebarWorkspaceEntry;
@@ -111,6 +112,8 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   isCreating?: boolean;
   shortcutNumber?: number | null;
   showShortcutBadge?: boolean;
+  /** Keep the empty leading slot when the workspace has no active status. */
+  reserveIdleStatusIndicatorSpace?: boolean;
   children?: ReactNode;
 }) {
   const {
@@ -134,6 +137,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
           bucket={workspace.statusBucket}
           workspaceKind={workspace.workspaceKind}
           loading={isLoading}
+          reserveIdleSpace={reserveIdleStatusIndicatorSpace}
         />
         <View style={styles.workspaceContentColumn}>
           <View style={styles.workspaceTitleRow}>
@@ -187,10 +191,12 @@ function WorkspaceStatusIndicator({
   bucket,
   workspaceKind,
   loading = false,
+  reserveIdleSpace = true,
 }: {
   bucket: SidebarWorkspaceEntry["statusBucket"];
   workspaceKind: SidebarWorkspaceEntry["workspaceKind"];
   loading?: boolean;
+  reserveIdleSpace?: boolean;
 }) {
   const shouldShowSyncedLoader = shouldRenderSyncedStatusLoader({ bucket });
 
@@ -227,7 +233,9 @@ function WorkspaceStatusIndicator({
   }
 
   if (bucket === "done") {
-    return <View style={styles.workspaceStatusDot} testID="workspace-status-indicator-done" />;
+    return reserveIdleSpace ? (
+      <View style={styles.workspaceStatusDot} testID="workspace-status-indicator-done" />
+    ) : null;
   }
 
   let KindIcon: typeof ThemedMonitor;

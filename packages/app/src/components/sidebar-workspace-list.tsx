@@ -45,8 +45,6 @@ import {
   GitPullRequest,
   Settings,
   MoreVertical,
-  Pin,
-  PinOff,
   Plus,
   Trash2,
 } from "lucide-react-native";
@@ -54,6 +52,12 @@ import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { DraggableList, type DraggableRenderItemInfo } from "./draggable-list";
 import type { DraggableListDragHandleProps } from "./draggable-list.types";
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
+import type { PinnedSidebarGroups } from "@/hooks/use-sidebar-pins";
+import {
+  useSidebarWorkspacePinController,
+  type ToggleSidebarWorkspacePin,
+} from "@/hooks/use-sidebar-workspace-pin";
+import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import { useHostFeatureMap } from "@/runtime/host-features";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useProjectIconDataByProjectKey } from "@/projects/project-icons";
@@ -68,9 +72,8 @@ import {
   type SidebarWorkspaceEntry,
   type SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
-import { useSidebarWorkspaceEntries } from "@/hooks/use-sidebar-workspace-entries";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
-import { usePinnedWorkspacesStore } from "@/stores/pinned-workspaces-store";
+import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
 import { ContextMenuTrigger, useContextMenu } from "@/components/ui/context-menu";
 import {
@@ -92,6 +95,7 @@ import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { SidebarStatusWorkspaceList } from "@/components/sidebar/sidebar-status-list";
 import type { StatusGroup } from "@/hooks/sidebar-status-view-model";
 import { SidebarWorkspaceMenu } from "@/components/sidebar/sidebar-workspace-menu";
+import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
 import {
   SidebarWorkspaceRowFrame,
   SidebarWorkspaceRowContent,
@@ -146,8 +150,6 @@ const ThemedPlus = withUnistyles(Plus);
 const ThemedMoreVertical = withUnistyles(MoreVertical);
 const ThemedTrash2 = withUnistyles(Trash2);
 const ThemedSettings = withUnistyles(Settings);
-const ThemedPin = withUnistyles(Pin);
-const ThemedPinOff = withUnistyles(PinOff);
 
 const foregroundColorMapping = (theme: Theme) => ({
   color: theme.colors.foreground,
@@ -226,6 +228,7 @@ function selectionForSelectedWorkspace(
 
 interface SidebarWorkspaceListProps {
   statusGroups: StatusGroup[];
+  pinnedGroups: PinnedSidebarGroups;
   projects: SidebarProjectEntry[];
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   projectNamesByKey: Map<string, string>;
@@ -238,6 +241,9 @@ interface SidebarWorkspaceListProps {
   onWorkspacePress?: () => void;
   onAddProject?: () => void;
   listFooterComponent?: ReactElement | null;
+  // Rendered inside the scroll area, below the Pinned section and above the workspace
+  // list. Holds the "Workspaces" section header so pinned items sit above it.
+  listHeaderComponent?: ReactElement | null;
   /** Gesture ref for coordinating with parent gestures (e.g., sidebar close) */
   parentGestureRef?: MutableRefObject<GestureType | undefined>;
 }
@@ -287,6 +293,9 @@ interface WorkspaceRowInnerProps {
   onRename?: () => void;
   onMarkAsRead?: () => void;
   archiveShortcutKeys?: ShortcutKey[][] | null;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
+  reserveIdleStatusIndicatorSpace?: boolean;
 }
 
 export function PrBadge({ hint }: { hint: PrHint }) {
@@ -611,62 +620,6 @@ function ProjectKebabMenu({
   );
 }
 
-function WorkspacePinToggle({
-  workspaceKey,
-  isPinned,
-  rowHovered,
-}: {
-  workspaceKey: string;
-  isPinned: boolean;
-  rowHovered: boolean;
-}) {
-  const { t } = useTranslation();
-  const togglePin = usePinnedWorkspacesStore((state) => state.togglePin);
-  const [isHovered, setIsHovered] = useState(false);
-  const handleHoverIn = useCallback(() => setIsHovered(true), []);
-  const handleHoverOut = useCallback(() => setIsHovered(false), []);
-  const handlePress = useCallback(
-    (event: GestureResponderEvent) => {
-      event.stopPropagation();
-      togglePin(workspaceKey);
-    },
-    [togglePin, workspaceKey],
-  );
-  const buttonStyle = useCallback(
-    ({ pressed }: PressableStateCallbackType) => [
-      styles.pinButton,
-      (isHovered || pressed) && styles.pinButtonHovered,
-    ],
-    [isHovered],
-  );
-  return (
-    <Pressable
-      onPress={handlePress}
-      onHoverIn={handleHoverIn}
-      onHoverOut={handleHoverOut}
-      hitSlop={6}
-      // Drop the button role on web so this renders a <div>, not a <button>
-      // nested inside the row's <button> (invalid HTML → hydration error). Keep
-      // it on native for a11y — same gating as the row's other corner controls.
-      accessibilityRole={platformIsWeb ? undefined : "button"}
-      accessibilityLabel={t(
-        isPinned ? "sidebar.workspace.actions.unpin" : "sidebar.workspace.actions.pin",
-      )}
-      testID={`sidebar-workspace-pin-${workspaceKey}`}
-      style={buttonStyle}
-    >
-      {isPinned && (rowHovered || isHovered) ? (
-        <ThemedPinOff size={13} uniProps={foregroundColorMapping} />
-      ) : (
-        <ThemedPin
-          size={13}
-          uniProps={isPinned || isHovered ? foregroundColorMapping : foregroundMutedColorMapping}
-        />
-      )}
-    </Pressable>
-  );
-}
-
 function WorkspaceRowRightGroup({
   workspace,
   isHovered,
@@ -683,6 +636,8 @@ function WorkspaceRowRightGroup({
   onCopyBranchName,
   onCopyPath,
   onRename,
+  isPinned,
+  onTogglePin,
 }: {
   workspace: SidebarWorkspaceEntry;
   isHovered: boolean;
@@ -699,25 +654,17 @@ function WorkspaceRowRightGroup({
   onCopyBranchName?: () => void;
   onCopyPath?: () => void;
   onRename?: () => void;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
 }) {
   const { t } = useTranslation();
-  const isPinned = usePinnedWorkspacesStore((state) =>
-    state.pinnedWorkspaceKeys.includes(workspace.workspaceKey),
-  );
   const showShortcut = showShortcutBadge && shortcutNumber !== null;
   const showKebab = Boolean(onArchive && (isHovered || isTouchPlatform));
   const showKebabInSlot = showKebab && !showShortcut;
   const shouldRenderActionSlot = Boolean(onArchive || workspace.diffStat);
 
   return (
-    <View style={styles.workspaceRightActions}>
-      {isHovered || isTouchPlatform ? (
-        <WorkspacePinToggle
-          workspaceKey={workspace.workspaceKey}
-          isPinned={isPinned}
-          rowHovered={isHovered}
-        />
-      ) : null}
+    <>
       {isCreating ? (
         <Text style={styles.workspaceCreatingText}>{t("sidebar.workspace.status.creating")}</Text>
       ) : null}
@@ -746,12 +693,14 @@ function WorkspaceRowRightGroup({
                 archiveStatus={archiveStatus}
                 archivePendingLabel={archivePendingLabel}
                 archiveShortcutKeys={archiveShortcutKeys}
+                isPinned={isPinned}
+                onTogglePin={onTogglePin}
               />
             ) : null}
           </SidebarWorkspaceTrailingActionOverlay>
         </SidebarWorkspaceTrailingActionSlot>
       ) : null}
-    </View>
+    </>
   );
 }
 
@@ -1390,6 +1339,9 @@ function WorkspaceRowInner({
   onCopyPath,
   onRename,
   archiveShortcutKeys,
+  isPinned,
+  onTogglePin,
+  reserveIdleStatusIndicatorSpace = true,
 }: WorkspaceRowInnerProps) {
   const _isCompact = useIsCompactFormFactor();
   const isTouchPlatform = platformIsNative;
@@ -1460,6 +1412,7 @@ function WorkspaceRowInner({
                 isCreating={isCreating}
                 shortcutNumber={shortcutNumber}
                 showShortcutBadge={showShortcutBadge}
+                reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
               >
                 <WorkspaceRowRightGroup
                   workspace={workspace}
@@ -1476,6 +1429,8 @@ function WorkspaceRowInner({
                   onCopyBranchName={onCopyBranchName}
                   onCopyPath={onCopyPath}
                   onRename={onRename}
+                  isPinned={isPinned}
+                  onTogglePin={onTogglePin}
                 />
               </SidebarWorkspaceRowContent>
             </Pressable>
@@ -1497,6 +1452,9 @@ function WorkspaceRowWithMenu({
   isDragging,
   dragHandleProps,
   canCopyBranchName,
+  canPin,
+  onToggleWorkspacePin,
+  reserveIdleStatusIndicatorSpace = true,
   isCreating = false,
 }: {
   workspace: SidebarWorkspaceEntry;
@@ -1509,6 +1467,9 @@ function WorkspaceRowWithMenu({
   isDragging: boolean;
   dragHandleProps?: DraggableListDragHandleProps;
   canCopyBranchName: boolean;
+  canPin: boolean;
+  onToggleWorkspacePin: ToggleSidebarWorkspacePin;
+  reserveIdleStatusIndicatorSpace?: boolean;
   isCreating?: boolean;
 }) {
   const { t } = useTranslation();
@@ -1593,6 +1554,12 @@ function WorkspaceRowWithMenu({
     [renameMutation],
   );
 
+  const isPinned = workspace.pinnedAt != null;
+  const handleTogglePin = useCallback(() => {
+    onToggleWorkspacePin(workspace);
+  }, [onToggleWorkspacePin, workspace]);
+  const onTogglePin = canPin ? handleTogglePin : undefined;
+
   const archiveShortcutKeys = useShortcutKeys("archive-workspace");
   const { hasClearableAttention, clearAttention } = useClearWorkspaceAttention({
     serverId: workspace.serverId,
@@ -1611,6 +1578,17 @@ function WorkspaceRowWithMenu({
     priority: 0,
     handle: () => {
       handleArchive();
+      return true;
+    },
+  });
+
+  useKeyboardActionHandler({
+    handlerId: `workspace-pin-${workspace.workspaceKey}`,
+    actions: ["workspace.pin"],
+    enabled: selected && canPin,
+    priority: 0,
+    handle: () => {
+      onTogglePin?.();
       return true;
     },
   });
@@ -1639,6 +1617,9 @@ function WorkspaceRowWithMenu({
         onRename={handleOpenRename}
         onMarkAsRead={hasClearableAttention ? handleMarkAsRead : undefined}
         archiveShortcutKeys={selected ? archiveShortcutKeys : null}
+        isPinned={isPinned}
+        onTogglePin={onTogglePin}
+        reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
       />
       <AdaptiveRenameModal
         visible={isRenameOpen}
@@ -1661,6 +1642,9 @@ interface WorkspaceRowItemProps {
   shortcutNumber: number | null;
   showShortcutBadge: boolean;
   canCopyBranchName: boolean;
+  canPin: boolean;
+  onToggleWorkspacePin: ToggleSidebarWorkspacePin;
+  reserveIdleStatusIndicatorSpace?: boolean;
   isCreating?: boolean;
   selectionEnabled: boolean;
   activeWorkspaceSelection: ActiveWorkspaceSelection | null;
@@ -1677,6 +1661,9 @@ function WorkspaceRowItem({
   shortcutNumber,
   showShortcutBadge,
   canCopyBranchName,
+  canPin,
+  onToggleWorkspacePin,
+  reserveIdleStatusIndicatorSpace = true,
   isCreating = false,
   selectionEnabled,
   activeWorkspaceSelection,
@@ -1700,6 +1687,9 @@ function WorkspaceRowItem({
       shortcutNumber={shortcutNumber}
       showShortcutBadge={showShortcutBadge}
       canCopyBranchName={canCopyBranchName}
+      canPin={canPin}
+      onToggleWorkspacePin={onToggleWorkspacePin}
+      reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
       isCreating={isCreating}
       selected={isWorkspaceSelected({
         selection: activeWorkspaceSelection,
@@ -1738,6 +1728,9 @@ function areWorkspaceRowItemPropsEqual(
     previous.shortcutNumber === next.shortcutNumber &&
     previous.showShortcutBadge === next.showShortcutBadge &&
     previous.canCopyBranchName === next.canCopyBranchName &&
+    previous.canPin === next.canPin &&
+    previous.onToggleWorkspacePin === next.onToggleWorkspacePin &&
+    previous.reserveIdleStatusIndicatorSpace === next.reserveIdleStatusIndicatorSpace &&
     previous.isCreating === next.isCreating &&
     previous.onWorkspacePress === next.onWorkspacePress &&
     previous.drag === next.drag &&
@@ -1759,6 +1752,9 @@ function WorkspaceRow({
   isDragging,
   dragHandleProps,
   canCopyBranchName,
+  canPin,
+  onToggleWorkspacePin,
+  reserveIdleStatusIndicatorSpace = true,
   isCreating = false,
   selected,
 }: {
@@ -1771,6 +1767,9 @@ function WorkspaceRow({
   isDragging: boolean;
   dragHandleProps?: DraggableListDragHandleProps;
   canCopyBranchName: boolean;
+  canPin: boolean;
+  onToggleWorkspacePin: ToggleSidebarWorkspacePin;
+  reserveIdleStatusIndicatorSpace?: boolean;
   isCreating?: boolean;
   selected: boolean;
 }) {
@@ -1790,6 +1789,9 @@ function WorkspaceRow({
       isDragging={isDragging}
       dragHandleProps={dragHandleProps}
       canCopyBranchName={canCopyBranchName}
+      canPin={canPin}
+      onToggleWorkspacePin={onToggleWorkspacePin}
+      reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
       isCreating={isCreating}
     />
   );
@@ -1818,6 +1820,8 @@ function ProjectBlock({
   hostLabelByServerId,
   showHostLabels,
   supportsMultiplicityByServerId,
+  supportsPinningByServerId,
+  onToggleWorkspacePin,
 }: {
   project: SidebarProjectEntry;
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
@@ -1841,6 +1845,8 @@ function ProjectBlock({
   hostLabelByServerId: ReadonlyMap<string, string>;
   showHostLabels: boolean;
   supportsMultiplicityByServerId: ReadonlyMap<string, boolean>;
+  supportsPinningByServerId: ReadonlyMap<string, boolean>;
+  onToggleWorkspacePin: ToggleSidebarWorkspacePin;
 }) {
   const rowModel = useMemo(
     () =>
@@ -1877,6 +1883,8 @@ function ProjectBlock({
           shortcutNumber={shortcutIndexByWorkspaceKey.get(item.workspaceKey) ?? null}
           showShortcutBadge={showShortcutBadges}
           canCopyBranchName={project.projectKind === "git"}
+          canPin={supportsPinningByServerId.get(item.serverId) === true}
+          onToggleWorkspacePin={onToggleWorkspacePin}
           isCreating={creatingWorkspaceIds.has(item.workspaceId)}
           selectionEnabled={selectionEnabled}
           activeWorkspaceSelection={activeWorkspaceSelection}
@@ -1889,6 +1897,8 @@ function ProjectBlock({
     },
     [
       project.projectKind,
+      onToggleWorkspacePin,
+      supportsPinningByServerId,
       showHostLabels,
       activeWorkspaceSelection,
       creatingWorkspaceIds,
@@ -2062,6 +2072,8 @@ function areProjectBlockPropsEqual(previous: ProjectBlockProps, next: ProjectBlo
     previous.hostLabelByServerId === next.hostLabelByServerId &&
     previous.showHostLabels === next.showHostLabels &&
     previous.supportsMultiplicityByServerId === next.supportsMultiplicityByServerId &&
+    previous.supportsPinningByServerId === next.supportsPinningByServerId &&
+    previous.onToggleWorkspacePin === next.onToggleWorkspacePin &&
     previous.parentGestureRef === next.parentGestureRef &&
     previous.onToggleCollapsed === next.onToggleCollapsed &&
     previous.onWorkspacePress === next.onWorkspacePress &&
@@ -2104,138 +2116,9 @@ function areProjectBlockSelectionsEqual(
 
 const MemoProjectBlock = memo(ProjectBlock, areProjectBlockPropsEqual);
 
-// Cursor-style dedicated "Pinned" section. Extracts pinned workspaces out of the
-// Workspaces list into a flat, drag-reorderable block above the Workspaces header.
-// Renders nothing when no workspace is pinned.
-export function SidebarPinnedSection({
-  projects,
-  shortcutIndexByWorkspaceKey,
-  onWorkspacePress,
-  parentGestureRef,
-}: {
-  projects: SidebarProjectEntry[];
-  shortcutIndexByWorkspaceKey: Map<string, number>;
-  onWorkspacePress?: () => void;
-  parentGestureRef?: MutableRefObject<GestureType | undefined>;
-}) {
-  const { t } = useTranslation();
-  const pathname = usePathname();
-  const pinnedWorkspaceKeys = usePinnedWorkspacesStore((state) => state.pinnedWorkspaceKeys);
-  const setPinnedOrder = usePinnedWorkspacesStore((state) => state.setPinnedOrder);
-  const showShortcutBadges = useShowShortcutBadges();
-  const activeWorkspaceSelection = useActiveWorkspaceSelection();
-  const selectionEnabled = useMemo(
-    () => Boolean(pathname && parseHostWorkspaceRouteFromPathname(pathname)),
-    [pathname],
-  );
-
-  const hosts = useHosts();
-  const hostLabelByServerId = useMemo(() => {
-    const labels = new Map<string, string>();
-    for (const host of hosts) {
-      labels.set(host.serverId, host.label?.trim() || host.serverId);
-    }
-    return labels;
-  }, [hosts]);
-  const showHostLabels = useMemo(() => shouldShowSidebarHostLabels(projects), [projects]);
-
-  // Flatten every placement into a key→placement map, then pull out the pinned
-  // keys in their persisted order. Stale keys (workspace no longer present) are
-  // ignored.
-  const pinnedWorkspaces = useMemo(() => {
-    const byKey = new Map<string, SidebarWorkspacePlacement>();
-    for (const project of projects) {
-      for (const workspace of project.workspaces) {
-        byKey.set(workspace.workspaceKey, workspace);
-      }
-    }
-    const result: SidebarWorkspacePlacement[] = [];
-    for (const key of pinnedWorkspaceKeys) {
-      const placement = byKey.get(key);
-      if (placement) {
-        result.push(placement);
-      }
-    }
-    return result;
-  }, [projects, pinnedWorkspaceKeys]);
-
-  const workspaceEntriesByKey = useSidebarWorkspaceEntries(pinnedWorkspaces);
-
-  const renderWorkspace = useCallback(
-    ({
-      item,
-      drag: workspaceDrag,
-      isActive,
-      dragHandleProps: workspaceDragHandleProps,
-    }: DraggableRenderItemInfo<SidebarWorkspacePlacement>) => {
-      return (
-        <MemoWorkspaceRowItem
-          workspace={item}
-          workspaceEntry={workspaceEntriesByKey.get(item.workspaceKey) ?? null}
-          subtitle={
-            showHostLabels ? (hostLabelByServerId.get(item.serverId) ?? item.serverId) : null
-          }
-          shortcutNumber={shortcutIndexByWorkspaceKey.get(item.workspaceKey) ?? null}
-          showShortcutBadge={showShortcutBadges}
-          canCopyBranchName={item.projectKind === "git"}
-          selectionEnabled={selectionEnabled}
-          activeWorkspaceSelection={activeWorkspaceSelection}
-          onWorkspacePress={onWorkspacePress}
-          drag={workspaceDrag}
-          isDragging={isActive}
-          dragHandleProps={workspaceDragHandleProps}
-        />
-      );
-    },
-    [
-      showHostLabels,
-      hostLabelByServerId,
-      shortcutIndexByWorkspaceKey,
-      showShortcutBadges,
-      selectionEnabled,
-      activeWorkspaceSelection,
-      onWorkspacePress,
-      workspaceEntriesByKey,
-    ],
-  );
-
-  const handleDragEnd = useCallback(
-    (reordered: SidebarWorkspacePlacement[]) => {
-      setPinnedOrder(reordered.map((workspace) => workspace.workspaceKey));
-    },
-    [setPinnedOrder],
-  );
-
-  if (pinnedWorkspaces.length === 0) {
-    return null;
-  }
-
-  return (
-    <View style={styles.pinnedSection}>
-      <View style={styles.pinnedSectionHeader}>
-        <Text style={styles.pinnedSectionTitle}>{t("sidebar.sections.pinned")}</Text>
-      </View>
-      <View style={styles.pinnedSectionList}>
-        <DraggableList
-          testID="sidebar-pinned-workspace-list"
-          data={pinnedWorkspaces}
-          keyExtractor={workspaceKeyExtractor}
-          renderItem={renderWorkspace}
-          onDragEnd={handleDragEnd}
-          extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
-          scrollEnabled={false}
-          useDragHandle
-          nestable={false}
-          simultaneousGestureRef={parentGestureRef}
-          containerStyle={styles.workspaceListContainer}
-        />
-      </View>
-    </View>
-  );
-}
-
 export function SidebarWorkspaceList({
   statusGroups,
+  pinnedGroups,
   projects,
   workspaceEntriesByKey,
   projectNamesByKey,
@@ -2248,6 +2131,7 @@ export function SidebarWorkspaceList({
   onWorkspacePress,
   onAddProject,
   listFooterComponent,
+  listHeaderComponent,
   parentGestureRef,
 }: SidebarWorkspaceListProps) {
   const pathname = usePathname();
@@ -2261,21 +2145,29 @@ export function SidebarWorkspaceList({
   }, [hosts]);
   const serverIds = useMemo(() => hosts.map((host) => host.serverId), [hosts]);
   const supportsMultiplicityByServerId = useHostFeatureMap(serverIds, "workspaceMultiplicity");
+  const supportsPinningByServerId = useHostFeatureMap(serverIds, "workspacePinning");
+  const onToggleWorkspacePin = useSidebarWorkspacePinController();
   const showHostLabels = useMemo(() => shouldShowSidebarHostLabels(projects), [projects]);
 
   const content =
     groupMode === "status" ? (
       <SidebarStatusModeWrapper
         statusGroups={statusGroups}
+        pinnedGroups={pinnedGroups}
+        workspaceEntriesByKey={workspaceEntriesByKey}
         projectNamesByKey={projectNamesByKey}
         shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
         onWorkspacePress={onWorkspacePress}
         hostLabelByServerId={hostLabelByServerId}
         showHostLabels={showHostLabels}
+        supportsPinningByServerId={supportsPinningByServerId}
+        onToggleWorkspacePin={onToggleWorkspacePin}
+        listHeaderComponent={listHeaderComponent}
       />
     ) : (
       <ProjectModeList
         projects={projects}
+        pinnedGroups={pinnedGroups}
         workspaceEntriesByKey={workspaceEntriesByKey}
         collapsedProjectKeys={collapsedProjectKeys}
         onToggleProjectCollapsed={onToggleProjectCollapsed}
@@ -2283,11 +2175,14 @@ export function SidebarWorkspaceList({
         onWorkspacePress={onWorkspacePress}
         onAddProject={onAddProject}
         listFooterComponent={listFooterComponent}
+        listHeaderComponent={listHeaderComponent}
         parentGestureRef={parentGestureRef}
         pathname={pathname}
         hostLabelByServerId={hostLabelByServerId}
         showHostLabels={showHostLabels}
         supportsMultiplicityByServerId={supportsMultiplicityByServerId}
+        supportsPinningByServerId={supportsPinningByServerId}
+        onToggleWorkspacePin={onToggleWorkspacePin}
       />
     );
 
@@ -2296,60 +2191,54 @@ export function SidebarWorkspaceList({
 
 function SidebarStatusModeWrapper({
   statusGroups,
+  pinnedGroups,
+  workspaceEntriesByKey,
   projectNamesByKey,
   shortcutIndexByWorkspaceKey: _projectShortcutIndex,
   onWorkspacePress,
   hostLabelByServerId,
   showHostLabels,
+  supportsPinningByServerId,
+  onToggleWorkspacePin,
+  listHeaderComponent,
 }: {
   statusGroups: StatusGroup[];
+  pinnedGroups: PinnedSidebarGroups;
+  workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   projectNamesByKey: Map<string, string>;
   shortcutIndexByWorkspaceKey: Map<string, number>;
   onWorkspacePress?: () => void;
   hostLabelByServerId: ReadonlyMap<string, string>;
   showHostLabels: boolean;
+  supportsPinningByServerId: ReadonlyMap<string, boolean>;
+  onToggleWorkspacePin: ToggleSidebarWorkspacePin;
+  listHeaderComponent?: ReactElement | null;
 }) {
   const showShortcutBadges = useShowShortcutBadges();
-  const pinnedWorkspaceKeys = usePinnedWorkspacesStore((state) => state.pinnedWorkspaceKeys);
-  // Pinned workspaces are extracted into the dedicated Pinned section, so filter
-  // them out of every status group here. Drop a group that becomes empty — status
-  // mode has no empty-group headers.
-  const orderedGroups = useMemo(() => {
-    const pinnedKeys = new Set(pinnedWorkspaceKeys);
-    if (pinnedKeys.size === 0) {
-      return statusGroups;
-    }
-    let changed = false;
-    const next: StatusGroup[] = [];
-    for (const group of statusGroups) {
-      const rows = group.rows.filter((row) => !pinnedKeys.has(row.workspaceKey));
-      if (rows.length === group.rows.length) {
-        next.push(group);
-        continue;
-      }
-      changed = true;
-      if (rows.length > 0) {
-        next.push({ ...group, rows });
-      }
-    }
-    return changed ? next : statusGroups;
-  }, [statusGroups, pinnedWorkspaceKeys]);
 
   return (
     <SidebarStatusWorkspaceList
-      groups={orderedGroups}
+      groups={statusGroups}
+      pinnedWorkspaces={pinnedGroups.pinnedChats.flatMap((workspace) => {
+        const entry = workspaceEntriesByKey.get(workspace.workspaceKey);
+        return entry ? [entry] : [];
+      })}
       projectNamesByKey={projectNamesByKey}
       shortcutIndexByWorkspaceKey={_projectShortcutIndex}
       showShortcutBadges={showShortcutBadges}
       onWorkspacePress={onWorkspacePress}
       hostLabelByServerId={hostLabelByServerId}
       showHostLabels={showHostLabels}
+      supportsPinningByServerId={supportsPinningByServerId}
+      onToggleWorkspacePin={onToggleWorkspacePin}
+      listHeaderComponent={listHeaderComponent}
     />
   );
 }
 
 function ProjectModeList({
   projects,
+  pinnedGroups,
   workspaceEntriesByKey,
   collapsedProjectKeys,
   onToggleProjectCollapsed,
@@ -2357,11 +2246,14 @@ function ProjectModeList({
   onWorkspacePress,
   onAddProject,
   listFooterComponent,
+  listHeaderComponent,
   parentGestureRef,
   pathname,
   hostLabelByServerId,
   showHostLabels,
   supportsMultiplicityByServerId,
+  supportsPinningByServerId,
+  onToggleWorkspacePin,
 }: Omit<
   SidebarWorkspaceListProps,
   "statusGroups" | "projectNamesByKey" | "groupMode" | "isRefreshing" | "onRefresh"
@@ -2370,42 +2262,25 @@ function ProjectModeList({
   hostLabelByServerId: ReadonlyMap<string, string>;
   showHostLabels: boolean;
   supportsMultiplicityByServerId: ReadonlyMap<string, boolean>;
+  supportsPinningByServerId: ReadonlyMap<string, boolean>;
+  onToggleWorkspacePin: ToggleSidebarWorkspacePin;
 }) {
+  const hasActiveHostFilter = useSidebarViewStore((state) => state.hostFilters.length > 0);
   const { t } = useTranslation();
   const [creatingWorkspaceIds, setCreatingWorkspaceIds] = useState<Set<string>>(() => new Set());
   const creatingWorkspaceTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
   const showShortcutBadges = useShowShortcutBadges();
+  const pinnedCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedPinned);
+  const togglePinnedCollapsed = useSidebarCollapsedSectionsStore(
+    (state) => state.togglePinnedCollapsed,
+  );
 
   const getProjectOrder = useSidebarOrderStore((state) => state.getProjectOrder);
   const setProjectOrder = useSidebarOrderStore((state) => state.setProjectOrder);
   const getWorkspaceOrder = useSidebarOrderStore((state) => state.getWorkspaceOrder);
   const setWorkspaceOrder = useSidebarOrderStore((state) => state.setWorkspaceOrder);
-
-  const pinnedWorkspaceKeys = usePinnedWorkspacesStore((state) => state.pinnedWorkspaceKeys);
-  // Project mode: pinned workspaces are extracted into the dedicated Pinned section,
-  // so filter them out of their project group. A project whose workspaces are all
-  // pinned keeps its header (empty-group behavior is unchanged). Preserve project
-  // identity where nothing moved so MemoProjectBlock doesn't re-render needlessly.
-  const orderedProjects = useMemo(() => {
-    const pinnedKeys = new Set(pinnedWorkspaceKeys);
-    if (pinnedKeys.size === 0) {
-      return projects;
-    }
-    let changed = false;
-    const next = projects.map((project) => {
-      const workspaces = project.workspaces.filter(
-        (workspace) => !pinnedKeys.has(workspace.workspaceKey),
-      );
-      if (workspaces.length === project.workspaces.length) {
-        return project;
-      }
-      changed = true;
-      return { ...project, workspaces };
-    });
-    return changed ? next : projects;
-  }, [projects, pinnedWorkspaceKeys]);
 
   const isWorkspaceRoute = useMemo(
     () => Boolean(pathname && parseHostWorkspaceRouteFromPathname(pathname)),
@@ -2413,6 +2288,7 @@ function ProjectModeList({
   );
   const selectionEnabled = isWorkspaceRoute;
   const activeWorkspaceSelection = useActiveWorkspaceSelection();
+  const { pinnedChats, unpinnedProjects } = pinnedGroups;
   const projectIconTargets = useMemo(
     () =>
       projects.flatMap((project) => {
@@ -2558,10 +2434,18 @@ function ProjectModeList({
     );
   }, []);
 
-  const renderProject = useCallback(
-    ({ item, drag, isActive, dragHandleProps }: DraggableRenderItemInfo<SidebarProjectEntry>) => {
+  const renderProjectBlock = useCallback(
+    (
+      item: SidebarProjectEntry,
+      dragState: {
+        drag: () => void;
+        isDragging: boolean;
+        dragHandleProps?: DraggableRenderItemInfo<SidebarProjectEntry>["dragHandleProps"];
+      },
+    ) => {
       return (
         <MemoProjectBlock
+          key={item.projectKey}
           project={item}
           workspaceEntriesByKey={workspaceEntriesByKey}
           collapsed={collapsedProjectKeys.has(item.projectKey)}
@@ -2575,15 +2459,17 @@ function ProjectModeList({
           onWorkspacePress={onWorkspacePress}
           onWorkspaceReorder={handleWorkspaceReorder}
           onWorktreeCreated={handleWorktreeCreated}
-          drag={drag}
-          isDragging={isActive}
-          dragHandleProps={dragHandleProps}
+          drag={dragState.drag}
+          isDragging={dragState.isDragging}
+          dragHandleProps={dragState.dragHandleProps}
           useNestable={platformIsNative}
           creatingWorkspaceIds={creatingWorkspaceIds}
           activeWorkspaceSelection={activeWorkspaceSelection}
           hostLabelByServerId={hostLabelByServerId}
           showHostLabels={showHostLabels}
           supportsMultiplicityByServerId={supportsMultiplicityByServerId}
+          supportsPinningByServerId={supportsPinningByServerId}
+          onToggleWorkspacePin={onToggleWorkspacePin}
         />
       );
     },
@@ -2595,6 +2481,8 @@ function ProjectModeList({
       hostLabelByServerId,
       showHostLabels,
       supportsMultiplicityByServerId,
+      supportsPinningByServerId,
+      onToggleWorkspacePin,
       onWorkspacePress,
       onToggleProjectCollapsed,
       parentGestureRef,
@@ -2607,8 +2495,62 @@ function ProjectModeList({
     ],
   );
 
+  const renderProject = useCallback(
+    ({ item, drag, isActive, dragHandleProps }: DraggableRenderItemInfo<SidebarProjectEntry>) =>
+      renderProjectBlock(item, { drag, isDragging: isActive, dragHandleProps }),
+    [renderProjectBlock],
+  );
+
+  const renderPinnedChat = useCallback(
+    (workspace: SidebarWorkspacePlacement) => {
+      // A hoisted chat loses its project context, so surface the project name (plus
+      // host when the sidebar spans multiple hosts) as the subtitle.
+      const hostLabel = showHostLabels
+        ? (hostLabelByServerId.get(workspace.serverId) ?? workspace.serverId)
+        : null;
+      return (
+        <MemoWorkspaceRowItem
+          key={workspace.workspaceKey}
+          workspace={workspace}
+          workspaceEntry={workspaceEntriesByKey.get(workspace.workspaceKey) ?? null}
+          subtitle={hostLabel ? `${workspace.projectName} · ${hostLabel}` : workspace.projectName}
+          shortcutNumber={shortcutIndexByWorkspaceKey.get(workspace.workspaceKey) ?? null}
+          showShortcutBadge={showShortcutBadges}
+          canCopyBranchName={workspace.projectKind === "git"}
+          canPin={supportsPinningByServerId.get(workspace.serverId) === true}
+          onToggleWorkspacePin={onToggleWorkspacePin}
+          reserveIdleStatusIndicatorSpace={false}
+          isCreating={creatingWorkspaceIds.has(workspace.workspaceId)}
+          selectionEnabled={selectionEnabled}
+          activeWorkspaceSelection={activeWorkspaceSelection}
+          onWorkspacePress={onWorkspacePress}
+        />
+      );
+    },
+    [
+      activeWorkspaceSelection,
+      creatingWorkspaceIds,
+      hostLabelByServerId,
+      onWorkspacePress,
+      selectionEnabled,
+      shortcutIndexByWorkspaceKey,
+      showHostLabels,
+      showShortcutBadges,
+      supportsPinningByServerId,
+      onToggleWorkspacePin,
+      workspaceEntriesByKey,
+    ],
+  );
+
   const content = (
     <>
+      {pinnedChats.length > 0 ? (
+        <View style={styles.pinnedSection} testID="sidebar-pinned-section">
+          <PinnedSectionHeader collapsed={pinnedCollapsed} onToggle={togglePinnedCollapsed} />
+          {pinnedCollapsed ? null : pinnedChats.map(renderPinnedChat)}
+        </View>
+      ) : null}
+      {unpinnedProjects.length > 0 || hasActiveHostFilter ? listHeaderComponent : null}
       {projects.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyTitle} testID="sidebar-project-empty-state">
@@ -2622,7 +2564,7 @@ function ProjectModeList({
       ) : (
         <DraggableList
           testID="sidebar-project-list"
-          data={orderedProjects}
+          data={unpinnedProjects}
           keyExtractor={projectKeyExtractor}
           renderItem={renderProject}
           onDragEnd={handleProjectDragEnd}
@@ -2680,25 +2622,7 @@ const styles = StyleSheet.create((theme) => ({
     width: "100%",
   },
   pinnedSection: {
-    paddingTop: theme.spacing[2],
-  },
-  pinnedSectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    // Match WorkspacesSectionHeader: align the title with the rows below.
-    paddingLeft: theme.spacing[2] + theme.spacing[2],
-    paddingRight: theme.spacing[2],
-    paddingTop: theme.spacing[1],
-    paddingBottom: theme.spacing[1],
-  },
-  pinnedSectionTitle: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.xs,
-    fontWeight: theme.fontWeight.normal,
-  },
-  pinnedSectionList: {
-    // Align pinned rows with the project/workspace rows in listContent below.
-    paddingHorizontal: theme.spacing[2],
+    marginBottom: theme.spacing[1],
   },
   projectBlock: {
     marginBottom: theme.spacing[1],
@@ -3014,23 +2938,6 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
     flexShrink: 0,
-  },
-  workspaceRightActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[1],
-    flexShrink: 0,
-  },
-  pinButton: {
-    width: 20,
-    height: 20,
-    borderRadius: theme.borderRadius.sm,
-    flexShrink: 0,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pinButtonHovered: {
-    backgroundColor: theme.colors.surface3,
   },
   statusDotNeedsInput: {
     backgroundColor: theme.colors.palette.amber[500],

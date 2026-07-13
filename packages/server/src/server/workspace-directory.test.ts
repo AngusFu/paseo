@@ -549,6 +549,7 @@ describe("WorkspaceDirectory empty projects", () => {
       createdAt: NOW,
       updatedAt: NOW,
       archivedAt: null,
+      pinnedAt: null,
       ...input,
     } satisfies PersistedProjectRecord;
   }

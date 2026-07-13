@@ -1066,6 +1066,10 @@ export const fr: TranslationResources = {
       loadFailed: "Impossible de charger l'état du démon de bureau.",
     },
     updates: {
+      trigger: {
+        manual: "Manuel",
+        scheduled: "Planifié",
+      },
       status: {
         checking: "Vérification des mises à jour de l'application...",
         installing: "Installation de la mise à jour de l'application...",

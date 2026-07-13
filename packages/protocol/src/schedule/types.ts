@@ -74,6 +74,13 @@ export const ScheduleRunSchema = z.object({
   error: z.string().nullable(),
   // COMPAT(commandSchedules): added in v0.1.106, optional field is safe for old clients.
   exitCode: z.number().int().nullable().optional(),
+  // Whether this run was fired by the schedule's cadence ("scheduled") or kicked
+  // off by hand via run-once ("manual"). Shown in the logs so the two are
+  // distinguishable.
+  // COMPAT(scheduleRunTrigger): added in v0.1.107, optional for old clients — a
+  // missing value reads as a scheduled (automatic) run. Drop the gate when
+  // floor >= v0.1.107 (target 2027-01-13).
+  trigger: z.enum(["scheduled", "manual"]).optional(),
 });
 export type ScheduleRun = z.infer<typeof ScheduleRunSchema>;
 

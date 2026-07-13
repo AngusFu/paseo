@@ -1057,6 +1057,10 @@ export const ptBR: TranslationResources = {
       loadFailed: "Não foi possível carregar o status do daemon desktop.",
     },
     updates: {
+      trigger: {
+        manual: "Manual",
+        scheduled: "Agendado",
+      },
       status: {
         checking: "Verificando atualizações do app...",
         installing: "Instalando atualização do app...",

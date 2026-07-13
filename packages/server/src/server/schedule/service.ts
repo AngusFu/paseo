@@ -769,6 +769,7 @@ export class ScheduleService {
       agentId: null,
       output: null,
       error: null,
+      trigger: manual ? "manual" : "scheduled",
     };
     const scheduleWithRun = await this.appendRunningRun(schedule.id, runningRun);
 

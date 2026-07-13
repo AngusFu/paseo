@@ -1066,6 +1066,10 @@ export const es: TranslationResources = {
       loadFailed: "No se puede cargar el estado del demonio del escritorio.",
     },
     updates: {
+      trigger: {
+        manual: "Manual",
+        scheduled: "Programado",
+      },
       status: {
         checking: "Buscando actualizaciones de la aplicación...",
         installing: "Instalando actualización de la aplicación...",

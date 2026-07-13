@@ -1046,6 +1046,10 @@ export const en = {
       loadFailed: "Unable to load desktop daemon status.",
     },
     updates: {
+      trigger: {
+        manual: "Manual",
+        scheduled: "Scheduled",
+      },
       status: {
         checking: "Checking for app updates...",
         installing: "Installing app update...",

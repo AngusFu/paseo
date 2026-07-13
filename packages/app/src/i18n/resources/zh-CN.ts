@@ -1027,6 +1027,10 @@ export const zhCN: TranslationResources = {
       loadFailed: "无法加载桌面 daemon 状态。",
     },
     updates: {
+      trigger: {
+        manual: "手动",
+        scheduled: "自动",
+      },
       status: {
         checking: "正在检查 app 更新...",
         installing: "正在安装 app 更新...",

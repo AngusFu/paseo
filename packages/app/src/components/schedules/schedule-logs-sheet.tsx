@@ -111,6 +111,13 @@ function RunEntry({
           )}
         </View>
         <StatusBadge label={t(badge.labelKey)} variant={badge.variant} />
+        <Text style={styles.entryTrigger} numberOfLines={1}>
+          {t(
+            run.trigger === "manual"
+              ? "schedule.logs.trigger.manual"
+              : "schedule.logs.trigger.scheduled",
+          )}
+        </Text>
         <Text style={styles.entryTime} numberOfLines={1}>
           {startedAgo}
         </Text>
@@ -325,6 +332,15 @@ const styles = StyleSheet.create((theme) => ({
   entryTime: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
+  },
+  entryTrigger: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.base,
+    paddingHorizontal: theme.spacing[1.5],
+    paddingVertical: 1,
   },
   entrySpacer: {
     flex: 1,

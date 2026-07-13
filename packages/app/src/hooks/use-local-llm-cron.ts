@@ -11,21 +11,38 @@ const CRON_JSON_SCHEMA = {
       type: "string",
       description: "Standard 5-field cron expression: minute hour day-of-month month day-of-week",
     },
+    explanation: {
+      type: "string",
+      description:
+        "One short sentence describing when it runs, in the same language as the request.",
+    },
   },
-  required: ["expression"],
+  required: ["expression", "explanation"],
 } as const;
 
-const CRON_SYSTEM_PROMPT =
-  "You convert natural-language scheduling requests into standard 5-field cron " +
-  "expressions (minute hour day-of-month month day-of-week). Use numeric fields, " +
-  "*, ranges (a-b), lists (a,b) and steps (*/n) only. Respond with JSON only.";
+// Few-shot examples matter: small models reliably drop compound syntax like a
+// range with a step (8-17/3) unless they have seen it spelled out.
+const CRON_SYSTEM_PROMPT = `You convert natural-language scheduling requests into standard 5-field cron expressions (minute hour day-of-month month day-of-week). Allowed syntax per field: numbers, * , ranges (a-b), lists (a,b), steps (*/n), and ranges with steps (a-b/n). Days of week: 0=Sunday … 6=Saturday. Respond with JSON only.
+
+Examples:
+"every weekday at 9:30" -> {"expression": "30 9 * * 1-5"}
+"every 15 minutes during work hours" -> {"expression": "*/15 9-18 * * 1-5"}
+"every 3 hours starting 8:30 on weekdays" -> {"expression": "30 8-17/3 * * 1-5"}
+"每周一和周四晚上11点" -> {"expression": "0 23 * * 1,4"}
+"每月1号和15号凌晨2点" -> {"expression": "0 2 1,15 * *"}`;
+
+export interface CronGenerationResult {
+  expression: string;
+  // The model's one-line description, in the request's language. May be empty.
+  explanation: string;
+}
 
 export interface UseLocalLlmCronResult {
   // false when the daemon lacks the localLlm capability — hide the UI entirely.
   supported: boolean;
   model: LlmLocalModelState | null;
   startDownload: () => void;
-  generate: (text: string) => Promise<string | null>;
+  generate: (text: string) => Promise<CronGenerationResult | null>;
   isGenerating: boolean;
 }
 
@@ -40,7 +57,7 @@ export function useLocalLlmCron(serverId: string | null | undefined): UseLocalLl
   // failed. Grammar-constrained output means the JSON always parses; the model
   // can still hallucinate an invalid field value, so validateCron gates it.
   const generate = useCallback(
-    async (text: string): Promise<string | null> => {
+    async (text: string): Promise<CronGenerationResult | null> => {
       if (!client) {
         return null;
       }
@@ -50,20 +67,24 @@ export function useLocalLlmCron(serverId: string | null | undefined): UseLocalLl
           prompt: text,
           systemPrompt: CRON_SYSTEM_PROMPT,
           jsonSchema: CRON_JSON_SCHEMA as unknown as Record<string, unknown>,
-          maxTokens: 128,
+          maxTokens: 160,
         });
         if (payload.error || !payload.text) {
           return null;
         }
         const parsed: unknown = JSON.parse(payload.text);
-        const expression =
-          typeof parsed === "object" && parsed !== null && "expression" in parsed
-            ? String((parsed as { expression: unknown }).expression).trim()
-            : null;
+        if (typeof parsed !== "object" || parsed === null || !("expression" in parsed)) {
+          return null;
+        }
+        const expression = String((parsed as { expression: unknown }).expression).trim();
         if (!expression || validateCron(expression) !== null) {
           return null;
         }
-        return expression;
+        const explanation =
+          "explanation" in parsed
+            ? String((parsed as { explanation: unknown }).explanation).trim()
+            : "";
+        return { expression, explanation };
       } catch {
         return null;
       } finally {

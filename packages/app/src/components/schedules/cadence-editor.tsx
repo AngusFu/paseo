@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import type { FieldControlSize } from "@/components/ui/control-geometry";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { SelectField, type SelectFieldOption } from "@/components/ui/select-field";
-import { useLocalLlmCron } from "@/hooks/use-local-llm-cron";
+import { useLocalLlmCron, type CronGenerationResult } from "@/hooks/use-local-llm-cron";
 import {
   CADENCE_PRESET_OPTIONS,
   CUSTOM_CRON_PRESET_ID,
@@ -58,10 +58,9 @@ export function CadenceEditor({
   serverId,
 }: CadenceEditorProps) {
   const { t } = useTranslation();
-  const ai = useLocalLlmCron(serverId);
-  const [aiOpen, setAiOpen] = useState(false);
-  const [aiText, setAiText] = useState("");
-  const [aiFailed, setAiFailed] = useState(false);
+  // The model's plain-language description of its last generated cron, shown as
+  // the preview until the user edits the expression away from it.
+  const [aiExplained, setAiExplained] = useState<CronGenerationResult | null>(null);
   const deviceTimeZone = useMemo(getDeviceTimeZone, []);
   const normalizedValue = normalizeScheduleFormCadence(value, deviceTimeZone);
   const [cronText, setCronText] = useState(() => normalizedValue.expression);
@@ -70,7 +69,11 @@ export function CadenceEditor({
   const trimmedCron = cronText.trim();
   const localCronError = trimmedCron ? validateCron(trimmedCron) : null;
   const effectiveError = error ?? localCronError;
-  const preview = getCronPreview(trimmedCron, cronTimeZone, effectiveError ?? null);
+  const aiPreview =
+    aiExplained && aiExplained.expression === trimmedCron && aiExplained.explanation
+      ? aiExplained.explanation
+      : null;
+  const preview = aiPreview ?? getCronPreview(trimmedCron, cronTimeZone, effectiveError ?? null);
   const currentCadence = useMemo<CronCadence>(
     () => buildCronCadence(trimmedCron, cronTimeZone),
     [cronTimeZone, trimmedCron],
@@ -117,97 +120,15 @@ export function CadenceEditor({
     [cronTimeZone, onChange],
   );
 
-  const handleAiGenerate = useCallback(() => {
-    const text = aiText.trim();
-    if (!text) {
-      return;
-    }
-    setAiFailed(false);
-    void (async () => {
-      const expression = await ai.generate(text);
-      if (!expression) {
-        setAiFailed(true);
-        return;
-      }
-      setCronText(expression);
+  const handleAiGenerated = useCallback(
+    (result: CronGenerationResult) => {
+      setCronText(result.expression);
+      setAiExplained(result.explanation ? result : null);
       bumpFieldResetKey();
-      onChange(buildCronCadence(expression, cronTimeZone));
-    })();
-  }, [ai, aiText, cronTimeZone, onChange]);
-
-  const handleAiOpen = useCallback(() => {
-    setAiOpen(true);
-  }, []);
-
-  let aiSection: ReactNode = null;
-  if (ai.supported) {
-    if (!aiOpen) {
-      aiSection = (
-        <Button
-          variant="ghost"
-          size="xs"
-          style={styles.aiTrigger}
-          testID="cadence-ai-trigger"
-          onPress={handleAiOpen}
-        >
-          {t("schedule.cadence.ai.trigger")}
-        </Button>
-      );
-    } else if (ai.model?.status === "downloading") {
-      const percent = ai.model.totalBytes
-        ? Math.round((ai.model.receivedBytes / ai.model.totalBytes) * 100)
-        : 0;
-      aiSection = (
-        <Text style={styles.preview}>{t("schedule.cadence.ai.downloading", { percent })}</Text>
-      );
-    } else if (ai.model?.status === "ready") {
-      aiSection = (
-        <View style={styles.stack}>
-          <View style={styles.aiRow}>
-            <View style={styles.aiInput}>
-              <FormTextInput
-                size={size}
-                testID="cadence-ai-input"
-                accessibilityLabel={t("schedule.cadence.ai.trigger")}
-                initialValue={aiText}
-                value={aiText}
-                onChangeText={setAiText}
-                placeholder={t("schedule.cadence.ai.placeholder")}
-                autoCapitalize="none"
-                autoCorrect={false}
-                onSubmitEditing={handleAiGenerate}
-              />
-            </View>
-            <Button
-              size={size === "sm" ? "sm" : "md"}
-              testID="cadence-ai-generate"
-              loading={ai.isGenerating}
-              disabled={ai.isGenerating || !aiText.trim()}
-              onPress={handleAiGenerate}
-            >
-              {t(
-                ai.isGenerating ? "schedule.cadence.ai.generating" : "schedule.cadence.ai.generate",
-              )}
-            </Button>
-          </View>
-          {aiFailed ? <Text style={styles.error}>{t("schedule.cadence.ai.failed")}</Text> : null}
-        </View>
-      );
-    } else {
-      // absent (or error) — offer the model download.
-      aiSection = (
-        <Button
-          variant="ghost"
-          size="xs"
-          style={styles.aiTrigger}
-          testID="cadence-ai-download"
-          onPress={ai.startDownload}
-        >
-          {t("schedule.cadence.ai.download")}
-        </Button>
-      );
-    }
-  }
+      onChange(buildCronCadence(result.expression, cronTimeZone));
+    },
+    [cronTimeZone, onChange],
+  );
 
   let feedback: ReactNode = null;
   if (effectiveError) {
@@ -249,9 +170,115 @@ export function CadenceEditor({
           style={styles.cronInput}
         />
         {feedback}
-        {aiSection}
+        <CadenceAiControls serverId={serverId} size={size} onGenerated={handleAiGenerated} />
       </View>
     </Field>
+  );
+}
+
+// Natural-language → cron affordance. Owns its own open/input/failed state so the
+// parent editor stays simple; calls back with the validated result on success.
+function CadenceAiControls({
+  serverId,
+  size,
+  onGenerated,
+}: {
+  serverId: string | null | undefined;
+  size: FieldControlSize;
+  onGenerated: (result: CronGenerationResult) => void;
+}): ReactNode {
+  const { t } = useTranslation();
+  const ai = useLocalLlmCron(serverId);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  const handleOpen = useCallback(() => setOpen(true), []);
+  const handleGenerate = useCallback(() => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return;
+    }
+    setFailed(false);
+    void (async () => {
+      const result = await ai.generate(trimmed);
+      if (!result) {
+        setFailed(true);
+        return;
+      }
+      onGenerated(result);
+    })();
+  }, [ai, text, onGenerated]);
+
+  if (!ai.supported) {
+    return null;
+  }
+
+  if (!open) {
+    return (
+      <Button
+        variant="ghost"
+        size="xs"
+        style={styles.aiTrigger}
+        testID="cadence-ai-trigger"
+        onPress={handleOpen}
+      >
+        {t("schedule.cadence.ai.trigger")}
+      </Button>
+    );
+  }
+
+  if (ai.model?.status === "downloading") {
+    const percent = ai.model.totalBytes
+      ? Math.round((ai.model.receivedBytes / ai.model.totalBytes) * 100)
+      : 0;
+    return <Text style={styles.preview}>{t("schedule.cadence.ai.downloading", { percent })}</Text>;
+  }
+
+  if (ai.model?.status !== "ready") {
+    // absent (or error) — offer the model download.
+    return (
+      <Button
+        variant="ghost"
+        size="xs"
+        style={styles.aiTrigger}
+        testID="cadence-ai-download"
+        onPress={ai.startDownload}
+      >
+        {t("schedule.cadence.ai.download")}
+      </Button>
+    );
+  }
+
+  return (
+    <View style={styles.stack}>
+      <View style={styles.aiRow}>
+        <View style={styles.aiInput}>
+          <FormTextInput
+            size={size}
+            testID="cadence-ai-input"
+            accessibilityLabel={t("schedule.cadence.ai.trigger")}
+            initialValue={text}
+            value={text}
+            onChangeText={setText}
+            placeholder={t("schedule.cadence.ai.placeholder")}
+            autoCapitalize="none"
+            autoCorrect={false}
+            onSubmitEditing={handleGenerate}
+          />
+        </View>
+        <Button
+          size={size === "sm" ? "sm" : "md"}
+          testID="cadence-ai-generate"
+          loading={ai.isGenerating}
+          disabled={ai.isGenerating || !text.trim()}
+          onPress={handleGenerate}
+        >
+          {t(ai.isGenerating ? "schedule.cadence.ai.generating" : "schedule.cadence.ai.generate")}
+        </Button>
+      </View>
+      {failed ? <Text style={styles.error}>{t("schedule.cadence.ai.failed")}</Text> : null}
+    </View>
   );
 }
 

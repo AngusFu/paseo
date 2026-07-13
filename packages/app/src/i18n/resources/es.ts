@@ -2500,8 +2500,23 @@ export const es: TranslationResources = {
       pause: "Pausar programación",
       pausing: "Pausando...",
       runNow: "Ejecutar ahora",
+      viewLogs: "Ver registros",
       delete: "Eliminar programación",
       deleting: "Eliminando...",
+    },
+    logs: {
+      title: "Historial de ejecución",
+      empty: "Esta programación nunca se ha ejecutado.",
+      loadError: "No se pudo cargar el historial de ejecución.",
+      refresh: "Actualizar",
+      noOutput: "Sin salida.",
+      running: "En ejecución",
+      exitCode: "salida {{code}}",
+      status: {
+        succeeded: "Correcto",
+        failed: "Fallido",
+        running: "En ejecución",
+      },
     },
     confirmDelete: {
       message: "Eliminar «{{title}}»? Esta acción no se puede deshacer.",

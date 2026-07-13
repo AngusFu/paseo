@@ -2465,8 +2465,23 @@ export const en = {
       pause: "Pause schedule",
       pausing: "Pausing...",
       runNow: "Run now",
+      viewLogs: "View logs",
       delete: "Delete schedule",
       deleting: "Deleting...",
+    },
+    logs: {
+      title: "Run history",
+      empty: "This schedule has never run.",
+      loadError: "Couldn't load run history.",
+      refresh: "Refresh",
+      noOutput: "No output.",
+      running: "Running",
+      exitCode: "exit {{code}}",
+      status: {
+        succeeded: "Succeeded",
+        failed: "Failed",
+        running: "Running",
+      },
     },
     confirmDelete: {
       message: 'Delete "{{title}}"? This cannot be undone.',

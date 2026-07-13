@@ -1,4 +1,13 @@
-import { MoreVertical, Pause, Pencil, Play, RotateCw, Trash2 } from "lucide-react-native";
+import {
+  MoreVertical,
+  Pause,
+  Pencil,
+  Play,
+  RotateCw,
+  ScrollText,
+  Trash2,
+  Zap,
+} from "lucide-react-native";
 import { useCallback, useState, type ReactElement } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -12,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { getProviderIcon } from "@/components/provider-icons";
 import { isNative } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -28,12 +38,16 @@ const ThemedPencil = withUnistyles(Pencil);
 const ThemedPause = withUnistyles(Pause);
 const ThemedPlay = withUnistyles(Play);
 const ThemedRotateCw = withUnistyles(RotateCw);
+const ThemedScrollText = withUnistyles(ScrollText);
 const ThemedTrash2 = withUnistyles(Trash2);
 const ThemedKebab = withUnistyles(MoreVertical);
+const ThemedZap = withUnistyles(Zap);
 
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const destructiveColorMapping = (theme: Theme) => ({ color: theme.colors.destructive });
+const runIconEnabledMapping = (theme: Theme) => ({ color: theme.colors.foreground });
+const runIconDisabledMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 const MENU_ICON_SIZE = 14;
 const PROVIDER_ICON_SIZE = 16;
@@ -52,6 +66,7 @@ export interface ScheduleRowActions {
   onPause: () => void;
   onResume: () => void;
   onRunNow: () => void;
+  onViewLogs: () => void;
   onDelete: () => void;
 }
 
@@ -150,6 +165,7 @@ export function ScheduleRow({
   onPause,
   onResume,
   onRunNow,
+  onViewLogs,
   onDelete,
 }: ScheduleRowProps): ReactElement {
   const { t } = useTranslation();
@@ -205,6 +221,12 @@ export function ScheduleRow({
         </View>
 
         <View style={styles.trailing}>
+          <ScheduleRunButton
+            scheduleId={schedule.id}
+            canRun={canRun}
+            pending={pending?.runNow ?? false}
+            onRunNow={onRunNow}
+          />
           <StatusBadge label={t(badge.labelKey)} variant={badge.variant} />
           <ScheduleKebabMenu
             schedule={schedule}
@@ -214,6 +236,7 @@ export function ScheduleRow({
             onPause={onPause}
             onResume={onResume}
             onRunNow={onRunNow}
+            onViewLogs={onViewLogs}
             onDelete={onDelete}
           />
         </View>
@@ -226,7 +249,54 @@ const editLeading = <ThemedPencil size={MENU_ICON_SIZE} uniProps={mutedColorMapp
 const pauseLeading = <ThemedPause size={MENU_ICON_SIZE} uniProps={mutedColorMapping} />;
 const resumeLeading = <ThemedPlay size={MENU_ICON_SIZE} uniProps={mutedColorMapping} />;
 const runLeading = <ThemedRotateCw size={MENU_ICON_SIZE} uniProps={mutedColorMapping} />;
+const logsLeading = <ThemedScrollText size={MENU_ICON_SIZE} uniProps={mutedColorMapping} />;
 const deleteLeading = <ThemedTrash2 size={MENU_ICON_SIZE} uniProps={destructiveColorMapping} />;
+
+const RUN_BUTTON_ICON_SIZE = 15;
+
+// Row-level instant trigger. A nested Pressable so its tap fires runNow without
+// bubbling to the row's edit press (same trick the kebab uses). Disabled while a
+// run is in flight or the schedule cannot run; shows a spinner mid-flight.
+function ScheduleRunButton({
+  scheduleId,
+  canRun,
+  pending,
+  onRunNow,
+}: {
+  scheduleId: string;
+  canRun: boolean;
+  pending: boolean;
+  onRunNow: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const disabled = !canRun || pending;
+  const handlePress = useCallback(() => {
+    if (!disabled) {
+      onRunNow();
+    }
+  }, [disabled, onRunNow]);
+
+  return (
+    <Pressable
+      onPress={handlePress}
+      disabled={disabled}
+      hitSlop={8}
+      style={runButtonStyle}
+      accessibilityRole="button"
+      accessibilityLabel={t("schedule.menu.runNow")}
+      testID={`schedule-run-${scheduleId}`}
+    >
+      {pending ? (
+        <LoadingSpinner size="small" color={styles.runIcon.color} />
+      ) : (
+        <ThemedZap
+          size={RUN_BUTTON_ICON_SIZE}
+          uniProps={disabled ? runIconDisabledMapping : runIconEnabledMapping}
+        />
+      )}
+    </Pressable>
+  );
+}
 
 function renderKebabTriggerIcon({ hovered }: { hovered?: boolean }): ReactElement {
   return (
@@ -245,10 +315,18 @@ function ScheduleKebabMenu({
   onPause,
   onResume,
   onRunNow,
+  onViewLogs,
   onDelete,
 }: Pick<
   ScheduleRowProps,
-  "schedule" | "pending" | "onEdit" | "onPause" | "onResume" | "onRunNow" | "onDelete"
+  | "schedule"
+  | "pending"
+  | "onEdit"
+  | "onPause"
+  | "onResume"
+  | "onRunNow"
+  | "onViewLogs"
+  | "onDelete"
 > & {
   canRun: boolean;
 }): ReactElement {
@@ -305,6 +383,13 @@ function ScheduleKebabMenu({
         >
           {t("schedule.menu.runNow")}
         </DropdownMenuItem>
+        <DropdownMenuItem
+          leading={logsLeading}
+          onSelect={onViewLogs}
+          testID={`schedule-menu-logs-${schedule.id}`}
+        >
+          {t("schedule.menu.viewLogs")}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           leading={deleteLeading}
@@ -325,6 +410,13 @@ function kebabTriggerStyle({
   hovered = false,
 }: PressableStateCallbackType & { hovered?: boolean }) {
   return [styles.kebabTrigger, hovered && styles.kebabTriggerHovered];
+}
+
+function runButtonStyle({
+  hovered = false,
+  pressed,
+}: PressableStateCallbackType & { hovered?: boolean }) {
+  return [styles.runButton, (hovered || pressed) && styles.runButtonHovered];
 }
 
 const styles = StyleSheet.create((theme) => ({
@@ -376,6 +468,19 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.borderRadius.base,
   },
   kebabTriggerHovered: {
+    backgroundColor: theme.colors.surface2,
+  },
+  // Static color holder read by the run-button spinner (compliant idiom).
+  runIcon: {
+    color: theme.colors.foreground,
+  },
+  runButton: {
+    padding: theme.spacing[1],
+    borderRadius: theme.borderRadius.base,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  runButtonHovered: {
     backgroundColor: theme.colors.surface2,
   },
 }));

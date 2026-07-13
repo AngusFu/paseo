@@ -2497,8 +2497,23 @@ export const ru: TranslationResources = {
       pause: "Приостановить расписание",
       pausing: "Приостановка...",
       runNow: "Запустить сейчас",
+      viewLogs: "Показать логи",
       delete: "Удалить расписание",
       deleting: "Удаление...",
+    },
+    logs: {
+      title: "История запусков",
+      empty: "Это расписание ещё ни разу не запускалось.",
+      loadError: "Не удалось загрузить историю запусков.",
+      refresh: "Обновить",
+      noOutput: "Нет вывода.",
+      running: "Выполняется",
+      exitCode: "код выхода {{code}}",
+      status: {
+        succeeded: "Успешно",
+        failed: "Ошибка",
+        running: "Выполняется",
+      },
     },
     confirmDelete: {
       message: "Удалить «{{title}}»? Это действие нельзя отменить.",

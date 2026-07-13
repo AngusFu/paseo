@@ -2511,8 +2511,23 @@ export const fr: TranslationResources = {
       pause: "Mettre en pause la planification",
       pausing: "Mise en pause...",
       runNow: "Exécuter maintenant",
+      viewLogs: "Voir les journaux",
       delete: "Supprimer la planification",
       deleting: "Suppression...",
+    },
+    logs: {
+      title: "Historique d'exécution",
+      empty: "Cette planification n'a jamais été exécutée.",
+      loadError: "Impossible de charger l'historique d'exécution.",
+      refresh: "Actualiser",
+      noOutput: "Aucune sortie.",
+      running: "En cours",
+      exitCode: "sortie {{code}}",
+      status: {
+        succeeded: "Réussi",
+        failed: "Échoué",
+        running: "En cours",
+      },
     },
     confirmDelete: {
       message: "Supprimer « {{title}} » ? Cette action est irréversible.",

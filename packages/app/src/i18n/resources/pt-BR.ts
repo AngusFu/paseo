@@ -2489,8 +2489,23 @@ export const ptBR: TranslationResources = {
       pause: "Pausar agendamento",
       pausing: "Pausando...",
       runNow: "Executar agora",
+      viewLogs: "Ver logs",
       delete: "Excluir agendamento",
       deleting: "Excluindo...",
+    },
+    logs: {
+      title: "Histórico de execução",
+      empty: "Este agendamento nunca foi executado.",
+      loadError: "Não foi possível carregar o histórico de execução.",
+      refresh: "Atualizar",
+      noOutput: "Sem saída.",
+      running: "Em execução",
+      exitCode: "saída {{code}}",
+      status: {
+        succeeded: "Concluído",
+        failed: "Falhou",
+        running: "Em execução",
+      },
     },
     confirmDelete: {
       message: 'Excluir "{{title}}"? Isso não pode ser desfeito.',

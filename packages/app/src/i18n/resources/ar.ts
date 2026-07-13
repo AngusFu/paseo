@@ -2452,8 +2452,23 @@ export const ar: TranslationResources = {
       pause: "إيقاف الجدول مؤقتًا",
       pausing: "جارٍ الإيقاف...",
       runNow: "التشغيل الآن",
+      viewLogs: "عرض السجلات",
       delete: "حذف الجدول",
       deleting: "جارٍ الحذف...",
+    },
+    logs: {
+      title: "سجل التشغيل",
+      empty: "لم يتم تشغيل هذه الجدولة من قبل.",
+      loadError: "تعذّر تحميل سجل التشغيل.",
+      refresh: "تحديث",
+      noOutput: "لا يوجد إخراج.",
+      running: "قيد التشغيل",
+      exitCode: "رمز الخروج {{code}}",
+      status: {
+        succeeded: "نجح",
+        failed: "فشل",
+        running: "قيد التشغيل",
+      },
     },
     confirmDelete: {
       message: 'حذف "{{title}}"؟ لا يمكن التراجع عن هذا الإجراء.',

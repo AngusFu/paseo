@@ -2431,8 +2431,23 @@ export const zhCN: TranslationResources = {
       pause: "暂停计划",
       pausing: "正在暂停…",
       runNow: "立即运行",
+      viewLogs: "查看日志",
       delete: "删除计划",
       deleting: "正在删除…",
+    },
+    logs: {
+      title: "运行历史",
+      empty: "该计划从未运行。",
+      loadError: "无法加载运行历史。",
+      refresh: "刷新",
+      noOutput: "无输出。",
+      running: "运行中",
+      exitCode: "退出码 {{code}}",
+      status: {
+        succeeded: "成功",
+        failed: "失败",
+        running: "运行中",
+      },
     },
     confirmDelete: {
       message: "删除“{{title}}”？此操作无法撤销。",

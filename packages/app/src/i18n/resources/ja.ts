@@ -2482,8 +2482,23 @@ export const ja: TranslationResources = {
       pause: "スケジュールを一時停止",
       pausing: "一時停止中...",
       runNow: "今すぐ実行",
+      viewLogs: "ログを表示",
       delete: "スケジュールを削除",
       deleting: "削除中...",
+    },
+    logs: {
+      title: "実行履歴",
+      empty: "このスケジュールはまだ実行されていません。",
+      loadError: "実行履歴を読み込めませんでした。",
+      refresh: "更新",
+      noOutput: "出力なし。",
+      running: "実行中",
+      exitCode: "終了コード {{code}}",
+      status: {
+        succeeded: "成功",
+        failed: "失敗",
+        running: "実行中",
+      },
     },
     confirmDelete: {
       message: "「{{title}}」を削除しますか？この操作は取り消せません。",

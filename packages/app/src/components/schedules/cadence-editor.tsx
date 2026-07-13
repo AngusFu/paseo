@@ -43,7 +43,10 @@ function getCronPreview(expression: string, timezone: string, error: string | nu
   if (error || !expression) {
     return null;
   }
-  return describeCron({ type: "cron", expression, timezone }) ?? expression;
+  // No fallback to the raw expression — a preview that just echoes the input is
+  // noise. Return null when we can't actually humanize it (the AI explanation,
+  // when present, is preferred by the caller anyway).
+  return describeCron({ type: "cron", expression, timezone });
 }
 
 function buildCronCadence(expression: string, timezone: string): CronCadence {

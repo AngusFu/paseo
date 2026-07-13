@@ -976,7 +976,7 @@ function DispatchActions({
           projectPath={workspace.cwd}
           worktree={plan.worktree}
           providerLabel={providerDefault?.label ?? providerDefault?.provider ?? null}
-          promptPreview={prompt.slice(0, 100)}
+          promptPreview={prompt}
           onConfirm={handleConfirmRun}
         />
       ) : null}

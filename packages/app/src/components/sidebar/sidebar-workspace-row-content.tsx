@@ -30,6 +30,7 @@ import { isEmphasizedStatusDotBucket } from "@/utils/status-dot-color";
 import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
+import { isWeb } from "@/constants/platform";
 
 const DEFAULT_STATUS_DOT_SIZE = 7;
 const EMPHASIZED_STATUS_DOT_SIZE = 9;
@@ -307,7 +308,11 @@ function PrBadge({ hint }: { hint: PrHint }) {
 
   return (
     <Pressable
-      accessibilityRole="link"
+      // Web: no role → renders a <div>, not an <a>. The badge lives inside the
+      // row's <button>, and an <a> descendant of <button> is invalid HTML (React
+      // hydration error). onPress opens the URL via JS, so there's no real href
+      // to lose. Native keeps the link role for a11y.
+      accessibilityRole={isWeb ? undefined : "link"}
       accessibilityLabel={`Pull request #${hint.number}`}
       hitSlop={4}
       onPressIn={handlePressIn}

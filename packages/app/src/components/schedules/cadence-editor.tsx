@@ -16,7 +16,11 @@ import { Button } from "@/components/ui/button";
 import type { FieldControlSize } from "@/components/ui/control-geometry";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { SelectField, type SelectFieldOption } from "@/components/ui/select-field";
-import { useLocalLlmCron, type CronGenerationResult } from "@/hooks/use-local-llm-cron";
+import {
+  useLocalLlmCron,
+  type CronGenerationResult,
+  type UseLocalLlmCronResult,
+} from "@/hooks/use-local-llm-cron";
 import {
   CADENCE_PRESET_OPTIONS,
   CUSTOM_CRON_PRESET_ID,
@@ -70,6 +74,7 @@ export function CadenceEditor({
   serverId,
 }: CadenceEditorProps) {
   const { t } = useTranslation();
+  const ai = useLocalLlmCron(serverId);
   // The model's plain-language description of its last generated cron, shown as
   // the preview until the user edits the expression away from it.
   const [aiExplained, setAiExplained] = useState<CronGenerationResult | null>(null);
@@ -142,10 +147,6 @@ export function CadenceEditor({
     [cronTimeZone, onChange],
   );
 
-  const handleExplained = useCallback((expression: string, explanation: string) => {
-    setAiExplained({ expression, explanation });
-  }, []);
-
   // When the expression matches a named preset, the dropdown above already says
   // what it does — a preview would just repeat it. Only describe custom crons.
   const isCustomCron = selectedPresetId === CUSTOM_CRON_PRESET_ID;
@@ -156,6 +157,10 @@ export function CadenceEditor({
   } else if (showPreview) {
     feedback = <Text style={styles.preview}>{preview}</Text>;
   }
+
+  const handleExplained = useCallback((expression: string, explanation: string) => {
+    setAiExplained({ expression, explanation });
+  }, []);
 
   // A custom cron with no available description is the only case where an
   // on-demand "explain" is useful (presets and AI-generated crons already have
@@ -181,69 +186,99 @@ export function CadenceEditor({
           field={false}
         />
 
-        <FormTextInput
-          size={size}
-          testID="cadence-cron-expression"
-          accessibilityLabel={t("schedule.cadence.cronAccessibility")}
-          initialValue={cronText}
-          resetKey={`cadence-cron-${fieldResetKey}`}
-          value={cronText}
-          onChangeText={handleCronChange}
-          placeholder="0 9 * * *"
-          autoCapitalize="none"
-          autoCorrect={false}
-          spellCheck={false}
-          style={styles.cronInput}
-        />
+        <View style={styles.cronRow}>
+          <View style={styles.cronInputWrap}>
+            <FormTextInput
+              size={size}
+              testID="cadence-cron-expression"
+              accessibilityLabel={t("schedule.cadence.cronAccessibility")}
+              initialValue={cronText}
+              resetKey={`cadence-cron-${fieldResetKey}`}
+              value={cronText}
+              onChangeText={handleCronChange}
+              placeholder="0 9 * * *"
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
+              style={styles.cronInput}
+            />
+          </View>
+          <CronExplainButton
+            ai={ai}
+            target={explainTarget}
+            size={size}
+            onExplained={handleExplained}
+          />
+        </View>
         {feedback}
-        <CadenceAiControls
-          serverId={serverId}
-          size={size}
-          explainTarget={explainTarget}
-          onGenerated={handleAiGenerated}
-          onExplained={handleExplained}
-        />
+        <CadenceAiControls ai={ai} size={size} onGenerated={handleAiGenerated} />
       </View>
     </Field>
   );
 }
 
-// Natural-language → cron affordance. Owns its own open/input/failed state so the
-// parent editor stays simple; calls back with the validated result on success.
-function CadenceAiControls({
-  serverId,
+// Inline "explain this cron" button, shown to the right of the expression input
+// when the current custom cron has no other description available.
+function CronExplainButton({
+  ai,
+  target,
   size,
-  explainTarget,
-  onGenerated,
   onExplained,
 }: {
-  serverId: string | null | undefined;
+  ai: UseLocalLlmCronResult;
+  target: string | null;
   size: FieldControlSize;
-  // A custom cron the user can ask the model to describe, or null when none.
-  explainTarget: string | null;
-  onGenerated: (result: CronGenerationResult) => void;
   onExplained: (expression: string, explanation: string) => void;
 }): ReactNode {
   const { t } = useTranslation();
-  const ai = useLocalLlmCron(serverId);
+  const handleExplain = useCallback(() => {
+    if (!target) {
+      return;
+    }
+    void (async () => {
+      const explanation = await ai.explain(target);
+      if (explanation) {
+        onExplained(target, explanation);
+      }
+    })();
+  }, [ai, target, onExplained]);
+
+  if (target === null || ai.model?.status !== "ready") {
+    return null;
+  }
+  return (
+    <Button
+      variant="ghost"
+      size={size === "sm" ? "sm" : "md"}
+      leftIcon={Info}
+      loading={ai.isExplaining}
+      testID="cadence-ai-explain"
+      onPress={handleExplain}
+    >
+      {t("schedule.cadence.ai.explain")}
+    </Button>
+  );
+}
+
+// Natural-language → cron affordance. Owns its own open/input/failed state so the
+// parent editor stays simple; calls back with the validated result on success.
+// The `ai` hook is owned by the parent so the inline explain button can share it.
+function CadenceAiControls({
+  ai,
+  size,
+  onGenerated,
+}: {
+  ai: UseLocalLlmCronResult;
+  size: FieldControlSize;
+  onGenerated: (result: CronGenerationResult) => void;
+}): ReactNode {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [failed, setFailed] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   const handleOpen = useCallback(() => setOpen(true), []);
-
-  const handleExplain = useCallback(() => {
-    if (!explainTarget) {
-      return;
-    }
-    void (async () => {
-      const explanation = await ai.explain(explainTarget);
-      if (explanation) {
-        onExplained(explainTarget, explanation);
-      }
-    })();
-  }, [ai, explainTarget, onExplained]);
 
   // Focus the input once it mounts (open + model ready). autoFocus alone is
   // unreliable for a conditionally-rendered field, so drive it from a ref too.
@@ -275,33 +310,17 @@ function CadenceAiControls({
   }
 
   if (!open) {
-    const canExplain = explainTarget !== null && ai.model?.status === "ready";
     return (
-      <View style={styles.aiRow}>
-        <Button
-          variant="ghost"
-          size="xs"
-          style={styles.aiTrigger}
-          leftIcon={Sparkles}
-          testID="cadence-ai-trigger"
-          onPress={handleOpen}
-        >
-          {t("schedule.cadence.ai.trigger")}
-        </Button>
-        {canExplain ? (
-          <Button
-            variant="ghost"
-            size="xs"
-            style={styles.aiTrigger}
-            leftIcon={Info}
-            loading={ai.isExplaining}
-            testID="cadence-ai-explain"
-            onPress={handleExplain}
-          >
-            {t("schedule.cadence.ai.explain")}
-          </Button>
-        ) : null}
-      </View>
+      <Button
+        variant="ghost"
+        size="xs"
+        style={styles.aiTrigger}
+        leftIcon={Sparkles}
+        testID="cadence-ai-trigger"
+        onPress={handleOpen}
+      >
+        {t("schedule.cadence.ai.trigger")}
+      </Button>
     );
   }
 
@@ -365,6 +384,14 @@ function CadenceAiControls({
 const styles = StyleSheet.create((theme) => ({
   stack: {
     gap: theme.spacing[3],
+  },
+  cronRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  cronInputWrap: {
+    flex: 1,
   },
   cronInput: {
     fontFamily: theme.fontFamily.mono,

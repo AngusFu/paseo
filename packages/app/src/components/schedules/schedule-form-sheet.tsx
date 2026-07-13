@@ -552,6 +552,15 @@ function ScheduleFormFields({
         />
       </Field>
 
+      <ScheduleTargetFields
+        model={model}
+        state={state}
+        providerSnapshot={providerSnapshot}
+        agentTargetLabel={agentTargetLabel}
+        controlSize={controlSize}
+        mutationServerId={mutationServerId}
+      />
+
       {state.targetKind === "command" ? null : (
         <Field label={t("schedule.form.prompt.label")}>
           <FormTextInput
@@ -569,15 +578,6 @@ function ScheduleFormFields({
           />
         </Field>
       )}
-
-      <ScheduleTargetFields
-        model={model}
-        state={state}
-        providerSnapshot={providerSnapshot}
-        agentTargetLabel={agentTargetLabel}
-        controlSize={controlSize}
-        mutationServerId={mutationServerId}
-      />
 
       <CadenceEditor
         value={state.cadence}

@@ -1,7 +1,16 @@
-import { useCallback, useMemo, useReducer, useState, type ReactNode } from "react";
-import { Text, View } from "react-native";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { Text, View, type TextInput } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
+import { Sparkles } from "lucide-react-native";
 import type { ScheduleCadence } from "@getpaseo/protocol/schedule/types";
 import { Button } from "@/components/ui/button";
 import type { FieldControlSize } from "@/components/ui/control-geometry";
@@ -198,8 +207,19 @@ function CadenceAiControls({
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [failed, setFailed] = useState(false);
+  const inputRef = useRef<TextInput>(null);
 
   const handleOpen = useCallback(() => setOpen(true), []);
+
+  // Focus the input once it mounts (open + model ready). autoFocus alone is
+  // unreliable for a conditionally-rendered field, so drive it from a ref too.
+  const inputReady = open && ai.model?.status === "ready";
+  useEffect(() => {
+    if (inputReady) {
+      inputRef.current?.focus();
+    }
+  }, [inputReady]);
+
   const handleGenerate = useCallback(() => {
     const trimmed = text.trim();
     if (!trimmed) {
@@ -226,6 +246,7 @@ function CadenceAiControls({
         variant="ghost"
         size="xs"
         style={styles.aiTrigger}
+        leftIcon={Sparkles}
         testID="cadence-ai-trigger"
         onPress={handleOpen}
       >
@@ -261,6 +282,7 @@ function CadenceAiControls({
       <View style={styles.aiRow}>
         <View style={styles.aiInput}>
           <FormTextInput
+            ref={inputRef}
             size={size}
             testID="cadence-ai-input"
             accessibilityLabel={t("schedule.cadence.ai.trigger")}
@@ -270,11 +292,13 @@ function CadenceAiControls({
             placeholder={t("schedule.cadence.ai.placeholder")}
             autoCapitalize="none"
             autoCorrect={false}
+            autoFocus
             onSubmitEditing={handleGenerate}
           />
         </View>
         <Button
           size={size === "sm" ? "sm" : "md"}
+          leftIcon={Sparkles}
           testID="cadence-ai-generate"
           loading={ai.isGenerating}
           disabled={ai.isGenerating || !text.trim()}

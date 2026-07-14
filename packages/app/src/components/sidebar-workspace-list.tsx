@@ -624,9 +624,11 @@ function ProjectKebabMenu({
 function WorkspacePinToggle({
   workspaceKey,
   isPinned,
+  rowHovered,
 }: {
   workspaceKey: string;
   isPinned: boolean;
+  rowHovered: boolean;
 }) {
   const { t } = useTranslation();
   const togglePin = usePinnedWorkspacesStore((state) => state.togglePin);
@@ -663,7 +665,7 @@ function WorkspacePinToggle({
       testID={`sidebar-workspace-pin-${workspaceKey}`}
       style={buttonStyle}
     >
-      {isPinned && isHovered ? (
+      {isPinned && (rowHovered || isHovered) ? (
         <ThemedPinOff size={13} uniProps={foregroundColorMapping} />
       ) : (
         <ThemedPin
@@ -720,7 +722,11 @@ function WorkspaceRowRightGroup({
   return (
     <View style={styles.workspaceRightActions}>
       {isHovered || isTouchPlatform ? (
-        <WorkspacePinToggle workspaceKey={workspace.workspaceKey} isPinned={isPinned} />
+        <WorkspacePinToggle
+          workspaceKey={workspace.workspaceKey}
+          isPinned={isPinned}
+          rowHovered={isHovered}
+        />
       ) : null}
       {isCreating ? (
         <Text style={styles.workspaceCreatingText}>{t("sidebar.workspace.status.creating")}</Text>

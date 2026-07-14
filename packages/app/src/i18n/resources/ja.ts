@@ -2134,6 +2134,7 @@ export const ja: TranslationResources = {
       url: "URL",
       source: "ソース",
       moreLabels: "+{{count}}",
+      unresolvedThreads: "未解決のスレッド",
     },
     actions: {
       add: "カードを追加",
@@ -2159,6 +2160,15 @@ export const ja: TranslationResources = {
         all: "すべての担当者",
         unassigned: "未割り当て",
         clear: "担当者フィルターをクリア",
+      },
+      dateRange: {
+        label: "更新期間",
+        "7d": "7d",
+        "2w": "2w",
+        "1m": "1m",
+        "2m": "2m",
+        "3m": "3m",
+        all: "すべて",
       },
     },
     status: {

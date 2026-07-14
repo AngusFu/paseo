@@ -223,6 +223,12 @@ export const KanbanCard = memo(function KanbanCard({
                   <Text style={styles.issueKeyText}>{issueKey}</Text>
                 </View>
               ) : null}
+              {card.hasUnresolvedThreads ? (
+                <View
+                  style={styles.unresolvedThreadsDot}
+                  accessibilityLabel={t("kanban.card.unresolvedThreads")}
+                />
+              ) : null}
             </View>
             <Text style={styles.title} numberOfLines={2}>
               {card.title}
@@ -336,6 +342,13 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontFamily: theme.fontFamily.mono,
     fontSize: theme.fontSize.xs,
+  },
+  // Red attention dot: MR has unresolved blocking discussion threads.
+  unresolvedThreadsDot: {
+    width: 8,
+    height: 8,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.statusDanger,
   },
   // Static color holder for the external-link icon button.
   linkButton: {

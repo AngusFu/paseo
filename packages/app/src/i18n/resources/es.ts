@@ -2154,6 +2154,7 @@ export const es: TranslationResources = {
       url: "URL",
       source: "Origen",
       moreLabels: "+{{count}}",
+      unresolvedThreads: "Hilos sin resolver",
     },
     actions: {
       add: "Añadir tarjeta",
@@ -2179,6 +2180,15 @@ export const es: TranslationResources = {
         all: "Todos los responsables",
         unassigned: "Sin asignar",
         clear: "Borrar filtro de responsable",
+      },
+      dateRange: {
+        label: "Actualizado en",
+        "7d": "7d",
+        "2w": "2w",
+        "1m": "1m",
+        "2m": "2m",
+        "3m": "3m",
+        all: "Todos",
       },
     },
     status: {

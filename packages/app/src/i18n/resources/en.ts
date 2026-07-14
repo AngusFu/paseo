@@ -2117,6 +2117,7 @@ export const en = {
       url: "URL",
       source: "Source",
       moreLabels: "+{{count}}",
+      unresolvedThreads: "Unresolved threads",
     },
     actions: {
       add: "Add card",
@@ -2142,6 +2143,15 @@ export const en = {
         all: "All assignees",
         unassigned: "Unassigned",
         clear: "Clear assignee filter",
+      },
+      dateRange: {
+        label: "Updated within",
+        "7d": "7d",
+        "2w": "2w",
+        "1m": "1m",
+        "2m": "2m",
+        "3m": "3m",
+        all: "All",
       },
     },
     status: {

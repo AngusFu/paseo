@@ -2148,6 +2148,7 @@ export const ru: TranslationResources = {
       url: "URL",
       source: "Источник",
       moreLabels: "+{{count}}",
+      unresolvedThreads: "Нерешённые обсуждения",
     },
     actions: {
       add: "Добавить карточку",
@@ -2173,6 +2174,15 @@ export const ru: TranslationResources = {
         all: "Все исполнители",
         unassigned: "Без исполнителя",
         clear: "Сбросить фильтр исполнителя",
+      },
+      dateRange: {
+        label: "Обновлено за",
+        "7d": "7d",
+        "2w": "2w",
+        "1m": "1m",
+        "2m": "2m",
+        "3m": "3m",
+        all: "Все",
       },
     },
     status: {

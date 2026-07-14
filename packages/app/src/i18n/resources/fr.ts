@@ -2161,6 +2161,7 @@ export const fr: TranslationResources = {
       url: "URL",
       source: "Source",
       moreLabels: "+{{count}}",
+      unresolvedThreads: "Fils non résolus",
     },
     actions: {
       add: "Ajouter une carte",
@@ -2186,6 +2187,15 @@ export const fr: TranslationResources = {
         all: "Tous les assignés",
         unassigned: "Non assigné",
         clear: "Effacer le filtre d'assigné",
+      },
+      dateRange: {
+        label: "Mis à jour depuis",
+        "7d": "7d",
+        "2w": "2w",
+        "1m": "1m",
+        "2m": "2m",
+        "3m": "3m",
+        all: "Tous",
       },
     },
     status: {

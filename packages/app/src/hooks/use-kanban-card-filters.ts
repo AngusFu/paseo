@@ -7,6 +7,31 @@ import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 // filter" here means the tracker kind, not an individual configured source.
 export type KanbanCardSourceKindFilter = "all" | "jira" | "gitlab" | "manual";
 
+// Recency window applied to a card's tracker last-updated time. Default hides
+// stale tickets; "all" shows every card regardless of age. The daemon always
+// syncs and stores the full board — this is a client-side view filter only.
+export type KanbanCardDateRangeFilter = "7d" | "2w" | "1m" | "2m" | "3m" | "all";
+
+export const KANBAN_DATE_RANGE_DEFAULT: KanbanCardDateRangeFilter = "1m";
+
+export const KANBAN_DATE_RANGE_OPTIONS: KanbanCardDateRangeFilter[] = [
+  "7d",
+  "2w",
+  "1m",
+  "2m",
+  "3m",
+  "all",
+];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const KANBAN_DATE_RANGE_MS: Record<Exclude<KanbanCardDateRangeFilter, "all">, number> = {
+  "7d": 7 * DAY_MS,
+  "2w": 14 * DAY_MS,
+  "1m": 30 * DAY_MS,
+  "2m": 60 * DAY_MS,
+  "3m": 90 * DAY_MS,
+};
+
 // Sentinel for "cards with no assignee", distinct from the `null` that means
 // "no assignee filter applied" (all cards).
 export const UNASSIGNED_ASSIGNEE_FILTER = "__unassigned__";
@@ -23,8 +48,28 @@ export interface UseKanbanCardFiltersResult {
   clearAssignee: () => void;
   assigneeOptions: string[];
   hasUnassignedCards: boolean;
+  dateRange: KanbanCardDateRangeFilter;
+  setDateRange: (value: KanbanCardDateRangeFilter) => void;
+  clearDateRange: () => void;
   isActive: boolean;
   filteredCards: StoredKanbanCard[];
+}
+
+// A card's tracker last-updated time, falling back to its created time. Manual
+// cards (and any pre-upgrade card without tracker timestamps) return null and
+// are never hidden by the recency filter.
+function cardActivityTime(card: StoredKanbanCard): number | null {
+  const iso = card.sourceUpdatedAt ?? card.sourceCreatedAt;
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function matchesDateRange(card: StoredKanbanCard, cutoff: number | null): boolean {
+  if (cutoff === null) return true;
+  const activity = cardActivityTime(card);
+  if (activity === null) return true;
+  return activity >= cutoff;
 }
 
 function cardIssueKeyText(card: StoredKanbanCard): string | null {
@@ -58,6 +103,7 @@ export function useKanbanCardFilters(cards: StoredKanbanCard[]): UseKanbanCardFi
   const [search, setSearch] = useState("");
   const [sourceKind, setSourceKind] = useState<KanbanCardSourceKindFilter>("all");
   const [assignee, setAssignee] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<KanbanCardDateRangeFilter>(KANBAN_DATE_RANGE_DEFAULT);
 
   const { assigneeOptions, hasUnassignedCards } = useMemo(() => {
     const seen = new Set<string>();
@@ -77,16 +123,18 @@ export function useKanbanCardFilters(cards: StoredKanbanCard[]): UseKanbanCardFi
 
   const filteredCards = useMemo(() => {
     const normalizedQuery = search.trim().toLowerCase();
-    if (!normalizedQuery && sourceKind === "all" && assignee === null) {
+    const cutoff = dateRange === "all" ? null : Date.now() - KANBAN_DATE_RANGE_MS[dateRange];
+    if (!normalizedQuery && sourceKind === "all" && assignee === null && cutoff === null) {
       return cards;
     }
     return cards.filter(
       (card) =>
         matchesSearch(card, normalizedQuery) &&
         matchesSourceKind(card, sourceKind) &&
-        matchesAssignee(card, assignee),
+        matchesAssignee(card, assignee) &&
+        matchesDateRange(card, cutoff),
     );
-  }, [cards, search, sourceKind, assignee]);
+  }, [cards, search, sourceKind, assignee, dateRange]);
 
   return {
     search,
@@ -100,7 +148,14 @@ export function useKanbanCardFilters(cards: StoredKanbanCard[]): UseKanbanCardFi
     clearAssignee: () => setAssignee(null),
     assigneeOptions,
     hasUnassignedCards,
-    isActive: search.trim() !== "" || sourceKind !== "all" || assignee !== null,
+    dateRange,
+    setDateRange,
+    clearDateRange: () => setDateRange(KANBAN_DATE_RANGE_DEFAULT),
+    isActive:
+      search.trim() !== "" ||
+      sourceKind !== "all" ||
+      assignee !== null ||
+      dateRange !== KANBAN_DATE_RANGE_DEFAULT,
     filteredCards,
   };
 }

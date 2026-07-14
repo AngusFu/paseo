@@ -2107,6 +2107,7 @@ export const ar: TranslationResources = {
       url: "الرابط",
       source: "المصدر",
       moreLabels: "+{{count}}",
+      unresolvedThreads: "مناقشات غير محلولة",
     },
     actions: {
       add: "إضافة بطاقة",
@@ -2132,6 +2133,15 @@ export const ar: TranslationResources = {
         all: "جميع المكلَّفين",
         unassigned: "غير مسند",
         clear: "مسح تصفية المكلَّف",
+      },
+      dateRange: {
+        label: "محدَّث خلال",
+        "7d": "7d",
+        "2w": "2w",
+        "1m": "1m",
+        "2m": "2m",
+        "3m": "3m",
+        all: "الكل",
       },
     },
     status: {

@@ -77,6 +77,15 @@ export interface UpsertKanbanCardBySourcePayload {
   assignee?: string | null;
   priority?: KanbanPriority | null;
   metadata?: Record<string, unknown>;
+  // Tracker's own timestamps (ISO), separate from the Paseo-local ones.
+  sourceCreatedAt?: string | null;
+  sourceUpdatedAt?: string | null;
+  // GitLab MR: unresolved blocking discussion threads present.
+  hasUnresolvedThreads?: boolean;
+  // When true, this sync applies status/columnId even to a user-pinned card.
+  // Used for terminal transitions (MR merged/closed) that should win over a
+  // manual drag — a merged MR belongs in done regardless.
+  forceStatus?: boolean;
 }
 
 export class KanbanStore {
@@ -380,6 +389,9 @@ export class KanbanStore {
           assignee: payload.assignee ?? null,
           priority: payload.priority ?? null,
           metadata: payload.metadata,
+          sourceCreatedAt: payload.sourceCreatedAt ?? null,
+          sourceUpdatedAt: payload.sourceUpdatedAt ?? null,
+          hasUnresolvedThreads: payload.hasUnresolvedThreads,
           createdAt: now,
           updatedAt: now,
         });
@@ -393,9 +405,15 @@ export class KanbanStore {
         url: payload.url,
         theme: payload.theme,
         source,
-        // Once the user drags the card, sync stops overwriting status/column.
-        status: existing.statusPinnedByUser ? existing.status : payload.status,
-        columnId: existing.statusPinnedByUser ? existing.columnId : payload.columnId,
+        // Once the user drags the card, sync stops overwriting status/column —
+        // unless this sync forces it (terminal MR merged/closed wins over a
+        // manual drag).
+        status:
+          existing.statusPinnedByUser && !payload.forceStatus ? existing.status : payload.status,
+        columnId:
+          existing.statusPinnedByUser && !payload.forceStatus
+            ? existing.columnId
+            : payload.columnId,
         labels: payload.labels ?? existing.labels,
         // The source is authoritative for synced fields: when it reports the
         // ticket as unassigned (payload.assignee === null) clear the card too,
@@ -404,6 +422,9 @@ export class KanbanStore {
         assignee: payload.assignee === undefined ? existing.assignee : payload.assignee,
         priority: payload.priority === undefined ? existing.priority : payload.priority,
         metadata: payload.metadata ?? existing.metadata,
+        sourceCreatedAt: payload.sourceCreatedAt ?? existing.sourceCreatedAt ?? null,
+        sourceUpdatedAt: payload.sourceUpdatedAt ?? existing.sourceUpdatedAt ?? null,
+        hasUnresolvedThreads: payload.hasUnresolvedThreads,
         updatedAt: now,
       });
       await this.writeCard(updated);

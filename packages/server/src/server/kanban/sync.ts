@@ -23,6 +23,10 @@ interface JiraIssue {
     assignee?: { displayName?: string } | null;
     labels?: string[];
     priority?: { name?: string } | null;
+    // Jira's own timestamps (ISO). Fetched explicitly on Cloud (see the fields
+    // param); returned by default on Server/DC.
+    created?: string;
+    updated?: string;
     [key: string]: unknown;
   };
 }
@@ -67,6 +71,12 @@ interface GitlabMergeRequest {
   labels?: string[];
   assignee?: { name?: string } | null;
   head_pipeline?: { status?: string } | null;
+  // ISO timestamps GitLab returns on the MR list endpoint.
+  created_at?: string;
+  updated_at?: string;
+  // False when the MR has open blocking discussion threads. Present on the MR
+  // list endpoint, so detecting unresolved threads costs no extra request.
+  blocking_discussions_resolved?: boolean;
 }
 
 // GitLab MR list responses don't carry one canonical "status" field the way
@@ -344,7 +354,7 @@ export class KanbanSyncService {
     headers: Record<string, string>,
   ): Promise<JiraIssue[]> {
     const jql = encodeURIComponent(query);
-    const fields = encodeURIComponent("summary,status,assignee,labels,priority");
+    const fields = encodeURIComponent("summary,status,assignee,labels,priority,created,updated");
     const issues: JiraIssue[] = [];
     let nextPageToken: string | undefined;
     for (let page = 0; page < MAX_SYNC_PAGES; page++) {
@@ -431,11 +441,12 @@ export class KanbanSyncService {
     payload: UpsertKanbanCardBySourcePayload;
   }> {
     const externalId = `jira:${issue.key}`;
-    const externalStatus = issue.fields?.status?.name ?? "";
+    const fields = issue.fields ?? {};
+    const externalStatus = fields.status?.name ?? "";
     const column = await this.store.resolveColumnForSync({
       columnIdOverride: source.columnMap?.[externalStatus],
       legacyStatusOverride: source.statusMap?.[externalStatus],
-      categoryLegacyStatus: jiraCategoryLegacyStatus(issue.fields?.status?.statusCategory?.key),
+      categoryLegacyStatus: jiraCategoryLegacyStatus(fields.status?.statusCategory?.key),
     });
     return {
       cardSource: {
@@ -445,15 +456,17 @@ export class KanbanSyncService {
         issueKey: issue.key,
       },
       payload: {
-        title: issue.fields?.summary ?? issue.key,
+        title: fields.summary ?? issue.key,
         url: `${trimTrailingSlash(baseUrl)}/browse/${issue.key}`,
         status: column.legacyStatus,
         columnId: column.id,
         theme: "jira",
-        labels: issue.fields?.labels,
-        assignee: issue.fields?.assignee?.displayName ?? null,
-        priority: mapJiraPriority(issue.fields?.priority?.name),
+        labels: fields.labels,
+        assignee: fields.assignee?.displayName ?? null,
+        priority: mapJiraPriority(fields.priority?.name),
         metadata: issue.fields as Record<string, unknown> | undefined,
+        sourceCreatedAt: fields.created ?? null,
+        sourceUpdatedAt: fields.updated ?? null,
       },
     };
   }
@@ -475,6 +488,9 @@ export class KanbanSyncService {
       legacyStatusOverride: source.statusMap?.[externalStatusKey],
       categoryLegacyStatus: gitlabCategoryLegacyStatus(mr),
     });
+    // A merged/closed MR is terminal — force it into its resolved column even
+    // if the user previously dragged the card elsewhere.
+    const isTerminal = mr.state === "merged" || mr.state === "closed";
     return {
       cardSource: {
         kind: "gitlab",
@@ -491,6 +507,10 @@ export class KanbanSyncService {
         labels: mr.labels,
         assignee: mr.assignee?.name ?? null,
         metadata: mr as unknown as Record<string, unknown>,
+        sourceCreatedAt: mr.created_at ?? null,
+        sourceUpdatedAt: mr.updated_at ?? null,
+        hasUnresolvedThreads: mr.blocking_discussions_resolved === false,
+        forceStatus: isTerminal,
       },
     };
   }

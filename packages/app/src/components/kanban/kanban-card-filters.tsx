@@ -22,7 +22,9 @@ import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/s
 import { isWeb } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import {
+  KANBAN_DATE_RANGE_OPTIONS,
   UNASSIGNED_ASSIGNEE_FILTER,
+  type KanbanCardDateRangeFilter,
   type KanbanCardSourceKindFilter,
   type UseKanbanCardFiltersResult,
 } from "@/hooks/use-kanban-card-filters";
@@ -139,6 +141,37 @@ function SourceKindFilterControl({
         </Pressable>
       ) : null}
     </View>
+  );
+}
+
+interface DateRangeFilterControlProps {
+  dateRange: KanbanCardDateRangeFilter;
+  onDateRangeChange: (value: KanbanCardDateRangeFilter) => void;
+  testID: string;
+}
+
+function DateRangeFilterControl({
+  dateRange,
+  onDateRangeChange,
+  testID,
+}: DateRangeFilterControlProps): ReactElement {
+  const { t } = useTranslation();
+  const options = useMemo<SegmentedControlOption<KanbanCardDateRangeFilter>[]>(
+    () =>
+      KANBAN_DATE_RANGE_OPTIONS.map((value) => ({
+        value,
+        label: t(`kanban.filters.dateRange.${value}`),
+      })),
+    [t],
+  );
+  return (
+    <SegmentedControl
+      options={options}
+      value={dateRange}
+      onValueChange={onDateRangeChange}
+      size="sm"
+      testID={testID}
+    />
   );
 }
 
@@ -323,6 +356,11 @@ function InlineFilters({ filters }: KanbanCardFiltersProps): ReactElement {
         onClear={filters.clearSourceKind}
         testID="kanban-filter-source"
       />
+      <DateRangeFilterControl
+        dateRange={filters.dateRange}
+        onDateRangeChange={filters.setDateRange}
+        testID="kanban-filter-date-range"
+      />
       {hasAssigneeOptions ? (
         <AssigneeFilterControl
           assignee={filters.assignee}
@@ -392,6 +430,15 @@ function CompactFilters({ filters }: KanbanCardFiltersProps): ReactElement {
             onSourceKindChange={filters.setSourceKind}
             onClear={filters.clearSourceKind}
             testID="kanban-filter-source"
+          />
+        </View>
+        <DropdownMenuSeparator />
+        <View style={styles.panelSection}>
+          <Text style={styles.panelLabel}>{t("kanban.filters.dateRange.label")}</Text>
+          <DateRangeFilterControl
+            dateRange={filters.dateRange}
+            onDateRangeChange={filters.setDateRange}
+            testID="kanban-filter-date-range"
           />
         </View>
         {hasAssigneeOptions ? (

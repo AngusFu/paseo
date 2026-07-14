@@ -98,6 +98,16 @@ export const StoredKanbanCardSchema = z.object({
   // Raw source fields (e.g. jira status name, gitlab pipeline status) kept for
   // display fallback and future auto-loop decisions.
   metadata: z.record(z.string(), z.unknown()).optional(),
+  // The tracker's OWN created/updated timestamps (ISO), distinct from the
+  // Paseo-local createdAt/updatedAt below (which mark first-sync / last-write
+  // and get bumped on every poll, so they can't drive a "recent activity"
+  // filter). Populated by source sync; null/absent for manual cards.
+  sourceCreatedAt: z.string().nullable().optional(),
+  sourceUpdatedAt: z.string().nullable().optional(),
+  // GitLab MR only: true when the MR has unresolved blocking discussion
+  // threads (from `blocking_discussions_resolved === false`). Drives the
+  // card's attention red dot. Absent for jira/manual cards.
+  hasUnresolvedThreads: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

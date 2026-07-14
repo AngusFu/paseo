@@ -737,6 +737,143 @@ describe("KanbanSyncService", () => {
     ]);
   });
 
+  test("GitLab sync captures tracker timestamps and the unresolved-thread flag", async () => {
+    const gitlabResponse = [
+      {
+        iid: 1,
+        project_id: 42,
+        title: "Has open threads",
+        state: "opened",
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-02-01T00:00:00.000Z",
+        blocking_discussions_resolved: false,
+      },
+      {
+        iid: 2,
+        project_id: 42,
+        title: "All resolved",
+        state: "opened",
+        created_at: "2026-01-03T00:00:00.000Z",
+        updated_at: "2026-02-03T00:00:00.000Z",
+        blocking_discussions_resolved: true,
+      },
+    ];
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => gitlabResponse,
+    })) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+      query: "state=opened",
+    });
+
+    const result = await syncService.sync(source);
+    const byId = new Map(result.cards.map((card) => [card.externalId, card]));
+
+    const withThreads = byId.get("gitlab:42!1");
+    expect(withThreads?.sourceCreatedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(withThreads?.sourceUpdatedAt).toBe("2026-02-01T00:00:00.000Z");
+    expect(withThreads?.hasUnresolvedThreads).toBe(true);
+
+    const clean = byId.get("gitlab:42!2");
+    expect(clean?.hasUnresolvedThreads).toBe(false);
+  });
+
+  test("a merged MR forces a user-pinned card to done, overriding the manual drag", async () => {
+    const cardSource = {
+      kind: "gitlab" as const,
+      externalId: "gitlab:42!9",
+      projectId: "42",
+      mrIid: "9",
+    };
+    const columns = await store.listColumns();
+    const wipColumnId = columns.find((c) => c.legacyStatus === "wip")!.id;
+    const created = await store.upsertCardBySource(cardSource, {
+      title: "Open MR",
+      url: null,
+      status: "wip",
+      columnId: wipColumnId,
+      theme: "gitlab-mr",
+    });
+    // User drags the still-open MR into Pending, pinning it.
+    const moved = await store.moveCard({ id: created.id, status: "pending" });
+    expect(moved?.statusPinnedByUser).toBe(true);
+    expect(moved?.status).toBe("pending");
+
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => [{ iid: 9, project_id: 42, title: "Open MR", state: "merged" }],
+    })) as unknown as typeof fetch;
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+      query: "state=all",
+    });
+
+    await syncService.sync(source);
+    const card = await store.getCard(created.id);
+    // Terminal merge wins over the pin: the card lands in done.
+    expect(card?.status).toBe("done");
+  });
+
+  test("Jira Cloud sync requests created/updated fields and stores them on the card", async () => {
+    const { credentialRefForConnection } = await import("./oauth.js");
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({
+        issues: [
+          {
+            key: "PROJ-1",
+            fields: {
+              summary: "Dated issue",
+              status: { name: "To Do", statusCategory: { key: "new" } },
+              created: "2026-01-01T00:00:00.000Z",
+              updated: "2026-02-01T00:00:00.000Z",
+            },
+          },
+        ],
+      }),
+    })) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const connection = await store.createConnection({
+      kind: "jira",
+      name: "Jira Cloud",
+      baseUrl: "https://x.atlassian.net",
+      email: "me@corp.com",
+    });
+    await secrets.set(credentialRefForConnection(connection.id), {
+      method: "token",
+      token: "jira-api-token",
+    });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "My todos",
+      connectionId: connection.id,
+      query: "assignee = currentUser()",
+    });
+
+    const result = await syncService.sync(source);
+    const [url] = fetchImpl.mock.calls[0];
+    expect(url).toContain("created");
+    expect(url).toContain("updated");
+    const card = result.cards[0];
+    expect(card.sourceCreatedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(card.sourceUpdatedAt).toBe("2026-02-01T00:00:00.000Z");
+  });
+
   test("paginates Jira Server/DC search via startAt until a short page ends it", async () => {
     const { credentialRefForConnection } = await import("./oauth.js");
     const firstPage = {

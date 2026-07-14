@@ -2083,6 +2083,7 @@ export const zhCN: TranslationResources = {
       url: "URL",
       source: "来源",
       moreLabels: "+{{count}}",
+      unresolvedThreads: "未解决的讨论",
     },
     actions: {
       add: "添加卡片",
@@ -2108,6 +2109,15 @@ export const zhCN: TranslationResources = {
         all: "全部指派人",
         unassigned: "未指派",
         clear: "清除指派人筛选",
+      },
+      dateRange: {
+        label: "更新时间",
+        "7d": "7d",
+        "2w": "2w",
+        "1m": "1m",
+        "2m": "2m",
+        "3m": "3m",
+        all: "全部",
       },
     },
     status: {

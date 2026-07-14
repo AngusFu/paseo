@@ -2140,6 +2140,7 @@ export const ptBR: TranslationResources = {
       url: "URL",
       source: "Origem",
       moreLabels: "+{{count}}",
+      unresolvedThreads: "Tópicos não resolvidos",
     },
     actions: {
       add: "Adicionar cartão",
@@ -2165,6 +2166,15 @@ export const ptBR: TranslationResources = {
         all: "Todos os responsáveis",
         unassigned: "Sem responsável",
         clear: "Limpar filtro de responsável",
+      },
+      dateRange: {
+        label: "Atualizado em",
+        "7d": "7d",
+        "2w": "2w",
+        "1m": "1m",
+        "2m": "2m",
+        "3m": "3m",
+        all: "Todos",
       },
     },
     status: {

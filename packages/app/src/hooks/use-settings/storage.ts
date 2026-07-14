@@ -12,10 +12,16 @@ export type SendBehavior = "interrupt" | "queue";
 export type ReleaseChannel = "stable" | "beta";
 export type ServiceUrlBehavior = "ask" | "in-app" | "external";
 export type WorkspaceTitleSource = "title" | "branch";
+export type ToolCallDetailLevel = "overview" | "concise" | "detailed";
 
 const VALID_THEMES = new Set<string>([...Object.keys(THEME_TO_UNISTYLES), "auto"]);
 const VALID_SERVICE_URL_BEHAVIORS = new Set<ServiceUrlBehavior>(["ask", "in-app", "external"]);
 const VALID_WORKSPACE_TITLE_SOURCES = new Set<WorkspaceTitleSource>(["title", "branch"]);
+const VALID_TOOL_CALL_DETAIL_LEVELS = new Set<ToolCallDetailLevel>([
+  "overview",
+  "concise",
+  "detailed",
+]);
 export const DEFAULT_TERMINAL_SCROLLBACK_LINES = 10_000;
 export const MIN_TERMINAL_SCROLLBACK_LINES = 0;
 export const MAX_TERMINAL_SCROLLBACK_LINES = 1_000_000;
@@ -49,12 +55,15 @@ export interface AppSettings {
   autoExpandReasoning: boolean;
   browserDefaultUrl: string; // start URL for new in-app browsers; "" = example.com fallback
   transcriptZoom: number; // agent transcript CSS zoom (web-only), default 1
+  toolCallDetailLevel: ToolCallDetailLevel;
 }
 
 export interface Settings extends AppSettings {
   manageBuiltInDaemon: boolean;
   releaseChannel: ReleaseChannel;
 }
+
+type StoredAppSettings = Partial<AppSettings> & { compactToolCalls?: unknown };
 
 export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   theme: "auto",
@@ -71,6 +80,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   autoExpandReasoning: false,
   browserDefaultUrl: DEFAULT_BROWSER_START_URL,
   transcriptZoom: DEFAULT_TRANSCRIPT_ZOOM,
+  toolCallDetailLevel: "detailed",
 };
 
 export const DEFAULT_APP_SETTINGS: Settings = {
@@ -103,9 +113,10 @@ export async function saveAppSettings(input: {
   updates: Partial<AppSettings>;
   deps: SettingsDeps;
 }): Promise<void> {
-  const current =
+  const storedCurrent =
     input.queryClient.getQueryData<AppSettings>(APP_SETTINGS_QUERY_KEY) ??
     (await loadAppSettingsFromStorage(input.deps));
+  const current = normalizeAppSettings(storedCurrent);
   const next = { ...current, ...input.updates };
   input.queryClient.setQueryData<AppSettings>(APP_SETTINGS_QUERY_KEY, next);
   await input.deps.storage.setItem(APP_SETTINGS_KEY, JSON.stringify(next));
@@ -115,8 +126,7 @@ export async function loadAppSettingsFromStorage(deps: SettingsDeps): Promise<Ap
   try {
     const stored = await deps.storage.getItem(APP_SETTINGS_KEY);
     if (stored) {
-      const parsed = JSON.parse(stored) as Partial<AppSettings>;
-      return { ...DEFAULT_CLIENT_SETTINGS, ...pickAppSettings(parsed) };
+      return normalizeAppSettings(JSON.parse(stored));
     }
 
     const legacyStored = await deps.storage.getItem(LEGACY_SETTINGS_KEY);
@@ -164,7 +174,29 @@ export async function loadSettingsFromStorage(deps: SettingsDeps): Promise<Setti
   };
 }
 
-function pickAppSettings(stored: Partial<AppSettings>): Partial<AppSettings> {
+export function normalizeAppSettings(value: unknown): AppSettings {
+  const stored =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as StoredAppSettings)
+      : {};
+  return { ...DEFAULT_CLIENT_SETTINGS, ...pickAppSettings(stored) };
+}
+
+function parseToolCallDetailLevel(stored: StoredAppSettings): ToolCallDetailLevel | null {
+  if (
+    typeof stored.toolCallDetailLevel === "string" &&
+    VALID_TOOL_CALL_DETAIL_LEVELS.has(stored.toolCallDetailLevel)
+  ) {
+    return stored.toolCallDetailLevel;
+  }
+  if (typeof stored.compactToolCalls === "boolean") {
+    // COMPAT(compactToolCalls): migrated in v0.1.105, remove after 2027-01-12.
+    return stored.compactToolCalls ? "overview" : "detailed";
+  }
+  return null;
+}
+
+function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
   const result: Partial<AppSettings> = {};
   if (typeof stored.theme === "string" && VALID_THEMES.has(stored.theme)) {
     result.theme = stored.theme;
@@ -220,6 +252,12 @@ function pickAppSettings(stored: Partial<AppSettings>): Partial<AppSettings> {
   if (typeof stored.autoExpandReasoning === "boolean") {
     result.autoExpandReasoning = stored.autoExpandReasoning;
   }
+  pickExtendedAppSettings(stored, result);
+  return result;
+}
+
+// Split out to keep pickAppSettings under the cyclomatic-complexity ceiling.
+function pickExtendedAppSettings(stored: StoredAppSettings, result: Partial<AppSettings>): void {
   const browserDefaultUrl = sanitizeBrowserDefaultUrl(stored.browserDefaultUrl);
   if (browserDefaultUrl !== null) {
     result.browserDefaultUrl = browserDefaultUrl;
@@ -228,7 +266,10 @@ function pickAppSettings(stored: Partial<AppSettings>): Partial<AppSettings> {
   if (transcriptZoom !== null) {
     result.transcriptZoom = transcriptZoom;
   }
-  return result;
+  const toolCallDetailLevel = parseToolCallDetailLevel(stored);
+  if (toolCallDetailLevel !== null) {
+    result.toolCallDetailLevel = toolCallDetailLevel;
+  }
 }
 
 // Accept a stored zoom only if it's one of the known discrete levels; anything

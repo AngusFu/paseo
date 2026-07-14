@@ -54,6 +54,10 @@ export interface StreamLayoutInput {
   history: StreamItem[];
   liveHead: StreamItem[];
   timingByAssistantId: Map<string, TurnTiming>;
+  // Collapse consecutive tool runs into a single ToolRunSummary. Disabled when the
+  // tool-call detail level compacts runs upstream (view.tsx feeds the compacted
+  // stream to ToolCallGroup instead), so the two grouping layers never stack.
+  groupToolRuns?: boolean;
 }
 
 interface LayoutSegmentInput {
@@ -67,6 +71,7 @@ interface LayoutSegmentInput {
   boundaryBelowItem: StreamItem | null;
   boundaryAboveItems: StreamItem[] | null;
   boundaryAboveIndex: number | null;
+  groupToolRuns: boolean;
 }
 
 interface AssistantFooterSource {
@@ -361,7 +366,9 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
   // Native inverted streams order the segment array reverse-chronologically:
   // there the "above" (earlier) neighbor sits at a higher index.
   const reversed = input.strategy.getNeighborIndex(0, "above") > 0;
-  groupToolRuns(result, reversed);
+  if (input.groupToolRuns) {
+    groupToolRuns(result, reversed);
+  }
   return result;
 }
 
@@ -379,6 +386,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
   const liveHeadBoundaryItem =
     liveHeadBoundaryIndex === null ? null : (input.liveHead[liveHeadBoundaryIndex] ?? null);
   const frameOrder = input.strategy.getFrameChildOrder();
+  const groupToolRunsEnabled = input.groupToolRuns ?? true;
 
   let history: StreamLayoutItem[];
   if (input.history.length > 0) {
@@ -391,6 +399,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
       liveHeadBoundaryItem?.id ?? "null",
       liveHeadBoundaryItem?.kind ?? "null",
       auxiliaryTurnFooter?.itemId ?? "null",
+      groupToolRunsEnabled ? "grouped" : "flat",
     ].join(":");
     let byKey = historyLayoutCache.get(input.history);
     if (!byKey) {
@@ -412,6 +421,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
         boundaryBelowItem: liveHeadBoundaryItem,
         boundaryAboveItems: null,
         boundaryAboveIndex: null,
+        groupToolRuns: groupToolRunsEnabled,
       });
       byKey.set(historyCacheKey, history);
     }
@@ -430,6 +440,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
     boundaryBelowItem: null,
     boundaryAboveItems: input.history,
     boundaryAboveIndex: historyBoundaryIndex,
+    groupToolRuns: groupToolRunsEnabled,
   });
 
   return {

@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { queryClient as appQueryClient } from "@/data/query-client";
@@ -30,6 +30,7 @@ import {
   DEFAULT_TRANSCRIPT_ZOOM,
   loadAppSettingsFromStorage as loadAppSettingsFromStoragePure,
   loadSettingsFromStorage as loadSettingsFromStoragePure,
+  normalizeAppSettings,
   parseClampedFontSize,
   parseTerminalScrollbackLines,
   sanitizeBrowserDefaultUrl,
@@ -139,9 +140,10 @@ export function useAppSettings(): UseAppSettingsReturn {
       throw err;
     }
   }, [queryClient]);
+  const settings = useMemo(() => normalizeAppSettings(data), [data]);
 
   return {
-    settings: data ?? DEFAULT_CLIENT_SETTINGS,
+    settings,
     isLoading: isPending,
     error: error ?? null,
     updateSettings,
@@ -201,6 +203,9 @@ export function useSettings<TSelected>(
       }
       if (updates.transcriptZoom !== undefined) {
         appUpdates.transcriptZoom = updates.transcriptZoom;
+      }
+      if (updates.toolCallDetailLevel !== undefined) {
+        appUpdates.toolCallDetailLevel = updates.toolCallDetailLevel;
       }
       const promises: Promise<void>[] = [];
       if (Object.keys(appUpdates).length > 0) {

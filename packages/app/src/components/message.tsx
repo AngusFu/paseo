@@ -2716,7 +2716,11 @@ function ExpandableBadgeLabelRow({
           onPress={onOpenFilePress}
           onHoverIn={onOpenFileHoverIn}
           onHoverOut={onOpenFileHoverOut}
-          accessibilityRole="button"
+          // The badge shell is itself a Pressable (accessibilityRole="button"),
+          // which renders a <button> on web — a nested <button> is invalid HTML
+          // and throws a hydration error. Drop the role on web so this renders a
+          // <div>; keep it on native for the accessibility tree.
+          accessibilityRole={isWeb ? undefined : "button"}
           accessibilityLabel={t("message.actions.openFile")}
           testID="tool-call-open-file"
           style={expandableBadgeStylesheet.openFileButton}

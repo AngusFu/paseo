@@ -267,6 +267,8 @@ export const es: TranslationResources = {
       copied: "Copiado",
       collapseAll: "Contraer todo",
       expandAll: "Expandir todo",
+      showMore: "Mostrar más",
+      showLess: "Mostrar menos",
     },
     attachments: {
       dismissImage: "Descartar imagen",

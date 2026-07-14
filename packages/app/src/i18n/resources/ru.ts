@@ -266,6 +266,8 @@ export const ru: TranslationResources = {
       copied: "Скопировано",
       collapseAll: "Свернуть все",
       expandAll: "Развернуть все",
+      showMore: "Показать больше",
+      showLess: "Свернуть",
     },
     attachments: {
       dismissImage: "Закрыть изображение",

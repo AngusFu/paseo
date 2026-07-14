@@ -264,6 +264,8 @@ export const zhCN: TranslationResources = {
       copied: "已复制",
       collapseAll: "折叠全部",
       expandAll: "展开全部",
+      showMore: "展开",
+      showLess: "收起",
     },
     attachments: {
       dismissImage: "关闭图片",

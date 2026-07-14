@@ -264,6 +264,8 @@ export const ar: TranslationResources = {
       copied: "منقول",
       collapseAll: "طي الكل",
       expandAll: "توسيع الكل",
+      showMore: "عرض المزيد",
+      showLess: "عرض أقل",
     },
     attachments: {
       dismissImage: "تجاهل الصورة",

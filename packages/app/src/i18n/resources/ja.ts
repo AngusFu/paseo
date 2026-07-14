@@ -267,6 +267,8 @@ export const ja: TranslationResources = {
       copied: "コピーしました",
       collapseAll: "すべて折りたたむ",
       expandAll: "すべて展開",
+      showMore: "もっと見る",
+      showLess: "折りたたむ",
     },
     attachments: {
       dismissImage: "画像を閉じる",

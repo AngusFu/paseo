@@ -267,6 +267,8 @@ export const fr: TranslationResources = {
       copied: "Copié",
       collapseAll: "Tout réduire",
       expandAll: "Tout développer",
+      showMore: "Afficher plus",
+      showLess: "Afficher moins",
     },
     attachments: {
       dismissImage: "Ignorer l'image",

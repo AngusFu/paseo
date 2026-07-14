@@ -347,6 +347,15 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     maxWidth: "100%",
     cursor: "auto",
   },
+  expandToggle: {
+    marginTop: theme.spacing[1],
+    alignSelf: "flex-start",
+  },
+  expandToggleText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    fontWeight: "500",
+  },
   containerSpacing: {
     marginBottom: theme.spacing[1],
   },
@@ -452,7 +461,7 @@ function UserUrlSegment({ href, text }: { href: string; text: string }) {
 
 // Renders a user's message body with a highlighted leading slash-command and
 // clickable URLs (see utils/user-message-segments).
-function UserMessageText({ message }: { message: string }) {
+function UserMessageText({ message, numberOfLines }: { message: string; numberOfLines?: number }) {
   const segments = useMemo(() => {
     let offset = 0;
     return segmentUserMessage(message).map((segment) => {
@@ -462,7 +471,7 @@ function UserMessageText({ message }: { message: string }) {
     });
   }, [message]);
   return (
-    <Text selectable style={userMessageStylesheet.text}>
+    <Text selectable style={userMessageStylesheet.text} numberOfLines={numberOfLines}>
       {segments.map(({ key, segment }) => {
         if (segment.kind === "command") {
           return (
@@ -479,6 +488,11 @@ function UserMessageText({ message }: { message: string }) {
     </Text>
   );
 }
+
+// Thresholds for collapsing a long user message. Either a high char count (a
+// pasted blob that wraps into many lines) or many explicit newlines trips it.
+const LONG_USER_MESSAGE_CHAR_THRESHOLD = 800;
+const COLLAPSED_USER_MESSAGE_LINE_COUNT = 12;
 
 export const UserMessage = memo(function UserMessage({
   serverId,
@@ -497,10 +511,23 @@ export const UserMessage = memo(function UserMessage({
   const isCompact = useIsCompactFormFactor();
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
+  const [isTextExpanded, setIsTextExpanded] = useState(false);
   const [lightboxMetadata, setLightboxMetadata] = useState<UserMessageImageAttachment | null>(null);
   const handleLightboxClose = useCallback(() => setLightboxMetadata(null), []);
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
   const hasText = message.trim().length > 0;
+  // Collapse very long pasted/typed messages so they don't dominate the stream.
+  // Heuristic (no measurement): long by char count OR by newline count. When
+  // collapsed, clamp the single root <Text> to a fixed line count.
+  const isLongMessage = useMemo(
+    () =>
+      message.trim().length > 0 &&
+      (message.length > LONG_USER_MESSAGE_CHAR_THRESHOLD ||
+        message.split("\n").length > COLLAPSED_USER_MESSAGE_LINE_COUNT),
+    [message],
+  );
+  const isTextClamped = isLongMessage && !isTextExpanded;
+  const handleToggleTextExpanded = useCallback(() => setIsTextExpanded((prev) => !prev), []);
   const hasImages = images.length > 0;
   const hasAttachments = attachments.length > 0;
   const showTrailingRow = hasText && (isCompact || isNative || isHovered);
@@ -593,7 +620,24 @@ export const UserMessage = memo(function UserMessage({
               })}
             </View>
           ) : null}
-          {hasText ? <UserMessageText message={message} /> : null}
+          {hasText ? (
+            <UserMessageText
+              message={message}
+              numberOfLines={isTextClamped ? COLLAPSED_USER_MESSAGE_LINE_COUNT : undefined}
+            />
+          ) : null}
+          {isLongMessage ? (
+            <Pressable
+              onPress={handleToggleTextExpanded}
+              hitSlop={6}
+              accessibilityRole={isWeb ? undefined : "button"}
+              style={userMessageStylesheet.expandToggle}
+            >
+              <Text style={userMessageStylesheet.expandToggleText}>
+                {t(isTextExpanded ? "message.actions.showLess" : "message.actions.showMore")}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
         {hasText ? (
           <View style={trailingRowStyle} pointerEvents={showTrailingRow ? "auto" : "none"}>

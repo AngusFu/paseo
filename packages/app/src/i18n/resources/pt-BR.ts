@@ -267,6 +267,8 @@ export const ptBR: TranslationResources = {
       copied: "Copiado",
       collapseAll: "Recolher tudo",
       expandAll: "Expandir tudo",
+      showMore: "Mostrar mais",
+      showLess: "Mostrar menos",
     },
     attachments: {
       dismissImage: "Dispensar imagem",

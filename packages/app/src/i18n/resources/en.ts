@@ -263,6 +263,8 @@ export const en = {
       copied: "Copied",
       collapseAll: "Collapse all",
       expandAll: "Expand all",
+      showMore: "Show more",
+      showLess: "Show less",
     },
     attachments: {
       dismissImage: "Dismiss image",

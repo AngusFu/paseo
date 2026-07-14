@@ -719,7 +719,7 @@ function WorkspaceRowRightGroup({
 
   return (
     <View style={styles.workspaceRightActions}>
-      {isPinned || isHovered || isTouchPlatform ? (
+      {isHovered || isTouchPlatform ? (
         <WorkspacePinToggle workspaceKey={workspace.workspaceKey} isPinned={isPinned} />
       ) : null}
       {isCreating ? (

@@ -138,6 +138,9 @@ export async function startCodeServer(
   const child = spawn(
     executable,
     [
+      // Pin the UI to English regardless of the OS locale — a localized VS Code
+      // web UI is jarring here. Global flag, must precede the `serve-web` subcommand.
+      "--locale=en-US",
       "serve-web",
       "--host",
       CODE_SERVER_HOST,

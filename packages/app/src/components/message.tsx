@@ -29,7 +29,7 @@ import {
   Children,
   cloneElement,
 } from "react";
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, Dispatch, ReactNode, SetStateAction } from "react";
 import { MarkdownIt, type ASTNode, type RenderRules } from "react-native-markdown-display";
 import { useQuery } from "@tanstack/react-query";
 import MaskedView from "@react-native-masked-view/masked-view";
@@ -64,6 +64,7 @@ import Animated, {
 } from "react-native-reanimated";
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from "react-native-svg";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
+import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { MarkdownRenderer, type MarkdownStyles } from "@/components/markdown/renderer";
 import { resolveInlineImageSize } from "@/components/markdown/inline-image-size";
 import type { StreamItem, TodoEntry, UserMessageImageAttachment } from "@/types/stream";
@@ -123,6 +124,7 @@ import type { AgentCapabilityFlags } from "@getpaseo/protocol/agent-types";
 import { RewindMenu, type RewindMode } from "@/components/rewind/rewind-menu";
 import { useRewindAgentMutation } from "@/components/rewind/use-rewind-agent-mutation";
 import { AssistantForkMenu, type AssistantForkTarget } from "@/components/assistant-fork-menu";
+import { useRetainedPanelActive } from "@/components/retained-panel";
 export type { InlinePathTarget } from "@/assistant-file-links";
 export type { AssistantForkTarget };
 
@@ -1410,6 +1412,9 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
   },
+  chevron: {
+    flexShrink: 0,
+  },
   openFileButton: {
     marginLeft: theme.spacing[1],
     padding: theme.spacing[1],
@@ -1443,10 +1448,15 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     ...(isWeb ? { cursor: "auto" as const, userSelect: "text" as const } : {}),
   },
   pressableExpanded: {
-    borderColor: theme.colors.border,
     backgroundColor: theme.colors.surface1,
+  },
+  pressableExpandedAttached: {
+    borderColor: theme.colors.border,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
+  },
+  detailWrapperBorderless: {
+    borderWidth: 0,
   },
   shimmerOverlay: {
     position: "absolute",
@@ -1499,9 +1509,14 @@ const NativeExpandableBadgeShimmer = memo(function NativeExpandableBadgeShimmer(
   durationSeconds,
   gradientId,
 }: NativeExpandableBadgeShimmerProps) {
+  const isPanelActive = useRetainedPanelActive();
   const shimmerTranslateX = useSharedValue(0);
 
   useEffect(() => {
+    if (!isPanelActive) {
+      cancelAnimation(shimmerTranslateX);
+      return;
+    }
     const startPosition = -peakWidth;
     const endPosition = rowWidth + peakWidth;
     shimmerTranslateX.value = startPosition;
@@ -1516,7 +1531,7 @@ const NativeExpandableBadgeShimmer = memo(function NativeExpandableBadgeShimmer(
     return () => {
       cancelAnimation(shimmerTranslateX);
     };
-  }, [durationSeconds, peakWidth, rowWidth, shimmerTranslateX]);
+  }, [durationSeconds, isPanelActive, peakWidth, rowWidth, shimmerTranslateX]);
 
   const nativeShimmerPeakStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: shimmerTranslateX.value }],
@@ -2585,7 +2600,7 @@ interface ExpandableBadgeProps {
   // Skip the filled "attached panel" header styling when expanded. Used by the
   // tool-run summary, whose members render as separate rows rather than an
   // attached detail accordion.
-  suppressExpandedSurface?: boolean;
+  borderlessWhenExpanded?: boolean;
   testID?: string;
 }
 
@@ -3036,7 +3051,7 @@ function buildShimmerTextStyle(input: {
   offsetX: number;
 }): object | null {
   if (!input.isWebShimmer) return null;
-  return {
+  return inlineUnistylesStyle({
     opacity: 1,
     color: "transparent",
     backgroundImage: SHIMMER_GRADIENT,
@@ -3048,10 +3063,10 @@ function buildShimmerTextStyle(input: {
     animation: `${WEB_TOOLCALL_SHIMMER_ANIMATION_NAME} ${input.shimmerDuration}s linear infinite`,
     "--paseo-shimmer-start": `${input.webShimmerTrackStart - input.offsetX}px`,
     "--paseo-shimmer-end": `${input.webShimmerTrackEnd - input.offsetX}px`,
-  };
+  });
 }
 
-const ExpandableBadge = memo(function ExpandableBadge({
+export const ExpandableBadge = memo(function ExpandableBadge({
   label,
   style,
   secondaryLabel,
@@ -3065,7 +3080,7 @@ const ExpandableBadge = memo(function ExpandableBadge({
   isError = false,
   isLastInSequence = false,
   disableOuterSpacing,
-  suppressExpandedSurface = false,
+  borderlessWhenExpanded = false,
   testID,
 }: ExpandableBadgeProps) {
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
@@ -3234,9 +3249,18 @@ const ExpandableBadge = memo(function ExpandableBadge({
     () => [
       expandableBadgeStylesheet.pressable,
       isPressed && isInteractive ? expandableBadgeStylesheet.pressablePressed : null,
-      isExpanded && !suppressExpandedSurface && expandableBadgeStylesheet.pressableExpanded,
+      isExpanded && expandableBadgeStylesheet.pressableExpanded,
+      isExpanded && !borderlessWhenExpanded && expandableBadgeStylesheet.pressableExpandedAttached,
     ],
-    [isExpanded, isInteractive, isPressed, suppressExpandedSurface],
+    [borderlessWhenExpanded, isExpanded, isInteractive, isPressed],
+  );
+
+  const detailWrapperStyle = useMemo(
+    () => [
+      expandableBadgeStylesheet.detailWrapper,
+      borderlessWhenExpanded && expandableBadgeStylesheet.detailWrapperBorderless,
+    ],
+    [borderlessWhenExpanded],
   );
 
   const accessibilityState = useMemo(
@@ -3347,7 +3371,7 @@ const ExpandableBadge = memo(function ExpandableBadge({
           {() => (
             <Pressable
               ref={detailWrapperRef}
-              style={expandableBadgeStylesheet.detailWrapper}
+              style={detailWrapperStyle}
               onHoverIn={handleDetailHoverIn}
               onHoverOut={handleDetailHoverOut}
             >
@@ -3370,7 +3394,7 @@ function areExpandableBadgePropsEqual(previous: ExpandableBadgeProps, next: Expa
   if (previous.isError !== next.isError) return false;
   if (previous.isLastInSequence !== next.isLastInSequence) return false;
   if (previous.disableOuterSpacing !== next.disableOuterSpacing) return false;
-  if (previous.suppressExpandedSurface !== next.suppressExpandedSurface) return false;
+  if (previous.borderlessWhenExpanded !== next.borderlessWhenExpanded) return false;
   if (previous.testID !== next.testID) return false;
   if (previous.onToggle !== next.onToggle) return false;
   if (previous.onOpenFile !== next.onOpenFile) return false;
@@ -3504,7 +3528,7 @@ export const ToolRunSummary = memo(function ToolRunSummary({
         icon={Layers}
         isExpanded={isExpanded}
         onToggle={handleToggle}
-        suppressExpandedSurface
+        borderlessWhenExpanded
       />
       {isExpanded ? (
         <View style={toolRunSummaryStylesheet.children}>
@@ -3541,6 +3565,25 @@ interface ToolCallProps {
   defaultExpanded?: boolean;
   forceInline?: boolean;
   collapseSignal?: CollapseSignal;
+  maxDetailHeight?: number;
+}
+
+// React to the stream-wide collapse/expand-all toggle on epoch changes only, so
+// the initial mount keeps respecting defaultExpanded.
+function useCollapseSignalExpansion(
+  collapseSignal: CollapseSignal | undefined,
+  defaultExpanded: boolean | undefined,
+): [boolean, Dispatch<SetStateAction<boolean>>] {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded ?? false);
+  const lastCollapseEpochRef = useRef(collapseSignal?.epoch ?? null);
+  useEffect(() => {
+    if (!collapseSignal || collapseSignal.epoch === lastCollapseEpochRef.current) {
+      return;
+    }
+    lastCollapseEpochRef.current = collapseSignal.epoch;
+    setIsExpanded(collapseSignal.expanded);
+  }, [collapseSignal]);
+  return [isExpanded, setIsExpanded];
 }
 
 export const ToolCall = memo(function ToolCall({
@@ -3560,20 +3603,10 @@ export const ToolCall = memo(function ToolCall({
   defaultExpanded,
   forceInline = false,
   collapseSignal,
+  maxDetailHeight = 400,
 }: ToolCallProps) {
   const { openToolCall } = useToolCallSheet();
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded ?? false);
-
-  // React to the stream-wide collapse/expand-all toggle on epoch changes only,
-  // so the initial mount keeps respecting defaultExpanded.
-  const lastCollapseEpochRef = useRef(collapseSignal?.epoch ?? null);
-  useEffect(() => {
-    if (!collapseSignal || collapseSignal.epoch === lastCollapseEpochRef.current) {
-      return;
-    }
-    lastCollapseEpochRef.current = collapseSignal.epoch;
-    setIsExpanded(collapseSignal.expanded);
-  }, [collapseSignal]);
+  const [isExpanded, setIsExpanded] = useCollapseSignalExpansion(collapseSignal, defaultExpanded);
 
   const isMobile = useIsCompactFormFactor();
   const shouldRenderInline = !isMobile || forceInline;
@@ -3653,6 +3686,7 @@ export const ToolCall = memo(function ToolCall({
     presentation.icon,
     presentation.isLoadingDetails,
     effectiveDetail,
+    setIsExpanded,
   ]);
 
   useEffect(() => {
@@ -3689,11 +3723,17 @@ export const ToolCall = memo(function ToolCall({
       <ToolCallDetailsContent
         detail={effectiveDetail}
         errorText={presentation.errorText}
-        maxHeight={400}
+        maxHeight={maxDetailHeight}
         showLoadingSkeleton={presentation.isLoadingDetails}
       />
     );
-  }, [shouldRenderInline, effectiveDetail, presentation.errorText, presentation.isLoadingDetails]);
+  }, [
+    shouldRenderInline,
+    effectiveDetail,
+    presentation.errorText,
+    presentation.isLoadingDetails,
+    maxDetailHeight,
+  ]);
 
   if (presentation.isPlan && effectiveDetail?.type === "plan") {
     return (
@@ -3752,5 +3792,6 @@ function areToolCallPropsEqual(previous: ToolCallProps, next: ToolCallProps) {
   if (previous.defaultExpanded !== next.defaultExpanded) return false;
   if (previous.forceInline !== next.forceInline) return false;
   if (previous.collapseSignal !== next.collapseSignal) return false;
+  if (previous.maxDetailHeight !== next.maxDetailHeight) return false;
   return true;
 }

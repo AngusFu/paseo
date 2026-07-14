@@ -55,11 +55,26 @@ export interface UseKanbanCardFiltersResult {
   filteredCards: StoredKanbanCard[];
 }
 
-// A card's tracker last-updated time, falling back to its created time. Manual
-// cards (and any pre-upgrade card without tracker timestamps) return null and
-// are never hidden by the recency filter.
+// A tracker timestamp lifted from the raw metadata blob, for cards synced
+// before the typed sourceCreatedAt/sourceUpdatedAt fields existed. GitLab MRs
+// store the whole MR (updated_at/created_at); Jira issues store fields
+// (updated/created). Prefer "updated" over "created", newest source first.
+function trackerTimeFromMetadata(card: StoredKanbanCard): string | null {
+  const meta = card.metadata;
+  if (!meta) return null;
+  for (const key of ["updated_at", "updated", "created_at", "created"] as const) {
+    const value = meta[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return null;
+}
+
+// A card's tracker last-updated time, falling back to its created time, then to
+// the raw metadata blob (pre-upgrade cards without the typed fields). Manual
+// cards and anything with no tracker timestamp return null and are never hidden
+// by the recency filter.
 function cardActivityTime(card: StoredKanbanCard): number | null {
-  const iso = card.sourceUpdatedAt ?? card.sourceCreatedAt;
+  const iso = card.sourceUpdatedAt ?? card.sourceCreatedAt ?? trackerTimeFromMetadata(card);
   if (!iso) return null;
   const ms = Date.parse(iso);
   return Number.isNaN(ms) ? null : ms;

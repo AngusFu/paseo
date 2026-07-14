@@ -139,4 +139,48 @@ describe("workspace agent activity index", () => {
       enteredAt: new Date("2026-06-01T10:00:00.000Z"),
     });
   });
+
+  it("treats a cross-workspace subagent as activity in its own workspace", () => {
+    const index = buildWorkspaceAgentActivityIndex(
+      new Map([
+        [
+          "parent",
+          agent({
+            id: "parent",
+            workspaceId: "workspace-a",
+            updatedAt: "2026-06-01T10:00:00.000Z",
+          }),
+        ],
+        [
+          "child",
+          agent({
+            id: "child",
+            workspaceId: "workspace-b",
+            status: "running",
+            updatedAt: "2026-06-01T10:03:00.000Z",
+            parentAgentId: "parent",
+          }),
+        ],
+      ]),
+    );
+
+    expect(index).toEqual(
+      new Map([
+        [
+          "workspace-a",
+          {
+            status: "done",
+            enteredAt: new Date("2026-06-01T10:00:00.000Z"),
+          },
+        ],
+        [
+          "workspace-b",
+          {
+            status: "running",
+            enteredAt: new Date("2026-06-01T10:03:00.000Z"),
+          },
+        ],
+      ]),
+    );
+  });
 });

@@ -896,6 +896,7 @@ export const ja: TranslationResources = {
       sessions: "履歴",
       schedules: "スケジュール",
       kanban: "カンバン",
+      pinned: "ピン留め",
     },
     worktreeSetup: {
       title: "ワークツリースクリプトを設定",

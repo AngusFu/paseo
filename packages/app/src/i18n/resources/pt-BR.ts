@@ -899,6 +899,7 @@ export const ptBR: TranslationResources = {
       sessions: "Histórico",
       schedules: "Agendamentos",
       kanban: "Kanban",
+      pinned: "Fixados",
     },
     worktreeSetup: {
       title: "Configurar scripts de worktree",

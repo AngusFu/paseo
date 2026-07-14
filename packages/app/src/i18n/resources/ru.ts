@@ -900,6 +900,7 @@ export const ru: TranslationResources = {
       sessions: "История",
       schedules: "Расписания",
       kanban: "Канбан",
+      pinned: "Закреплённые",
     },
     worktreeSetup: {
       title: "Настройка сценариев рабочего дерева",

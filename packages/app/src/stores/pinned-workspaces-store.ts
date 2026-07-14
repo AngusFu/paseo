@@ -6,6 +6,11 @@ interface PinnedWorkspacesStoreState {
   pinnedWorkspaceKeys: string[];
   isPinned: (workspaceKey: string) => boolean;
   togglePin: (workspaceKey: string) => void;
+  /**
+   * Persist a new drag-reordered order. Keeps only keys that are currently
+   * pinned (drops stale keys, dedupes) so the order stays in sync with the set.
+   */
+  setPinnedOrder: (keys: string[]) => void;
 }
 
 interface PinnedWorkspacesPersistedState {
@@ -52,6 +57,21 @@ export const usePinnedWorkspacesStore = create<PinnedWorkspacesStoreState>()(
             ? state.pinnedWorkspaceKeys.filter((existing) => existing !== key)
             : [...state.pinnedWorkspaceKeys, key];
           return { pinnedWorkspaceKeys: normalizeKeys(next) };
+        });
+      },
+      setPinnedOrder: (keys) => {
+        set((state) => {
+          const currentlyPinned = new Set(state.pinnedWorkspaceKeys);
+          // Take the incoming order, but only for keys that are still pinned.
+          const reordered = normalizeKeys(keys).filter((key) => currentlyPinned.has(key));
+          // Append any pinned keys the caller omitted so nothing is silently dropped.
+          const reorderedSet = new Set(reordered);
+          for (const key of state.pinnedWorkspaceKeys) {
+            if (!reorderedSet.has(key)) {
+              reordered.push(key);
+            }
+          }
+          return { pinnedWorkspaceKeys: reordered };
         });
       },
     }),

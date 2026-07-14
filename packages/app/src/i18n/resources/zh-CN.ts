@@ -874,6 +874,7 @@ export const zhCN: TranslationResources = {
       sessions: "历史",
       schedules: "计划",
       kanban: "看板",
+      pinned: "已置顶",
     },
     worktreeSetup: {
       title: "设置 worktree scripts",

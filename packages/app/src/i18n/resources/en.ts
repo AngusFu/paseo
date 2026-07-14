@@ -888,6 +888,7 @@ export const en = {
       sessions: "History",
       schedules: "Schedules",
       kanban: "Kanban",
+      pinned: "Pinned",
     },
     worktreeSetup: {
       title: "Set up worktree scripts",

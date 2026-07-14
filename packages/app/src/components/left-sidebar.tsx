@@ -67,7 +67,7 @@ import {
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { SidebarCalloutSlot } from "./sidebar-callout-slot";
-import { SidebarWorkspaceList } from "./sidebar-workspace-list";
+import { SidebarPinnedSection, SidebarWorkspaceList } from "./sidebar-workspace-list";
 
 const MIN_CHAT_WIDTH = 400;
 
@@ -601,6 +601,14 @@ function MobileSidebar({
             variant="compact"
           />
         </View>
+        {isInitialLoad ? null : (
+          <SidebarPinnedSection
+            projects={projects}
+            shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
+            onWorkspacePress={handleWorkspacePress}
+            parentGestureRef={closeGestureRef}
+          />
+        )}
         <WorkspacesSectionHeader
           onBeforeNavigate={closeSidebar}
           newWorkspaceKeys={newWorkspaceKeys}
@@ -776,6 +784,12 @@ function DesktopSidebar({
             />
           </View>
         </View>
+        {isInitialLoad ? null : (
+          <SidebarPinnedSection
+            projects={projects}
+            shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
+          />
+        )}
         <WorkspacesSectionHeader newWorkspaceKeys={newWorkspaceKeys} />
 
         {isInitialLoad ? (

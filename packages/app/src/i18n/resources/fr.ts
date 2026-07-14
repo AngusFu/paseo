@@ -908,6 +908,7 @@ export const fr: TranslationResources = {
       sessions: "Historique",
       schedules: "Planifications",
       kanban: "Kanban",
+      pinned: "Épinglés",
     },
     worktreeSetup: {
       title: "Configurer les scripts d'arbre de travail",

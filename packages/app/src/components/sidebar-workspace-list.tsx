@@ -150,33 +150,6 @@ const ThemedSettings = withUnistyles(Settings);
 const ThemedPin = withUnistyles(Pin);
 const ThemedPinOff = withUnistyles(PinOff);
 
-// Reorder so pinned workspaces float to the front, preserving the relative order of both
-// the pinned and non-pinned partitions. Returns the same array reference when nothing moves
-// so downstream memoization (ProjectBlock identity, status group rows) stays intact.
-function floatPinnedWorkspacesFirst<T extends { workspaceKey: string }>(
-  items: T[],
-  pinnedKeys: ReadonlySet<string>,
-): T[] {
-  if (pinnedKeys.size === 0) {
-    return items;
-  }
-  const pinned: T[] = [];
-  const rest: T[] = [];
-  for (const item of items) {
-    if (pinnedKeys.has(item.workspaceKey)) {
-      pinned.push(item);
-    } else {
-      rest.push(item);
-    }
-  }
-  if (pinned.length === 0 || rest.length === 0) {
-    return items;
-  }
-  const reordered = [...pinned, ...rest];
-  // Already pinned-first — keep the original reference for memoization.
-  return reordered.every((item, index) => item === items[index]) ? items : reordered;
-}
-
 const foregroundColorMapping = (theme: Theme) => ({
   color: theme.colors.foreground,
 });
@@ -2147,6 +2120,132 @@ function areProjectBlockSelectionsEqual(
 
 const MemoProjectBlock = memo(ProjectBlock, areProjectBlockPropsEqual);
 
+// Cursor-style dedicated "Pinned" section. Extracts pinned workspaces out of the
+// Workspaces list into a flat, drag-reorderable block above the Workspaces header.
+// Renders nothing when no workspace is pinned.
+export function SidebarPinnedSection({
+  projects,
+  shortcutIndexByWorkspaceKey,
+  onWorkspacePress,
+  parentGestureRef,
+}: {
+  projects: SidebarProjectEntry[];
+  shortcutIndexByWorkspaceKey: Map<string, number>;
+  onWorkspacePress?: () => void;
+  parentGestureRef?: MutableRefObject<GestureType | undefined>;
+}) {
+  const { t } = useTranslation();
+  const pathname = usePathname();
+  const pinnedWorkspaceKeys = usePinnedWorkspacesStore((state) => state.pinnedWorkspaceKeys);
+  const setPinnedOrder = usePinnedWorkspacesStore((state) => state.setPinnedOrder);
+  const showShortcutBadges = useShowShortcutBadges();
+  const activeWorkspaceSelection = useActiveWorkspaceSelection();
+  const selectionEnabled = useMemo(
+    () => Boolean(pathname && parseHostWorkspaceRouteFromPathname(pathname)),
+    [pathname],
+  );
+
+  const hosts = useHosts();
+  const hostLabelByServerId = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const host of hosts) {
+      labels.set(host.serverId, host.label?.trim() || host.serverId);
+    }
+    return labels;
+  }, [hosts]);
+  const showHostLabels = useMemo(() => shouldShowSidebarHostLabels(projects), [projects]);
+
+  // Flatten every placement into a key→placement map, then pull out the pinned
+  // keys in their persisted order. Stale keys (workspace no longer present) are
+  // ignored.
+  const pinnedWorkspaces = useMemo(() => {
+    const byKey = new Map<string, SidebarWorkspacePlacement>();
+    for (const project of projects) {
+      for (const workspace of project.workspaces) {
+        byKey.set(workspace.workspaceKey, workspace);
+      }
+    }
+    const result: SidebarWorkspacePlacement[] = [];
+    for (const key of pinnedWorkspaceKeys) {
+      const placement = byKey.get(key);
+      if (placement) {
+        result.push(placement);
+      }
+    }
+    return result;
+  }, [projects, pinnedWorkspaceKeys]);
+
+  const renderWorkspace = useCallback(
+    ({
+      item,
+      drag: workspaceDrag,
+      isActive,
+      dragHandleProps: workspaceDragHandleProps,
+    }: DraggableRenderItemInfo<SidebarWorkspacePlacement>) => {
+      return (
+        <MemoWorkspaceRowItem
+          workspace={item}
+          subtitle={
+            showHostLabels ? (hostLabelByServerId.get(item.serverId) ?? item.serverId) : null
+          }
+          shortcutNumber={shortcutIndexByWorkspaceKey.get(item.workspaceKey) ?? null}
+          showShortcutBadge={showShortcutBadges}
+          canCopyBranchName={item.projectKind === "git"}
+          selectionEnabled={selectionEnabled}
+          activeWorkspaceSelection={activeWorkspaceSelection}
+          onWorkspacePress={onWorkspacePress}
+          drag={workspaceDrag}
+          isDragging={isActive}
+          dragHandleProps={workspaceDragHandleProps}
+        />
+      );
+    },
+    [
+      showHostLabels,
+      hostLabelByServerId,
+      shortcutIndexByWorkspaceKey,
+      showShortcutBadges,
+      selectionEnabled,
+      activeWorkspaceSelection,
+      onWorkspacePress,
+    ],
+  );
+
+  const handleDragEnd = useCallback(
+    (reordered: SidebarWorkspacePlacement[]) => {
+      setPinnedOrder(reordered.map((workspace) => workspace.workspaceKey));
+    },
+    [setPinnedOrder],
+  );
+
+  if (pinnedWorkspaces.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.pinnedSection}>
+      <View style={styles.pinnedSectionHeader}>
+        <Text style={styles.pinnedSectionTitle}>{t("sidebar.sections.pinned")}</Text>
+      </View>
+      <View style={styles.pinnedSectionList}>
+        <DraggableList
+          testID="sidebar-pinned-workspace-list"
+          data={pinnedWorkspaces}
+          keyExtractor={workspaceKeyExtractor}
+          renderItem={renderWorkspace}
+          onDragEnd={handleDragEnd}
+          extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
+          scrollEnabled={false}
+          useDragHandle
+          nestable={false}
+          simultaneousGestureRef={parentGestureRef}
+          containerStyle={styles.workspaceListContainer}
+        />
+      </View>
+    </View>
+  );
+}
+
 export function SidebarWorkspaceList({
   statusGroups,
   projects,
@@ -2222,20 +2321,27 @@ function SidebarStatusModeWrapper({
 }) {
   const showShortcutBadges = useShowShortcutBadges();
   const pinnedWorkspaceKeys = usePinnedWorkspacesStore((state) => state.pinnedWorkspaceKeys);
+  // Pinned workspaces are extracted into the dedicated Pinned section, so filter
+  // them out of every status group here. Drop a group that becomes empty — status
+  // mode has no empty-group headers.
   const orderedGroups = useMemo(() => {
     const pinnedKeys = new Set(pinnedWorkspaceKeys);
     if (pinnedKeys.size === 0) {
       return statusGroups;
     }
     let changed = false;
-    const next = statusGroups.map((group) => {
-      const rows = floatPinnedWorkspacesFirst(group.rows, pinnedKeys);
-      if (rows === group.rows) {
-        return group;
+    const next: StatusGroup[] = [];
+    for (const group of statusGroups) {
+      const rows = group.rows.filter((row) => !pinnedKeys.has(row.workspaceKey));
+      if (rows.length === group.rows.length) {
+        next.push(group);
+        continue;
       }
       changed = true;
-      return { ...group, rows };
-    });
+      if (rows.length > 0) {
+        next.push({ ...group, rows });
+      }
+    }
     return changed ? next : statusGroups;
   }, [statusGroups, pinnedWorkspaceKeys]);
 
@@ -2287,8 +2393,10 @@ function ProjectModeList({
   const setWorkspaceOrder = useSidebarOrderStore((state) => state.setWorkspaceOrder);
 
   const pinnedWorkspaceKeys = usePinnedWorkspacesStore((state) => state.pinnedWorkspaceKeys);
-  // Project mode: pinned workspaces float to the top of their own project group. Preserve
-  // project identity where nothing moved so MemoProjectBlock doesn't re-render needlessly.
+  // Project mode: pinned workspaces are extracted into the dedicated Pinned section,
+  // so filter them out of their project group. A project whose workspaces are all
+  // pinned keeps its header (empty-group behavior is unchanged). Preserve project
+  // identity where nothing moved so MemoProjectBlock doesn't re-render needlessly.
   const orderedProjects = useMemo(() => {
     const pinnedKeys = new Set(pinnedWorkspaceKeys);
     if (pinnedKeys.size === 0) {
@@ -2296,8 +2404,10 @@ function ProjectModeList({
     }
     let changed = false;
     const next = projects.map((project) => {
-      const workspaces = floatPinnedWorkspacesFirst(project.workspaces, pinnedKeys);
-      if (workspaces === project.workspaces) {
+      const workspaces = project.workspaces.filter(
+        (workspace) => !pinnedKeys.has(workspace.workspaceKey),
+      );
+      if (workspaces.length === project.workspaces.length) {
         return project;
       }
       changed = true;
@@ -2575,6 +2685,27 @@ const styles = StyleSheet.create((theme) => ({
   },
   projectListContainer: {
     width: "100%",
+  },
+  pinnedSection: {
+    paddingTop: theme.spacing[2],
+  },
+  pinnedSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    // Match WorkspacesSectionHeader: align the title with the rows below.
+    paddingLeft: theme.spacing[2] + theme.spacing[2],
+    paddingRight: theme.spacing[2],
+    paddingTop: theme.spacing[1],
+    paddingBottom: theme.spacing[1],
+  },
+  pinnedSectionTitle: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.normal,
+  },
+  pinnedSectionList: {
+    // Align pinned rows with the project/workspace rows in listContent below.
+    paddingHorizontal: theme.spacing[2],
   },
   projectBlock: {
     marginBottom: theme.spacing[1],

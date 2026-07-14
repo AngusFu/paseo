@@ -881,6 +881,7 @@ export const ar: TranslationResources = {
       sessions: "السجل",
       schedules: "الجداول",
       kanban: "كانبان",
+      pinned: "المثبتة",
     },
     worktreeSetup: {
       title: "إعداد البرامج النصية لشجرة العمل",

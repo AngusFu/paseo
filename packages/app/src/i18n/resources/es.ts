@@ -908,6 +908,7 @@ export const es: TranslationResources = {
       sessions: "Historial",
       schedules: "Horarios",
       kanban: "Kanban",
+      pinned: "Fijados",
     },
     worktreeSetup: {
       title: "Configurar secuencias de comandos del árbol de trabajo",

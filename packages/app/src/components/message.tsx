@@ -2318,35 +2318,55 @@ export const CompactionMarker = memo(function CompactionMarker({
   );
 });
 
+// Broadcast signal for the stream-wide collapse/expand-all toggle. A new object
+// (bumped epoch) is pushed on each button press; cards react to epoch changes
+// only, so mount still respects each card's own initial/default expansion.
+export interface CollapseSignal {
+  epoch: number;
+  expanded: boolean;
+}
+
 interface TodoListCardProps {
   items: TodoEntry[];
   disableOuterSpacing?: boolean;
+  collapseSignal?: CollapseSignal;
 }
 
 interface TodoListItemRowProps {
   text: string;
-  completed: boolean;
+  status: TodoEntry["status"];
+  isCurrent: boolean;
 }
 
-function TodoListItemRow({ text, completed }: TodoListItemRowProps) {
+function TodoListItemRow({ text, status, isCurrent }: TodoListItemRowProps) {
+  const completed = status === "completed";
+  const inProgress = status === "in_progress";
   const badgeStyle = useMemo(
     () => [
       todoListCardStylesheet.radioBadge,
-      completed
-        ? todoListCardStylesheet.radioBadgeComplete
-        : todoListCardStylesheet.radioBadgeIncomplete,
+      completed && todoListCardStylesheet.radioBadgeComplete,
+      inProgress && todoListCardStylesheet.radioBadgeInProgress,
+      !completed && !inProgress && todoListCardStylesheet.radioBadgePending,
     ],
-    [completed],
+    [completed, inProgress],
   );
   const textStyle = useMemo(
-    () => [todoListCardStylesheet.itemText, completed && todoListCardStylesheet.itemTextCompleted],
-    [completed],
+    () => [
+      todoListCardStylesheet.itemText,
+      inProgress && todoListCardStylesheet.itemTextInProgress,
+      completed && todoListCardStylesheet.itemTextCompleted,
+    ],
+    [completed, inProgress],
+  );
+  const rowStyle = useMemo(
+    () => [todoListCardStylesheet.itemRow, isCurrent && todoListCardStylesheet.itemRowCurrent],
+    [isCurrent],
   );
   return (
-    <View style={todoListCardStylesheet.itemRow}>
+    <View style={rowStyle}>
       <View style={badgeStyle}>
         {completed ? (
-          <ThemedTodoCheckIcon size={12} uniProps={primaryForegroundColorMapping} />
+          <ThemedTodoCheckIcon size={10} uniProps={primaryForegroundColorMapping} />
         ) : null}
       </View>
       <Text style={textStyle}>{text}</Text>
@@ -2365,25 +2385,44 @@ const todoListCardStylesheet = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
+    paddingVertical: theme.spacing[1],
+    paddingHorizontal: theme.spacing[2],
+    marginHorizontal: -theme.spacing[2],
+    borderRadius: theme.borderRadius.md,
+  },
+  itemRowCurrent: {
+    backgroundColor: theme.colors.surface2,
   },
   radioBadge: {
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: theme.colors.foregroundMuted,
+    borderWidth: theme.borderWidth[2],
+    borderColor: "transparent",
     alignItems: "center",
     justifyContent: "center",
   },
-  radioBadgeIncomplete: {
+  radioBadgePending: {
+    borderColor: theme.colors.foregroundMuted,
+    backgroundColor: "transparent",
     opacity: 0.55,
   },
+  radioBadgeInProgress: {
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.accent,
+  },
   radioBadgeComplete: {
-    opacity: 0.95,
+    borderColor: theme.colors.foregroundMuted,
+    backgroundColor: theme.colors.foregroundMuted,
+    opacity: 0.9,
   },
   itemText: {
     flex: 1,
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.sm,
+  },
+  itemTextInProgress: {
+    fontWeight: theme.fontWeight.medium,
   },
   itemTextCompleted: {
     color: theme.colors.foregroundMuted,
@@ -2391,22 +2430,53 @@ const todoListCardStylesheet = StyleSheet.create((theme) => ({
   },
   emptyText: {
     color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.sm,
   },
 }));
 
 export const TodoListCard = memo(function TodoListCard({
   items,
   disableOuterSpacing,
+  collapseSignal,
 }: TodoListCardProps) {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const nextTask = useMemo(() => items.find((item) => !item.completed)?.text, [items]);
+  const total = items.length;
+  const completedCount = useMemo(
+    () => items.reduce((count, item) => (item.completed ? count + 1 : count), 0),
+    [items],
+  );
+  // Current task = the in-progress row, or the first pending row if none is
+  // marked in progress. Drives both the header preview and the row highlight.
+  const currentIndex = useMemo(() => {
+    const inProgress = items.findIndex((item) => item.status === "in_progress");
+    if (inProgress !== -1) {
+      return inProgress;
+    }
+    return items.findIndex((item) => !item.completed);
+  }, [items]);
+  const currentTask = currentIndex === -1 ? undefined : items[currentIndex]?.text;
+  const secondaryLabel = useMemo(() => {
+    if (total === 0) {
+      return undefined;
+    }
+    const progress = `${completedCount}/${total}`;
+    return currentTask ? `${progress} · ${currentTask}` : progress;
+  }, [total, completedCount, currentTask]);
 
   const handleToggle = useCallback(() => {
     setIsExpanded((prev) => !prev);
   }, []);
+
+  const lastCollapseEpochRef = useRef(collapseSignal?.epoch ?? null);
+  useEffect(() => {
+    if (!collapseSignal || collapseSignal.epoch === lastCollapseEpochRef.current) {
+      return;
+    }
+    lastCollapseEpochRef.current = collapseSignal.epoch;
+    setIsExpanded(collapseSignal.expanded);
+  }, [collapseSignal]);
 
   const renderDetails = useCallback(() => {
     return (
@@ -2415,19 +2485,24 @@ export const TodoListCard = memo(function TodoListCard({
           {items.length === 0 ? (
             <Text style={todoListCardStylesheet.emptyText}>{t("message.todo.empty")}</Text>
           ) : (
-            items.map((item) => (
-              <TodoListItemRow key={item.text} text={item.text} completed={item.completed} />
+            items.map((item, index) => (
+              <TodoListItemRow
+                key={item.text}
+                text={item.text}
+                status={item.status}
+                isCurrent={index === currentIndex}
+              />
             ))
           )}
         </View>
       </View>
     );
-  }, [items, t]);
+  }, [items, currentIndex, t]);
 
   return (
     <ExpandableBadge
       label={t("message.todo.title")}
-      secondaryLabel={nextTask}
+      secondaryLabel={secondaryLabel}
       icon={CheckSquare}
       isExpanded={isExpanded}
       onToggle={handleToggle}
@@ -3321,6 +3396,7 @@ interface ToolRunSummaryProps {
   // the host can synchronously reposition virtualized sibling rows and avoid the
   // one-frame flash from a deferred re-measure.
   onExpandedLayoutChange?: () => void;
+  collapseSignal?: CollapseSignal;
 }
 
 export const ToolRunSummary = memo(function ToolRunSummary({
@@ -3329,9 +3405,22 @@ export const ToolRunSummary = memo(function ToolRunSummary({
   renderChild,
   onUserToggle,
   onExpandedLayoutChange,
+  collapseSignal,
 }: ToolRunSummaryProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const label = useToolRunSummaryLabel(childItems);
+
+  // React to the stream-wide collapse/expand-all toggle on epoch changes only, so
+  // the group's members are actually revealed/hidden by the toolbar button. Most
+  // tool calls live inside a run group, so without this the button appears inert.
+  const lastCollapseEpochRef = useRef(collapseSignal?.epoch ?? null);
+  useEffect(() => {
+    if (!collapseSignal || collapseSignal.epoch === lastCollapseEpochRef.current) {
+      return;
+    }
+    lastCollapseEpochRef.current = collapseSignal.epoch;
+    setIsExpanded(collapseSignal.expanded);
+  }, [collapseSignal]);
   const handleToggle = useCallback(() => {
     onUserToggle?.();
     setIsExpanded((prev) => !prev);
@@ -3391,6 +3480,7 @@ interface ToolCallProps {
   onOpenFilePath?: (filePath: string) => void;
   defaultExpanded?: boolean;
   forceInline?: boolean;
+  collapseSignal?: CollapseSignal;
 }
 
 export const ToolCall = memo(function ToolCall({
@@ -3409,9 +3499,21 @@ export const ToolCall = memo(function ToolCall({
   onOpenFilePath,
   defaultExpanded,
   forceInline = false,
+  collapseSignal,
 }: ToolCallProps) {
   const { openToolCall } = useToolCallSheet();
   const [isExpanded, setIsExpanded] = useState(defaultExpanded ?? false);
+
+  // React to the stream-wide collapse/expand-all toggle on epoch changes only,
+  // so the initial mount keeps respecting defaultExpanded.
+  const lastCollapseEpochRef = useRef(collapseSignal?.epoch ?? null);
+  useEffect(() => {
+    if (!collapseSignal || collapseSignal.epoch === lastCollapseEpochRef.current) {
+      return;
+    }
+    lastCollapseEpochRef.current = collapseSignal.epoch;
+    setIsExpanded(collapseSignal.expanded);
+  }, [collapseSignal]);
 
   const isMobile = useIsCompactFormFactor();
   const shouldRenderInline = !isMobile || forceInline;
@@ -3589,5 +3691,6 @@ function areToolCallPropsEqual(previous: ToolCallProps, next: ToolCallProps) {
   if (previous.onOpenFilePath !== next.onOpenFilePath) return false;
   if (previous.defaultExpanded !== next.defaultExpanded) return false;
   if (previous.forceInline !== next.forceInline) return false;
+  if (previous.collapseSignal !== next.collapseSignal) return false;
   return true;
 }

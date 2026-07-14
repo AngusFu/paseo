@@ -1,11 +1,12 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { Archive, CircleCheck, Copy, MoreVertical, Pencil } from "lucide-react-native";
+import { Archive, CircleCheck, Copy, MoreVertical, Pencil, Pin, PinOff } from "lucide-react-native";
 import { isNative, isWeb } from "@/constants/platform";
 import type { Theme } from "@/styles/theme";
 import type { ShortcutKey } from "@/utils/format-shortcut";
+import { usePinnedWorkspacesStore } from "@/stores/pinned-workspaces-store";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,8 +25,12 @@ const ThemedCopy = withUnistyles(Copy);
 const ThemedArchive = withUnistyles(Archive);
 const ThemedPencil = withUnistyles(Pencil);
 const ThemedCircleCheck = withUnistyles(CircleCheck);
+const ThemedPin = withUnistyles(Pin);
+const ThemedPinOff = withUnistyles(PinOff);
 
 const copyLeadingIcon = <ThemedCopy size={14} uniProps={foregroundMutedColorMapping} />;
+const pinLeadingIcon = <ThemedPin size={14} uniProps={foregroundMutedColorMapping} />;
+const unpinLeadingIcon = <ThemedPinOff size={14} uniProps={foregroundMutedColorMapping} />;
 const renameLeadingIcon = <ThemedPencil size={14} uniProps={foregroundMutedColorMapping} />;
 const markAsReadLeadingIcon = (
   <ThemedCircleCheck size={14} uniProps={foregroundMutedColorMapping} />
@@ -67,6 +72,11 @@ export function SidebarWorkspaceMenu({
   archiveShortcutKeys,
 }: SidebarWorkspaceMenuProps) {
   const { t } = useTranslation();
+  const isPinned = usePinnedWorkspacesStore((state) =>
+    state.pinnedWorkspaceKeys.includes(workspaceKey),
+  );
+  const togglePin = usePinnedWorkspacesStore((state) => state.togglePin);
+  const handleTogglePin = useCallback(() => togglePin(workspaceKey), [togglePin, workspaceKey]);
   const archiveTrailing = useMemo(
     () => (archiveShortcutKeys && !isNative ? <Shortcut chord={archiveShortcutKeys} /> : null),
     [archiveShortcutKeys],
@@ -120,6 +130,13 @@ export function SidebarWorkspaceMenu({
             Mark as read
           </DropdownMenuItem>
         ) : null}
+        <DropdownMenuItem
+          testID={`sidebar-workspace-menu-pin-${workspaceKey}`}
+          leading={isPinned ? unpinLeadingIcon : pinLeadingIcon}
+          onSelect={handleTogglePin}
+        >
+          {isPinned ? t("sidebar.workspace.actions.unpin") : t("sidebar.workspace.actions.pin")}
+        </DropdownMenuItem>
         <DropdownMenuItem
           testID={`sidebar-workspace-menu-archive-${workspaceKey}`}
           leading={archiveLeadingIcon}

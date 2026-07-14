@@ -158,6 +158,7 @@ export interface CompactionItem {
 export interface TodoEntry {
   text: string;
   completed: boolean;
+  status: "pending" | "in_progress" | "completed";
 }
 
 export interface TodoListItem {
@@ -625,6 +626,7 @@ function appendTodoList(
   const normalizedItems = items.map((item) => ({
     text: item.text,
     completed: item.completed,
+    status: item.status,
   }));
 
   const lastItem = state[state.length - 1];
@@ -681,7 +683,11 @@ function reduceTimelineToolCall(
     return appendTodoList(
       state,
       event.provider,
-      tasks.map((entry) => ({ text: entry.text, completed: entry.completed })),
+      tasks.map((entry) => ({
+        text: entry.text,
+        completed: entry.completed,
+        status: entry.status,
+      })),
       timestamp,
     );
   }
@@ -691,7 +697,11 @@ function reduceTimelineToolCall(
     return appendTodoList(
       state,
       event.provider,
-      tasks.map((entry) => ({ text: entry.text, completed: entry.completed })),
+      tasks.map((entry) => ({
+        text: entry.text,
+        completed: entry.completed,
+        status: entry.status,
+      })),
       timestamp,
     );
   }
@@ -771,6 +781,10 @@ function reduceTimelineEvent(
       const items: TodoEntry[] = (item.items ?? []).map((todo) => ({
         text: todo.text,
         completed: todo.completed,
+        // Wire "todo" events only carry text/completed (no in_progress); default
+        // status from completed. The status-bearing path is the Claude TodoWrite
+        // tool call above, which threads TaskEntry.status through appendTodoList.
+        status: todo.completed ? ("completed" as const) : ("pending" as const),
       }));
       return finalizeActiveThoughts(appendTodoList(state, event.provider, items, timestamp));
     }

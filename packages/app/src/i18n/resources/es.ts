@@ -265,6 +265,8 @@ export const es: TranslationResources = {
       forkFailed: "No se pudo bifurcar el chat",
       openFile: "Abrir archivo",
       copied: "Copiado",
+      collapseAll: "Contraer todo",
+      expandAll: "Expandir todo",
     },
     attachments: {
       dismissImage: "Descartar imagen",
@@ -954,6 +956,8 @@ export const es: TranslationResources = {
         hideFromSidebar: "Ocultar de la barra lateral",
         archiving: "Archivando...",
         hiding: "Ocultación...",
+        pin: "Fijar",
+        unpin: "Desfijar",
       },
       confirmations: {
         hideTitle: "¿Ocultar espacio de trabajo?",

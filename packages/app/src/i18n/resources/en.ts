@@ -261,6 +261,8 @@ export const en = {
       forkFailed: "Failed to fork chat",
       openFile: "Open file",
       copied: "Copied",
+      collapseAll: "Collapse all",
+      expandAll: "Expand all",
     },
     attachments: {
       dismissImage: "Dismiss image",
@@ -934,6 +936,8 @@ export const en = {
         hideFromSidebar: "Hide from sidebar",
         archiving: "Archiving...",
         hiding: "Hiding...",
+        pin: "Pin",
+        unpin: "Unpin",
       },
       confirmations: {
         hideTitle: "Hide workspace?",

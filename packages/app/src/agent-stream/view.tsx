@@ -27,7 +27,7 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { MAX_CONTENT_WIDTH, useIsCompactFormFactor } from "@/constants/layout";
 import { useMutation } from "@tanstack/react-query";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
-import { Check, ChevronDown, X } from "lucide-react-native";
+import { Check, ChevronDown, ChevronsDownUp, ChevronsUpDown, X } from "lucide-react-native";
 import { usePanelStore } from "@/stores/panel-store";
 import {
   AssistantMessage,
@@ -39,6 +39,7 @@ import {
   ToolRunSummary,
   CompactionMarker,
   MessageOuterSpacingProvider,
+  type CollapseSignal,
   type InlinePathTarget,
 } from "@/components/message";
 import { PlanCard } from "@/components/plan-card";
@@ -334,6 +335,24 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const [isNearBottom, setIsNearBottom] = useState(true);
     const [expandedInlineToolCallIds, setExpandedInlineToolCallIds] = useState<Set<string>>(
       new Set(),
+    );
+    // Stream-wide collapse/expand-all broadcast. Each press bumps the epoch so
+    // mounted tool-call / thinking / task cards react (once) and flip to the
+    // target expansion; the epoch guard keeps mount respecting per-card defaults.
+    const [collapseSignal, setCollapseSignal] = useState<CollapseSignal>({
+      epoch: 0,
+      expanded: false,
+    });
+    const handleToggleCollapseAll = useCallback(() => {
+      setCollapseSignal((prev) => ({ epoch: prev.epoch + 1, expanded: !prev.expanded }));
+    }, []);
+    const collapseToggleButtonStyle = useCallback(
+      ({ pressed, hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => [
+        stylesheet.collapseToggleButton,
+        hovered ? stylesheet.collapseToggleButtonHovered : null,
+        pressed ? stylesheet.collapseToggleButtonPressed : null,
+      ],
+      [],
     );
     const openFileExplorerForCheckout = usePanelStore((state) => state.openFileExplorerForCheckout);
     const setExplorerTabForCheckout = usePanelStore((state) => state.setExplorerTabForCheckout);
@@ -651,10 +670,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             isLastInSequence={layoutItem.isLastInToolSequence}
             defaultExpanded={autoExpandReasoning}
             forceInline={autoExpandReasoning}
+            collapseSignal={collapseSignal}
           />
         );
       },
-      [autoExpandReasoning, setInlineDetailsExpanded],
+      [autoExpandReasoning, setInlineDetailsExpanded, collapseSignal],
     );
 
     const renderToolCallItem = useCallback(
@@ -687,6 +707,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               metadata={data.metadata}
               isLastInSequence={layoutItem.isLastInToolSequence}
               onOpenFilePath={handleToolCallOpenFile}
+              collapseSignal={collapseSignal}
             />
           );
         }
@@ -702,10 +723,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             status={data.status}
             isLastInSequence={layoutItem.isLastInToolSequence}
             onOpenFilePath={handleToolCallOpenFile}
+            collapseSignal={collapseSignal}
           />
         );
       },
-      [agent.cwd, setInlineDetailsExpanded, handleToolCallOpenFile],
+      [agent.cwd, setInlineDetailsExpanded, handleToolCallOpenFile, collapseSignal],
     );
 
     // Renders a single member of a collapsed tool run (thought / tool_call)
@@ -741,6 +763,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               renderChild={renderToolRunChild}
               onUserToggle={handleToolRunToggle}
               onExpandedLayoutChange={handleToolRunLayoutChange}
+              collapseSignal={collapseSignal}
             />
           );
         }
@@ -769,7 +792,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             );
 
           case "todo_list":
-            return <TodoListCard items={item.items} />;
+            return <TodoListCard items={item.items} collapseSignal={collapseSignal} />;
 
           case "compaction":
             return (
@@ -792,6 +815,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         renderToolRunChild,
         handleToolRunToggle,
         handleToolRunLayoutChange,
+        collapseSignal,
       ],
     );
 
@@ -938,6 +962,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       !streamRenderStrategy.shouldDisableParentScrollOnInlineDetailsExpansion() ||
       expandedInlineToolCallIds.size === 0;
 
+    // Only surface the collapse/expand-all toggle once there is stream content
+    // that owns its own expansion (tool calls, thinking, task cards).
+    const hasStreamContent =
+      boundary.hasVirtualizedHistory || boundary.hasMountedHistory || boundary.hasLiveHead;
+
     return (
       <ToolCallSheetProvider>
         <View style={stylesheet.container}>
@@ -961,6 +990,29 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               forwardListContentContainerStyle: stylesheet.forwardListContentContainer,
             })}
           </MessageOuterSpacingProvider>
+          {hasStreamContent && (
+            <View style={stylesheet.collapseToggleContainer} pointerEvents="box-none">
+              <View style={stylesheet.collapseToggleInner} pointerEvents="box-none">
+                <Pressable
+                  style={collapseToggleButtonStyle}
+                  onPress={handleToggleCollapseAll}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    collapseSignal.expanded
+                      ? t("message.actions.collapseAll")
+                      : t("message.actions.expandAll")
+                  }
+                  testID="collapse-all-toggle"
+                >
+                  {collapseSignal.expanded ? (
+                    <ThemedChevronsDownUp size={18} uniProps={collapseToggleColorMapping} />
+                  ) : (
+                    <ThemedChevronsUpDown size={18} uniProps={collapseToggleColorMapping} />
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          )}
           {!isNearBottom && (
             <Animated.View
               style={stylesheet.scrollToBottomContainer}
@@ -1111,6 +1163,11 @@ function ToolCallSlot({
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedCheckIcon = withUnistyles(Check);
 const ThemedXIcon = withUnistyles(X);
+const ThemedChevronsDownUp = withUnistyles(ChevronsDownUp);
+const ThemedChevronsUpDown = withUnistyles(ChevronsUpDown);
+const collapseToggleColorMapping = (theme: Theme) => ({
+  color: theme.colors.foreground,
+});
 
 const primaryColorMapping = (theme: Theme) => ({
   color: theme.colors.foreground,
@@ -1443,6 +1500,38 @@ const stylesheet = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     textAlign: "center",
+  },
+  collapseToggleContainer: {
+    position: "absolute",
+    top: theme.spacing[2],
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    pointerEvents: "box-none",
+  },
+  collapseToggleInner: {
+    width: "100%",
+    maxWidth: MAX_CONTENT_WIDTH,
+    alignSelf: "center",
+    alignItems: "flex-end",
+    paddingHorizontal: theme.spacing[2],
+  },
+  collapseToggleButton: {
+    width: 32,
+    height: 32,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.surface2,
+    borderWidth: theme.borderWidth[1],
+    borderColor: theme.colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    ...theme.shadow.sm,
+  },
+  collapseToggleButtonHovered: {
+    backgroundColor: theme.colors.surface1,
+  },
+  collapseToggleButtonPressed: {
+    opacity: 0.7,
   },
   scrollToBottomContainer: {
     position: "absolute",

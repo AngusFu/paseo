@@ -264,6 +264,8 @@ export const ru: TranslationResources = {
       forkFailed: "Не удалось форкнуть чат",
       openFile: "Открыть файл",
       copied: "Скопировано",
+      collapseAll: "Свернуть все",
+      expandAll: "Развернуть все",
     },
     attachments: {
       dismissImage: "Закрыть изображение",
@@ -946,6 +948,8 @@ export const ru: TranslationResources = {
         hideFromSidebar: "Скрыть с боковой панели",
         archiving: "Архивирование...",
         hiding: "Скрытие...",
+        pin: "Закрепить",
+        unpin: "Открепить",
       },
       confirmations: {
         hideTitle: "Скрыть рабочее пространство?",

@@ -70,7 +70,7 @@ function todoList(id: string, seed: number): Extract<StreamItem, { kind: "todo_l
     id,
     timestamp: timestamp(seed),
     provider: "claude",
-    items: [{ text: id, completed: false }],
+    items: [{ text: id, completed: false, status: "pending" }],
   };
 }
 

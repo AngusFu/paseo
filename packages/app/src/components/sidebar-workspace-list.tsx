@@ -45,6 +45,8 @@ import {
   GitPullRequest,
   Settings,
   MoreVertical,
+  Pin,
+  PinOff,
   Plus,
   Trash2,
 } from "lucide-react-native";
@@ -68,6 +70,7 @@ import {
   type SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
+import { usePinnedWorkspacesStore } from "@/stores/pinned-workspaces-store";
 import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
 import { ContextMenuTrigger, useContextMenu } from "@/components/ui/context-menu";
 import {
@@ -144,6 +147,35 @@ const ThemedPlus = withUnistyles(Plus);
 const ThemedMoreVertical = withUnistyles(MoreVertical);
 const ThemedTrash2 = withUnistyles(Trash2);
 const ThemedSettings = withUnistyles(Settings);
+const ThemedPin = withUnistyles(Pin);
+const ThemedPinOff = withUnistyles(PinOff);
+
+// Reorder so pinned workspaces float to the front, preserving the relative order of both
+// the pinned and non-pinned partitions. Returns the same array reference when nothing moves
+// so downstream memoization (ProjectBlock identity, status group rows) stays intact.
+function floatPinnedWorkspacesFirst<T extends { workspaceKey: string }>(
+  items: T[],
+  pinnedKeys: ReadonlySet<string>,
+): T[] {
+  if (pinnedKeys.size === 0) {
+    return items;
+  }
+  const pinned: T[] = [];
+  const rest: T[] = [];
+  for (const item of items) {
+    if (pinnedKeys.has(item.workspaceKey)) {
+      pinned.push(item);
+    } else {
+      rest.push(item);
+    }
+  }
+  if (pinned.length === 0 || rest.length === 0) {
+    return items;
+  }
+  const reordered = [...pinned, ...rest];
+  // Already pinned-first — keep the original reference for memoization.
+  return reordered.every((item, index) => item === items[index]) ? items : reordered;
+}
 
 const foregroundColorMapping = (theme: Theme) => ({
   color: theme.colors.foreground,
@@ -616,6 +648,57 @@ function ProjectKebabMenu({
   );
 }
 
+function WorkspacePinToggle({
+  workspaceKey,
+  isPinned,
+}: {
+  workspaceKey: string;
+  isPinned: boolean;
+}) {
+  const { t } = useTranslation();
+  const togglePin = usePinnedWorkspacesStore((state) => state.togglePin);
+  const [isHovered, setIsHovered] = useState(false);
+  const handleHoverIn = useCallback(() => setIsHovered(true), []);
+  const handleHoverOut = useCallback(() => setIsHovered(false), []);
+  const handlePress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      togglePin(workspaceKey);
+    },
+    [togglePin, workspaceKey],
+  );
+  const buttonStyle = useCallback(
+    ({ pressed }: PressableStateCallbackType) => [
+      styles.pinButton,
+      (isHovered || pressed) && styles.pinButtonHovered,
+    ],
+    [isHovered],
+  );
+  return (
+    <Pressable
+      onPress={handlePress}
+      onHoverIn={handleHoverIn}
+      onHoverOut={handleHoverOut}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={t(
+        isPinned ? "sidebar.workspace.actions.unpin" : "sidebar.workspace.actions.pin",
+      )}
+      testID={`sidebar-workspace-pin-${workspaceKey}`}
+      style={buttonStyle}
+    >
+      {isPinned && isHovered ? (
+        <ThemedPinOff size={13} uniProps={foregroundColorMapping} />
+      ) : (
+        <ThemedPin
+          size={13}
+          uniProps={isPinned || isHovered ? foregroundColorMapping : foregroundMutedColorMapping}
+        />
+      )}
+    </Pressable>
+  );
+}
+
 function WorkspaceRowRightGroup({
   workspace,
   isHovered,
@@ -650,13 +733,19 @@ function WorkspaceRowRightGroup({
   onRename?: () => void;
 }) {
   const { t } = useTranslation();
+  const isPinned = usePinnedWorkspacesStore((state) =>
+    state.pinnedWorkspaceKeys.includes(workspace.workspaceKey),
+  );
   const showShortcut = showShortcutBadge && shortcutNumber !== null;
   const showKebab = Boolean(onArchive && (isHovered || isTouchPlatform));
   const showKebabInSlot = showKebab && !showShortcut;
   const shouldRenderActionSlot = Boolean(onArchive || workspace.diffStat);
 
   return (
-    <>
+    <View style={styles.workspaceRightActions}>
+      {isPinned || isHovered || isTouchPlatform ? (
+        <WorkspacePinToggle workspaceKey={workspace.workspaceKey} isPinned={isPinned} />
+      ) : null}
       {isCreating ? (
         <Text style={styles.workspaceCreatingText}>{t("sidebar.workspace.status.creating")}</Text>
       ) : null}
@@ -690,7 +779,7 @@ function WorkspaceRowRightGroup({
           </SidebarWorkspaceTrailingActionOverlay>
         </SidebarWorkspaceTrailingActionSlot>
       ) : null}
-    </>
+    </View>
   );
 }
 
@@ -2129,10 +2218,27 @@ function SidebarStatusModeWrapper({
   showHostLabels: boolean;
 }) {
   const showShortcutBadges = useShowShortcutBadges();
+  const pinnedWorkspaceKeys = usePinnedWorkspacesStore((state) => state.pinnedWorkspaceKeys);
+  const orderedGroups = useMemo(() => {
+    const pinnedKeys = new Set(pinnedWorkspaceKeys);
+    if (pinnedKeys.size === 0) {
+      return statusGroups;
+    }
+    let changed = false;
+    const next = statusGroups.map((group) => {
+      const rows = floatPinnedWorkspacesFirst(group.rows, pinnedKeys);
+      if (rows === group.rows) {
+        return group;
+      }
+      changed = true;
+      return { ...group, rows };
+    });
+    return changed ? next : statusGroups;
+  }, [statusGroups, pinnedWorkspaceKeys]);
 
   return (
     <SidebarStatusWorkspaceList
-      groups={statusGroups}
+      groups={orderedGroups}
       projectNamesByKey={projectNamesByKey}
       shortcutIndexByWorkspaceKey={_projectShortcutIndex}
       showShortcutBadges={showShortcutBadges}
@@ -2176,6 +2282,26 @@ function ProjectModeList({
   const setProjectOrder = useSidebarOrderStore((state) => state.setProjectOrder);
   const getWorkspaceOrder = useSidebarOrderStore((state) => state.getWorkspaceOrder);
   const setWorkspaceOrder = useSidebarOrderStore((state) => state.setWorkspaceOrder);
+
+  const pinnedWorkspaceKeys = usePinnedWorkspacesStore((state) => state.pinnedWorkspaceKeys);
+  // Project mode: pinned workspaces float to the top of their own project group. Preserve
+  // project identity where nothing moved so MemoProjectBlock doesn't re-render needlessly.
+  const orderedProjects = useMemo(() => {
+    const pinnedKeys = new Set(pinnedWorkspaceKeys);
+    if (pinnedKeys.size === 0) {
+      return projects;
+    }
+    let changed = false;
+    const next = projects.map((project) => {
+      const workspaces = floatPinnedWorkspacesFirst(project.workspaces, pinnedKeys);
+      if (workspaces === project.workspaces) {
+        return project;
+      }
+      changed = true;
+      return { ...project, workspaces };
+    });
+    return changed ? next : projects;
+  }, [projects, pinnedWorkspaceKeys]);
 
   const isWorkspaceRoute = useMemo(
     () => Boolean(pathname && parseHostWorkspaceRouteFromPathname(pathname)),
@@ -2390,7 +2516,7 @@ function ProjectModeList({
       ) : (
         <DraggableList
           testID="sidebar-project-list"
-          data={projects}
+          data={orderedProjects}
           keyExtractor={projectKeyExtractor}
           renderItem={renderProject}
           onDragEnd={handleProjectDragEnd}
@@ -2761,6 +2887,23 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
     flexShrink: 0,
+  },
+  workspaceRightActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+    flexShrink: 0,
+  },
+  pinButton: {
+    width: 20,
+    height: 20,
+    borderRadius: theme.borderRadius.sm,
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pinButtonHovered: {
+    backgroundColor: theme.colors.surface3,
   },
   statusDotNeedsInput: {
     backgroundColor: theme.colors.palette.amber[500],

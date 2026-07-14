@@ -265,6 +265,8 @@ export const ja: TranslationResources = {
       forkFailed: "チャットのフォークに失敗しました",
       openFile: "ファイルを開く",
       copied: "コピーしました",
+      collapseAll: "すべて折りたたむ",
+      expandAll: "すべて展開",
     },
     attachments: {
       dismissImage: "画像を閉じる",
@@ -942,6 +944,8 @@ export const ja: TranslationResources = {
         hideFromSidebar: "サイドバーから非表示",
         archiving: "アーカイブ中...",
         hiding: "非表示にしています...",
+        pin: "ピン留め",
+        unpin: "ピン留めを解除",
       },
       confirmations: {
         hideTitle: "ワークスペースを非表示にしますか？",

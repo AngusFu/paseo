@@ -265,6 +265,8 @@ export const ptBR: TranslationResources = {
       forkFailed: "Falha ao bifurcar o chat",
       openFile: "Abrir arquivo",
       copied: "Copiado",
+      collapseAll: "Recolher tudo",
+      expandAll: "Expandir tudo",
     },
     attachments: {
       dismissImage: "Dispensar imagem",
@@ -945,6 +947,8 @@ export const ptBR: TranslationResources = {
         hideFromSidebar: "Ocultar da barra lateral",
         archiving: "Arquivando...",
         hiding: "Ocultando...",
+        pin: "Fixar",
+        unpin: "Desafixar",
       },
       confirmations: {
         hideTitle: "Ocultar workspace?",

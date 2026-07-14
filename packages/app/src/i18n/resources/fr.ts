@@ -265,6 +265,8 @@ export const fr: TranslationResources = {
       forkFailed: "Impossible de dupliquer le chat",
       openFile: "Ouvrir le fichier",
       copied: "Copié",
+      collapseAll: "Tout réduire",
+      expandAll: "Tout développer",
     },
     attachments: {
       dismissImage: "Ignorer l'image",
@@ -954,6 +956,8 @@ export const fr: TranslationResources = {
         hideFromSidebar: "Masquer de la barre latérale",
         archiving: "Archivage...",
         hiding: "Dissimulation...",
+        pin: "Épingler",
+        unpin: "Désépingler",
       },
       confirmations: {
         hideTitle: "Masquer l'espace de travail?",

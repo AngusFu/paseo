@@ -262,6 +262,8 @@ export const zhCN: TranslationResources = {
       forkFailed: "分叉聊天失败",
       openFile: "打开文件",
       copied: "已复制",
+      collapseAll: "折叠全部",
+      expandAll: "展开全部",
     },
     attachments: {
       dismissImage: "关闭图片",
@@ -918,6 +920,8 @@ export const zhCN: TranslationResources = {
         hideFromSidebar: "从侧边栏隐藏",
         archiving: "正在归档...",
         hiding: "正在隐藏...",
+        pin: "置顶",
+        unpin: "取消置顶",
       },
       confirmations: {
         hideTitle: "隐藏 workspace？",

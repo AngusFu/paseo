@@ -162,7 +162,11 @@ class NativeArchiveRecordingClient extends TestAgentClient {
 }
 
 class EnvProbeAgentClient extends TestAgentClient {
-  probe: Promise<{ probe: string | null; agentId: string | null }> | null = null;
+  probe: Promise<{
+    probe: string | null;
+    agentId: string | null;
+    workspaceId: string | null;
+  }> | null = null;
 
   override async createSession(
     config: AgentSessionConfig,
@@ -171,7 +175,8 @@ class EnvProbeAgentClient extends TestAgentClient {
     const script = `
       process.stdout.write(JSON.stringify({
         probe: process.env.CHUNK14_PROBE ?? null,
-        agentId: process.env.PASEO_AGENT_ID ?? null
+        agentId: process.env.PASEO_AGENT_ID ?? null,
+        workspaceId: process.env.PASEO_WORKSPACE_ID ?? null
       }));
     `;
     const child = spawn(process.execPath, ["-e", script], {
@@ -194,7 +199,13 @@ class EnvProbeAgentClient extends TestAgentClient {
           reject(new Error(`env probe exited ${code}: ${stderr}`));
           return;
         }
-        resolve(JSON.parse(stdout) as { probe: string | null; agentId: string | null });
+        resolve(
+          JSON.parse(stdout) as {
+            probe: string | null;
+            agentId: string | null;
+            workspaceId: string | null;
+          },
+        );
       });
     });
     return new TestAgentSession(config);
@@ -504,6 +515,40 @@ test("createAgent forwards request env into the spawned provider process", async
     await expect(client.probe).resolves.toEqual({
       probe: "expected",
       agentId: "00000000-0000-4000-8000-00000000e001",
+      workspaceId: null,
+    });
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("createAgent injects PASEO_WORKSPACE_ID into the spawned provider process", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-workspace-env-test-"));
+  const client = new EnvProbeAgentClient();
+  const manager = new AgentManager({
+    clients: {
+      codex: client,
+    },
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-00000000e002",
+  });
+
+  try {
+    await manager.createAgent(
+      {
+        provider: "codex",
+        cwd: workdir,
+      },
+      undefined,
+      {
+        workspaceId: "wks_env_probe",
+      },
+    );
+
+    await expect(client.probe).resolves.toEqual({
+      probe: null,
+      agentId: "00000000-0000-4000-8000-00000000e002",
+      workspaceId: "wks_env_probe",
     });
   } finally {
     rmSync(workdir, { recursive: true, force: true });

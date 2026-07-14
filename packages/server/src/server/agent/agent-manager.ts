@@ -933,7 +933,12 @@ export class AgentManager {
     const client = await this.requireAvailableClient({
       provider: storedConfig.provider,
     });
-    const launchContext = await this.buildLaunchContext(resolvedAgentId, client, options?.env);
+    const launchContext = await this.buildLaunchContext(
+      resolvedAgentId,
+      client,
+      options?.env,
+      options.workspaceId,
+    );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const createOptions = this.buildCreateSessionOptions(options);
     const session = await client.createSession(providerLaunchConfig, launchContext, createOptions);
@@ -988,7 +993,12 @@ export class AgentManager {
         `Provider '${handle.provider}' is not available. Please ensure the CLI is installed.`,
       );
     }
-    const launchContext = await this.buildLaunchContext(resolvedAgentId, client);
+    const launchContext = await this.buildLaunchContext(
+      resolvedAgentId,
+      client,
+      undefined,
+      options?.workspaceId,
+    );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const session = await client.resumeSession(handle, providerLaunchConfig, launchContext);
     return this.registerSession(session, storedConfig, resolvedAgentId, options);
@@ -1016,7 +1026,12 @@ export class AgentManager {
       },
       resolvedAgentId,
     );
-    const launchContext = await this.buildLaunchContext(resolvedAgentId, client);
+    const launchContext = await this.buildLaunchContext(
+      resolvedAgentId,
+      client,
+      undefined,
+      input.workspaceId,
+    );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const imported = await client.importSession(
       {
@@ -1071,7 +1086,12 @@ export class AgentManager {
       provider,
     } as AgentSessionConfig;
     const { storedConfig, launchConfig } = await this.prepareSessionConfig(refreshConfig, agentId);
-    const launchContext = await this.buildLaunchContext(agentId, client);
+    const launchContext = await this.buildLaunchContext(
+      agentId,
+      client,
+      undefined,
+      existing.workspaceId,
+    );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
 
     const session = handle
@@ -3750,12 +3770,26 @@ export class AgentManager {
     agentId: string,
     client: AgentClient,
     env?: Record<string, string>,
+    workspaceId?: string,
   ): Promise<AgentLaunchContext> {
+    // Mirror the terminal's PASEO_WORKSPACE_ID (terminal.ts injects it directly at
+    // spawn) so an agent process can resolve which workspace owns it — e.g. when it
+    // shells out to the `paseo` CLI, whose workspace-scoped commands default to
+    // $PASEO_WORKSPACE_ID. Without this the agent's env has PASEO_AGENT_ID but no
+    // workspace id, and CLI calls that need a workspace fail to find a default.
+    //
+    // NOTE: worktree/service context (PASEO_BRANCH_NAME, PASEO_WORKTREE_PATH/PORT,
+    // PASEO_SOURCE_CHECKOUT_PATH, PASEO_SERVICE_*) that terminals receive via
+    // terminalManager.registerCwdEnv is NOT injected here yet: that registry lives
+    // in the terminal worker process and is not synchronously readable from the
+    // agent-manager. Injecting it needs a worker round-trip or recomputing from the
+    // worktree records — tracked separately.
     const context: AgentLaunchContext = {
       agentId,
       env: {
         ...env,
         PASEO_AGENT_ID: agentId,
+        ...(workspaceId ? { PASEO_WORKSPACE_ID: workspaceId } : {}),
       },
     };
     if (

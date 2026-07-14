@@ -680,7 +680,10 @@ function WorkspacePinToggle({
       onHoverIn={handleHoverIn}
       onHoverOut={handleHoverOut}
       hitSlop={6}
-      accessibilityRole="button"
+      // Drop the button role on web so this renders a <div>, not a <button>
+      // nested inside the row's <button> (invalid HTML → hydration error). Keep
+      // it on native for a11y — same gating as the row's other corner controls.
+      accessibilityRole={platformIsWeb ? undefined : "button"}
       accessibilityLabel={t(
         isPinned ? "sidebar.workspace.actions.unpin" : "sidebar.workspace.actions.pin",
       )}

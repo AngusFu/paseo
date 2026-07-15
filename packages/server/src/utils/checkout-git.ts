@@ -748,6 +748,16 @@ export class NotGitRepoError extends Error {
   }
 }
 
+export class BaseRefNotFoundError extends Error {
+  readonly baseRef: string;
+
+  constructor(baseRef: string) {
+    super(`Base branch not found locally or on origin: ${baseRef}`);
+    this.name = "BaseRefNotFoundError";
+    this.baseRef = baseRef;
+  }
+}
+
 export class MergeConflictError extends Error {
   readonly baseRef: string;
   readonly currentBranch: string;
@@ -1467,7 +1477,7 @@ async function resolveBestComparisonBaseRef(
     baseRef.startsWith("origin/") || baseRef.startsWith("refs/remotes/origin/")
       ? normalized.originRef
       : normalized.localName;
-  throw new Error(`Base branch not found locally or on origin: ${refName}`);
+  throw new BaseRefNotFoundError(refName);
 }
 
 async function resolveMostAheadBaseRef(cwd: string, normalizedBaseRef: string): Promise<string> {
@@ -2501,24 +2511,11 @@ async function resolveCheckoutDiffRefs(
   }
   // A stored base ref can go stale — e.g. a worktree's placeholder branch is
   // renamed after its base was recorded, leaving baseRefName pointing at a
-  // branch that no longer exists locally or on origin. Rather than hard-fail
-  // the whole diff (every sibling base read in this file already tolerates an
-  // unresolvable base via .catch(() => null)), fall back to the repo default
-  // branch, then give up gracefully with no diff if that can't resolve either.
-  let bestBaseRef: string;
-  try {
-    bestBaseRef = await resolveBestComparisonBaseRef(cwd, baseRef);
-  } catch (error) {
-    const fallbackBase = await resolveBaseRef(cwd);
-    if (!fallbackBase || fallbackBase === baseRef) {
-      throw error;
-    }
-    try {
-      bestBaseRef = await resolveBestComparisonBaseRef(cwd, fallbackBase);
-    } catch {
-      return null;
-    }
-  }
+  // branch that no longer exists. resolveBestComparisonBaseRef throws
+  // BaseRefNotFoundError, which surfaces to the client as BASE_REF_NOT_FOUND so
+  // it can offer a base-branch reselect (checkout.baseRef.set) rather than
+  // silently comparing against a guessed branch.
+  const bestBaseRef = await resolveBestComparisonBaseRef(cwd, baseRef);
   return {
     baseRef: (await tryResolveMergeBase(cwd, bestBaseRef)) ?? bestBaseRef,
     targetRef: "HEAD",

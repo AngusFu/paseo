@@ -1,4 +1,5 @@
 import {
+  BaseRefNotFoundError,
   MergeConflictError,
   MergeFromBaseConflictError,
   NotGitRepoError,
@@ -9,7 +10,12 @@ export const READ_ONLY_GIT_ENV = {
   GIT_OPTIONAL_LOCKS: "0",
 } as const;
 
-export type CheckoutErrorCode = "NOT_GIT_REPO" | "NOT_ALLOWED" | "MERGE_CONFLICT" | "UNKNOWN";
+export type CheckoutErrorCode =
+  | "NOT_GIT_REPO"
+  | "NOT_ALLOWED"
+  | "MERGE_CONFLICT"
+  | "BASE_REF_NOT_FOUND"
+  | "UNKNOWN";
 
 export interface CheckoutErrorPayload {
   code: CheckoutErrorCode;
@@ -38,6 +44,9 @@ export function toCheckoutError(error: unknown): CheckoutErrorPayload {
   }
   if (error instanceof MergeFromBaseConflictError) {
     return { code: "MERGE_CONFLICT", message: error.message };
+  }
+  if (error instanceof BaseRefNotFoundError) {
+    return { code: "BASE_REF_NOT_FOUND", message: error.message };
   }
   if (error instanceof Error) {
     return { code: "UNKNOWN", message: error.message };

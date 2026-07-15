@@ -5,6 +5,7 @@ import type {
   BranchSuggestionsRequest,
   CheckoutRefreshRequest,
   CheckoutRenameBranchRequest,
+  CheckoutSetBaseRefRequest,
   CheckoutStatusRequest,
   SessionInboundMessage,
   SessionOutboundMessage,
@@ -44,6 +45,7 @@ import {
 } from "../../../utils/checkout-git.js";
 import { execCommand } from "../../../utils/spawn.js";
 import { expandTilde } from "../../../utils/path.js";
+import { updatePaseoWorktreeBaseRef } from "../../../utils/worktree-metadata.js";
 import type { GitMetadataGenerator } from "./git-metadata-generator.js";
 
 /**
@@ -457,6 +459,38 @@ export class CheckoutSession {
           cwd,
           success: false,
           currentBranch: null,
+          error: toCheckoutError(error),
+          requestId,
+        },
+      });
+    }
+  }
+
+  async handleCheckoutSetBaseRefRequest(msg: CheckoutSetBaseRefRequest): Promise<void> {
+    const { cwd, baseRef, requestId } = msg;
+    try {
+      const normalized = updatePaseoWorktreeBaseRef(cwd, baseRef);
+      // Recompute the live diff against the new base and refresh the header/
+      // status so the base label updates without waiting for the git watcher.
+      this.scheduleDiffRefresh(cwd);
+      await this.host.emitWorkspaceUpdateForCwd(cwd);
+      this.host.emit({
+        type: "checkout.baseRef.set.response",
+        payload: {
+          cwd,
+          success: true,
+          baseRef: normalized,
+          error: null,
+          requestId,
+        },
+      });
+    } catch (error) {
+      this.host.emit({
+        type: "checkout.baseRef.set.response",
+        payload: {
+          cwd,
+          success: false,
+          baseRef: null,
           error: toCheckoutError(error),
           requestId,
         },

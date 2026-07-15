@@ -31,6 +31,7 @@ import {
   MergeConflictError,
   MergeFromBaseConflictError,
   NotGitRepoError,
+  BaseRefNotFoundError,
   pullCurrentBranch,
   pushCurrentBranch,
   resolveBranchCheckout,
@@ -995,7 +996,7 @@ const x = 1;
     expect(diff.diff).toContain("local-feature.txt");
   });
 
-  it("falls back to the repo default branch when the base ref no longer exists", async () => {
+  it("throws BaseRefNotFoundError when the base ref no longer exists (client offers reselect)", async () => {
     execFileSync("git", ["checkout", "-b", "feature"], { cwd: repoDir });
     writeFileSync(join(repoDir, "ghost-base-feature.txt"), "feature\n");
     execFileSync("git", ["add", "ghost-base-feature.txt"], { cwd: repoDir });
@@ -1005,10 +1006,12 @@ const x = 1;
 
     // The recorded base branch was renamed/removed and no longer exists locally
     // or on origin (e.g. a worktree placeholder branch auto-renamed after its
-    // base was recorded). Instead of hard-failing, the diff falls back to the
-    // repo default branch (main).
-    const diff = await getCheckoutDiff(repoDir, { mode: "base", baseRef: "chatty-camel" });
-    expect(diff.diff).toContain("ghost-base-feature.txt");
+    // base was recorded). Rather than silently comparing against a guessed
+    // branch, the diff throws BaseRefNotFoundError so the client can surface a
+    // base-branch reselect affordance.
+    await expect(
+      getCheckoutDiff(repoDir, { mode: "base", baseRef: "chatty-camel" }),
+    ).rejects.toBeInstanceOf(BaseRefNotFoundError);
   });
 
   it("keeps an explicit origin base ref instead of stripping it to a stale local branch", async () => {

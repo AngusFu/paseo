@@ -213,11 +213,16 @@ export class KanbanSyncService {
           cards.push(await this.store.upsertCardBySource(cardSource, payload));
         }
       } else {
+        const seenExternalIds = new Set<string>();
         const mergeRequests = await this.fetchGitlabMergeRequests(baseUrl, source.query, token);
         for (const mr of mergeRequests) {
           const { cardSource, payload } = await this.buildGitlabUpsert(baseUrl, source, mr);
+          seenExternalIds.add(cardSource.externalId);
           cards.push(await this.store.upsertCardBySource(cardSource, payload));
         }
+        cards.push(
+          ...(await this.reconcileTerminalGitlabCards(baseUrl, source, token, seenExternalIds)),
+        );
       }
 
       const updatedSource = await this.store.recordSourceSync(source.id, {
@@ -513,5 +518,75 @@ export class KanbanSyncService {
         forceStatus: isTerminal,
       },
     };
+  }
+
+  // A merged/closed MR drops out of a state-filtered sync query (the common
+  // `state=opened` filter), so the sync loop above never sees it again and the
+  // forceStatus→Done move never fires — the card is stuck in whatever column it
+  // held when it last matched the query. This pass re-checks each
+  // previously-synced GitLab card the query omitted: it hits the single-MR
+  // endpoint and, only when the MR is now terminal, runs it through the same
+  // upsert so the merged/closed → Done move finally happens. Cards whose stored
+  // metadata is already terminal are skipped, so each MR costs exactly one
+  // extra request — the sync that moves it. Cards belonging to a different
+  // GitLab source/instance return 404/401 under this token and are ignored.
+  private async reconcileTerminalGitlabCards(
+    baseUrl: string,
+    source: StoredKanbanSource,
+    token: string | null,
+    seenExternalIds: Set<string>,
+  ): Promise<StoredKanbanCard[]> {
+    const moved: StoredKanbanCard[] = [];
+    for (const card of await this.store.listCards()) {
+      if (card.source.kind !== "gitlab" || seenExternalIds.has(card.externalId ?? "")) {
+        continue;
+      }
+      const storedState = (card.metadata as { state?: string } | undefined)?.state;
+      if (storedState === "merged" || storedState === "closed") {
+        continue;
+      }
+      // Best-effort per card: a network error re-fetching one card must not
+      // fail the whole sync, whose primary query already succeeded.
+      try {
+        const mr = await this.fetchGitlabMergeRequestById(
+          baseUrl,
+          card.source.projectId,
+          card.source.mrIid,
+          token,
+        );
+        if (!mr || (mr.state !== "merged" && mr.state !== "closed")) {
+          continue;
+        }
+        const { cardSource, payload } = await this.buildGitlabUpsert(baseUrl, source, mr);
+        moved.push(await this.store.upsertCardBySource(cardSource, payload));
+      } catch (error) {
+        this.logger?.warn(
+          { err: error, sourceId: source.id, externalId: card.externalId },
+          "Kanban terminal-state reconciliation failed for card",
+        );
+      }
+    }
+    return moved;
+  }
+
+  private async fetchGitlabMergeRequestById(
+    baseUrl: string,
+    projectId: string,
+    mrIid: string,
+    token: string | null,
+  ): Promise<GitlabMergeRequest | null> {
+    const base = trimTrailingSlash(baseUrl);
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (token) {
+      headers["PRIVATE-TOKEN"] = token;
+    }
+    const url = `${base}/api/v4/projects/${encodeURIComponent(projectId)}/merge_requests/${encodeURIComponent(mrIid)}`;
+    const response = await this.fetchImpl(url, { headers });
+    if (!response.ok) {
+      // 404/401 → the card belongs to a different GitLab source/instance, or the
+      // MR was deleted. Not this sync's problem; leave the card untouched.
+      return null;
+    }
+    return (await response.json()) as GitlabMergeRequest;
   }
 }

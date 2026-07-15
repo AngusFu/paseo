@@ -231,6 +231,67 @@ describe("KanbanSyncService", () => {
     expect(byExternalId.get("gitlab:42!7")?.status).toBe("done");
   });
 
+  test("moves a card to Done once its MR merges and drops out of the state=opened query", async () => {
+    const openMr = {
+      iid: 5,
+      project_id: 42,
+      title: "Add feature",
+      web_url: "https://gitlab.example.com/group/project/-/merge_requests/5",
+      state: "opened",
+      draft: false,
+    };
+    const mergedMr = { ...openMr, state: "merged" };
+    let listCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      // List endpoint: the first sync returns the open MR; later syncs no
+      // longer return it, mirroring how a merged MR drops out of a
+      // `state=opened` query.
+      if (url.includes("/api/v4/merge_requests")) {
+        listCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => (listCalls === 1 ? [openMr] : []),
+        };
+      }
+      // Single-MR endpoint used by terminal-state reconciliation: now merged.
+      if (url.includes("/api/v4/projects/42/merge_requests/5")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => mergedMr };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+      query: "state=opened",
+    });
+
+    const first = await syncService.sync(source);
+    expect(first.cards.find((card) => card.externalId === "gitlab:42!5")?.status).toBe("wip");
+
+    // Second sync: the MR is gone from the list query, but reconciliation
+    // re-fetches it, sees it merged, and moves the card to Done.
+    const second = await syncService.sync(source);
+    expect(second.cards.find((card) => card.externalId === "gitlab:42!5")?.status).toBe("done");
+    const storedAfter = (await store.listCards()).find((card) => card.externalId === "gitlab:42!5");
+    expect(storedAfter?.status).toBe("done");
+
+    // Third sync: the card's stored metadata is already terminal, so it is not
+    // re-fetched again — each merged MR costs exactly one reconciliation request.
+    const singleFetchCount = () =>
+      fetchImpl.mock.calls.filter((call: unknown[]) =>
+        String(call[0]).includes("/api/v4/projects/42/merge_requests/5"),
+      ).length;
+    const before = singleFetchCount();
+    await syncService.sync(source);
+    expect(singleFetchCount()).toBe(before);
+  });
+
   test("does not auto-create a column for an unmapped Jira status name — never more than the default 3 columns", async () => {
     const jiraResponse = {
       issues: Array.from({ length: 5 }, (_, i) => ({

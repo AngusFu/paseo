@@ -9,8 +9,6 @@ import React, {
   useState,
 } from "react";
 import { ActivityIndicator } from "react-native";
-import { measureElement as measureVirtualElement, useVirtualizer } from "@tanstack/react-virtual";
-import { estimateStreamItemHeight } from "./web-virtualization";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
 import { createStreamStrategy } from "./strategy";
 
@@ -136,14 +134,12 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   // change must not yank a bottom-pinned viewport, so we let the browser's native
   // scroll anchoring hold the row in place while streaming pin resumes after.
   const suppressAutoStickUntilRef = useRef(0);
-  const pendingVirtualRowMeasureFramesRef = useRef(new Map<Element, number>());
   const historyStartReadyRef = useRef(false);
   const showDesktopWebScrollbar = !isMobileBreakpoint;
   const scrollbarOverlay = useWebElementScrollbar(scrollContainerRef, {
     enabled: showDesktopWebScrollbar,
     contentRef,
   });
-  const shouldUseVirtualizer = segments.historyVirtualized.length > 0;
   const {
     renderHistoryVirtualizedRow,
     renderHistoryMountedRow,
@@ -156,70 +152,6 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const hasRouteBottomAnchorRequest = routeBottomAnchorRequest !== null;
   const activationKey = routeBottomAnchorRequest?.requestKey ?? props.agentId;
   const isActivationReady = !hasRouteBottomAnchorRequest || isAuthoritativeHistoryReady;
-
-  const rowVirtualizer = useVirtualizer({
-    count: segments.historyVirtualized.length,
-    getScrollElement: () => scrollContainerRef.current,
-    getItemKey: (index: number) => segments.historyVirtualized[index]?.id ?? index,
-    estimateSize: (index: number) => {
-      const row = segments.historyVirtualized[index];
-      return row ? estimateStreamItemHeight(row) : 120;
-    },
-    measureElement: measureVirtualElement,
-    // Measure resized rows synchronously in the ResizeObserver callback (which
-    // fires after layout, before paint) instead of deferring to the next frame.
-    // Deferring left the absolutely-positioned sibling rows at stale translateY
-    // offsets for a frame when a row grew (e.g. expanding a tool-run summary),
-    // which read as a visible flash. Synchronous measurement repositions them in
-    // the same frame.
-    useAnimationFrameWithResizeObserver: false,
-    overscan: 8,
-  });
-  useEffect(() => {
-    rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = (_item, _delta, instance) => {
-      const viewportHeight = instance.scrollRect?.height ?? 0;
-      const scrollOffset = instance.scrollOffset ?? 0;
-      const remainingDistance = instance.getTotalSize() - (scrollOffset + viewportHeight);
-      return remainingDistance > AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
-    };
-    return () => {
-      rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
-    };
-  }, [rowVirtualizer]);
-  const virtualRows = rowVirtualizer.getVirtualItems();
-  const virtualTotalSize = rowVirtualizer.getTotalSize();
-
-  const measureVirtualizedRowElement = useCallback(
-    (node: HTMLDivElement | null) => {
-      if (!node) {
-        rowVirtualizer.measureElement(null);
-        return;
-      }
-      const pendingFrames = pendingVirtualRowMeasureFramesRef.current;
-      const existingFrame = pendingFrames.get(node);
-      if (existingFrame !== undefined) {
-        window.cancelAnimationFrame(existingFrame);
-      }
-      const frame = window.requestAnimationFrame(() => {
-        pendingFrames.delete(node);
-        if (node.isConnected) {
-          rowVirtualizer.measureElement(node);
-        }
-      });
-      pendingFrames.set(node, frame);
-    },
-    [rowVirtualizer],
-  );
-
-  useEffect(() => {
-    const pendingFrames = pendingVirtualRowMeasureFramesRef.current;
-    return () => {
-      for (const frame of pendingFrames.values()) {
-        window.cancelAnimationFrame(frame);
-      }
-      pendingFrames.clear();
-    };
-  }, []);
 
   const cancelPendingStickToBottom = useCallback(() => {
     const pendingFrame = pendingAutoScrollFrameRef.current;
@@ -383,20 +315,12 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   ]);
 
   useEffect(() => {
-    if (!followOutputRef.current || !shouldUseVirtualizer) {
-      return;
-    }
-    scheduleStickToBottom();
-  }, [scheduleStickToBottom, shouldUseVirtualizer, virtualTotalSize]);
-
-  useEffect(() => {
     updateScrollMetrics();
   }, [
     segments.historyMounted.length,
     segments.historyVirtualized.length,
     segments.liveHead.length,
     updateScrollMetrics,
-    virtualTotalSize,
   ]);
 
   useEffect(() => {
@@ -504,28 +428,11 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         suppressAutoStickUntilRef.current = performance.now() + WEB_EXPAND_ANCHOR_SUPPRESS_MS;
         cancelPendingStickToBottom();
       },
-      flushRowMeasurements: () => {
-        const scrollContainer = scrollContainerRef.current;
-        if (!scrollContainer) {
-          return;
-        }
-        const rowNodes = scrollContainer.querySelectorAll<HTMLElement>("[data-index]");
-        if (rowNodes.length === 0) {
-          return;
-        }
-        // Re-measure the just-resized virtualized row(s) now. This runs from the
-        // toggling row's layout effect (before paint), so the virtualizer's
-        // resulting reposition re-render is flushed by React before the browser
-        // paints — the absolutely-positioned siblings never show their stale
-        // translateY offsets. (flushSync is intentionally NOT used: it both warns
-        // and no-ops inside a commit-phase layout effect.) measureElement is a
-        // no-op for rows whose size is unchanged, so this stays cheap.
-        for (const node of rowNodes) {
-          if (node.isConnected) {
-            rowVirtualizer.measureElement(node);
-          }
-        }
-      },
+      // No-op since history rows render in normal document flow (no virtualizer):
+      // a row that grows on expand/collapse reflows its siblings automatically and
+      // the browser's native scroll anchoring keeps the viewport stable. Kept to
+      // satisfy the StreamViewportHandle contract shared with the native strategy.
+      flushRowMeasurements: () => {},
     };
     viewportRef.current = handle;
     return () => {
@@ -534,13 +441,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       }
       cancelPendingStickToBottom();
     };
-  }, [
-    cancelPendingStickToBottom,
-    forceStickToBottom,
-    rowVirtualizer,
-    scheduleStickToBottom,
-    viewportRef,
-  ]);
+  }, [cancelPendingStickToBottom, forceStickToBottom, scheduleStickToBottom, viewportRef]);
 
   const contentContainerStyle = useMemo((): CSSProperties => {
     return {
@@ -563,25 +464,17 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       overscrollBehaviorY: "contain",
     };
   }, [scrollEnabled]);
-  const virtualRowsContainerStyle = useMemo((): CSSProperties => {
-    return {
-      position: "relative",
-      width: "100%",
-      height: virtualTotalSize,
-    };
-  }, [virtualTotalSize]);
-  const renderVirtualRowStyle = useCallback(
-    (start: number): CSSProperties => ({
-      position: "absolute",
-      top: 0,
-      left: 0,
-      display: "flex",
-      flexDirection: "column",
-      width: "100%",
-      transform: `translateY(${start}px)`,
-    }),
-    [],
-  );
+  // Older history renders in normal document flow, exactly like the mounted
+  // segment (the two renderers are identical). No virtualization: every history
+  // row is a real, laid-out node, which keeps CSS `zoom` and scroll anchoring
+  // simple at the cost of mounting the whole transcript.
+  const virtualizedHistoryRows = useMemo(() => {
+    return segments.historyVirtualized.map((item, index) => (
+      <Fragment key={item.id}>
+        {renderHistoryVirtualizedRow(item, index, segments.historyVirtualized)}
+      </Fragment>
+    ));
+  }, [renderHistoryVirtualizedRow, segments.historyVirtualized]);
   const mountedHistoryRows = useMemo(() => {
     return segments.historyMounted.map((item, index) => (
       <Fragment key={item.id}>
@@ -618,35 +511,12 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       <div
         ref={handleScrollContainerRef}
         data-testid="agent-chat-scroll"
-        id={`agent-chat-scroll-${shouldUseVirtualizer ? "web-dom-virtualized" : "web-dom-scroll"}`}
+        id="agent-chat-scroll-web-dom-scroll"
         style={scrollContainerStyle}
       >
         <div ref={handleContentRef} style={contentContainerStyle}>
           {historyStartSlot}
-          {shouldUseVirtualizer ? (
-            <div style={virtualRowsContainerStyle}>
-              {virtualRows.map((virtualRow) => {
-                const item = segments.historyVirtualized[virtualRow.index];
-                if (!item) {
-                  return null;
-                }
-                return (
-                  <div
-                    key={virtualRow.key}
-                    data-index={virtualRow.index}
-                    ref={measureVirtualizedRowElement}
-                    style={renderVirtualRowStyle(virtualRow.start)}
-                  >
-                    {renderHistoryVirtualizedRow(
-                      item,
-                      virtualRow.index,
-                      segments.historyVirtualized,
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : null}
+          {virtualizedHistoryRows}
           {mountedHistoryRows}
           {liveHeadRows}
           {liveAuxiliary}

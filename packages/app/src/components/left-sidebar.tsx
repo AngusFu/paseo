@@ -9,6 +9,7 @@ import {
   Server,
   Settings,
   SquareKanban,
+  Workflow,
   X,
 } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
@@ -58,6 +59,7 @@ import {
   buildOpenProjectRoute,
   buildNewWorkspaceRoute,
   buildKanbanRoute,
+  buildWorkflowsRoute,
   buildSchedulesRoute,
   buildSessionsRoute,
   buildSettingsAddHostRoute,
@@ -105,6 +107,7 @@ interface SidebarLabels {
   sessions: string;
   schedules: string;
   kanban: string;
+  workflows: string;
   closeSidebar: string;
 }
 
@@ -114,6 +117,7 @@ interface MobileSidebarProps extends SidebarSharedProps {
   closeSidebar: () => void;
   handleViewSchedulesNavigate: () => void;
   handleViewKanbanNavigate: () => void;
+  handleViewWorkflowsNavigate: () => void;
 }
 
 interface DesktopSidebarProps extends SidebarSharedProps {
@@ -121,6 +125,7 @@ interface DesktopSidebarProps extends SidebarSharedProps {
   isOpen: boolean;
   handleViewSchedules: () => void;
   handleViewKanban: () => void;
+  handleViewWorkflows: () => void;
 }
 
 export const LeftSidebar = memo(function LeftSidebar() {
@@ -217,6 +222,9 @@ export const LeftSidebar = memo(function LeftSidebar() {
   const handleViewKanbanNavigate = useCallback(() => {
     router.push(buildKanbanRoute());
   }, []);
+  const handleViewWorkflowsNavigate = useCallback(() => {
+    router.push(buildWorkflowsRoute());
+  }, []);
 
   const newWorkspaceKeys = useShortcutKeys("new-workspace");
   const labels = useMemo(
@@ -230,6 +238,7 @@ export const LeftSidebar = memo(function LeftSidebar() {
       sessions: t("sidebar.sections.sessions"),
       schedules: t("sidebar.sections.schedules"),
       kanban: t("sidebar.sections.kanban"),
+      workflows: t("sidebar.sections.workflows"),
       closeSidebar: t("sidebar.actions.closeSidebar"),
     }),
     [t],
@@ -266,6 +275,7 @@ export const LeftSidebar = memo(function LeftSidebar() {
         handleOpenHostSettings={handleOpenHostSettingsMobile}
         handleViewSchedulesNavigate={handleViewSchedulesNavigate}
         handleViewKanbanNavigate={handleViewKanbanNavigate}
+        handleViewWorkflowsNavigate={handleViewWorkflowsNavigate}
       />
     );
   }
@@ -282,6 +292,7 @@ export const LeftSidebar = memo(function LeftSidebar() {
       handleOpenHostSettings={handleOpenHostSettingsDesktop}
       handleViewSchedules={handleViewSchedulesNavigate}
       handleViewKanban={handleViewKanbanNavigate}
+      handleViewWorkflows={handleViewWorkflowsNavigate}
     />
   );
 });
@@ -538,11 +549,13 @@ function MobileSidebar({
   closeSidebar,
   handleViewSchedulesNavigate,
   handleViewKanbanNavigate,
+  handleViewWorkflowsNavigate,
 }: MobileSidebarProps) {
   const pathname = usePathname();
   const isHomeActive = pathname.includes("/open-project");
   const isSchedulesActive = pathname.includes("/schedules");
   const isKanbanActive = pathname.includes("/kanban");
+  const isWorkflowsActive = pathname.includes("/workflows");
   const { gesture: closeGesture, gestureRef: closeGestureRef } = useCloseAgentListGesture();
 
   const handleViewSchedules = useCallback(() => {
@@ -554,6 +567,10 @@ function MobileSidebar({
     closeSidebar();
     handleViewKanbanNavigate();
   }, [closeSidebar, handleViewKanbanNavigate]);
+  const handleViewWorkflows = useCallback(() => {
+    closeSidebar();
+    handleViewWorkflowsNavigate();
+  }, [closeSidebar, handleViewWorkflowsNavigate]);
 
   const handleWorkspacePress = useCallback(() => {
     closeSidebar();
@@ -590,6 +607,14 @@ function MobileSidebar({
             onPress={handleViewKanban}
             isActive={isKanbanActive}
             testID="sidebar-kanban"
+            variant="compact"
+          />
+          <SidebarHeaderRow
+            icon={Workflow}
+            label={labels.workflows}
+            onPress={handleViewWorkflows}
+            isActive={isWorkflowsActive}
+            testID="sidebar-workflows"
             variant="compact"
           />
           <SidebarHeaderRow
@@ -688,11 +713,13 @@ function DesktopSidebar({
   isOpen,
   handleViewSchedules,
   handleViewKanban,
+  handleViewWorkflows,
 }: DesktopSidebarProps) {
   const pathname = usePathname();
   const isHomeActive = pathname.includes("/open-project");
   const isSchedulesActive = pathname.includes("/schedules");
   const isKanbanActive = pathname.includes("/kanban");
+  const isWorkflowsActive = pathname.includes("/workflows");
   const padding = useWindowControlsPadding("sidebar");
   const sidebarWidth = usePanelStore((state) => state.sidebarWidth);
   const setSidebarWidth = usePanelStore((state) => state.setSidebarWidth);
@@ -772,6 +799,14 @@ function DesktopSidebar({
               onPress={handleViewKanban}
               isActive={isKanbanActive}
               testID="sidebar-kanban"
+              variant="compact"
+            />
+            <SidebarHeaderRow
+              icon={Workflow}
+              label={labels.workflows}
+              onPress={handleViewWorkflows}
+              isActive={isWorkflowsActive}
+              testID="sidebar-workflows"
               variant="compact"
             />
             <SidebarHeaderRow

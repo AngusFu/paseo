@@ -14,6 +14,7 @@ import type { FileBackedChatService } from "./chat/chat-service.js";
 import type { LoopService } from "./loop-service.js";
 import type { ScheduleService } from "./schedule/service.js";
 import { KanbanService } from "./kanban/service.js";
+import { WorkflowService } from "./workflow/service.js";
 import { LlamaService } from "./llm/llama-service.js";
 import type { CheckoutDiffManager, CheckoutDiffMetrics } from "./checkout-diff-manager.js";
 import type { DaemonConfigStore, MutableDaemonConfig } from "./daemon-config-store.js";
@@ -433,6 +434,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly loopService: LoopService;
   private readonly scheduleService: ScheduleService;
   private readonly kanbanService: KanbanService;
+  private readonly workflowService: WorkflowService;
   private readonly llamaService: LlamaService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: GitHubService;
@@ -532,6 +534,7 @@ export class VoiceAssistantWebSocketServer {
     serviceProxyPublicBaseUrl?: string | null,
     browserToolsBroker?: BrowserToolsBroker | null,
     kanbanService?: KanbanService,
+    workflowService?: WorkflowService,
     llamaService?: LlamaService,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
@@ -556,6 +559,7 @@ export class VoiceAssistantWebSocketServer {
     this.loopService = requiredServices.loopService;
     this.scheduleService = requiredServices.scheduleService;
     this.kanbanService = kanbanService ?? new KanbanService({ dir: join(paseoHome, "kanban") });
+    this.workflowService = workflowService ?? new WorkflowService({ paseoHome });
     this.llamaService =
       llamaService ??
       new LlamaService({
@@ -1070,6 +1074,7 @@ export class VoiceAssistantWebSocketServer {
       loopService: this.loopService,
       scheduleService: this.scheduleService,
       kanbanService: this.kanbanService,
+      workflowService: this.workflowService,
       llamaService: this.llamaService,
       checkoutDiffManager: this.checkoutDiffManager,
       github: this.github,
@@ -1298,6 +1303,8 @@ export class VoiceAssistantWebSocketServer {
         kanbanColumns: true,
         // COMPAT(kanbanCardDetail): added in v0.1.109, drop the gate when floor >= v0.1.109.
         kanbanCardDetail: true,
+        // COMPAT(workflow): added in v0.1.105, drop the gate when floor >= v0.1.105.
+        workflow: true,
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
         localLlm: true,
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.

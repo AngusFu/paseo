@@ -25,6 +25,7 @@ import { KanbanCardDetailService, type KanbanAttachmentFetchResult } from "./det
 import { KanbanSecretsStore, type KanbanOauthSecret, type KanbanSecret } from "./secrets-store.js";
 import { credentialRefForConnection, KanbanOauthService } from "./oauth.js";
 import { KanbanPollService } from "./poll.js";
+import type { WorkflowService } from "../workflow/service.js";
 
 // Merge a client id + optional new secret into an OAuth secret, preserving any
 // tokens already issued for this connection. Extracted so applyConnectionSecrets
@@ -140,6 +141,7 @@ export interface KanbanServiceOptions {
   dir: string;
   fetchImpl?: typeof fetch;
   logger?: pino.Logger;
+  workflowService?: WorkflowService;
 }
 
 // Secret-bearing fields on Create/UpdateKanbanConnectionInput. Never
@@ -179,6 +181,9 @@ export class KanbanService {
       fetchImpl,
       oauthService: this.oauthService,
       logger: options.logger,
+      onCardCreated: async (card, source) => {
+        await options.workflowService?.enqueueForNewKanbanCard(card, source.id);
+      },
     });
     this.detailService = new KanbanCardDetailService({
       store: this.store,

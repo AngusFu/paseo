@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import type { FieldControlSize } from "@/components/ui/control-geometry";
 import { useKanbanConnections } from "@/hooks/use-kanban-connections";
+import { KanbanWorkflowRulesSection } from "@/components/kanban/kanban-workflow-rules-section";
 import {
   useKanbanSourceMutations,
   type CreateKanbanSourceInput,
@@ -759,6 +760,10 @@ export function KanbanSourceFormSheet({
         onChangeColumnMap={setColumnMap}
         controlSize={controlSize}
       />
+
+      {mode === "edit" && source ? (
+        <KanbanWorkflowRulesSection serverId={serverId} sourceId={source.id} />
+      ) : null}
 
       {mode === "edit" && source ? (
         <Button

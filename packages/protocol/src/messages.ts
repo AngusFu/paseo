@@ -92,6 +92,36 @@ import {
   KanbanColumnDeleteResponseSchema,
 } from "./kanban/rpc-schemas.js";
 import {
+  KanbanRuleCreateRequestSchema,
+  KanbanRuleCreateResponseSchema,
+  KanbanRuleDeleteRequestSchema,
+  KanbanRuleDeleteResponseSchema,
+  KanbanRuleListRequestSchema,
+  KanbanRuleListResponseSchema,
+  KanbanRuleUpdateRequestSchema,
+  KanbanRuleUpdateResponseSchema,
+  WorkflowDefinitionCreateRequestSchema,
+  WorkflowDefinitionCreateResponseSchema,
+  WorkflowDefinitionDeleteRequestSchema,
+  WorkflowDefinitionDeleteResponseSchema,
+  WorkflowDefinitionGetRequestSchema,
+  WorkflowDefinitionGetResponseSchema,
+  WorkflowDefinitionListBuiltinsRequestSchema,
+  WorkflowDefinitionListBuiltinsResponseSchema,
+  WorkflowDefinitionListRequestSchema,
+  WorkflowDefinitionListResponseSchema,
+  WorkflowDefinitionUpdateRequestSchema,
+  WorkflowDefinitionUpdateResponseSchema,
+  WorkflowRunCancelRequestSchema,
+  WorkflowRunCancelResponseSchema,
+  WorkflowRunDispatchRequestSchema,
+  WorkflowRunDispatchResponseSchema,
+  WorkflowRunGetRequestSchema,
+  WorkflowRunGetResponseSchema,
+  WorkflowRunListRequestSchema,
+  WorkflowRunListResponseSchema,
+} from "./workflow/rpc-schemas.js";
+import {
   LoopRunRequestSchema,
   LoopListRequestSchema,
   LoopInspectRequestSchema,
@@ -1551,6 +1581,12 @@ const CheckoutErrorCodeSchema = z.enum([
   "NOT_GIT_REPO",
   "NOT_ALLOWED",
   "MERGE_CONFLICT",
+  // COMPAT(baseRefNotFound): added in v0.1.108. The stored base ref no longer
+  // resolves; the client uses this code to offer a base-branch reselect. Old
+  // daemons never emit it (they fall through to UNKNOWN), so it doubles as the
+  // capability signal — the reselect UI and checkout.baseRef.set RPC only
+  // engage when this code is present, which only a new daemon sends.
+  "BASE_REF_NOT_FOUND",
   "UNKNOWN",
 ]);
 
@@ -1704,6 +1740,14 @@ export const CheckoutRenameBranchRequestSchema = z.object({
   type: z.literal("checkout.rename_branch.request"),
   cwd: z.string(),
   branch: z.string(),
+  requestId: z.string(),
+});
+
+export const CheckoutSetBaseRefRequestSchema = z.object({
+  type: z.literal("checkout.baseRef.set.request"),
+  cwd: z.string(),
+  // The new base branch to record for this checkout's diff/status comparisons.
+  baseRef: z.string(),
   requestId: z.string(),
 });
 
@@ -2243,6 +2287,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   PullRequestTimelineRequestSchema,
   CheckoutSwitchBranchRequestSchema,
   CheckoutRenameBranchRequestSchema,
+  CheckoutSetBaseRefRequestSchema,
   StashSaveRequestSchema,
   StashPopRequestSchema,
   StashListRequestSchema,
@@ -2321,6 +2366,20 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   KanbanColumnUpdateRequestSchema,
   KanbanColumnReorderRequestSchema,
   KanbanColumnDeleteRequestSchema,
+  WorkflowDefinitionListRequestSchema,
+  WorkflowDefinitionGetRequestSchema,
+  WorkflowDefinitionCreateRequestSchema,
+  WorkflowDefinitionUpdateRequestSchema,
+  WorkflowDefinitionDeleteRequestSchema,
+  WorkflowDefinitionListBuiltinsRequestSchema,
+  WorkflowRunListRequestSchema,
+  WorkflowRunGetRequestSchema,
+  WorkflowRunDispatchRequestSchema,
+  WorkflowRunCancelRequestSchema,
+  KanbanRuleListRequestSchema,
+  KanbanRuleCreateRequestSchema,
+  KanbanRuleUpdateRequestSchema,
+  KanbanRuleDeleteRequestSchema,
   LoopRunRequestSchema,
   LoopListRequestSchema,
   LoopInspectRequestSchema,
@@ -2546,6 +2605,8 @@ export const ServerInfoStatusPayloadSchema = z
         kanbanColumns: z.boolean().optional(),
         // COMPAT(kanbanCardDetail): added in v0.1.109, drop the gate when floor >= v0.1.109.
         kanbanCardDetail: z.boolean().optional(),
+        // COMPAT(workflow): added in v0.1.105, drop the gate when floor >= v0.1.105.
+        workflow: z.boolean().optional(),
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
         localLlm: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
@@ -3926,6 +3987,18 @@ export const CheckoutRenameBranchResponseSchema = z.object({
   }),
 });
 
+export const CheckoutSetBaseRefResponseSchema = z.object({
+  type: z.literal("checkout.baseRef.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    cwd: z.string(),
+    // The normalized base ref that was persisted (origin/ stripped), or null on failure.
+    baseRef: z.string().nullable(),
+    error: CheckoutErrorSchema.nullable(),
+  }),
+});
+
 const StashEntrySchema = z.object({
   index: z.number().int().min(0),
   message: z.string(),
@@ -4547,6 +4620,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   PullRequestTimelineResponseSchema,
   CheckoutSwitchBranchResponseSchema,
   CheckoutRenameBranchResponseSchema,
+  CheckoutSetBaseRefResponseSchema,
   StashSaveResponseSchema,
   StashPopResponseSchema,
   StashListResponseSchema,
@@ -4620,6 +4694,20 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   KanbanColumnUpdateResponseSchema,
   KanbanColumnReorderResponseSchema,
   KanbanColumnDeleteResponseSchema,
+  WorkflowDefinitionListResponseSchema,
+  WorkflowDefinitionGetResponseSchema,
+  WorkflowDefinitionCreateResponseSchema,
+  WorkflowDefinitionUpdateResponseSchema,
+  WorkflowDefinitionDeleteResponseSchema,
+  WorkflowDefinitionListBuiltinsResponseSchema,
+  WorkflowRunListResponseSchema,
+  WorkflowRunGetResponseSchema,
+  WorkflowRunDispatchResponseSchema,
+  WorkflowRunCancelResponseSchema,
+  KanbanRuleListResponseSchema,
+  KanbanRuleCreateResponseSchema,
+  KanbanRuleUpdateResponseSchema,
+  KanbanRuleDeleteResponseSchema,
   LoopRunResponseSchema,
   LoopListResponseSchema,
   LoopInspectResponseSchema,
@@ -4965,6 +5053,8 @@ export type CheckoutSwitchBranchRequest = z.infer<typeof CheckoutSwitchBranchReq
 export type CheckoutSwitchBranchResponse = z.infer<typeof CheckoutSwitchBranchResponseSchema>;
 export type CheckoutRenameBranchRequest = z.infer<typeof CheckoutRenameBranchRequestSchema>;
 export type CheckoutRenameBranchResponse = z.infer<typeof CheckoutRenameBranchResponseSchema>;
+export type CheckoutSetBaseRefRequest = z.infer<typeof CheckoutSetBaseRefRequestSchema>;
+export type CheckoutSetBaseRefResponse = z.infer<typeof CheckoutSetBaseRefResponseSchema>;
 export type StashSaveRequest = z.infer<typeof StashSaveRequestSchema>;
 export type StashSaveResponse = z.infer<typeof StashSaveResponseSchema>;
 export type StashPopRequest = z.infer<typeof StashPopRequestSchema>;

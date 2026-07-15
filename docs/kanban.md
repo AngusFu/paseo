@@ -63,19 +63,21 @@ optional; wire schemas are pure structural declarations (discriminated unions fo
 `source`/`auth`, no `transform`/`catch`/`preprocess`). Gated behind
 `server_info.features.kanban` — `COMPAT(kanban)` marks the cleanup site.
 
-## auto-loop hook (design detail D — NOT built here)
+## Workflow auto-trigger (source rules)
 
-v1 only _produces_ the data an auto-loop engine would consume; it does not run any
-task flow. Two seams are reserved:
+New cards from sync can automatically enqueue a workflow run. See
+[workflow.md](workflow.md) for storage, RPCs, and concurrency.
 
-- **Status-change signal.** A card's status changing (drag or sync) is already
-  observable via the existing card-change broadcast; the terminal auto-loop goal
-  subscribes to it. v1 produces, does not consume.
+- Rules live in `$PASEO_HOME/workflows/rules.json` (`kanban.rule.*` RPCs).
+- Each rule binds a Kanban **source** to a workflow definition, with optional
+  filter (`labelsAny`, `titleRegex`, `projectKey`) and an enabled flag.
+- On sync, when `upsertCardBySource` **creates** a card (first insert for
+  `(source.kind, externalId)`), matching enabled rules enqueue runs.
+- Re-sync updates do not re-trigger. Card-level `trigger` / status-change
+  auto-loop remains a separate follow-up (still not executed).
+
+## Card-level trigger (reserved, not executed)
+
 - **`trigger` field on the card** (`{ onStatus, target: ScheduleTarget }`,
-  optional): "when this card enters `onStatus`, run this target." v1 stores it and
-  the CLI can write it, but nothing executes it. The terminal auto-loop engine
-  will subscribe to status changes, read `trigger`, and call the existing schedule
-  `command-runner` — no data-model change required then.
-
-TODO(auto-loop): wire the consumer in a dedicated goal; the `ScheduleTarget`
-execution primitives already exist in `packages/server/src/server/schedule/`.
+  optional): "when this card enters `onStatus`, run this target." Still stored
+  only — not consumed. Distinct from source-level workflow rules above.

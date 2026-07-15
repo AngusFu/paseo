@@ -120,6 +120,7 @@ import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { LoopService } from "./loop-service.js";
 import { ScheduleService } from "./schedule/service.js";
 import { KanbanService } from "./kanban/service.js";
+import { WorkflowService } from "./workflow/service.js";
 import { DaemonConfigStore, type MutableDaemonConfig } from "./daemon-config-store.js";
 import { BrowserToolsBroker } from "./browser-tools/broker.js";
 import { DaemonConfigBrowserToolsPolicy } from "./browser-tools/policy.js";
@@ -627,9 +628,11 @@ export async function createPaseoDaemon(
   // the daemon-password middleware. Its own capability is the single-use
   // `state` param minted by kanban.connection.oauth.start — see the
   // BEARER_AUTH_BYPASS_PATHS comment in auth.ts.
+  const workflowService = new WorkflowService({ paseoHome: config.paseoHome });
   const kanbanService = new KanbanService({
     dir: path.join(config.paseoHome, "kanban"),
     logger,
+    workflowService,
   });
   app.get("/kanban/oauth/callback", (req, res) => {
     void (async () => {
@@ -1486,6 +1489,7 @@ export async function createPaseoDaemon(
               serviceProxyPublicBaseUrl,
               browserToolsBroker,
               kanbanService,
+              workflowService,
             );
 
             if (relayEnabled) {

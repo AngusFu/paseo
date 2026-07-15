@@ -75,11 +75,7 @@ export function normalizeBaseRefName(input: string): string {
   return trimmed;
 }
 
-export function writePaseoWorktreeMetadata(
-  worktreeRoot: string,
-  options: { baseRefName: string },
-): void {
-  const baseRefName = normalizeBaseRefName(options.baseRefName);
+function assertValidBaseRefName(baseRefName: string): void {
   if (baseRefName === "HEAD") {
     throw new Error("Base branch cannot be HEAD");
   }
@@ -89,11 +85,42 @@ export function writePaseoWorktreeMetadata(
   if (!/^[0-9A-Za-z._/-]+$/.test(baseRefName)) {
     throw new Error(`Invalid base branch: ${baseRefName}`);
   }
+}
+
+export function writePaseoWorktreeMetadata(
+  worktreeRoot: string,
+  options: { baseRefName: string },
+): void {
+  const baseRefName = normalizeBaseRefName(options.baseRefName);
+  assertValidBaseRefName(baseRefName);
 
   const metadataPath = getPaseoWorktreeMetadataPath(worktreeRoot);
   mkdirSync(join(getGitDirForWorktreeRoot(worktreeRoot), "paseo"), { recursive: true });
   const metadata: PaseoWorktreeMetadata = { version: 1, baseRefName };
   writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+}
+
+// Repoint an existing checkout's base ref (e.g. after the user reselects a base
+// following a BASE_REF_NOT_FOUND error) without dropping v2 fields like
+// firstAgentBranchAutoName/runtime. Returns the normalized name that was stored.
+export function updatePaseoWorktreeBaseRef(worktreeRoot: string, baseRef: string): string {
+  const baseRefName = normalizeBaseRefName(baseRef);
+  assertValidBaseRefName(baseRefName);
+
+  const current = readPaseoWorktreeMetadata(worktreeRoot);
+  if (current?.version === 2) {
+    writePaseoWorktreeMetadataFile(worktreeRoot, {
+      version: 2,
+      baseRefName,
+      ...(current.firstAgentBranchAutoName
+        ? { firstAgentBranchAutoName: current.firstAgentBranchAutoName }
+        : {}),
+      ...(current.runtime ? { runtime: current.runtime } : {}),
+    });
+  } else {
+    writePaseoWorktreeMetadataFile(worktreeRoot, { version: 1, baseRefName });
+  }
+  return baseRefName;
 }
 
 export function writePaseoWorktreeRuntimeMetadata(

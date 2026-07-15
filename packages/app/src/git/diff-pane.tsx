@@ -1918,6 +1918,8 @@ interface DiffBodyContentProps {
   notGit: boolean;
   isDiffLoading: boolean;
   diffErrorMessage: string | null;
+  diffErrorCode: string | null;
+  baseReselectSlot: ReactElement | null;
   hasChanges: boolean;
   emptyMessage: string;
   flatItems: DiffFlatItem[];
@@ -1943,6 +1945,8 @@ function DiffBodyContent({
   notGit,
   isDiffLoading,
   diffErrorMessage,
+  diffErrorCode,
+  baseReselectSlot,
   hasChanges,
   emptyMessage,
   flatItems,
@@ -2006,6 +2010,7 @@ function DiffBodyContent({
     return (
       <View style={styles.errorContainer}>
         <Text style={errorTextStyle}>{diffErrorMessage}</Text>
+        {diffErrorCode === "BASE_REF_NOT_FOUND" ? baseReselectSlot : null}
       </View>
     );
   }
@@ -2326,6 +2331,113 @@ function useDiffPaneBranchCompare({
     handleSwapBranchCompareRefs,
     clearBranchCompare,
   };
+}
+
+// Shown inside the diff error card when the stored base ref no longer resolves
+// (BASE_REF_NOT_FOUND). Lets the user pick a new base branch, persists it via
+// checkout.baseRef.set, and forces a refresh so the diff recomputes.
+function BaseRefReselect({
+  serverId,
+  cwd,
+  client,
+}: {
+  serverId: string;
+  cwd: string;
+  client: DaemonClient | null;
+}): ReactElement {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const runRefresh = useCheckoutGitActionsStore((s) => s.refresh);
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const anchorRef = useRef<View>(null);
+
+  const suggestionsQuery = useFetchQuery({
+    queryKey: ["baseRefReselectSuggestions", serverId, cwd],
+    queryFn: async () => {
+      if (!client) {
+        throw new Error(t("common.errors.daemonClientUnavailable"));
+      }
+      const payload = await client.getBranchSuggestions({ cwd, limit: 200 });
+      if (payload.error) {
+        throw new Error(payload.error);
+      }
+      return payload.branches ?? [];
+    },
+    dataShape: "list",
+    enabled: open && Boolean(client),
+    retry: false,
+    staleTimeMs: 15_000,
+  });
+  const options = useMemo<ComboboxOption[]>(
+    () => (suggestionsQuery.data ?? []).map((name) => ({ id: name, label: name })),
+    [suggestionsQuery.data],
+  );
+
+  const handleOpen = useCallback(() => {
+    setOpen(true);
+  }, []);
+
+  const handleSelect = useCallback(
+    (baseRef: string) => {
+      setOpen(false);
+      if (!client) {
+        return;
+      }
+      setSaving(true);
+      void (async () => {
+        try {
+          const result = await client.setBaseRef({ cwd, baseRef });
+          if (result.error) {
+            toast.error(result.error.message);
+            return;
+          }
+          // The daemon reschedules the diff and pushes a workspace update; force
+          // a refresh so the new base takes effect without waiting on the watcher.
+          await runRefresh({ serverId, cwd });
+        } catch (error) {
+          toast.error(
+            error instanceof Error ? error.message : t("workspace.git.diff.baseReselectFailed"),
+          );
+        } finally {
+          setSaving(false);
+        }
+      })();
+    },
+    [client, cwd, runRefresh, serverId, t, toast],
+  );
+
+  return (
+    <View style={styles.baseReselectContainer}>
+      <Pressable
+        ref={anchorRef}
+        onPress={handleOpen}
+        disabled={saving}
+        accessibilityRole="button"
+        style={styles.baseReselectButton}
+      >
+        <Text style={styles.baseReselectButtonText}>
+          {t("workspace.git.diff.baseReselectAction")}
+        </Text>
+      </Pressable>
+      <Combobox
+        options={options}
+        value=""
+        onSelect={handleSelect}
+        searchable
+        placeholder={t("branchSwitcher.placeholder")}
+        searchPlaceholder={t("branchSwitcher.searchPlaceholder")}
+        emptyText={t("branchSwitcher.empty")}
+        title={t("workspace.git.diff.baseReselectTitle")}
+        open={open}
+        onOpenChange={setOpen}
+        anchorRef={anchorRef}
+        desktopPlacement="bottom-start"
+        desktopPreventInitialFlash
+        desktopMinWidth={280}
+      />
+    </View>
+  );
 }
 
 function computeDiffModeTriggerLabel(input: {
@@ -3046,6 +3158,10 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
 
   const hasChanges = files.length > 0;
   const diffErrorMessage = diffPayloadError?.message ?? null;
+  const baseReselectSlot = useMemo(
+    () => (client ? <BaseRefReselect serverId={serverId} cwd={cwd} client={client} /> : null),
+    [client, cwd, serverId],
+  );
   const prErrorMessage = computePrErrorMessage(githubFeaturesEnabled, prPayloadError);
   const baseRefLabel = useMemo(
     () => computeBaseRefLabel(baseRef, t("workspace.git.diff.base")),
@@ -3105,6 +3221,8 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
       notGit={notGit}
       isDiffLoading={isDiffLoading}
       diffErrorMessage={diffErrorMessage}
+      diffErrorCode={diffPayloadError?.code ?? null}
+      baseReselectSlot={baseReselectSlot}
       hasChanges={hasChanges}
       emptyMessage={emptyMessage}
       flatItems={flatItems}
@@ -3405,6 +3523,21 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.base,
     color: theme.colors.destructive,
     textAlign: "center",
+  },
+  baseReselectContainer: {
+    marginTop: theme.spacing[4],
+    alignItems: "center",
+  },
+  baseReselectButton: {
+    paddingVertical: theme.spacing[2],
+    paddingHorizontal: theme.spacing[4],
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  baseReselectButtonText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.foreground,
   },
   emptyContainer: {
     flex: 1,

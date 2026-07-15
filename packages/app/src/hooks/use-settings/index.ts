@@ -26,6 +26,8 @@ import {
   MIN_CODE_FONT_SIZE,
   MIN_TERMINAL_SCROLLBACK_LINES,
   MIN_UI_FONT_SIZE,
+  TRANSCRIPT_ZOOM_LEVELS,
+  DEFAULT_TRANSCRIPT_ZOOM,
   loadAppSettingsFromStorage as loadAppSettingsFromStoragePure,
   loadSettingsFromStorage as loadSettingsFromStoragePure,
   parseClampedFontSize,
@@ -59,6 +61,8 @@ export {
   MIN_CODE_FONT_SIZE,
   MIN_TERMINAL_SCROLLBACK_LINES,
   MIN_UI_FONT_SIZE,
+  TRANSCRIPT_ZOOM_LEVELS,
+  DEFAULT_TRANSCRIPT_ZOOM,
   parseClampedFontSize,
   parseTerminalScrollbackLines,
   sanitizeBrowserDefaultUrl,
@@ -194,6 +198,9 @@ export function useSettings<TSelected>(
       }
       if (updates.browserDefaultUrl !== undefined) {
         appUpdates.browserDefaultUrl = updates.browserDefaultUrl;
+      }
+      if (updates.transcriptZoom !== undefined) {
+        appUpdates.transcriptZoom = updates.transcriptZoom;
       }
       const promises: Promise<void>[] = [];
       if (Object.keys(appUpdates).length > 0) {

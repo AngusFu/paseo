@@ -28,6 +28,11 @@ export const MAX_CODE_FONT_SIZE = 22; // line-height 1.5×22=33 stays safe
 export const MAX_FONT_FAMILY_LENGTH = 200;
 export const DEFAULT_BROWSER_START_URL = "https://example.com";
 export const MAX_BROWSER_START_URL_LENGTH = 2048;
+// Discrete zoom levels for the agent transcript (web-only, applied via CSS
+// `zoom`). 1 = 100%. Kept as a fixed set so the control steps predictably and
+// stored values can be validated against it.
+export const TRANSCRIPT_ZOOM_LEVELS = [0.8, 0.9, 1, 1.1, 1.25, 1.5] as const;
+export const DEFAULT_TRANSCRIPT_ZOOM = 1;
 
 export interface AppSettings {
   theme: ThemeName | "auto";
@@ -43,6 +48,7 @@ export interface AppSettings {
   workspaceTitleSource: WorkspaceTitleSource;
   autoExpandReasoning: boolean;
   browserDefaultUrl: string; // start URL for new in-app browsers; "" = example.com fallback
+  transcriptZoom: number; // agent transcript CSS zoom (web-only), default 1
 }
 
 export interface Settings extends AppSettings {
@@ -64,6 +70,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   workspaceTitleSource: "title",
   autoExpandReasoning: false,
   browserDefaultUrl: DEFAULT_BROWSER_START_URL,
+  transcriptZoom: DEFAULT_TRANSCRIPT_ZOOM,
 };
 
 export const DEFAULT_APP_SETTINGS: Settings = {
@@ -217,7 +224,19 @@ function pickAppSettings(stored: Partial<AppSettings>): Partial<AppSettings> {
   if (browserDefaultUrl !== null) {
     result.browserDefaultUrl = browserDefaultUrl;
   }
+  const transcriptZoom = parseTranscriptZoom(stored.transcriptZoom);
+  if (transcriptZoom !== null) {
+    result.transcriptZoom = transcriptZoom;
+  }
   return result;
+}
+
+// Accept a stored zoom only if it's one of the known discrete levels; anything
+// else (corrupt/legacy) falls back to the default via the null return.
+export function parseTranscriptZoom(value: unknown): number | null {
+  return typeof value === "number" && (TRANSCRIPT_ZOOM_LEVELS as readonly number[]).includes(value)
+    ? value
+    : null;
 }
 
 function pickAppSettingsFromLegacy(legacy: Record<string, unknown>): Partial<AppSettings> {

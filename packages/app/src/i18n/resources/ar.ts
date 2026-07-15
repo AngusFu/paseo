@@ -171,6 +171,11 @@ export const ar: TranslationResources = {
   agentStream: {
     empty: "ابدأ الدردشة مع هذا الوكيل...",
     scrollToBottom: "قم بالتمرير إلى الأسفل",
+    zoom: {
+      in: "تكبير",
+      out: "تصغير",
+      reset: "إعادة ضبط التكبير",
+    },
     permission: {
       plan: "يخطط",
       required: "الإذن مطلوب",

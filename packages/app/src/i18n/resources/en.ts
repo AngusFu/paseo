@@ -169,6 +169,11 @@ export const en = {
   agentStream: {
     empty: "Start chatting with this agent...",
     scrollToBottom: "Scroll to bottom",
+    zoom: {
+      in: "Zoom in",
+      out: "Zoom out",
+      reset: "Reset zoom",
+    },
     permission: {
       plan: "Plan",
       required: "Permission Required",

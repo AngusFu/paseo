@@ -27,7 +27,15 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { MAX_CONTENT_WIDTH, useIsCompactFormFactor } from "@/constants/layout";
 import { useMutation } from "@tanstack/react-query";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
-import { Check, ChevronDown, ChevronsDownUp, ChevronsUpDown, X } from "lucide-react-native";
+import {
+  Check,
+  ChevronDown,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react-native";
 import { usePanelStore } from "@/stores/panel-store";
 import {
   AssistantMessage,
@@ -54,13 +62,14 @@ import type { AgentScreenAgent } from "@/hooks/use-agent-screen-state-machine";
 import { useSessionStore } from "@/stores/session-store";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
 import { useLoadOlderAgentHistory } from "@/hooks/use-load-older-agent-history";
-import { useSettings } from "@/hooks/use-settings";
+import { useSettings, TRANSCRIPT_ZOOM_LEVELS, DEFAULT_TRANSCRIPT_ZOOM } from "@/hooks/use-settings";
 import type { ToastApi } from "@/components/toast-host";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { ToolCallDetailsContent } from "@/components/tool-call-details";
 import { QuestionFormCard } from "@/components/question-form-card";
 import { ToolCallSheetProvider } from "@/components/tool-call-sheet";
 import { type AgentStreamRenderModel, buildAgentStreamRenderModel } from "./model";
+import { TranscriptZoomLayer } from "./transcript-zoom-layer";
 import { resolveStreamRenderStrategy } from "./strategy-resolver";
 import { type StreamSegmentRenderers, type StreamViewportHandle } from "./strategy";
 import {
@@ -354,6 +363,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       ],
       [],
     );
+    // Agent-transcript zoom (web-only). A user preference persisted in settings;
+    // read here to feed <TranscriptZoomLayer>, which wraps the whole transcript
+    // in a `zoom`-scaled DOM layer on web. The stepping controls live in
+    // <TranscriptZoomControl>. Native ignores the value.
+    const transcriptZoom = useSettings((settings) => settings.transcriptZoom);
+
     const openFileExplorerForCheckout = usePanelStore((state) => state.openFileExplorerForCheckout);
     const setExplorerTabForCheckout = usePanelStore((state) => state.setExplorerTabForCheckout);
 
@@ -971,45 +986,50 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       <ToolCallSheetProvider>
         <View style={stylesheet.container}>
           <MessageOuterSpacingProvider disableOuterSpacing>
-            {streamRenderStrategy.render({
-              agentId,
-              segments: renderModel.segments,
-              boundary,
-              renderers,
-              listEmptyComponent,
-              viewportRef,
-              routeBottomAnchorRequest,
-              isAuthoritativeHistoryReady,
-              onNearBottomChange: setIsNearBottom,
-              onNearHistoryStart: loadOlder,
-              isLoadingOlderHistory: isLoadingOlder,
-              hasOlderHistory: hasOlder,
-              scrollEnabled: streamScrollEnabled,
-              listStyle: stylesheet.list,
-              baseListContentContainerStyle: stylesheet.listContentContainer,
-              forwardListContentContainerStyle: stylesheet.forwardListContentContainer,
-            })}
+            <TranscriptZoomLayer zoom={transcriptZoom}>
+              {streamRenderStrategy.render({
+                agentId,
+                segments: renderModel.segments,
+                boundary,
+                renderers,
+                listEmptyComponent,
+                viewportRef,
+                routeBottomAnchorRequest,
+                isAuthoritativeHistoryReady,
+                onNearBottomChange: setIsNearBottom,
+                onNearHistoryStart: loadOlder,
+                isLoadingOlderHistory: isLoadingOlder,
+                hasOlderHistory: hasOlder,
+                scrollEnabled: streamScrollEnabled,
+                listStyle: stylesheet.list,
+                baseListContentContainerStyle: stylesheet.listContentContainer,
+                forwardListContentContainerStyle: stylesheet.forwardListContentContainer,
+              })}
+            </TranscriptZoomLayer>
           </MessageOuterSpacingProvider>
           {hasStreamContent && (
             <View style={stylesheet.collapseToggleContainer} pointerEvents="box-none">
               <View style={stylesheet.collapseToggleInner} pointerEvents="box-none">
-                <Pressable
-                  style={collapseToggleButtonStyle}
-                  onPress={handleToggleCollapseAll}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    collapseSignal.expanded
-                      ? t("message.actions.collapseAll")
-                      : t("message.actions.expandAll")
-                  }
-                  testID="collapse-all-toggle"
-                >
-                  {collapseSignal.expanded ? (
-                    <ThemedChevronsDownUp size={18} uniProps={collapseToggleColorMapping} />
-                  ) : (
-                    <ThemedChevronsUpDown size={18} uniProps={collapseToggleColorMapping} />
-                  )}
-                </Pressable>
+                <View style={stylesheet.toggleRow} pointerEvents="box-none">
+                  {isWeb && <TranscriptZoomControl />}
+                  <Pressable
+                    style={collapseToggleButtonStyle}
+                    onPress={handleToggleCollapseAll}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      collapseSignal.expanded
+                        ? t("message.actions.collapseAll")
+                        : t("message.actions.expandAll")
+                    }
+                    testID="collapse-all-toggle"
+                  >
+                    {collapseSignal.expanded ? (
+                      <ThemedChevronsDownUp size={18} uniProps={collapseToggleColorMapping} />
+                    ) : (
+                      <ThemedChevronsUpDown size={18} uniProps={collapseToggleColorMapping} />
+                    )}
+                  </Pressable>
+                </View>
               </View>
             </View>
           )}
@@ -1165,6 +1185,8 @@ const ThemedCheckIcon = withUnistyles(Check);
 const ThemedXIcon = withUnistyles(X);
 const ThemedChevronsDownUp = withUnistyles(ChevronsDownUp);
 const ThemedChevronsUpDown = withUnistyles(ChevronsUpDown);
+const ThemedZoomIn = withUnistyles(ZoomIn);
+const ThemedZoomOut = withUnistyles(ZoomOut);
 const collapseToggleColorMapping = (theme: Theme) => ({
   color: theme.colors.foreground,
 });
@@ -1175,6 +1197,83 @@ const primaryColorMapping = (theme: Theme) => ({
 const mutedColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
 });
+
+// Web-only stepped zoom for the agent transcript. Reads/writes the persisted
+// `transcriptZoom` setting; the transcript view applies it as CSS `zoom`.
+// Extracted so the stepping logic and its JSX don't inflate AgentStreamView.
+function TranscriptZoomControl() {
+  const { t } = useTranslation();
+  const transcriptZoom = useSettings((settings) => settings.transcriptZoom);
+  const { updateSettings } = useSettings();
+  const zoomLevels = TRANSCRIPT_ZOOM_LEVELS as readonly number[];
+  const currentIndex =
+    zoomLevels.indexOf(transcriptZoom) === -1
+      ? zoomLevels.indexOf(DEFAULT_TRANSCRIPT_ZOOM)
+      : zoomLevels.indexOf(transcriptZoom);
+  const canZoomOut = currentIndex > 0;
+  const canZoomIn = currentIndex < zoomLevels.length - 1;
+  const setZoom = useCallback(
+    (level: number) => {
+      if (level !== transcriptZoom) {
+        void updateSettings({ transcriptZoom: level });
+      }
+    },
+    [transcriptZoom, updateSettings],
+  );
+  const handleZoomOut = useCallback(() => {
+    if (canZoomOut) setZoom(zoomLevels[currentIndex - 1]);
+  }, [canZoomOut, currentIndex, setZoom, zoomLevels]);
+  const handleZoomIn = useCallback(() => {
+    if (canZoomIn) setZoom(zoomLevels[currentIndex + 1]);
+  }, [canZoomIn, currentIndex, setZoom, zoomLevels]);
+  const handleReset = useCallback(() => setZoom(DEFAULT_TRANSCRIPT_ZOOM), [setZoom]);
+  const zoomButtonStyle = useCallback(
+    ({ pressed, hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => [
+      stylesheet.zoomButton,
+      hovered ? stylesheet.zoomButtonHovered : null,
+      pressed ? stylesheet.zoomButtonPressed : null,
+    ],
+    [],
+  );
+  return (
+    <View style={stylesheet.zoomControl}>
+      <Pressable
+        style={zoomButtonStyle}
+        onPress={handleZoomOut}
+        disabled={!canZoomOut}
+        accessibilityRole="button"
+        accessibilityLabel={t("agentStream.zoom.out")}
+        testID="transcript-zoom-out"
+      >
+        <ThemedZoomOut
+          size={15}
+          uniProps={canZoomOut ? collapseToggleColorMapping : mutedColorMapping}
+        />
+      </Pressable>
+      <Pressable
+        onPress={handleReset}
+        accessibilityRole="button"
+        accessibilityLabel={t("agentStream.zoom.reset")}
+        testID="transcript-zoom-reset"
+      >
+        <Text style={stylesheet.zoomLabel}>{`${Math.round(transcriptZoom * 100)}%`}</Text>
+      </Pressable>
+      <Pressable
+        style={zoomButtonStyle}
+        onPress={handleZoomIn}
+        disabled={!canZoomIn}
+        accessibilityRole="button"
+        accessibilityLabel={t("agentStream.zoom.in")}
+        testID="transcript-zoom-in"
+      >
+        <ThemedZoomIn
+          size={15}
+          uniProps={canZoomIn ? collapseToggleColorMapping : mutedColorMapping}
+        />
+      </Pressable>
+    </View>
+  );
+}
 
 const pressableStyle = ({
   pressed,
@@ -1532,6 +1631,43 @@ const stylesheet = StyleSheet.create((theme) => ({
   },
   collapseToggleButtonPressed: {
     opacity: 0.7,
+  },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  zoomControl: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: 32,
+    paddingHorizontal: theme.spacing[1],
+    gap: 2,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.surface2,
+    borderWidth: theme.borderWidth[1],
+    borderColor: theme.colors.border,
+    ...theme.shadow.sm,
+  },
+  zoomButton: {
+    width: 26,
+    height: 26,
+    borderRadius: theme.borderRadius.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  zoomButtonHovered: {
+    backgroundColor: theme.colors.surface1,
+  },
+  zoomButtonPressed: {
+    opacity: 0.7,
+  },
+  zoomLabel: {
+    minWidth: 38,
+    textAlign: "center",
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    fontVariant: ["tabular-nums"],
   },
   scrollToBottomContainer: {
     position: "absolute",

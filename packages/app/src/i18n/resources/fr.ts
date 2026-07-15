@@ -172,6 +172,11 @@ export const fr: TranslationResources = {
   agentStream: {
     empty: "Commencez à discuter avec cet agent...",
     scrollToBottom: "Faire défiler vers le bas",
+    zoom: {
+      in: "Zoom avant",
+      out: "Zoom arrière",
+      reset: "Réinitialiser le zoom",
+    },
     permission: {
       plan: "Plan",
       required: "Autorisation requise",

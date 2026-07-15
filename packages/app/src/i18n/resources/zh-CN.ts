@@ -1502,7 +1502,6 @@ export const zhCN: TranslationResources = {
       other: "调用了 Paseo {{count}} 次",
     },
     and: "并",
-    failed: "{{count}} 次失败",
   },
   renameModal: {
     rename: "重命名",

@@ -1558,7 +1558,6 @@ export const es: TranslationResources = {
       other: "llamó a Paseo {{count}} veces",
     },
     and: "y",
-    failed: "{{count}} con error",
   },
   renameModal: {
     rename: "Rebautizar",

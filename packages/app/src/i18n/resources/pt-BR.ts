@@ -1544,7 +1544,6 @@ export const ptBR: TranslationResources = {
       other: "chamou o Paseo {{count}} vezes",
     },
     and: "e",
-    failed: "{{count}} com falha",
   },
   renameModal: {
     rename: "Renomear",

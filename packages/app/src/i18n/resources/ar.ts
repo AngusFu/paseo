@@ -1519,7 +1519,6 @@ export const ar: TranslationResources = {
       other: "استدعى Paseo {{count}} مرات",
     },
     and: "و",
-    failed: "فشل {{count}}",
   },
   renameModal: {
     rename: "إعادة تسمية",

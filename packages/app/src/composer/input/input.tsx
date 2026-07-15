@@ -78,6 +78,7 @@ import {
 } from "./state";
 
 const DEFAULT_SEND_KEYS: ShortcutKey[][] = [["Enter"]];
+const COMPOSER_INPUT_DATASET = { composerInput: "" } as const;
 
 export interface AttachmentMenuItem {
   id: string;
@@ -1528,6 +1529,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
 
     const inputScrollbar = useWebElementScrollbar(webTextareaRef, {
       enabled: isWeb,
+      scrollbarGutter: "stable",
     });
 
     usePasteImagesEffect({
@@ -1758,6 +1760,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
           <View style={styles.textInputScrollWrapper}>
             <ThemedTextInput
               ref={textInputRef}
+              dataSet={COMPOSER_INPUT_DATASET}
               value={value}
               onChangeText={handleInputChange}
               placeholder={placeholder ?? t("composer.placeholders.fallback")}

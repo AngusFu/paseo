@@ -60,10 +60,12 @@ export function useWebElementScrollbar(
   options?: {
     enabled?: boolean;
     contentRef?: RefObject<HTMLElement | null>;
+    scrollbarGutter?: "auto" | "stable";
   },
 ): ReactNode {
   const enabled = (options?.enabled ?? true) && platformIsWeb;
   const contentRef = options?.contentRef;
+  const scrollbarGutter = options?.scrollbarGutter ?? "auto";
 
   const [metrics, setMetrics] = useState<ScrollbarMetrics>({
     offset: 0,
@@ -89,7 +91,7 @@ export function useWebElementScrollbar(
     element.setAttribute("data-hide-scrollbar", "");
     style.scrollbarWidth = "none";
     style.msOverflowStyle = "none";
-    style.scrollbarGutter = "auto";
+    style.scrollbarGutter = scrollbarGutter;
     ensureHideScrollbarStyle();
 
     function update() {
@@ -122,7 +124,7 @@ export function useWebElementScrollbar(
       style.msOverflowStyle = previousMsOverflowStyle;
       style.scrollbarGutter = previousScrollbarGutter;
     };
-  }, [contentRef, elementRef, enabled]);
+  }, [contentRef, elementRef, enabled, scrollbarGutter]);
 
   const onScrollToOffset = useCallback(
     (offset: number) => {

@@ -53,7 +53,7 @@ import { useKeyboardShortcutsStore } from "@/stores/keyboard-shortcuts-store";
 import { useHosts } from "@/runtime/host-runtime";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { useWorkspace } from "@/stores/session-store-hooks";
-import { selectIsAgentListOpen, usePanelStore } from "@/stores/panel-store";
+import { usePanelStore } from "@/stores/panel-store";
 import { useOwnsWindowChromeCorner, WindowChromeSafeArea } from "@/utils/desktop-window";
 import { useCloseAgentListGesture } from "@/mobile-panels/gestures";
 import { MobilePanelOverlay } from "@/mobile-panels/presentation";
@@ -122,20 +122,17 @@ interface MobileSidebarProps extends SidebarSharedProps {
 
 interface DesktopSidebarProps extends SidebarSharedProps {
   insetsTop: number;
-  isOpen: boolean;
+  active: boolean;
   handleViewSchedules: () => void;
   handleViewKanban: () => void;
   handleViewWorkflows: () => void;
 }
 
-export const LeftSidebar = memo(function LeftSidebar() {
+export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boolean }) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const isCompactLayout = useIsCompactFormFactor();
-  const isOpen = usePanelStore((state) =>
-    selectIsAgentListOpen(state, { isCompact: isCompactLayout }),
-  );
   const showMobileAgent = usePanelStore((state) => state.showMobileAgent);
 
   const {
@@ -265,7 +262,7 @@ export const LeftSidebar = memo(function LeftSidebar() {
 
   if (isCompactLayout) {
     return (
-      <RetainedPanelActivity active={isOpen}>
+      <RetainedPanelActivity active={active}>
         <MobileSidebar
           {...sharedProps}
           insetsTop={insets.top}
@@ -285,11 +282,11 @@ export const LeftSidebar = memo(function LeftSidebar() {
   }
 
   return (
-    <RetainedPanelActivity active={isOpen}>
+    <RetainedPanelActivity active={active}>
       <DesktopSidebar
         {...sharedProps}
         insetsTop={insets.top}
-        isOpen={isOpen}
+        active={active}
         handleOpenProject={handleOpenProjectDesktop}
         handleHome={handleHomeDesktop}
         handleSettings={handleSettingsDesktop}
@@ -712,7 +709,7 @@ function DesktopSidebar({
   handleAddHost,
   handleOpenHostSettings,
   insetsTop,
-  isOpen,
+  active,
   handleViewSchedules,
   handleViewKanban,
   handleViewWorkflows,
@@ -766,8 +763,12 @@ function DesktopSidebar({
   }));
 
   const desktopSidebarStyle = useMemo(
-    () => [staticStyles.desktopSidebar, resizeAnimatedStyle],
-    [resizeAnimatedStyle],
+    () => [
+      staticStyles.desktopSidebar,
+      !active && staticStyles.desktopSidebarHidden,
+      resizeAnimatedStyle,
+    ],
+    [active, resizeAnimatedStyle],
   );
   const desktopSidebarBorderStyle = useMemo(
     () => [styles.desktopSidebarBorder, { flex: 1, paddingTop: insetsTop }],
@@ -782,12 +783,13 @@ function DesktopSidebar({
     [],
   );
 
-  if (!isOpen) {
-    return null;
-  }
-
   return (
-    <Animated.View style={desktopSidebarStyle}>
+    <Animated.View
+      accessibilityElementsHidden={!active}
+      importantForAccessibility={active ? "auto" : "no-hide-descendants"}
+      pointerEvents={active ? "auto" : "none"}
+      style={desktopSidebarStyle}
+    >
       <View style={desktopSidebarBorderStyle}>
         <View style={styles.sidebarDragArea}>
           {ownsTopLeft ? (
@@ -983,6 +985,9 @@ const workspacesSectionHeaderElement = <WorkspacesSectionHeader />;
 const staticStyles = RNStyleSheet.create({
   desktopSidebar: {
     position: "relative" as const,
+  },
+  desktopSidebarHidden: {
+    display: "none",
   },
 });
 

@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import { PASEO_BROWSER_PROFILE_PARTITION } from "./features/browser-profile.js";
 
 type EventHandler = (payload: unknown) => void;
+
+interface AttachedBrowserRegistration {
+  browserId: string;
+  workspaceId: string;
+  webContentsId: number;
+}
 
 contextBridge.exposeInMainWorld("paseoDesktop", {
   platform: process.platform,
@@ -83,8 +90,9 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
       ipcRenderer.invoke("paseo:menu:set-capturing-shortcut", capturing),
   },
   browser: {
-    registerWorkspaceBrowser: (input: { browserId: string; workspaceId: string }) =>
-      ipcRenderer.invoke("paseo:browser:register-workspace-browser", input),
+    profilePartition: PASEO_BROWSER_PROFILE_PARTITION,
+    registerAttachedBrowser: (input: AttachedBrowserRegistration) =>
+      ipcRenderer.invoke("paseo:browser:register-attached", input),
     unregisterWorkspaceBrowser: (browserId: string) =>
       ipcRenderer.invoke("paseo:browser:unregister-workspace-browser", browserId),
     setWorkspaceActiveBrowser: (input: { workspaceId: string; browserId: string | null }) =>
@@ -106,8 +114,8 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
     }) => ipcRenderer.invoke("paseo:browser:set-devtools-bounds", input),
     closeDevTools: (browserId: string) =>
       ipcRenderer.invoke("paseo:browser:close-devtools", browserId),
-    clearPartition: (browserId: string) =>
-      ipcRenderer.invoke("paseo:browser:clear-partition", browserId),
+    clearProfile: (legacyBrowserIds: string[]) =>
+      ipcRenderer.invoke("paseo:browser:clear-profile", legacyBrowserIds),
     executeAutomationCommand: (request: Record<string, unknown>) =>
       ipcRenderer.invoke("paseo:browser:execute-automation-command", request),
     captureElement: (

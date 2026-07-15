@@ -1,4 +1,5 @@
 import { session } from "electron";
+import { PASEO_BROWSER_PROFILE_PARTITION } from "../browser-profile.js";
 import { decryptCookieValue, deriveKey } from "./chromium-cookie-decrypt.js";
 import { readCookieRows, type RawCookieRow } from "./cookies-db.js";
 import { getChromeSafeStoragePassword, KeychainError } from "./keychain.js";
@@ -7,7 +8,7 @@ import { listChromeProfiles } from "./profiles.js";
 /**
  * Orchestrates a Chrome → Paseo-browser cookie import on macOS:
  * Keychain password → derive AES key → read Cookies DB → decrypt each →
- * inject into the browser's persistent session partition.
+ * inject into the shared persistent browser profile session.
  */
 
 export type ImportFailureReason =
@@ -88,8 +89,9 @@ export async function importCookiesFromChrome(
     return { ok: false, reason: "unexpected-error" };
   }
 
-  const partition = `persist:paseo-browser-${input.browserId}`;
-  const cookieStore = session.fromPartition(partition).cookies;
+  // browserId is retained for call-site compatibility; cookies share one profile.
+  void input.browserId;
+  const cookieStore = session.fromPartition(PASEO_BROWSER_PROFILE_PARTITION).cookies;
 
   let imported = 0;
   let skipped = 0;

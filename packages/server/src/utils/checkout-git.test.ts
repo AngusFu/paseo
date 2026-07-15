@@ -995,6 +995,22 @@ const x = 1;
     expect(diff.diff).toContain("local-feature.txt");
   });
 
+  it("falls back to the repo default branch when the base ref no longer exists", async () => {
+    execFileSync("git", ["checkout", "-b", "feature"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "ghost-base-feature.txt"), "feature\n");
+    execFileSync("git", ["add", "ghost-base-feature.txt"], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "feature commit"], {
+      cwd: repoDir,
+    });
+
+    // The recorded base branch was renamed/removed and no longer exists locally
+    // or on origin (e.g. a worktree placeholder branch auto-renamed after its
+    // base was recorded). Instead of hard-failing, the diff falls back to the
+    // repo default branch (main).
+    const diff = await getCheckoutDiff(repoDir, { mode: "base", baseRef: "chatty-camel" });
+    expect(diff.diff).toContain("ghost-base-feature.txt");
+  });
+
   it("keeps an explicit origin base ref instead of stripping it to a stale local branch", async () => {
     const remoteDir = join(tempDir, "remote.git");
     const otherClone = join(tempDir, "other-clone");

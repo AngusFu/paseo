@@ -2499,7 +2499,26 @@ async function resolveCheckoutDiffRefs(
   if (storedBaseRef && compare.baseRef && compare.baseRef !== storedBaseRef) {
     throw new Error(`Base ref mismatch: expected ${baseRef}, got ${compare.baseRef}`);
   }
-  const bestBaseRef = await resolveBestComparisonBaseRef(cwd, baseRef);
+  // A stored base ref can go stale — e.g. a worktree's placeholder branch is
+  // renamed after its base was recorded, leaving baseRefName pointing at a
+  // branch that no longer exists locally or on origin. Rather than hard-fail
+  // the whole diff (every sibling base read in this file already tolerates an
+  // unresolvable base via .catch(() => null)), fall back to the repo default
+  // branch, then give up gracefully with no diff if that can't resolve either.
+  let bestBaseRef: string;
+  try {
+    bestBaseRef = await resolveBestComparisonBaseRef(cwd, baseRef);
+  } catch (error) {
+    const fallbackBase = await resolveBaseRef(cwd);
+    if (!fallbackBase || fallbackBase === baseRef) {
+      throw error;
+    }
+    try {
+      bestBaseRef = await resolveBestComparisonBaseRef(cwd, fallbackBase);
+    } catch {
+      return null;
+    }
+  }
   return {
     baseRef: (await tryResolveMergeBase(cwd, bestBaseRef)) ?? bestBaseRef,
     targetRef: "HEAD",

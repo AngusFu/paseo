@@ -34,7 +34,7 @@ import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/sidebar-disp
 import { SidebarHelpMenu } from "@/components/sidebar/sidebar-help-menu";
 import { Shortcut } from "@/components/ui/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useIsCompactFormFactor } from "@/constants/layout";
+import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
 import { useOpenProjectPicker } from "@/hooks/use-open-project-picker";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
@@ -54,7 +54,7 @@ import { useHosts } from "@/runtime/host-runtime";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { useWorkspace } from "@/stores/session-store-hooks";
 import { selectIsAgentListOpen, usePanelStore } from "@/stores/panel-store";
-import { WindowChromeSafeArea } from "@/utils/desktop-window";
+import { useOwnsWindowChromeCorner, WindowChromeSafeArea } from "@/utils/desktop-window";
 import { useCloseAgentListGesture } from "@/mobile-panels/gestures";
 import { MobilePanelOverlay } from "@/mobile-panels/presentation";
 import {
@@ -717,6 +717,7 @@ function DesktopSidebar({
   handleViewKanban,
   handleViewWorkflows,
 }: DesktopSidebarProps) {
+  const ownsTopLeft = useOwnsWindowChromeCorner("top-left");
   const pathname = usePathname();
   const isHomeActive = pathname.includes("/open-project");
   const hasActiveHostFilter = useSidebarViewStore((state) => state.hostFilters.length > 0);
@@ -772,6 +773,10 @@ function DesktopSidebar({
     () => [styles.desktopSidebarBorder, { flex: 1, paddingTop: insetsTop }],
     [insetsTop],
   );
+  const sidebarHeaderGroupStyle = useMemo(
+    () => [styles.sidebarHeaderGroup, ownsTopLeft && styles.sidebarHeaderGroupBelowChrome],
+    [ownsTopLeft],
+  );
   const resizeHandleStyle = useMemo(
     () => [styles.resizeHandle, isWeb && ({ cursor: "col-resize" } as object)],
     [],
@@ -785,9 +790,14 @@ function DesktopSidebar({
     <Animated.View style={desktopSidebarStyle}>
       <View style={desktopSidebarBorderStyle}>
         <View style={styles.sidebarDragArea}>
-          <TitlebarDragRegion />
-          <WindowChromeSafeArea placement="below" />
-          <View style={styles.sidebarHeaderGroup}>
+          {ownsTopLeft ? (
+            <View style={styles.desktopChromeRow}>
+              <TitlebarDragRegion />
+            </View>
+          ) : (
+            <TitlebarDragRegion />
+          )}
+          <View style={sidebarHeaderGroupStyle}>
             <SidebarHeaderRow
               icon={Home}
               label={labels.home}
@@ -987,6 +997,9 @@ const styles = StyleSheet.create((theme) => ({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
+  sidebarHeaderGroupBelowChrome: {
+    paddingTop: 0,
+  },
   workspacesSectionHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -1057,6 +1070,14 @@ const styles = StyleSheet.create((theme) => ({
   },
   sidebarDragArea: {
     position: "relative",
+  },
+  desktopChromeRow: {
+    position: "relative",
+    height: HEADER_INNER_HEIGHT,
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: theme.borderWidth[1],
+    borderBottomColor: "transparent",
   },
   sidebarFooter: {
     flexDirection: "row",

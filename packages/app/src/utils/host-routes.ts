@@ -423,6 +423,10 @@ export function buildKanbanRoute() {
   return "/kanban" as const;
 }
 
+export function buildWorkflowsRoute() {
+  return "/workflows" as const;
+}
+
 export function buildOpenProjectRoute() {
   return "/open-project" as const;
 }

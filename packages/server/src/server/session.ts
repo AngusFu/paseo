@@ -200,6 +200,7 @@ import { FileBackedChatService } from "./chat/chat-service.js";
 import { LoopService } from "./loop-service.js";
 import { ScheduleService } from "./schedule/service.js";
 import { KanbanService } from "./kanban/service.js";
+import { WorkflowService } from "./workflow/service.js";
 import { LlamaService, LlmGenerateError } from "./llm/llama-service.js";
 import { createGitHubService, type GitHubService } from "../services/github-service.js";
 import type { ProviderUsageService } from "../services/quota-fetcher/service.js";
@@ -444,6 +445,7 @@ export interface SessionOptions {
   chatService: FileBackedChatService;
   scheduleService: ScheduleService;
   kanbanService: KanbanService;
+  workflowService: WorkflowService;
   llamaService: LlamaService;
   loopService: LoopService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -612,6 +614,7 @@ export class Session {
   private readonly checkoutSession: CheckoutSession;
   private readonly chatScheduleLoopSession: ChatScheduleLoopSession;
   private readonly kanbanService: KanbanService;
+  private readonly workflowService: WorkflowService;
   private readonly llamaService: LlamaService;
   private readonly providerCatalogSession: ProviderCatalogSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
@@ -643,6 +646,7 @@ export class Session {
       chatService,
       scheduleService,
       kanbanService,
+      workflowService,
       llamaService,
       loopService,
       checkoutDiffManager,
@@ -781,6 +785,7 @@ export class Session {
       logger: this.sessionLogger,
     });
     this.kanbanService = kanbanService;
+    this.workflowService = workflowService;
     this.llamaService = llamaService;
     this.providerCatalogSession = new ProviderCatalogSession({
       host: {
@@ -1410,6 +1415,7 @@ export class Session {
       this.dispatchChatScheduleLoopMessage(msg) ??
       this.dispatchKanbanMessage(msg) ??
       this.dispatchKanbanColumnMessage(msg) ??
+      this.dispatchWorkflowMessage(msg) ??
       this.dispatchLlmMessage(msg) ??
       this.dispatchMiscMessage(msg);
     if (promise) await promise;
@@ -1601,6 +1607,8 @@ export class Session {
         return this.checkoutSession.handleCheckoutSwitchBranchRequest(msg);
       case "checkout.rename_branch.request":
         return this.checkoutSession.handleCheckoutRenameBranchRequest(msg);
+      case "checkout.baseRef.set.request":
+        return this.checkoutSession.handleCheckoutSetBaseRefRequest(msg);
       case "checkout_commit_request":
         return this.checkoutSession.handleCheckoutCommitRequest(msg);
       case "checkout_merge_request":
@@ -1827,6 +1835,93 @@ export class Session {
       default:
         return undefined;
     }
+  }
+
+  private dispatchWorkflowMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "workflow.definition.list.request":
+        return this.handleWorkflowRequest(msg, () => this.workflowService.listDefinitions());
+      case "workflow.definition.get.request":
+        return this.handleWorkflowRequest(msg, () =>
+          this.workflowService.getDefinition(msg.definitionId),
+        );
+      case "workflow.definition.create.request":
+        return this.handleWorkflowRequest(msg, () =>
+          this.workflowService.createDefinition({
+            id: msg.id,
+            name: msg.name,
+            description: msg.description,
+            source: msg.source,
+          }),
+        );
+      case "workflow.definition.update.request":
+        return this.handleWorkflowRequest(msg, () =>
+          this.workflowService.updateDefinition({
+            id: msg.definitionId,
+            name: msg.name,
+            description: msg.description,
+            source: msg.source,
+          }),
+        );
+      case "workflow.definition.delete.request":
+        return this.handleWorkflowRequest(msg, async () =>
+          (await this.workflowService.deleteDefinition(msg.definitionId)) ? msg.definitionId : null,
+        );
+      case "workflow.definition.list_builtins.request":
+        return this.handleWorkflowRequest(msg, () => this.workflowService.listBuiltins());
+      case "workflow.run.list.request":
+        return this.handleWorkflowRequest(msg, () => this.workflowService.listRuns());
+      case "workflow.run.get.request":
+        return this.handleWorkflowRequest(msg, () => this.workflowService.getRun(msg.runId));
+      case "workflow.run.dispatch.request":
+        return this.handleWorkflowRequest(msg, () =>
+          this.workflowService.dispatch({
+            definitionId: msg.definitionId,
+            args: msg.args,
+            cwd: msg.cwd,
+            repoPath: msg.repoPath,
+          }),
+        );
+      case "workflow.run.cancel.request":
+        return this.handleWorkflowRequest(msg, () => this.workflowService.cancel(msg.runId));
+      case "kanban.rule.list.request":
+        return this.handleWorkflowRequest(msg, () => this.workflowService.listRules());
+      case "kanban.rule.create.request":
+        return this.handleWorkflowRequest(msg, () =>
+          this.workflowService.createRule({
+            sourceId: msg.sourceId,
+            enabled: msg.enabled,
+            workflowDefinitionId: msg.workflowDefinitionId,
+            filter: msg.filter,
+          }),
+        );
+      case "kanban.rule.update.request":
+        return this.handleWorkflowRequest(msg, () =>
+          this.workflowService.updateRule({
+            id: msg.ruleId,
+            enabled: msg.enabled,
+            workflowDefinitionId: msg.workflowDefinitionId,
+            filter: msg.filter,
+          }),
+        );
+      case "kanban.rule.delete.request":
+        return this.handleWorkflowRequest(msg, async () =>
+          (await this.workflowService.deleteRule(msg.ruleId)) ? msg.ruleId : null,
+        );
+      default:
+        return undefined;
+    }
+  }
+
+  private async handleWorkflowRequest(
+    msg: Extract<SessionInboundMessage, { requestId: string }> & { type: string },
+    operation: () => Promise<unknown>,
+  ): Promise<void> {
+    const value = await operation();
+    this.emit({
+      type: msg.type.replace(".request", ".response"),
+      payload: { requestId: msg.requestId, value, error: null },
+    } as SessionOutboundMessage);
   }
 
   private async handleKanbanCardCreateRequest(

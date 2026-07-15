@@ -14,12 +14,20 @@ import type {
   UpdateKanbanConnectionInput,
   UpdateKanbanSourceInput,
 } from "@getpaseo/protocol/kanban/types";
+import type {
+  CreateKanbanWorkflowRuleInput,
+  CreateWorkflowDefinitionInput,
+  DispatchWorkflowRunInput,
+  UpdateKanbanWorkflowRuleInput,
+  UpdateWorkflowDefinitionInput,
+} from "@getpaseo/protocol/workflow/types";
 import {
   AgentCreateFailedStatusPayloadSchema,
   AgentCreatedStatusPayloadSchema,
   AgentRefreshedStatusPayloadSchema,
   AgentResumedStatusPayloadSchema,
   CheckoutRenameBranchResponseSchema,
+  CheckoutSetBaseRefResponseSchema,
   parseServerInfoStatusPayload,
   RenameTerminalResponseSchema,
   RestartRequestedStatusPayloadSchema,
@@ -335,6 +343,7 @@ type CheckoutPrStatusPayload = CheckoutPrStatusResponse["payload"];
 type PullRequestTimelinePayload = PullRequestTimelineResponse["payload"];
 type CheckoutSwitchBranchPayload = CheckoutSwitchBranchResponse["payload"];
 export type RenameBranchResult = z.infer<typeof CheckoutRenameBranchResponseSchema>["payload"];
+export type SetBaseRefResult = z.infer<typeof CheckoutSetBaseRefResponseSchema>["payload"];
 type StashSavePayload = StashSaveResponse["payload"];
 type StashPopPayload = StashPopResponse["payload"];
 type StashListPayload = StashListResponse["payload"];
@@ -612,6 +621,22 @@ type KanbanColumnDeletePayload = Extract<
   SessionOutboundMessage,
   { type: "kanban.column.delete.response" }
 >["payload"];
+type WorkflowDefinitionListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "workflow.definition.list.response" }
+>["payload"];
+type WorkflowRunListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "workflow.run.list.response" }
+>["payload"];
+type WorkflowRunDispatchPayload = Extract<
+  SessionOutboundMessage,
+  { type: "workflow.run.dispatch.response" }
+>["payload"];
+type KanbanRuleListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.rule.list.response" }
+>["payload"];
 
 export type KanbanCardCreateOptions = CreateKanbanCardInput & { requestId?: string };
 export type KanbanCardUpdateOptions = UpdateKanbanCardInput & { requestId?: string };
@@ -623,6 +648,15 @@ export type KanbanConnectionUpdateOptions = UpdateKanbanConnectionInput & { requ
 export type KanbanColumnCreateOptions = CreateKanbanColumnInput & { requestId?: string };
 export type KanbanColumnUpdateOptions = UpdateKanbanColumnInput & { requestId?: string };
 export type KanbanColumnReorderOptions = ReorderKanbanColumnInput & { requestId?: string };
+export type WorkflowDefinitionCreateOptions = CreateWorkflowDefinitionInput & {
+  requestId?: string;
+};
+export type WorkflowDefinitionUpdateOptions = UpdateWorkflowDefinitionInput & {
+  requestId?: string;
+};
+export type WorkflowRunDispatchOptions = DispatchWorkflowRunInput & { requestId?: string };
+export type KanbanRuleCreateOptions = CreateKanbanWorkflowRuleInput & { requestId?: string };
+export type KanbanRuleUpdateOptions = UpdateKanbanWorkflowRuleInput & { requestId?: string };
 export type FetchAgentTimelinePayload = FetchAgentTimelineResponseMessage["payload"];
 export type AgentForkContextPayload = AgentForkContextResponseMessage["payload"];
 
@@ -902,6 +936,11 @@ export interface UpdateScheduleOptions {
 export interface RenameBranchInput {
   cwd: string;
   branch: string;
+  requestId?: string;
+}
+export interface SetBaseRefInput {
+  cwd: string;
+  baseRef: string;
   requestId?: string;
 }
 export interface RenameTerminalInput {
@@ -3598,6 +3637,18 @@ export class DaemonClient {
     });
   }
 
+  async setBaseRef(input: SetBaseRefInput): Promise<SetBaseRefResult> {
+    return this.sendCorrelatedSessionRequest({
+      requestId: input.requestId,
+      message: {
+        type: "checkout.baseRef.set.request",
+        cwd: input.cwd,
+        baseRef: input.baseRef,
+      },
+      responseType: "checkout.baseRef.set.response",
+    });
+  }
+
   async stashSave(
     cwd: string,
     options?: { branch?: string },
@@ -5094,6 +5145,148 @@ export class DaemonClient {
     return this.sendNamespacedCorrelatedSessionRequest({
       requestId,
       message: { type: "kanban.column.delete.request", columnId, moveCardsToColumnId },
+    });
+  }
+
+  // COMPAT(workflow): added in v0.1.105. Requires server_info.features.workflow.
+  async workflowDefinitionList(requestId?: string): Promise<WorkflowDefinitionListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workflow.definition.list.request" },
+    });
+  }
+
+  async workflowDefinitionCreate(
+    options: WorkflowDefinitionCreateOptions,
+  ): Promise<
+    Extract<SessionOutboundMessage, { type: "workflow.definition.create.response" }>["payload"]
+  > {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "workflow.definition.create.request",
+        name: options.name,
+        source: options.source,
+        ...(options.id !== undefined ? { id: options.id } : {}),
+        ...(options.description !== undefined ? { description: options.description } : {}),
+      },
+    });
+  }
+
+  async workflowDefinitionUpdate(
+    options: WorkflowDefinitionUpdateOptions,
+  ): Promise<
+    Extract<SessionOutboundMessage, { type: "workflow.definition.update.response" }>["payload"]
+  > {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "workflow.definition.update.request",
+        definitionId: options.id,
+        ...(options.name !== undefined ? { name: options.name } : {}),
+        ...(options.description !== undefined ? { description: options.description } : {}),
+        ...(options.source !== undefined ? { source: options.source } : {}),
+      },
+    });
+  }
+
+  async workflowDefinitionListBuiltins(requestId?: string): Promise<WorkflowDefinitionListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workflow.definition.list_builtins.request" },
+    });
+  }
+
+  async workflowDefinitionDelete(
+    definitionId: string,
+    requestId?: string,
+  ): Promise<
+    Extract<SessionOutboundMessage, { type: "workflow.definition.delete.response" }>["payload"]
+  > {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workflow.definition.delete.request", definitionId },
+    });
+  }
+
+  async workflowRunList(requestId?: string): Promise<WorkflowRunListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workflow.run.list.request" },
+    });
+  }
+
+  async workflowRunDispatch(
+    options: WorkflowRunDispatchOptions,
+  ): Promise<WorkflowRunDispatchPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "workflow.run.dispatch.request",
+        definitionId: options.definitionId,
+        ...(options.args !== undefined ? { args: options.args } : {}),
+        ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
+        ...(options.repoPath !== undefined ? { repoPath: options.repoPath } : {}),
+      },
+    });
+  }
+
+  async workflowRunCancel(
+    runId: string,
+    requestId?: string,
+  ): Promise<Extract<SessionOutboundMessage, { type: "workflow.run.cancel.response" }>["payload"]> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workflow.run.cancel.request", runId },
+    });
+  }
+
+  async kanbanRuleList(requestId?: string): Promise<KanbanRuleListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.rule.list.request" },
+    });
+  }
+
+  async kanbanRuleCreate(
+    options: KanbanRuleCreateOptions,
+  ): Promise<Extract<SessionOutboundMessage, { type: "kanban.rule.create.response" }>["payload"]> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "kanban.rule.create.request",
+        sourceId: options.sourceId,
+        workflowDefinitionId: options.workflowDefinitionId,
+        ...(options.enabled !== undefined ? { enabled: options.enabled } : {}),
+        ...(options.filter !== undefined ? { filter: options.filter } : {}),
+      },
+    });
+  }
+
+  async kanbanRuleUpdate(
+    options: KanbanRuleUpdateOptions,
+  ): Promise<Extract<SessionOutboundMessage, { type: "kanban.rule.update.response" }>["payload"]> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "kanban.rule.update.request",
+        ruleId: options.id,
+        ...(options.enabled !== undefined ? { enabled: options.enabled } : {}),
+        ...(options.workflowDefinitionId !== undefined
+          ? { workflowDefinitionId: options.workflowDefinitionId }
+          : {}),
+        ...(options.filter !== undefined ? { filter: options.filter } : {}),
+      },
+    });
+  }
+
+  async kanbanRuleDelete(
+    ruleId: string,
+    requestId?: string,
+  ): Promise<Extract<SessionOutboundMessage, { type: "kanban.rule.delete.response" }>["payload"]> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.rule.delete.request", ruleId },
     });
   }
 

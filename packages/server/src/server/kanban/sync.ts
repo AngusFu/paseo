@@ -160,6 +160,7 @@ export interface KanbanSyncServiceOptions {
   // still works without it — it just uses whatever access token is on hand.
   oauthService?: KanbanOauthService;
   logger?: pino.Logger;
+  onCardCreated?: (card: StoredKanbanCard, source: StoredKanbanSource) => Promise<void>;
 }
 
 // An access token is refreshed once it's within this window of expiring,
@@ -177,6 +178,10 @@ export class KanbanSyncService {
   private readonly fetchImpl: typeof fetch;
   private readonly oauthService?: KanbanOauthService;
   private readonly logger?: pino.Logger;
+  private readonly onCardCreated?: (
+    card: StoredKanbanCard,
+    source: StoredKanbanSource,
+  ) => Promise<void>;
 
   constructor(options: KanbanSyncServiceOptions) {
     this.store = options.store;
@@ -184,6 +189,7 @@ export class KanbanSyncService {
     this.fetchImpl = options.fetchImpl;
     this.oauthService = options.oauthService;
     this.logger = options.logger;
+    this.onCardCreated = options.onCardCreated;
   }
 
   async sync(source: StoredKanbanSource): Promise<KanbanSyncResult> {
@@ -210,7 +216,11 @@ export class KanbanSyncService {
         );
         for (const issue of issues) {
           const { cardSource, payload } = await this.buildJiraUpsert(baseUrl, source, issue);
-          cards.push(await this.store.upsertCardBySource(cardSource, payload));
+          const card = await this.store.upsertCardBySource(cardSource, payload);
+          cards.push(card);
+          if (card.created) {
+            await this.onCardCreated?.(card, source);
+          }
         }
       } else {
         const seenExternalIds = new Set<string>();
@@ -218,7 +228,11 @@ export class KanbanSyncService {
         for (const mr of mergeRequests) {
           const { cardSource, payload } = await this.buildGitlabUpsert(baseUrl, source, mr);
           seenExternalIds.add(cardSource.externalId);
-          cards.push(await this.store.upsertCardBySource(cardSource, payload));
+          const card = await this.store.upsertCardBySource(cardSource, payload);
+          cards.push(card);
+          if (card.created) {
+            await this.onCardCreated?.(card, source);
+          }
         }
         cards.push(
           ...(await this.reconcileTerminalGitlabCards(baseUrl, source, token, seenExternalIds)),

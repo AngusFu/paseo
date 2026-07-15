@@ -88,6 +88,10 @@ export interface UpsertKanbanCardBySourcePayload {
   forceStatus?: boolean;
 }
 
+export interface UpsertKanbanCardBySourceResult extends StoredKanbanCard {
+  created: boolean;
+}
+
 export class KanbanStore {
   private readonly cardMutations = new Map<string, Promise<unknown>>();
   private readonly identityMutations = new Map<string, Promise<unknown>>();
@@ -365,7 +369,7 @@ export class KanbanStore {
   async upsertCardBySource(
     source: ExternalKanbanCardSource,
     payload: UpsertKanbanCardBySourcePayload,
-  ): Promise<StoredKanbanCard> {
+  ): Promise<UpsertKanbanCardBySourceResult> {
     const identity = `${source.kind}:${source.externalId}`;
     return this.serializeIdentityMutation(identity, async () => {
       const cards = await this.listCards();
@@ -396,7 +400,7 @@ export class KanbanStore {
           updatedAt: now,
         });
         await this.writeCard(created);
-        return created;
+        return { ...created, created: true };
       }
 
       const updated = StoredKanbanCardSchema.parse({
@@ -428,7 +432,7 @@ export class KanbanStore {
         updatedAt: now,
       });
       await this.writeCard(updated);
-      return updated;
+      return { ...updated, created: false };
     });
   }
 

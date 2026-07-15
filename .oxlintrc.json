@@ -3,7 +3,7 @@
   "options": {
     "typeAware": false
   },
-  "ignorePatterns": [".dev/**", "**/__fixtures__/difftastic/**"],
+  "ignorePatterns": [".dev/**", "**/__fixtures__/difftastic/**", "packages/agents-workflow/**"],
   "plugins": ["react", "react-perf", "unicorn", "typescript", "oxc", "import", "promise"],
   "categories": {
     "correctness": "error",

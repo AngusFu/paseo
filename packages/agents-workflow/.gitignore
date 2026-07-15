@@ -1,0 +1,17 @@
+# build artifact, regenerate with `pnpm build`. not tracked.
+dist/
+
+# coverage report, regenerate with `pnpm test:coverage`. not tracked.
+coverage/
+
+# default runtime dir — the CLI writes gated artifacts + journals here when
+# --runtime-dir / AW_RUNTIME_DIR / XDG_STATE_HOME are not set. run output,
+# not source. (a real run picks a path outside the repo; this catches runs
+# started from inside tools/agents-workflow.)
+.aw/
+.flow2/
+
+# root .claude/.gitignore has a bare `package.json` rule (no path
+# anchor) that ignores every package.json anywhere under .claude/.
+# un-ignore ours here, gatekeeper needs this file tracked.
+!package.json

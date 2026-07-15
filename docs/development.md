@@ -384,7 +384,7 @@ npm run cli -- provider inspect --cwd . --json              # Snapshot dump (mod
 npm run cli -- provider ls                                  # Providers + mode ids
 npm run cli -- provider models claude --thinking            # Models + effort ids
 npm run cli -- provider features claude --cwd . --model <id>  # Fast/plan/… features
-npm run cli -- clone owner/repo --dir ~/workspace           # Clone GitHub repo and register workspace
+npm run cli -- clone owner/repo --dir ~/workspace           # Clone GitHub repo and register project
 ```
 
 Use `--host <host:port>` to point the CLI at a different daemon:

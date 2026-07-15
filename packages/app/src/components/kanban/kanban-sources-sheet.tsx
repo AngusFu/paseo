@@ -8,6 +8,7 @@ import type { StoredKanbanConnection, StoredKanbanSource } from "@getpaseo/proto
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { isWeb } from "@/constants/platform";
 import type { Theme } from "@/styles/theme";
 
 const ThemedRotateCw = withUnistyles(RotateCw);
@@ -115,7 +116,11 @@ function KanbanSourceRow({
         style={syncButtonStyle}
         onPress={handleSync}
         disabled={isSyncing}
-        accessibilityRole="button"
+        // The row itself is a Pressable (accessibilityRole="button"), which
+        // renders a <button> on web — a nested <button> is invalid HTML and
+        // throws a hydration error. Drop the role on web so this renders a
+        // <div>; keep it on native for the accessibility tree.
+        accessibilityRole={isWeb ? undefined : "button"}
         accessibilityLabel={t("kanban.sources.sync")}
         testID={`kanban-source-sync-${source.id}`}
         hitSlop={8}

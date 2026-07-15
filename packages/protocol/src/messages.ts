@@ -1431,6 +1431,7 @@ export const ProviderSubagentTimelineRequestMessageSchema = z.object({
 export const AgentForkContextRequestMessageSchema = z.object({
   type: z.literal("agent.fork_context.request"),
   agentId: z.string(),
+  boundaryCursor: AgentTimelineCursorSchema.optional(),
   boundaryMessageId: z.string().optional(),
   requestId: z.string(),
 });
@@ -2649,6 +2650,8 @@ export const ServerInfoStatusPayloadSchema = z
         workflow: z.boolean().optional(),
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
         localLlm: z.boolean().optional(),
+        // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
+        agentForkContextCursor: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: z.boolean().optional(),
         // COMPAT(workspacePinning): added in v0.1.107, remove gate after 2027-01-12.
@@ -3349,6 +3352,7 @@ export const AgentForkContextResponseMessageSchema = z.object({
     attachment: TextAttachmentSchema.nullable(),
     itemCount: z.number().int().nonnegative(),
     boundaryMessageId: z.string().nullable(),
+    boundaryCursor: AgentTimelineCursorSchema.nullable().optional(),
     error: z.string().nullable(),
   }),
 });

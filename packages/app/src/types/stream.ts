@@ -107,10 +107,16 @@ export interface AssistantMessageItem {
   kind: "assistant_message";
   id: string;
   messageId?: string;
+  timelineCursor?: TimelinePosition;
   text: string;
   timestamp: Date;
   blockGroupId?: string;
   blockIndex?: number;
+}
+
+export interface TimelinePosition {
+  epoch: string;
+  seq: number;
 }
 
 export type ThoughtStatus = "loading" | "ready";
@@ -203,6 +209,7 @@ export type StreamUpdateSource = "live" | "canonical";
 interface StreamUpdateOptions {
   source?: StreamUpdateSource;
   reservedItemIds?: ReadonlySet<string>;
+  timelineCursor?: TimelinePosition;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -386,6 +393,7 @@ function appendAssistantMessage(
   source: StreamUpdateSource,
   messageId?: string,
   reservedItemIds?: ReadonlySet<string>,
+  timelineCursor?: TimelinePosition,
 ): StreamItem[] {
   const { chunk, hasContent } = normalizeChunk(text);
   if (!chunk) {
@@ -402,6 +410,7 @@ function appendAssistantMessage(
       ...last,
       text: `${last.text}${chunk}`,
       timestamp,
+      ...(timelineCursor ? { timelineCursor } : {}),
     };
     return [...state.slice(0, -1), updated];
   }
@@ -419,6 +428,7 @@ function appendAssistantMessage(
       ...secondLast,
       text: `${secondLast.text}${chunk}`,
       timestamp,
+      ...(timelineCursor ? { timelineCursor } : {}),
     };
     return [...state.slice(0, -2), updated, last];
   }
@@ -433,6 +443,7 @@ function appendAssistantMessage(
     kind: "assistant_message",
     id: entryId,
     ...(messageId ? { messageId } : {}),
+    ...(timelineCursor ? { timelineCursor } : {}),
     text: chunk,
     timestamp,
   };
@@ -827,6 +838,7 @@ function reduceTimelineEvent(
   timestamp: Date,
   source: StreamUpdateSource,
   reservedItemIds?: ReadonlySet<string>,
+  timelineCursor?: TimelinePosition,
 ): StreamItem[] {
   const item = event.item;
   switch (item.type) {
@@ -841,6 +853,7 @@ function reduceTimelineEvent(
           source,
           item.messageId,
           reservedItemIds,
+          timelineCursor,
         ),
       );
     case "reasoning":
@@ -890,7 +903,14 @@ export function reduceStreamUpdate(
   const source = options?.source ?? "live";
   switch (event.type) {
     case "timeline":
-      return reduceTimelineEvent(state, event, timestamp, source, options?.reservedItemIds);
+      return reduceTimelineEvent(
+        state,
+        event,
+        timestamp,
+        source,
+        options?.reservedItemIds,
+        options?.timelineCursor,
+      );
     case "thread_started":
     case "turn_started":
     case "turn_completed":
@@ -912,11 +932,12 @@ export function hydrateStreamState(
   events: Array<{
     event: AgentStreamEventPayload;
     timestamp: Date;
+    timelineCursor?: TimelinePosition;
   }>,
   options?: { source?: StreamUpdateSource },
 ): StreamItem[] {
-  const hydrated = events.reduce<StreamItem[]>((state, { event, timestamp }) => {
-    return reduceStreamUpdate(state, event, timestamp, options);
+  const hydrated = events.reduce<StreamItem[]>((state, { event, timestamp, timelineCursor }) => {
+    return reduceStreamUpdate(state, event, timestamp, { ...options, timelineCursor });
   }, []);
 
   return finalizeActiveThoughts(hydrated);
@@ -1200,6 +1221,7 @@ export function applyStreamEvent(params: {
   event: AgentStreamEventPayload;
   timestamp: Date;
   source?: StreamUpdateSource;
+  timelineCursor?: TimelinePosition;
 }): ApplyStreamEventResult {
   const { tail, head, event, timestamp } = params;
   const source = params.source ?? "live";
@@ -1270,7 +1292,11 @@ export function applyStreamEvent(params: {
             ),
           )
         : undefined;
-    const reduced = reduceStreamUpdate(nextHead, event, timestamp, { source, reservedItemIds });
+    const reduced = reduceStreamUpdate(nextHead, event, timestamp, {
+      source,
+      reservedItemIds,
+      timelineCursor: params.timelineCursor,
+    });
     if (reduced !== nextHead) {
       nextHead = reduced;
       changedHead = true;
@@ -1289,7 +1315,10 @@ export function applyStreamEvent(params: {
   }
 
   // For non-streamable kinds or non-timeline events, apply to tail
-  const reduced = reduceStreamUpdate(nextTail, event, timestamp, { source });
+  const reduced = reduceStreamUpdate(nextTail, event, timestamp, {
+    source,
+    timelineCursor: params.timelineCursor,
+  });
   if (reduced !== nextTail) {
     nextTail = reduced;
     changedTail = true;

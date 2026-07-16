@@ -161,51 +161,14 @@ export function useSettings<TSelected>(
 
   const updateSettings = useCallback(
     async (updates: Partial<Settings>) => {
+      // Copy every defined AppSettings field from updates. Looping over the known
+      // keys (DEFAULT_CLIENT_SETTINGS holds exactly the AppSettings fields) keeps
+      // this under the cyclomatic-complexity ceiling as settings grow.
       const appUpdates: Partial<AppSettings> = {};
-      if (updates.theme !== undefined) {
-        appUpdates.theme = updates.theme;
-      }
-      if (updates.language !== undefined) {
-        appUpdates.language = updates.language;
-      }
-      if (updates.sendBehavior !== undefined) {
-        appUpdates.sendBehavior = updates.sendBehavior;
-      }
-      if (updates.serviceUrlBehavior !== undefined) {
-        appUpdates.serviceUrlBehavior = updates.serviceUrlBehavior;
-      }
-      if (updates.terminalScrollbackLines !== undefined) {
-        appUpdates.terminalScrollbackLines = updates.terminalScrollbackLines;
-      }
-      if (updates.uiFontFamily !== undefined) {
-        appUpdates.uiFontFamily = updates.uiFontFamily;
-      }
-      if (updates.monoFontFamily !== undefined) {
-        appUpdates.monoFontFamily = updates.monoFontFamily;
-      }
-      if (updates.uiFontSize !== undefined) {
-        appUpdates.uiFontSize = updates.uiFontSize;
-      }
-      if (updates.codeFontSize !== undefined) {
-        appUpdates.codeFontSize = updates.codeFontSize;
-      }
-      if (updates.syntaxTheme !== undefined) {
-        appUpdates.syntaxTheme = updates.syntaxTheme;
-      }
-      if (updates.workspaceTitleSource !== undefined) {
-        appUpdates.workspaceTitleSource = updates.workspaceTitleSource;
-      }
-      if (updates.autoExpandReasoning !== undefined) {
-        appUpdates.autoExpandReasoning = updates.autoExpandReasoning;
-      }
-      if (updates.browserDefaultUrl !== undefined) {
-        appUpdates.browserDefaultUrl = updates.browserDefaultUrl;
-      }
-      if (updates.transcriptZoom !== undefined) {
-        appUpdates.transcriptZoom = updates.transcriptZoom;
-      }
-      if (updates.toolCallDetailLevel !== undefined) {
-        appUpdates.toolCallDetailLevel = updates.toolCallDetailLevel;
+      for (const key of Object.keys(DEFAULT_CLIENT_SETTINGS) as (keyof AppSettings)[]) {
+        if (updates[key] !== undefined) {
+          Object.assign(appUpdates, { [key]: updates[key] });
+        }
       }
       const promises: Promise<void>[] = [];
       if (Object.keys(appUpdates).length > 0) {

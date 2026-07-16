@@ -3820,9 +3820,20 @@ function ToolCallDebugTooltip({
     () => buildToolCallDebugJson({ toolName, status, detail, metadata, error }),
     [toolName, status, detail, metadata, error],
   );
+  const [isOpen, setIsOpen] = useState(false);
+  const handlePointerEnter = useCallback(() => setIsOpen(true), []);
+  const handlePointerLeave = useCallback(() => setIsOpen(false), []);
   return (
-    <Tooltip delayDuration={150}>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
+    <Tooltip open={isOpen} onOpenChange={setIsOpen}>
+      {/* Hover lives on a plain View wrapping the badge, never on the badge
+          itself: asChild would clone ref/onHoverIn onto ExpandableBadge, which
+          forwards neither, and a wrapping Pressable would nest a button inside
+          the badge's own. See docs/hover.md. */}
+      <TooltipTrigger asChild>
+        <View onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
+          {children}
+        </View>
+      </TooltipTrigger>
       <TooltipContent side="top" align="start" maxWidth={520} testID="tool-call-debug-tooltip">
         <Text selectable style={toolCallDebugStyles.json}>
           {json}

@@ -20,8 +20,6 @@ import { Archive } from "lucide-react-native";
 import { getProviderIcon } from "@/components/provider-icons";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
-import { useQueryClient } from "@tanstack/react-query";
-import { agentHistoryQueryKey } from "@/hooks/agent-history-query-key";
 
 interface AgentListProps {
   agents: AggregatedAgent[];
@@ -263,7 +261,6 @@ export function AgentList({
   const insets = useSafeAreaInsets();
   const [actionAgent, setActionAgent] = useState<AggregatedAgent | null>(null);
   const { archiveAgent } = useArchiveAgent();
-  const queryClient = useQueryClient();
 
   const actionClient = useSessionStore((state) =>
     actionAgent?.serverId ? (state.sessions[actionAgent.serverId]?.client ?? null) : null,
@@ -280,35 +277,15 @@ export function AgentList({
 
       const serverId = agent.serverId;
       const agentId = agent.id;
-      const openAgent = () => {
-        onAgentSelect?.();
-        navigateToAgent({
-          serverId,
-          agentId,
-          workspaceId: agent.workspaceId,
-          pin: false,
-        });
-      };
 
-      if (agent.archivedAt) {
-        const client = useSessionStore.getState().sessions[serverId]?.client ?? null;
-        if (client) {
-          void client
-            .refreshAgent(agentId)
-            .then(() => {
-              openAgent();
-              return queryClient.invalidateQueries({
-                queryKey: agentHistoryQueryKey(serverId),
-              });
-            })
-            .catch(() => {});
-        }
-        return;
-      }
-
-      openAgent();
+      onAgentSelect?.();
+      navigateToAgent({
+        serverId,
+        agentId,
+        workspaceId: agent.workspaceId,
+      });
     },
-    [isActionSheetVisible, onAgentSelect, queryClient],
+    [isActionSheetVisible, onAgentSelect],
   );
 
   const handleAgentLongPress = useCallback(

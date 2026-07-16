@@ -908,7 +908,7 @@ function WorkspacesSectionHeader({
             </Pressable>
           </TooltipTrigger>
           <TooltipContent side="bottom" align="center" offset={8}>
-            <HeaderIconTooltipContent label={newWorkspaceLabel} shortcutKeys={newWorkspaceKeys} />
+            <IconTooltipContent label={newWorkspaceLabel} shortcutKeys={newWorkspaceKeys} />
           </TooltipContent>
         </Tooltip>
         <Tooltip delayDuration={300}>
@@ -924,7 +924,7 @@ function WorkspacesSectionHeader({
             </Pressable>
           </TooltipTrigger>
           <TooltipContent side="bottom" align="center" offset={8}>
-            <HeaderIconTooltipContent label={historyLabel} />
+            <IconTooltipContent label={historyLabel} />
           </TooltipContent>
         </Tooltip>
         <Tooltip delayDuration={300}>

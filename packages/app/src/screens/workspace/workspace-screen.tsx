@@ -355,6 +355,9 @@ function getFallbackTabOptionLabel(
   if (tab.target.kind === "file") {
     return tab.target.path.split("/").findLast(Boolean) ?? tab.target.path;
   }
+  if (tab.target.kind === "commit_diff") {
+    return tab.target.sha.slice(0, 7);
+  }
   return labels.agent;
 }
 
@@ -388,6 +391,9 @@ function getFallbackTabOptionDescription(
   }
   if (tab.target.kind === "workflow_run") {
     return labels.agent;
+  }
+  if (tab.target.kind === "commit_diff") {
+    return tab.target.sha.slice(0, 7);
   }
   return tab.target.path;
 }

@@ -144,6 +144,9 @@ function getCloseButtonTestId(tab: WorkspaceTabDescriptor): string {
   if (tab.target.kind === "workflow_run") {
     return `workspace-workflow-run-close-${tab.target.runId}`;
   }
+  if (tab.target.kind === "commit_diff") {
+    return `workspace-commit-diff-close-${encodeFilePathForPathSegment(tab.target.sha)}`;
+  }
   return `workspace-file-close-${encodeFilePathForPathSegment(tab.target.path)}`;
 }
 

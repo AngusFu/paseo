@@ -873,6 +873,17 @@ export const ja: TranslationResources = {
         textSizeXl: "特大",
         textSizeXxl: "超特大",
         textSizeXxxl: "最大",
+        commits: {
+          title: "コミット",
+          legendLocal: "ローカル",
+          legendRemote: "リモート",
+          countLabel: "ベースより先のコミット数: {{count}}",
+          fileDiffEmpty: "表示する変更はありません",
+          fileDiffError: "ファイル差分の読み込みに失敗しました",
+          loading: "コミットを読み込み中…",
+          loadError: "コミットの読み込みに失敗しました",
+          empty: "ベースより先のコミットはありません",
+        },
       },
       openInEditor: {
         open: "開く",
@@ -1554,6 +1565,15 @@ export const ja: TranslationResources = {
       binaryPreviewUnavailable: "バイナリプレビューが利用できません",
       failedToLoad: "ファイルの読み込みに失敗しました",
       failedToLoadPreview: "ファイルプレビューの読み込みに失敗しました",
+    },
+    diff: {
+      changesLabel: "変更",
+      changesSubtitle: "作業ツリーの差分",
+      commitSubtitle: "コミット差分",
+      directoryMissing: "ワークスペースディレクトリが見つかりません。",
+      empty: "変更はありません",
+      loadError: "差分の読み込みに失敗しました",
+      capabilityMissing: "コミット差分を表示するにはホストを更新してください。",
     },
   },
   toolCallDetails: {

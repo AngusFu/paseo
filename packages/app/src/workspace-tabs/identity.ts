@@ -23,26 +23,41 @@ export function normalizeWorkspaceTabTarget(
       ? { kind: "provider_subagent", parentAgentId, subagentId }
       : null;
   }
-  if (value.kind === "workflow_run") {
-    const runId = trimNonEmpty(value.runId);
-    return runId ? { kind: "workflow_run", runId } : null;
-  }
-  if (value.kind === "terminal") {
-    const terminalId = trimNonEmpty(value.terminalId);
-    return terminalId ? { kind: "terminal", terminalId } : null;
-  }
-  if (value.kind === "browser") {
-    const browserId = trimNonEmpty(value.browserId);
-    return browserId ? { kind: "browser", browserId } : null;
-  }
   if (value.kind === "file") {
     return normalizeFileTabTarget(value);
   }
-  if (value.kind === "setup") {
-    const workspaceId = trimNonEmpty(value.workspaceId);
-    return workspaceId ? { kind: "setup", workspaceId } : null;
+  return normalizeSimpleWorkspaceTabTarget(value);
+}
+
+function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): WorkspaceTabTarget | null {
+  switch (value.kind) {
+    case "agent": {
+      const agentId = trimNonEmpty(value.agentId);
+      return agentId ? { kind: "agent", agentId } : null;
+    }
+    case "workflow_run": {
+      const runId = trimNonEmpty(value.runId);
+      return runId ? { kind: "workflow_run", runId } : null;
+    }
+    case "terminal": {
+      const terminalId = trimNonEmpty(value.terminalId);
+      return terminalId ? { kind: "terminal", terminalId } : null;
+    }
+    case "browser": {
+      const browserId = trimNonEmpty(value.browserId);
+      return browserId ? { kind: "browser", browserId } : null;
+    }
+    case "setup": {
+      const workspaceId = trimNonEmpty(value.workspaceId);
+      return workspaceId ? { kind: "setup", workspaceId } : null;
+    }
+    case "commit_diff": {
+      const sha = trimNonEmpty(value.sha);
+      return sha ? { kind: "commit_diff", sha } : null;
+    }
+    default:
+      return null;
   }
-  return null;
 }
 
 function normalizeDraftTarget(
@@ -111,6 +126,9 @@ export function workspaceTabTargetsEqual(
   if (left.kind === "setup" && right.kind === "setup") {
     return left.workspaceId === right.workspaceId;
   }
+  if (left.kind === "commit_diff" && right.kind === "commit_diff") {
+    return left.sha === right.sha;
+  }
   return false;
 }
 
@@ -168,6 +186,9 @@ export function buildDeterministicWorkspaceTabId(target: WorkspaceTabTarget): st
   }
   if (target.kind === "setup") {
     return `setup_${target.workspaceId}`;
+  }
+  if (target.kind === "commit_diff") {
+    return `commit_diff_${target.sha}`;
   }
   return `file_${target.path}`;
 }

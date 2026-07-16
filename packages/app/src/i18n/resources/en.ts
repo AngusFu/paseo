@@ -868,6 +868,17 @@ export const en = {
         textSizeXl: "Extra large",
         textSizeXxl: "Huge",
         textSizeXxxl: "Gigantic",
+        commits: {
+          title: "Commits",
+          legendLocal: "local",
+          legendRemote: "on remote",
+          countLabel: "{{count}} commits ahead of base",
+          fileDiffEmpty: "No changes to display",
+          fileDiffError: "Failed to load file diff",
+          loading: "Loading commits…",
+          loadError: "Failed to load commits",
+          empty: "No commits ahead of base",
+        },
       },
       openInEditor: {
         open: "Open",
@@ -1545,6 +1556,15 @@ export const en = {
       binaryPreviewUnavailable: "Binary preview unavailable",
       failedToLoad: "Failed to load file",
       failedToLoadPreview: "Failed to load file preview",
+    },
+    diff: {
+      changesLabel: "Changes",
+      changesSubtitle: "Working tree diff",
+      commitSubtitle: "Commit diff",
+      directoryMissing: "Workspace directory not found.",
+      empty: "No changes",
+      loadError: "Failed to load diff",
+      capabilityMissing: "Update the host to view commit diffs.",
     },
   },
   toolCallDetails: {

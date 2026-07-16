@@ -34,6 +34,7 @@ describe("loadChangesPreferencesFromStorage", () => {
       diffTool: "git",
       gitAlgorithm: undefined,
       diffFontSize: "md",
+      commitsCollapsed: true,
     });
     expect(storage.entries.get(CHANGES_PREFERENCES_STORAGE_KEY)).toBe(JSON.stringify(result));
   });
@@ -59,6 +60,7 @@ describe("loadChangesPreferencesFromStorage", () => {
       diffTool: "git",
       gitAlgorithm: undefined,
       diffFontSize: "md",
+      commitsCollapsed: true,
     });
     expect(storage.entries.get(CHANGES_PREFERENCES_STORAGE_KEY)).toBe(persisted);
     expect(storage.entries.size).toBe(1);
@@ -118,6 +120,32 @@ describe("loadChangesPreferencesFromStorage", () => {
 
     expect(result.diffFontSize).toBe("md");
     expect(result.layout).toBe("split");
+  });
+});
+
+describe("changes preferences commitsCollapsed", () => {
+  it("collapses commits by default", () => {
+    expect(DEFAULT_CHANGES_PREFERENCES.commitsCollapsed).toBe(true);
+  });
+
+  it("round-trips commitsCollapsed: false", async () => {
+    const storage = createInMemoryKeyValueStorage({
+      [CHANGES_PREFERENCES_STORAGE_KEY]: JSON.stringify({ commitsCollapsed: false }),
+    });
+
+    const prefs = await loadChangesPreferencesFromStorage(storage);
+
+    expect(prefs.commitsCollapsed).toBe(false);
+  });
+
+  it("falls back to collapsed for invalid commitsCollapsed", async () => {
+    const storage = createInMemoryKeyValueStorage({
+      [CHANGES_PREFERENCES_STORAGE_KEY]: JSON.stringify({ commitsCollapsed: "nope" }),
+    });
+
+    const prefs = await loadChangesPreferencesFromStorage(storage);
+
+    expect(prefs.commitsCollapsed).toBe(true);
   });
 });
 

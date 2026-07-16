@@ -879,6 +879,17 @@ export const ru: TranslationResources = {
         textSizeXl: "Очень крупный",
         textSizeXxl: "Огромный",
         textSizeXxxl: "Гигантский",
+        commits: {
+          title: "Коммиты",
+          legendLocal: "локально",
+          legendRemote: "на удалённом",
+          countLabel: "{{count}} коммитов впереди базы",
+          fileDiffEmpty: "Нет изменений для отображения",
+          fileDiffError: "Не удалось загрузить различия файла",
+          loading: "Загрузка коммитов…",
+          loadError: "Не удалось загрузить коммиты",
+          empty: "Нет коммитов впереди базы",
+        },
       },
       openInEditor: {
         open: "Открыть",
@@ -1568,6 +1579,15 @@ export const ru: TranslationResources = {
       binaryPreviewUnavailable: "Предварительный просмотр двоичного файла недоступен.",
       failedToLoad: "Не удалось загрузить файл",
       failedToLoadPreview: "Не удалось загрузить предварительный просмотр файла.",
+    },
+    diff: {
+      changesLabel: "Изменения",
+      changesSubtitle: "Различия рабочего дерева",
+      commitSubtitle: "Различия коммита",
+      directoryMissing: "Каталог Workspace не найден.",
+      empty: "Нет изменений",
+      loadError: "Не удалось загрузить различия",
+      capabilityMissing: "Обновите хост, чтобы просматривать различия коммитов.",
     },
   },
   toolCallDetails: {

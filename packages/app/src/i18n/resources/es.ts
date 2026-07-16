@@ -888,6 +888,17 @@ export const es: TranslationResources = {
         textSizeXl: "Muy grande",
         textSizeXxl: "Enorme",
         textSizeXxxl: "Gigante",
+        commits: {
+          title: "Commits",
+          legendLocal: "local",
+          legendRemote: "en remoto",
+          countLabel: "{{count}} commits por delante de la base",
+          fileDiffEmpty: "No hay cambios para mostrar",
+          fileDiffError: "Error al cargar el diff del archivo",
+          loading: "Cargando commits…",
+          loadError: "Error al cargar los commits",
+          empty: "No hay commits por delante de la base",
+        },
       },
       openInEditor: {
         open: "Abierto",
@@ -1576,6 +1587,15 @@ export const es: TranslationResources = {
       binaryPreviewUnavailable: "Vista previa binaria no disponible",
       failedToLoad: "No se pudo cargar el archivo",
       failedToLoadPreview: "No se pudo cargar la vista previa del archivo",
+    },
+    diff: {
+      changesLabel: "Cambios",
+      changesSubtitle: "Diferencias del árbol de trabajo",
+      commitSubtitle: "Diferencias del commit",
+      directoryMissing: "No se encontró el directorio de Workspace.",
+      empty: "Sin cambios",
+      loadError: "No se pudieron cargar las diferencias",
+      capabilityMissing: "Actualiza el host para ver las diferencias de los commits.",
     },
   },
   toolCallDetails: {

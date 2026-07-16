@@ -857,6 +857,17 @@ export const ar: TranslationResources = {
         textSizeXl: "كبير جدًا",
         textSizeXxl: "ضخم",
         textSizeXxxl: "عملاق",
+        commits: {
+          title: "الإيداعات",
+          legendLocal: "محلي",
+          legendRemote: "على المستودع البعيد",
+          countLabel: "{{count}} إيداعات قبل الأساس",
+          fileDiffEmpty: "لا توجد تغييرات لعرضها",
+          fileDiffError: "تعذّر تحميل فروق الملف",
+          loading: "جارٍ تحميل الإيداعات…",
+          loadError: "تعذّر تحميل الإيداعات",
+          empty: "لا توجد إيداعات قبل الأساس",
+        },
       },
       openInEditor: {
         open: "يفتح",
@@ -1533,6 +1544,15 @@ export const ar: TranslationResources = {
       binaryPreviewUnavailable: "المعاينة الثنائية غير متاحة",
       failedToLoad: "فشل تحميل الملف",
       failedToLoadPreview: "فشل تحميل معاينة الملف",
+    },
+    diff: {
+      changesLabel: "التغييرات",
+      changesSubtitle: "فروقات شجرة العمل",
+      commitSubtitle: "فروقات الالتزام",
+      directoryMissing: "لم يتم العثور على دليل Workspace.",
+      empty: "لا توجد تغييرات",
+      loadError: "فشل تحميل الفروقات",
+      capabilityMissing: "حدّث المضيف لعرض فروقات الالتزامات.",
     },
   },
   toolCallDetails: {

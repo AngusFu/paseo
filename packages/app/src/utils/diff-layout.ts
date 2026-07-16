@@ -1,4 +1,5 @@
-import type { DiffLine, ParsedDiffFile } from "@/git/use-diff-query";
+import type { ParsedDiffFile } from "@getpaseo/protocol/messages";
+import type { DiffLine } from "@/git/use-diff-query";
 import { computeWordChangeRanges, type WordChangeRange } from "@/utils/diff-word-highlight";
 
 type ReviewSide = "old" | "new";

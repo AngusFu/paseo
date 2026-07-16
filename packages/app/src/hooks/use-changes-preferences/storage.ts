@@ -21,6 +21,7 @@ const changesPreferencesSchema = z.object({
   // git/diff-font-size.ts). Optional so payloads persisted before this field existed
   // still parse; absent falls back to "md" — the pre-selector rendering.
   diffFontSize: z.enum(["xs", "sm", "md", "lg", "xl", "xxl", "xxxl"]).optional(),
+  commitsCollapsed: z.boolean().optional(),
 });
 
 export interface ChangesPreferences {
@@ -31,6 +32,7 @@ export interface ChangesPreferences {
   diffTool: "git" | "vscode" | "difftastic";
   gitAlgorithm: "histogram" | "myers" | "patience" | undefined;
   diffFontSize: "xs" | "sm" | "md" | "lg" | "xl" | "xxl" | "xxxl";
+  commitsCollapsed: boolean;
 }
 
 export const DEFAULT_CHANGES_PREFERENCES: ChangesPreferences = {
@@ -41,6 +43,7 @@ export const DEFAULT_CHANGES_PREFERENCES: ChangesPreferences = {
   diffTool: "git",
   gitAlgorithm: undefined,
   diffFontSize: "md",
+  commitsCollapsed: true,
 };
 
 export interface KeyValueStorage {

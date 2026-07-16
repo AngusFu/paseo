@@ -109,6 +109,8 @@ const styles = StyleSheet.create((theme) => ({
     maxHeight: "85%",
     flexShrink: 1,
     minHeight: 0,
+    display: "flex",
+    flexDirection: "column",
     backgroundColor: theme.colors.surface1,
     borderRadius: theme.borderRadius.xl,
     borderWidth: 1,
@@ -190,11 +192,13 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
   },
   desktopScrollContainer: {
+    flex: 1,
     flexShrink: 1,
     minHeight: 0,
     position: "relative",
   },
   desktopScroll: {
+    flex: 1,
     flexShrink: 1,
     minHeight: 0,
   },
@@ -214,6 +218,7 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: 0,
   },
   desktopStaticContent: {
+    flex: 1,
     flexShrink: 1,
     minHeight: 0,
     padding: theme.spacing[SHEET_HORIZONTAL_PADDING_SCALE],
@@ -467,6 +472,8 @@ export interface AdaptiveModalSheetProps {
   testID?: string;
   /** Override the max width of the desktop card. */
   desktopMaxWidth?: number;
+  /** Fixed desktop card height (content scrolls inside). Ignores content length. */
+  desktopHeight?: number | `${number}%`;
   scrollable?: boolean;
   presentation?: "push" | "replace";
   /**
@@ -486,6 +493,7 @@ export function AdaptiveModalSheet({
   snapPoints,
   testID,
   desktopMaxWidth,
+  desktopHeight,
   scrollable = true,
   presentation,
   webScrollbar = false,
@@ -569,8 +577,16 @@ export function AdaptiveModalSheet({
   );
 
   const desktopCardStyle = useMemo(
-    () => [styles.desktopCard, desktopMaxWidth != null && { maxWidth: desktopMaxWidth }],
-    [desktopMaxWidth],
+    () => [
+      styles.desktopCard,
+      desktopMaxWidth != null && { maxWidth: desktopMaxWidth },
+      desktopHeight != null && {
+        height: desktopHeight,
+        maxHeight: desktopHeight,
+        minHeight: desktopHeight,
+      },
+    ],
+    [desktopMaxWidth, desktopHeight],
   );
   const desktopOverlayStyle = useMemo(
     () => [

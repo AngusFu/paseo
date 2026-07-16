@@ -30,10 +30,18 @@ source into a user definition.
 
 ## Run isolation
 
-Each run gets a dedicated directory under `runs/{runId}/` used as `cwd` /
-`workspacePath` (v1). Optional `cwd` / `repoPath` on dispatch can override.
-Creating a full Paseo worktree from a repo path is a follow-up; the per-run
-directory already isolates artifacts (`runtimeDir` + `key` = run id).
+Each run gets a dedicated directory under `runs/{runId}/` used as
+`workspacePath` (artifacts / journal). Dispatch may override agent `cwd` with a
+project repo path. Creating a full Paseo worktree from a repo path is a
+follow-up.
+
+Dispatch args conventionally include:
+
+- `task` / `prompt` — task text (required by most builtins)
+- `provider` / `model` — defaults for `agent()` calls that omit them
+  (`PaseoBackend` `defaultProvider` / `defaultModel`)
+
+CLI: `paseo workflow run <id> --cwd /path/to/repo --arg task=... --arg provider=claude`.
 
 ## Concurrency (two layers)
 

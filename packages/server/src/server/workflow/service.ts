@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { access, cp, mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 import {
   createEngine,
   Journal,
@@ -20,17 +22,92 @@ import {
   type WorkflowRun,
 } from "@getpaseo/protocol/workflow/types";
 import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
+import { expandUserPath } from "../path-utils.js";
 import { WorkflowQueue } from "./queue.js";
 import { WorkflowStore } from "./store.js";
+
+const CREATE_WORKFLOW_SKILL = "paseo-create-workflow";
 
 const AUTHORING_README = `# Paseo workflows
 
 Author \`*.flow.js\` definitions under \`definitions/\`.
 
-Use the \`paseo-create-workflow\` skill (or ask the agent in this workspace) to
-create or edit workflow scripts. Built-in templates live in the
+Read \`.claude/skills/${CREATE_WORKFLOW_SKILL}/SKILL.md\` (also mirrored under
+\`.agents/skills/\`) before writing a flow. Built-in templates live in the
 \`@getpaseo/agents-workflow\` package and can be copied into \`definitions/\`.
 `;
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Resolve the bundled/repo skill dir, or a user-installed copy. */
+export async function resolveCreateWorkflowSkillDir(): Promise<string | null> {
+  const skillMd = "SKILL.md";
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 12; i++) {
+    const candidate = join(dir, "skills", CREATE_WORKFLOW_SKILL);
+    if (await pathExists(join(candidate, skillMd))) {
+      return candidate;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) {
+      break;
+    }
+    dir = parent;
+  }
+  for (const root of [
+    join(homedir(), ".claude", "skills", CREATE_WORKFLOW_SKILL),
+    join(homedir(), ".agents", "skills", CREATE_WORKFLOW_SKILL),
+    join(homedir(), ".codex", "skills", CREATE_WORKFLOW_SKILL),
+  ]) {
+    if (await pathExists(join(root, skillMd))) {
+      return root;
+    }
+  }
+  return null;
+}
+
+async function ensureAuthoringSkill(cwd: string): Promise<void> {
+  const source = await resolveCreateWorkflowSkillDir();
+  if (!source) {
+    return;
+  }
+  for (const rel of [".claude/skills", ".agents/skills"] as const) {
+    const target = join(cwd, rel, CREATE_WORKFLOW_SKILL);
+    await mkdir(dirname(target), { recursive: true });
+    await cp(source, target, { recursive: true, force: true });
+  }
+}
+
+/** Engine may return `{ result: { error } }` while still completing — treat as failed. */
+export function extractWorkflowResultError(result: unknown): string | null {
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+  const outer = result as Record<string, unknown>;
+  const inner = outer.result;
+  if (inner && typeof inner === "object" && inner !== null && "error" in inner) {
+    const err = (inner as { error: unknown }).error;
+    if (typeof err === "string" && err.trim()) {
+      return err.trim();
+    }
+  }
+  if (typeof outer.error === "string" && outer.error.trim()) {
+    return outer.error.trim();
+  }
+  return null;
+}
+
+function readArgString(args: Record<string, unknown>, key: string): string | undefined {
+  const value = args[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
 
 export function matchesKanbanWorkflowRule(
   rule: KanbanWorkflowRule,
@@ -101,12 +178,9 @@ export class WorkflowService {
   async prepareAuthoring(): Promise<{ cwd: string }> {
     const cwd = join(this.paseoHome, "workflows");
     await mkdir(join(cwd, "definitions"), { recursive: true });
+    await ensureAuthoringSkill(cwd);
     const readmePath = join(cwd, "README.md");
-    try {
-      await access(readmePath);
-    } catch {
-      await writeFile(readmePath, AUTHORING_README, "utf8");
-    }
+    await writeFile(readmePath, AUTHORING_README, "utf8");
     return { cwd };
   }
 
@@ -147,7 +221,7 @@ export class WorkflowService {
       definitionId: definition.id,
       status: "queued",
       args: input.args ?? {},
-      cwd: input.cwd ?? runDir,
+      cwd: input.cwd ? expandUserPath(input.cwd) : runDir,
       workspaceId: null,
       workspacePath: runDir,
       queuedAt: new Date().toISOString(),
@@ -223,11 +297,13 @@ export class WorkflowService {
     }
     try {
       const result = await this.runner(definition, run);
+      const nestedError = extractWorkflowResultError(result);
       await this.store.updateRun(run.id, (current) => ({
         ...current,
-        status: "succeeded",
+        status: nestedError ? "failed" : "succeeded",
         endedAt: new Date().toISOString(),
         result,
+        error: nestedError,
       }));
     } catch (error) {
       await this.store.updateRun(run.id, (current) => ({
@@ -240,10 +316,16 @@ export class WorkflowService {
   }
 
   private async runEngine(definition: WorkflowDefinition, run: WorkflowRun): Promise<unknown> {
+    const provider = readArgString(run.args, "provider");
+    const model = readArgString(run.args, "model");
     const backend =
       process.env.PASEO_WORKFLOW_BACKEND === "mock"
         ? new MockBackend()
-        : new PaseoBackend({ cwd: run.cwd });
+        : new PaseoBackend({
+            cwd: run.cwd,
+            ...(provider ? { defaultProvider: provider } : {}),
+            ...(model ? { defaultModel: model } : {}),
+          });
     const journal = new Journal({ path: join(run.workspacePath, "journal.jsonl") });
     const engine = createEngine({ backend, journal });
     try {

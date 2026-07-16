@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -57,6 +57,21 @@ describe("WorkflowService builtins and authoring", () => {
     const service = new WorkflowService({ paseoHome: dir });
     const prepared = await service.prepareAuthoring();
     expect(prepared.cwd).toBe(join(dir, "workflows"));
+    // Skill is copied when the monorepo skills/ dir is discoverable from this package.
+    const skillMd = join(prepared.cwd, ".claude", "skills", "paseo-create-workflow", "SKILL.md");
+    await expect(access(skillMd)).resolves.toBeUndefined();
+  });
+});
+
+describe("extractWorkflowResultError", () => {
+  it("reads nested engine result errors", async () => {
+    const { extractWorkflowResultError } = await import("./service.js");
+    expect(
+      extractWorkflowResultError({
+        result: { error: "No task provided. Pass the task description as args." },
+      }),
+    ).toBe("No task provided. Pass the task description as args.");
+    expect(extractWorkflowResultError({ result: { ok: true } })).toBeNull();
   });
 });
 

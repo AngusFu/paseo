@@ -38,6 +38,8 @@ export interface PaseoBackendOptions {
   exec?: PaseoExec;
   /** provider used when a spec carries none (default "claude"). */
   defaultProvider?: string;
+  /** model used when a spec carries none. omitted from args when unset. */
+  defaultModel?: string;
   /** --wait-timeout value (e.g. "5m"). omitted from args when unset. */
   waitTimeout?: string;
   /** --cwd value. omitted from args when unset. */
@@ -66,6 +68,7 @@ const FAILURE_STATUSES = new Set(["error", "timeout", "permission", "failed", "c
 export class PaseoBackend extends AgentBackend {
   private readonly exec: PaseoExec;
   private readonly defaultProvider: string;
+  private readonly defaultModel?: string;
   private readonly waitTimeout?: string;
   private readonly cwd?: string;
   private readonly fetchUsage: boolean;
@@ -74,6 +77,7 @@ export class PaseoBackend extends AgentBackend {
     super();
     this.exec = opts.exec ?? defaultPaseoExec;
     this.defaultProvider = opts.defaultProvider ?? "claude";
+    this.defaultModel = opts.defaultModel;
     this.waitTimeout = opts.waitTimeout;
     this.cwd = opts.cwd;
     this.fetchUsage = opts.fetchUsage ?? true;
@@ -91,7 +95,8 @@ export class PaseoBackend extends AgentBackend {
    */
   buildArgs(spec: AgentSpec): string[] {
     const args = ["run", "--json", "--provider", spec.provider ?? this.defaultProvider];
-    if (spec.model) args.push("--model", spec.model);
+    const model = spec.model ?? this.defaultModel;
+    if (model) args.push("--model", model);
     if (spec.isolation === "worktree") args.push("--worktree", worktreeName(spec));
     if (this.waitTimeout) args.push("--wait-timeout", this.waitTimeout);
     if (this.cwd) args.push("--cwd", this.cwd);
@@ -107,8 +112,12 @@ export class PaseoBackend extends AgentBackend {
     // "--worktree" or "-x" would inject a bare argv FLAG into `paseo run` (there
     // is no shell, so it is flag-injection, not shell-injection). Reject anything
     // that isn't a safe token BEFORE shelling out, so a script can't smuggle a
-    // flag through provider/model.
-    const bad = flagLike(spec.provider) ?? flagLike(spec.model);
+    // flag through provider/model (including backend defaults).
+    const bad =
+      flagLike(spec.provider) ??
+      flagLike(spec.model) ??
+      flagLike(this.defaultProvider) ??
+      flagLike(this.defaultModel);
     if (bad != null)
       return { error: `paseo: unsafe provider/model value "${bad}" (flag-like or invalid)` };
     try {

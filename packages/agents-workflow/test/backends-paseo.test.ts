@@ -88,6 +88,15 @@ describe("PaseoBackend.buildArgs", () => {
     expect(new PaseoBackend().buildArgs(spec()).includes("--model")).toBe(false);
   });
 
+  it("uses defaultModel when the spec omits model", () => {
+    const args = new PaseoBackend({ defaultModel: "claude-sonnet-4-6" }).buildArgs(spec());
+    expect(args[args.indexOf("--model") + 1]).toBe("claude-sonnet-4-6");
+    const overridden = new PaseoBackend({ defaultModel: "claude-sonnet-4-6" }).buildArgs(
+      spec({ model: "claude-opus-4-8" }),
+    );
+    expect(overridden[overridden.indexOf("--model") + 1]).toBe("claude-opus-4-8");
+  });
+
   it("adds --worktree with a deterministic slug ONLY for isolation=worktree", () => {
     const wt = new PaseoBackend().buildArgs(spec({ isolation: "worktree", phase: "Deep RCA" }));
     expect(wt[wt.indexOf("--worktree") + 1]).toBe("flow2-deep-rca");

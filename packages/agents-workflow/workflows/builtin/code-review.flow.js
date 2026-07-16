@@ -40,7 +40,15 @@ const LEVEL_PARAMS = {
 };
 const SWEEP_MAX = 8;
 
-const RAW_ARGS = (typeof args === "string" ? args : "").trim();
+const RAW_ARGS = (
+  typeof args === "string"
+    ? args
+    : typeof args === "object" && args && typeof args.task === "string"
+      ? args.task
+      : typeof args === "object" && args && typeof args.prompt === "string"
+        ? args.prompt
+        : ""
+).trim();
 const FIRST = RAW_ARGS.split(/\s+/)[0] || "";
 // Own-property check so Object.prototype keys ("constructor", "toString") never parse as a level.
 const FIRST_IS_LEVEL = Object.prototype.hasOwnProperty.call(LEVEL_PARAMS, FIRST);

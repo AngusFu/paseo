@@ -13,7 +13,14 @@ export const meta = {
   ],
 };
 
-const TASK = typeof args === "string" && args.trim() ? args.trim() : "";
+const TASK =
+  typeof args === "string" && args.trim()
+    ? args.trim()
+    : typeof args === "object" && args && typeof args.task === "string" && args.task.trim()
+      ? args.task.trim()
+      : typeof args === "object" && args && typeof args.prompt === "string" && args.prompt.trim()
+        ? args.prompt.trim()
+        : "";
 if (!TASK)
   return {
     error: "No incident description provided. Pass the incident, error, or question as args.",

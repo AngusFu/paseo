@@ -270,6 +270,8 @@ export const zhCN: TranslationResources = {
       copied: "已复制",
       collapseAll: "折叠全部",
       expandAll: "展开全部",
+      showToolCallDebug: "显示工具调用载荷",
+      hideToolCallDebug: "隐藏工具调用载荷",
       showMore: "展开",
       showLess: "收起",
     },

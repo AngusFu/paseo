@@ -273,6 +273,8 @@ export const fr: TranslationResources = {
       copied: "Copié",
       collapseAll: "Tout réduire",
       expandAll: "Tout développer",
+      showToolCallDebug: "Afficher les charges utiles des appels d'outils",
+      hideToolCallDebug: "Masquer les charges utiles des appels d'outils",
       showMore: "Afficher plus",
       showLess: "Afficher moins",
     },

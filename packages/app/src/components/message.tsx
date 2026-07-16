@@ -63,6 +63,9 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from "react-native-svg";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useToolCallDebug } from "@/contexts/tool-call-debug-context";
+import { buildToolCallDebugJson } from "@/tool-calls/debug-payload";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { MarkdownRenderer, type MarkdownStyles } from "@/components/markdown/renderer";
@@ -3607,6 +3610,7 @@ export const ToolCall = memo(function ToolCall({
 }: ToolCallProps) {
   const { openToolCall } = useToolCallSheet();
   const [isExpanded, setIsExpanded] = useCollapseSignalExpansion(collapseSignal, defaultExpanded);
+  const { isDebugEnabled } = useToolCallDebug();
 
   const isMobile = useIsCompactFormFactor();
   const shouldRenderInline = !isMobile || forceInline;
@@ -3758,7 +3762,7 @@ export const ToolCall = memo(function ToolCall({
     );
   }
 
-  return (
+  const badge = (
     <ExpandableBadge
       testID="tool-call-badge"
       label={presentation.displayName}
@@ -3775,7 +3779,66 @@ export const ToolCall = memo(function ToolCall({
       onDetailHoverChange={onInlineDetailsHoverChange}
     />
   );
+
+  if (!isDebugEnabled) {
+    return badge;
+  }
+
+  return (
+    <ToolCallDebugTooltip
+      toolName={toolName}
+      status={status}
+      detail={effectiveDetail}
+      metadata={metadata}
+      error={error}
+    >
+      {badge}
+    </ToolCallDebugTooltip>
+  );
 }, areToolCallPropsEqual);
+
+// Wraps a tool call badge in a hover card carrying the payload the client
+// actually received. Only mounted while debug is on, so the normal path keeps
+// its exact node tree (an extra always-mounted wrapper would change the badge's
+// hover geometry — see docs/hover.md).
+function ToolCallDebugTooltip({
+  toolName,
+  status,
+  detail,
+  metadata,
+  error,
+  children,
+}: {
+  toolName: string;
+  status: string;
+  detail: ToolCallDetail | undefined;
+  metadata: Record<string, unknown> | undefined;
+  error: unknown;
+  children: ReactNode;
+}) {
+  const json = useMemo(
+    () => buildToolCallDebugJson({ toolName, status, detail, metadata, error }),
+    [toolName, status, detail, metadata, error],
+  );
+  return (
+    <Tooltip delayDuration={150}>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="top" align="start" maxWidth={520} testID="tool-call-debug-tooltip">
+        <Text selectable style={toolCallDebugStyles.json}>
+          {json}
+        </Text>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+const toolCallDebugStyles = StyleSheet.create((theme) => ({
+  json: {
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.foreground,
+  },
+}));
 
 function areToolCallPropsEqual(previous: ToolCallProps, next: ToolCallProps) {
   if (previous.toolName !== next.toolName) return false;

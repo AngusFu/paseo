@@ -272,6 +272,8 @@ export const ru: TranslationResources = {
       copied: "Скопировано",
       collapseAll: "Свернуть все",
       expandAll: "Развернуть все",
+      showToolCallDebug: "Показать полезную нагрузку вызовов инструментов",
+      hideToolCallDebug: "Скрыть полезную нагрузку вызовов инструментов",
       showMore: "Показать больше",
       showLess: "Свернуть",
     },

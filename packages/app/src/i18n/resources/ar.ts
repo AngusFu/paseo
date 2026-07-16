@@ -270,6 +270,8 @@ export const ar: TranslationResources = {
       copied: "منقول",
       collapseAll: "طي الكل",
       expandAll: "توسيع الكل",
+      showToolCallDebug: "إظهار حمولات استدعاء الأدوات",
+      hideToolCallDebug: "إخفاء حمولات استدعاء الأدوات",
       showMore: "عرض المزيد",
       showLess: "عرض أقل",
     },

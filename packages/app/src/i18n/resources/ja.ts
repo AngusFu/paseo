@@ -273,6 +273,8 @@ export const ja: TranslationResources = {
       copied: "コピーしました",
       collapseAll: "すべて折りたたむ",
       expandAll: "すべて展開",
+      showToolCallDebug: "ツール呼び出しのペイロードを表示",
+      hideToolCallDebug: "ツール呼び出しのペイロードを非表示",
       showMore: "もっと見る",
       showLess: "折りたたむ",
     },

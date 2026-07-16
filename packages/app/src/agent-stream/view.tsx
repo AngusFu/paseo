@@ -27,6 +27,7 @@ import { MAX_CONTENT_WIDTH, useIsCompactFormFactor } from "@/constants/layout";
 import { useMutation } from "@tanstack/react-query";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import {
+  Bug,
   Check,
   ChevronDown,
   ChevronsDownUp,
@@ -35,6 +36,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react-native";
+import { ToolCallDebugProvider, useToolCallDebug } from "@/contexts/tool-call-debug-context";
 import { usePanelStore } from "@/stores/panel-store";
 import {
   AssistantMessage,
@@ -1143,6 +1145,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               <View style={stylesheet.collapseToggleInner} pointerEvents="box-none">
                 <View style={stylesheet.toggleRow} pointerEvents="box-none">
                   {isWeb && <TranscriptZoomControl />}
+                  <ToolCallDebugToggle buttonStyle={collapseToggleButtonStyle} />
                   <Pressable
                     style={collapseToggleButtonStyle}
                     onPress={handleToggleCollapseAll}
@@ -1330,7 +1333,20 @@ function agentStreamViewPropsEqual(
   return reasons.length === 0;
 }
 
-export const AgentStreamView = memo(AgentStreamViewComponent, agentStreamViewPropsEqual);
+const MemoizedAgentStreamView = memo(AgentStreamViewComponent, agentStreamViewPropsEqual);
+
+// The debug switch wraps the memoized view rather than living inside it: the
+// transcript tree is already at the JSX nesting ceiling, and a provider there
+// would re-render the whole stream on every toggle.
+export const AgentStreamView = forwardRef<AgentStreamViewHandle, AgentStreamViewProps>(
+  function AgentStreamView(props, ref) {
+    return (
+      <ToolCallDebugProvider>
+        <MemoizedAgentStreamView {...props} ref={ref} />
+      </ToolCallDebugProvider>
+    );
+  },
+);
 AgentStreamView.displayName = "AgentStreamView";
 
 interface ToolCallSlotProps extends Omit<
@@ -1356,6 +1372,48 @@ function ToolCallSlot({
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedCheckIcon = withUnistyles(Check);
 const ThemedXIcon = withUnistyles(X);
+// Toggles the per-transcript tool-call payload inspector. Lives next to the
+// zoom/collapse controls because it is a view preference for this chat, not a
+// persisted app setting — see ToolCallDebugProvider.
+function ToolCallDebugToggle({
+  buttonStyle,
+}: {
+  buttonStyle: (state: PressableStateCallbackType & { hovered?: boolean }) => StyleProp<ViewStyle>;
+}) {
+  const { t } = useTranslation();
+  const { isDebugEnabled, toggleDebug } = useToolCallDebug();
+  // Inspecting a payload means hovering it, which only exists on web.
+  if (!isWeb) {
+    return null;
+  }
+  const label = t(
+    isDebugEnabled ? "message.actions.hideToolCallDebug" : "message.actions.showToolCallDebug",
+  );
+  return (
+    <Pressable
+      style={buttonStyle}
+      onPress={toggleDebug}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={isDebugEnabled ? DEBUG_TOGGLE_SELECTED : DEBUG_TOGGLE_UNSELECTED}
+      testID="tool-call-debug-toggle"
+    >
+      <ThemedBug
+        size={18}
+        uniProps={isDebugEnabled ? debugToggleActiveColorMapping : collapseToggleColorMapping}
+      />
+    </Pressable>
+  );
+}
+
+const DEBUG_TOGGLE_SELECTED = { selected: true } as const;
+const DEBUG_TOGGLE_UNSELECTED = { selected: false } as const;
+
+const debugToggleActiveColorMapping = (theme: { colors: { foreground: string } }) => ({
+  color: theme.colors.foreground,
+});
+
+const ThemedBug = withUnistyles(Bug);
 const ThemedChevronsDownUp = withUnistyles(ChevronsDownUp);
 const ThemedChevronsUpDown = withUnistyles(ChevronsUpDown);
 const ThemedZoomIn = withUnistyles(ZoomIn);

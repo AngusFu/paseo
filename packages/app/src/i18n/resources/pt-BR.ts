@@ -273,6 +273,8 @@ export const ptBR: TranslationResources = {
       copied: "Copiado",
       collapseAll: "Recolher tudo",
       expandAll: "Expandir tudo",
+      showToolCallDebug: "Mostrar payloads das chamadas de ferramenta",
+      hideToolCallDebug: "Ocultar payloads das chamadas de ferramenta",
       showMore: "Mostrar mais",
       showLess: "Mostrar menos",
     },

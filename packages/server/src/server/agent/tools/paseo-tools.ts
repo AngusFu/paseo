@@ -44,6 +44,7 @@ import type { ProviderSnapshotManager } from "../provider-snapshot-manager.js";
 import {
   AgentModelSchema,
   AgentProviderEnum,
+  AgentSelectOptionSchema,
   AgentStatusEnum,
   ProviderModeSchema,
   ProviderSummarySchema,
@@ -1055,7 +1056,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     {
       title: "Create agent",
       description:
-        "Create an agent. Requires relationship, workspace, provider/model (for example codex/gpt-5.4), and an initial prompt. Do not guess; call list_providers and list_models first if uncertain.",
+        "Create an agent. Requires relationship, workspace, provider/model (for example codex/gpt-5.4), and an initial prompt. Do not guess ids — prefer inspect_providers for modes/models/thinking, and inspect_provider for features, first when uncertain.",
       inputSchema: createAgentInputSchema,
       outputSchema: {
         agentId: z.string(),
@@ -2418,7 +2419,8 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     "list_models",
     {
       title: "List models",
-      description: "List models for an agent provider.",
+      description:
+        "List models for an agent provider. Each model includes thinkingOptions (effort/thinking ids) and defaultThinkingOptionId — use those ids for create_agent/update_agent settings.thinkingOptionId.",
       inputSchema: {
         provider: AgentProviderEnum,
       },
@@ -2447,7 +2449,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     {
       title: "Inspect provider",
       description:
-        "Inspect compact provider capabilities for orchestration, including modes and draft feature settings. Use list_models for the full model list.",
+        "Inspect compact provider capabilities for orchestration: modes plus draft features (fast_mode, plan_mode, Cursor fast select, …) for the given cwd/model. Use list_models for the full model list and thinkingOptions. Pass settings.model when features are model-gated.",
       inputSchema: inspectProviderInputSchema,
       outputSchema: {
         provider: AgentProviderEnum,
@@ -2499,6 +2501,103 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           modes: summary.modes,
           selectedModel: selectedModel ?? null,
           features,
+        }),
+      };
+    },
+  );
+
+  registerTool(
+    "inspect_providers",
+    {
+      title: "Inspect providers",
+      description:
+        "Dump enabled providers with modes, models, and thinking/effort option ids from the provider snapshot. Disabled providers are omitted unless all=true. For draft features (fast/plan/…), use inspect_provider or the CLI provider features command — not this tool.",
+      inputSchema: {
+        cwd: z
+          .string()
+          .optional()
+          .describe(
+            "Working directory for the provider snapshot. Required outside an agent-scoped session.",
+          ),
+        provider: AgentProviderEnum.optional().describe(
+          "Limit the dump to one provider id (for example claude).",
+        ),
+        all: z
+          .boolean()
+          .optional()
+          .describe("When true, include disabled providers. Default: enabled providers only."),
+      },
+      outputSchema: {
+        cwd: z.string(),
+        includeDisabled: z.boolean(),
+        providers: z.array(
+          z.object({
+            id: z.string(),
+            label: z.string().nullable().optional(),
+            description: z.string().nullable().optional(),
+            enabled: z.boolean(),
+            status: z.string(),
+            defaultModeId: z.string().nullable().optional(),
+            modes: z.array(ProviderModeSchema).nullish(),
+            models: z.array(
+              z.object({
+                id: z.string(),
+                label: z.string().nullable().optional(),
+                description: z.string().nullable().optional(),
+                defaultThinkingOptionId: z.string().nullable().optional(),
+                thinkingOptions: z.array(AgentSelectOptionSchema).nullish(),
+              }),
+            ),
+          }),
+        ),
+      },
+    },
+    async ({ cwd, provider, all }) => {
+      const includeDisabled = all === true;
+      const resolvedCwd = resolveScopedCwd(cwd, {
+        required: !resolveCallerAgent(),
+      });
+      let entries = await providerSnapshotManager.listProviders({
+        cwd: resolvedCwd,
+        wait: true,
+        ...(provider ? { providers: [provider] } : {}),
+      });
+      if (provider && entries.length === 0) {
+        throw new Error(`Provider '${provider}' not found`);
+      }
+      if (provider && !includeDisabled && entries.some((entry) => !entry.enabled)) {
+        throw new Error(`Provider '${provider}' is disabled (pass all=true to include)`);
+      }
+      if (!includeDisabled) {
+        entries = entries.filter((entry) => entry.enabled);
+      }
+
+      const providers = entries.map((entry) => {
+        const summary = toProviderSummary(entry);
+        return {
+          id: summary.id,
+          label: summary.label,
+          description: summary.description,
+          enabled: summary.enabled,
+          status: summary.status,
+          defaultModeId: entry.defaultModeId ?? null,
+          modes: summary.modes,
+          models: (entry.models ?? []).map((model) => ({
+            id: model.id,
+            label: model.label,
+            description: model.description ?? null,
+            defaultThinkingOptionId: model.defaultThinkingOptionId ?? null,
+            thinkingOptions: model.thinkingOptions ?? [],
+          })),
+        };
+      });
+
+      return {
+        content: [],
+        structuredContent: ensureValidJson({
+          cwd: resolvedCwd,
+          includeDisabled,
+          providers,
         }),
       };
     },

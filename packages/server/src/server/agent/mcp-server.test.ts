@@ -276,6 +276,7 @@ interface ConfigureProviderEntry {
   enabled?: boolean;
   defaultModeId?: string;
   modes?: AgentMode[];
+  models?: ProviderSnapshotEntry["models"];
 }
 
 // Builds a ProviderSnapshotEntry for tests that need to configure listProviders /
@@ -292,6 +293,7 @@ function buildSnapshotEntry(entry: ConfigureProviderEntry): ProviderSnapshotEntr
       ...(entry.description !== undefined ? { description: entry.description } : {}),
       ...(entry.defaultModeId !== undefined ? { defaultModeId: entry.defaultModeId } : {}),
       modes: [],
+      ...(entry.models !== undefined ? { models: entry.models } : {}),
     };
   }
   return {
@@ -302,6 +304,7 @@ function buildSnapshotEntry(entry: ConfigureProviderEntry): ProviderSnapshotEntr
     ...(entry.description !== undefined ? { description: entry.description } : {}),
     ...(entry.defaultModeId !== undefined ? { defaultModeId: entry.defaultModeId } : {}),
     modes: entry.modes ?? [],
+    ...(entry.models !== undefined ? { models: entry.models } : {}),
   };
 }
 
@@ -4820,6 +4823,127 @@ describe("provider MCP tools", () => {
     await expect(tool.handler({ provider: "codex", cwd: "~/repo" })).rejects.toThrow(
       "Provider 'codex' is disabled",
     );
+  });
+
+  it("inspect_providers dumps enabled providers with models and thinking options", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const provStub = createProviderSnapshotManagerStub();
+    provStub.listProviders.mockResolvedValue([
+      buildSnapshotEntry({
+        provider: "claude",
+        label: "Claude Code",
+        defaultModeId: "default",
+        modes: [{ id: "default", label: "Default" }],
+        models: [
+          {
+            provider: "claude",
+            id: "sonnet",
+            label: "Sonnet",
+            thinkingOptions: [{ id: "high", label: "High" }],
+            defaultThinkingOptionId: "high",
+          },
+        ],
+      }),
+      buildSnapshotEntry({
+        provider: "cursor",
+        label: "Cursor",
+        modes: [{ id: "agent", label: "Agent" }],
+        models: [{ provider: "cursor", id: "composer-2", label: "Composer 2" }],
+      }),
+    ]);
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: provStub.manager,
+      logger,
+    });
+    const tool = registeredTool(server, "inspect_providers");
+
+    const response = await tool.handler({ cwd: "~/repo" });
+
+    expect(spies.agentManager.listDraftFeatures).not.toHaveBeenCalled();
+    expect(response.structuredContent).toEqual({
+      cwd: expect.stringContaining("repo"),
+      includeDisabled: false,
+      providers: [
+        {
+          id: "claude",
+          label: "Claude Code",
+          description: "",
+          enabled: true,
+          status: "available",
+          defaultModeId: "default",
+          modes: [{ id: "default", label: "Default" }],
+          models: [
+            {
+              id: "sonnet",
+              label: "Sonnet",
+              description: null,
+              defaultThinkingOptionId: "high",
+              thinkingOptions: [{ id: "high", label: "High" }],
+            },
+          ],
+        },
+        {
+          id: "cursor",
+          label: "Cursor",
+          description: "",
+          enabled: true,
+          status: "available",
+          defaultModeId: null,
+          modes: [{ id: "agent", label: "Agent" }],
+          models: [
+            {
+              id: "composer-2",
+              label: "Composer 2",
+              description: null,
+              defaultThinkingOptionId: null,
+              thinkingOptions: [],
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("inspect_providers omits disabled providers unless all=true", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const provStub = createProviderSnapshotManagerStub();
+    provStub.listProviders.mockResolvedValue([
+      buildSnapshotEntry({
+        provider: "claude",
+        label: "Claude Code",
+        models: [{ provider: "claude", id: "sonnet", label: "Sonnet" }],
+      }),
+      buildSnapshotEntry({
+        provider: "cursor",
+        label: "Cursor",
+        enabled: false,
+        models: [{ provider: "cursor", id: "composer-2", label: "Composer 2" }],
+      }),
+    ]);
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: provStub.manager,
+      logger,
+    });
+    const tool = registeredTool(server, "inspect_providers");
+
+    const enabledOnly = await tool.handler({ cwd: "~/repo" });
+    expect(enabledOnly.structuredContent).toMatchObject({
+      includeDisabled: false,
+      providers: [{ id: "claude" }],
+    });
+    expect(
+      (enabledOnly.structuredContent as { providers: Array<{ id: string }> }).providers,
+    ).toHaveLength(1);
+
+    const withDisabled = await tool.handler({ cwd: "~/repo", all: true });
+    expect(withDisabled.structuredContent).toMatchObject({
+      includeDisabled: true,
+      providers: [{ id: "claude" }, { id: "cursor", enabled: false }],
+    });
   });
 });
 

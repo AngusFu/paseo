@@ -6312,6 +6312,17 @@ export class CodexAppServerAgentClient implements AgentClient {
     }
   }
 
+  async listFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
+    // Draft listing must not spawn an app-server session — same shape as Claude/OpenCode.
+    // Plan availability is only known after collaborationMode/list; assume available for draft.
+    return buildCodexFeatures({
+      modelId: config.model,
+      fastModeEnabled: config.featureValues?.fast_mode === true,
+      planModeEnabled: config.featureValues?.plan_mode === true,
+      planModeAvailable: true,
+    });
+  }
+
   async isAvailable(): Promise<boolean> {
     const launch = await resolveCodexLaunch(this.runtimeSettings);
     const availability = await checkCodexLaunchAvailable(launch);

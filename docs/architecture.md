@@ -108,7 +108,7 @@ Commander.js CLI with Docker-style commands. Common agent operations are also ex
 - `paseo loop run/ls/inspect/logs/stop`
 - `paseo schedule create/ls/inspect/update/pause/resume/run-once/logs/delete`
 - `paseo permit allow/deny/ls`
-- `paseo provider ls/models`
+- `paseo provider ls/models/features/inspect` (modes, thinking/effort ids, draft features; MCP: `inspect_providers` / `list_providers` / `list_models` / `inspect_provider`)
 - `paseo worktree create/ls/archive`
 - `paseo speech …`
 

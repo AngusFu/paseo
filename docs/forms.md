@@ -61,6 +61,10 @@ complete`), keyed off the opened snapshot's serverId. Waiting for data is a
   states) is owned by `components/ui/control-geometry.ts` — controls never
   declare their own, and screens never nudge global component styles to align
   a row.
+- Agent launch options that need **labeled form fields** (schedule create/edit)
+  use `packages/app/src/components/agent-launch-fields.tsx`. Surfaces that
+  should match the chat composer (workflow dispatch) use `DraftAgentControls`
+  - `DraftAgentModeControl` instead — same chip row, not vertical SelectFields.
 - The form declares one size for all fields: `sm` on desktop, `md` compact
   (`useIsCompactFormFactor`).
 - Availability hierarchy: a field whose capability doesn't apply is **hidden**

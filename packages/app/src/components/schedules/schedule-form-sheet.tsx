@@ -19,7 +19,11 @@ import { useStoreWithEqualityFn } from "zustand/traditional";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { ComboboxItem } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
-import { CombinedModelSelector } from "@/components/combined-model-selector";
+import {
+  AgentModeField,
+  AgentModelField,
+  AgentThinkingField,
+} from "@/components/agent-launch-fields";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { HostStatusDotSlot } from "@/components/hosts/host-picker";
 import { createControlGeometry, type FieldControlSize } from "@/components/ui/control-geometry";
@@ -35,7 +39,6 @@ import {
   type SelectFieldOption,
   type SelectFieldRenderOptionInput,
 } from "@/components/ui/select-field";
-import { formatThinkingOptionLabel } from "@/composer/agent-controls/utils";
 import {
   mergeProviderPreferences,
   useFormPreferences,
@@ -645,25 +648,6 @@ function ScheduleTargetFields({
     return null;
   }, [selectedHost, state.selectedServerId]);
   const projectOptions = state.projectOptions;
-  const modeOptions = useMemo<SelectFieldOption<string>[]>(
-    () =>
-      state.modeOptions.map((option) => ({
-        id: option.id,
-        value: option.id,
-        label: option.label,
-      })),
-    [state.modeOptions],
-  );
-  const thinkingOptions = useMemo<SelectFieldOption<string>[]>(
-    () =>
-      state.availableThinkingOptions.map((option) => ({
-        id: option.id,
-        value: option.id,
-        label: formatThinkingOptionLabel(option),
-        testID: buildThinkingOptionTestId(option.id),
-      })),
-    [state.availableThinkingOptions],
-  );
   const handleSelectHost = useCallback(
     (nextServerId: string) => {
       model.setHost(nextServerId);
@@ -804,56 +788,51 @@ function ScheduleTargetFields({
       ) : null}
 
       {state.disclosure.showModelField ? (
-        <Field label={t("schedule.form.model.label")}>
-          <CombinedModelSelector
-            providers={state.modelSelectorProviders}
-            selectedProvider={state.selectedProvider ?? ""}
-            selectedModel={state.selectedModel}
-            onSelect={handleSelectModel}
-            isLoading={providerSnapshot.isLoading || providerSnapshot.isFetching}
-            renderTrigger={renderModelTrigger}
-            triggerFill
-            serverId={mutationServerId}
-            disabled={!state.selectedServerId}
-            onOpen={handleModelOpen}
-            onRetryProvider={handleRetryProvider}
-            isRetryingProvider={providerSnapshot.isRefreshing}
-          />
-        </Field>
+        <AgentModelField
+          label={t("schedule.form.model.label")}
+          providers={state.modelSelectorProviders}
+          selectedProvider={state.selectedProvider ?? ""}
+          selectedModel={state.selectedModel}
+          onSelect={handleSelectModel}
+          isLoading={providerSnapshot.isLoading || providerSnapshot.isFetching}
+          renderTrigger={renderModelTrigger}
+          serverId={mutationServerId}
+          disabled={!state.selectedServerId}
+          onOpen={handleModelOpen}
+          onRetryProvider={handleRetryProvider}
+          isRetryingProvider={providerSnapshot.isRefreshing}
+        />
       ) : null}
 
       {state.disclosure.showThinkingField ? (
-        <SelectField
-          label={t("schedule.form.thinking.label")}
+        <AgentThinkingField
+          options={state.availableThinkingOptions}
           value={state.selectedThinkingOptionId || null}
           selectedDisplay={state.selectedThinkingDisplay}
-          options={thinkingOptions}
           onChange={handleSelectThinking}
+          label={t("schedule.form.thinking.label")}
           placeholder={t("schedule.form.thinking.placeholder")}
           emptyText={t("schedule.form.thinking.empty")}
-          searchable={thinkingOptions.length > 6}
-          title={t("schedule.form.thinking.placeholder")}
           size={controlSize}
           triggerTestID="schedule-thinking-trigger"
           renderOption={renderThinkingOption}
+          getOptionTestId={buildThinkingOptionTestId}
         />
       ) : null}
 
       {state.disclosure.showModeField ? (
-        <SelectField
-          label={t("schedule.form.mode.label")}
+        <AgentModeField
+          options={state.modeOptions}
           value={state.selectedMode || null}
           selectedDisplay={state.selectedModeDisplay}
-          options={modeOptions}
           onChange={handleSelectMode}
+          label={t("schedule.form.mode.label")}
           placeholder={t("schedule.form.mode.placeholder")}
           emptyText={t("schedule.form.mode.empty")}
-          disabled={modeOptions.length === 0}
-          hint={modeOptions.length === 0 ? t("schedule.form.mode.unavailable") : undefined}
-          searchable={modeOptions.length > 6}
-          title={t("schedule.form.mode.placeholder")}
+          hint={state.modeOptions.length === 0 ? t("schedule.form.mode.unavailable") : undefined}
           size={controlSize}
           triggerTestID="schedule-mode-trigger"
+          allowEmpty
         />
       ) : null}
 

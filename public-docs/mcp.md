@@ -53,11 +53,37 @@ The MCP server itself is controlled by `daemon.mcp.enabled`. Existing agents may
 
 ### Providers
 
-| Tool               | Function                                                          |
-| ------------------ | ----------------------------------------------------------------- |
-| `list_providers`   | List configured agent providers, availability, and modes.         |
-| `list_models`      | List models for an agent provider.                                |
-| `inspect_provider` | Inspect compact provider capabilities and draft feature settings. |
+| Tool                | Function                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| `inspect_providers` | Snapshot dump of enabled providers (modes, models, thinking/effort ids); `all` includes disabled |
+| `list_providers`    | List configured agent providers, availability, and modes.                                        |
+| `list_models`       | List models for an agent provider (includes per-model thinking/effort options).                  |
+| `inspect_provider`  | Inspect one provider's modes plus draft features for a cwd/model.                                |
+
+**Discovery before create/update:** do not guess provider, model, mode, thinking, or feature ids.
+
+Prefer one call:
+
+```
+inspect_providers { "cwd": "/path/to/repo" }
+  → enabled providers[].id, modes[].id, models[].id, models[].thinkingOptions[].id
+
+inspect_providers { "cwd": "/path/to/repo", "all": true }
+  → include disabled providers too
+
+inspect_providers { "cwd": "/path/to/repo", "provider": "claude" }
+  → limit to one provider
+
+# Features are a separate draft probe — not part of inspect_providers
+inspect_provider { "provider": "claude", "cwd": "/path/to/repo", "settings": { "model": "…" } }
+  → features[] (toggles like fast_mode, selects like Cursor fast)
+```
+
+Or chain the narrower tools: `list_providers` → `list_models` → `inspect_provider`.
+
+Then pass those ids into `create_agent` / `update_agent` `settings` (`modeId`, `thinkingOptionId`, `features`). Feature **ids are provider-specific** — Claude/Codex use boolean `fast_mode`; Cursor uses a select named `fast` with string option ids.
+
+CLI equivalents: `paseo provider inspect`, or `paseo provider ls` / `models` / `features`. See [CLI](/docs/cli#providers-models-and-features).
 
 ### Worktrees
 

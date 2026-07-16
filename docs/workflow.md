@@ -69,9 +69,14 @@ Dispatch args conventionally include:
   omit `effort` (`defaultEffort` → createAgent `thinking` / `paseo run --thinking`)
 - `mode` — default provider mode id (`defaultMode` → createAgent `mode` /
   `paseo run --mode`)
-- `fast` — boolean convenience for Claude-style `fast_mode`
+- `fast` — boolean convenience for Claude/Codex-style `fast_mode`
   (`defaultFeatureValues.fast_mode`)
-- `featureValues` — optional object of provider features merged into defaults
+- `featureValues` — provider features from dispatch UI / CLI, merged into
+  `agent()` defaults. Dispatch reuses composer `DraftAgentControls` (same chip
+  row as chat) and loads options via `listProviderFeatures` — every returned
+  toggle/select (Claude `fast_mode`, Codex `fast_mode` + `plan_mode`, Cursor
+  ACP `fast`, Copilot `agent`, OpenCode auto-accept, …). Keys are
+  provider-specific — e.g. Cursor uses `{ fast: "true" }`, not `fast_mode`.
 - `workspaceTitle` — optional sidebar title for the one Paseo workspace minted
   for the run (dispatch field or args; always prefixed with `⚙️ `; default body
   is the definition name)
@@ -101,6 +106,22 @@ paseo workflow run <id> --cwd /path/to/repo \
 
 `paseo run` also accepts `--thinking`, `--mode`, and `--feature key=value`
 (e.g. `--feature fast_mode=true`).
+
+Discover valid ids on the live daemon (do not invent them):
+
+```bash
+paseo provider inspect --cwd . --json                    # enabled providers → modes → models → thinking
+paseo provider inspect --cwd . --all --json              # include disabled providers
+paseo provider features <provider> --cwd . --model <id>  # draft features (separate probe)
+# or piece by piece:
+paseo provider ls
+paseo provider models <provider> --thinking
+```
+
+Inside a Paseo agent (MCP): prefer `inspect_providers` for modes/models/thinking;
+use `inspect_provider` for features.
+See `skills/paseo-create-workflow/SKILL.md` (“Discover what you can pass”) and
+[public-docs/cli.md](../public-docs/cli.md) / [public-docs/mcp.md](../public-docs/mcp.md).
 
 ## Concurrency (two layers)
 

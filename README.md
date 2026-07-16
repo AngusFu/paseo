@@ -126,6 +126,12 @@ paseo ls                           # list running agents
 paseo attach abc123                # stream live output
 paseo send abc123 "also add tests" # follow-up task
 
+# discover valid provider / model / effort / feature ids
+paseo provider inspect --cwd . --json
+paseo provider ls
+paseo provider models claude --thinking
+paseo provider features claude --cwd . --model <id>
+
 # run on a remote daemon
 paseo --host workstation.local:6767 run "run the full test suite"
 ```

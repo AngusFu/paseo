@@ -100,6 +100,12 @@ paseo ls                           # 列出正在运行的 agents
 paseo attach abc123                # 实时流式查看输出
 paseo send abc123 "also add tests" # 发送后续任务
 
+# 查询可用的 provider / model / effort / feature ids
+paseo provider inspect --cwd . --json
+paseo provider ls
+paseo provider models claude --thinking
+paseo provider features claude --cwd . --model <id>
+
 # 在远程 daemon 上运行
 paseo --host workstation.local:6767 run "run the full test suite"
 ```

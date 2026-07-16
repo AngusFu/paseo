@@ -20,7 +20,8 @@ const PROVIDERS: ProviderListItem[] = AGENT_PROVIDER_DEFINITIONS.map((def) => ({
   status: "available",
   enabled: def.enabledByDefault === false ? "Disabled" : "Enabled",
   defaultMode: def.defaultModeId ?? "-",
-  modes: def.modes.length > 0 ? def.modes.map((m) => m.label).join(", ") : "-",
+  // Authors need mode ids for agent({ mode }) / --mode — labels alone are not enough.
+  modes: def.modes.length > 0 ? def.modes.map((m) => m.id).join(", ") : "-",
 }));
 
 function getStaticProviders(): ProviderListItem[] {
@@ -79,7 +80,7 @@ export async function runLsCommand(
         status: entry.status === "ready" ? "available" : entry.status,
         enabled: !entry.enabled ? "Disabled" : "Enabled",
         defaultMode: entry.defaultModeId ?? "default",
-        modes: (entry.modes ?? []).map((mode) => mode.label).join(", "),
+        modes: (entry.modes ?? []).map((mode) => mode.id).join(", ") || "-",
       })),
       schema: providerLsSchema,
     };

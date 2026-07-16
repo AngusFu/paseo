@@ -2,7 +2,7 @@ import pino from "pino";
 import { describe, expect, test } from "vitest";
 
 import type { AgentSession, AgentSessionConfig } from "../agent-sdk-types.js";
-import { CodexAppServerAgentSession } from "./codex-app-server-agent.js";
+import { CodexAppServerAgentClient, CodexAppServerAgentSession } from "./codex-app-server-agent.js";
 import {
   createFakeCodexAppServer,
   type FakeCodexAppServer,
@@ -345,5 +345,20 @@ describe("Codex app-server provider features", () => {
         mode: "plan",
       }),
     });
+  });
+
+  test("listFeatures returns draft toggles without spawning a session", async () => {
+    const client = new CodexAppServerAgentClient(createTestLogger());
+    await expect(
+      client.listFeatures(
+        createConfig({
+          model: "gpt-5.4",
+          featureValues: { fast_mode: true, plan_mode: false },
+        }),
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({ id: "fast_mode", type: "toggle", value: true }),
+      expect.objectContaining({ id: "plan_mode", type: "toggle", value: false }),
+    ]);
   });
 });

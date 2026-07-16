@@ -56,11 +56,13 @@ Agent-scoped `create_agent` defaults `notifyOnFinish` to true. Set it to `false`
 
 ## Provider discovery
 
+**`inspect_providers`** — preferred snapshot dump of enabled providers with modes, models, and thinking/effort ids. Pass `cwd`; set `all: true` to include disabled providers. Optional `provider` filter. Does not return draft features.
+
 **`list_providers`** — compact provider availability and modes.
 
 **`list_models`** — full model list for one provider. Use only when you need model IDs or thinking options; the list can be large.
 
-**`inspect_provider`** — compact provider capability and feature inspection. Required: `provider`; pass `cwd` when you are not in an agent-scoped session. Optional: `settings` with draft `model`, `modeId`, `thinkingOptionId`, and `features`.
+**`inspect_provider`** — one provider's modes plus draft features for a cwd/model. Required: `provider`; pass `cwd` when you are not in an agent-scoped session. Optional: `settings` with draft `model`, `modeId`, `thinkingOptionId`, and `features`.
 
 Only set feature IDs returned by `inspect_provider`. For Codex fast mode, look for `fast_mode` and pass `settings: { features: { "fast_mode": true } }` to `create_agent` or `update_agent`.
 

@@ -121,6 +121,68 @@ paseo agent mode <id> bypass   # Set bypass mode
 paseo agent mode <id> plan     # Set plan mode
 ```
 
+## Providers, models, and features
+
+Query the live daemon before hard-coding `--provider`, `--model`, `--thinking`, `--mode`, or `--feature`. Do not invent ids from memory — they depend on what is installed and which model is selected.
+
+Prefer one dump when you need everything:
+
+```bash
+paseo provider inspect --cwd . --json            # Enabled providers → modes → models → thinking ids
+paseo provider inspect --cwd . --all --json      # Include disabled providers too
+paseo provider inspect --provider claude --cwd . # Limit to one provider
+```
+
+Or query piece by piece:
+
+```bash
+paseo provider ls                              # Providers + mode ids
+paseo provider ls --json                       # Machine-readable
+paseo provider models claude --thinking        # Model ids + thinking/effort ids
+paseo provider features claude --cwd . --model claude-opus-4-8
+paseo provider features cursor --cwd . --model <id> --mode agent --thinking high --json
+```
+
+| Command                                                              | Use for                                                                                            |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `provider inspect [--cwd] [--provider] [--all]`                      | Snapshot dump of enabled providers (modes/models/thinking); `--all` includes disabled              |
+| `provider ls`                                                        | Provider id + **mode** ids (`--mode` / agent mode)                                                 |
+| `provider models <p> --thinking`                                     | Model id + **thinking/effort** ids (`--thinking`)                                                  |
+| `provider features <p> --cwd <path> [--model] [--mode] [--thinking]` | Feature ids/values for `--feature key=value` (e.g. `fast_mode=true`; Cursor uses select id `fast`) |
+
+`provider features` draft-probes the provider, so pass a real `--cwd` (and usually `--model` when options are model-gated). Use it separately from `provider inspect`.
+
+The same discovery data is available to agents as MCP tools: `inspect_providers` (preferred dump), or `list_providers` / `list_models` / `inspect_provider`. See [Paseo MCP](/docs/mcp).
+
+Example with discovered ids:
+
+```bash
+paseo run --provider claude --thinking high --mode agent \
+  --feature fast_mode=true -- "fix the flaky login test"
+```
+
+## Workflow runs
+
+Dispatch a stored workflow definition with optional agent defaults (folded into run `args` the same way as `--arg effort=…`):
+
+```bash
+paseo workflow run <definitionId> --cwd /path/to/repo \
+  --arg task="fix login" \
+  --provider cursor --model grok-4.5 \
+  --thinking high --mode agent --fast
+```
+
+| Flag            | Sets                                                                 |
+| --------------- | -------------------------------------------------------------------- |
+| `--provider`    | Default provider for `agent()` calls                                 |
+| `--model`       | Default model                                                        |
+| `--thinking`    | Default thinking/effort option id (also `--arg effort=…`)            |
+| `--mode`        | Default provider mode id                                             |
+| `--fast`        | Claude/Codex-style `fast_mode` convenience                           |
+| `--arg key=val` | Arbitrary run args (including extra `featureValues` via script args) |
+
+Discover valid ids with `paseo provider inspect` before hard-coding them. Other feature keys beyond `--fast` go through workflow script args / `featureValues`, not a `--feature` flag on `workflow run`.
+
 ## Daemon management
 
 ```bash

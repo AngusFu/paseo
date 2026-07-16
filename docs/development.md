@@ -338,6 +338,10 @@ npm run cli -- ls -a -g --json       # Same, as JSON
 npm run cli -- inspect <id>          # Show detailed agent info
 npm run cli -- logs <id>             # View agent timeline
 npm run cli -- daemon status         # Check daemon status
+npm run cli -- provider inspect --cwd . --json              # Snapshot dump (modes/models/thinking)
+npm run cli -- provider ls                                  # Providers + mode ids
+npm run cli -- provider models claude --thinking            # Models + effort ids
+npm run cli -- provider features claude --cwd . --model <id>  # Fast/plan/… features
 ```
 
 Use `--host <host:port>` to point the CLI at a different daemon:

@@ -30,16 +30,18 @@ import {
   AdaptiveTextInput,
   type SheetHeader,
 } from "@/components/adaptive-modal-sheet";
-import { CombinedModelSelector } from "@/components/combined-model-selector";
+import { AgentModelField, collectAgentFeatureValues } from "@/components/agent-launch-fields";
 import { MenuHeader } from "@/components/headers/menu-header";
 import { Button } from "@/components/ui/button";
+import { resolveControlInteractionStyles } from "@/components/ui/control-geometry";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { SelectField, SelectFieldTrigger } from "@/components/ui/select-field";
+import { SelectFieldTrigger } from "@/components/ui/select-field";
 import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
-import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { formatAgentModeLabel, formatThinkingOptionLabel } from "@/composer/agent-controls/utils";
+import { DraftAgentControls } from "@/composer/agent-controls";
+import { DraftAgentModeControl } from "@/composer/agent-controls/mode-control";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
 import type { AgentProvider, ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
 import { useDraftAgentFeatures } from "@/hooks/use-draft-agent-features";
@@ -75,6 +77,7 @@ import { confirmDialog } from "@/utils/confirm-dialog";
 import { toErrorMessage } from "@/utils/error-messages";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { formatTimeAgo } from "@/utils/time";
+import { buildProviderDefinitions } from "@/utils/provider-definitions";
 import { requireWorkspaceDirectory } from "@/utils/workspace-directory";
 import { shortenPath } from "@/utils/shorten-path";
 
@@ -655,21 +658,19 @@ function WorkflowAuthoringSheet({
       testID="workflow-create-sheet"
     >
       <View style={styles.authoringBody}>
-        <Field label={t("workflows.authoring.provider")}>
-          <CombinedModelSelector
-            providers={modelSelectorProviders}
-            selectedProvider={selectedProvider}
-            selectedModel={selectedModel}
-            onSelect={(provider, modelId) => {
-              setSelectedProvider(provider);
-              setSelectedModel(modelId);
-            }}
-            isLoading={snapshot.isLoading || snapshot.isFetching}
-            serverId={serverId}
-            renderTrigger={renderModelTrigger}
-            triggerFill
-          />
-        </Field>
+        <AgentModelField
+          label={t("workflows.authoring.provider")}
+          providers={modelSelectorProviders}
+          selectedProvider={selectedProvider}
+          selectedModel={selectedModel}
+          onSelect={(provider, modelId) => {
+            setSelectedProvider(provider);
+            setSelectedModel(modelId);
+          }}
+          isLoading={snapshot.isLoading || snapshot.isFetching}
+          serverId={serverId}
+          renderTrigger={renderModelTrigger}
+        />
         <View style={styles.promptField}>
           <View style={styles.promptLabelRow}>
             <Text style={styles.promptLabel}>{t("workflows.authoring.prompt")}</Text>
@@ -715,15 +716,16 @@ function WorkflowDispatchSheet({
   const { t } = useTranslation();
   const { preferences } = useFormPreferences();
   const { projects } = useProjects();
+  const isCompact = useIsCompactFormFactor();
   const [task, setTask] = useState("");
   const [workspaceTitleBody, setWorkspaceTitleBody] = useState(definition.name);
   const [cwd, setCwd] = useState<string | null>(null);
   const [cwdLabel, setCwdLabel] = useState<string | null>(null);
   const [pickingDirectory, setPickingDirectory] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState("");
+  const [selectedProvider, setSelectedProvider] = useState<AgentProvider | null>(null);
   const [selectedModel, setSelectedModel] = useState("");
-  const [selectedEffort, setSelectedEffort] = useState<string | null>(null);
-  const [selectedMode, setSelectedMode] = useState<string | null>(null);
+  const [selectedEffort, setSelectedEffort] = useState("");
+  const [selectedMode, setSelectedMode] = useState("");
 
   const snapshot = useProvidersSnapshot(serverId, {
     enabled: Boolean(serverId),
@@ -732,18 +734,28 @@ function WorkflowDispatchSheet({
     () => resolveAuthoringProviderDefault(preferences.provider, snapshot.entries),
     [preferences.provider, snapshot.entries],
   );
+  const providerDefinitions = useMemo(
+    () => buildProviderDefinitions(snapshot.entries),
+    [snapshot.entries],
+  );
   const modelSelectorProviders = useMemo(
     () => buildSelectableProviderSelectorProviders(snapshot.entries),
     [snapshot.entries],
   );
   const selectedProviderEntry = useMemo(
-    () => snapshot.entries?.find((entry) => entry.provider === selectedProvider) ?? null,
+    () =>
+      selectedProvider
+        ? (snapshot.entries?.find((entry) => entry.provider === selectedProvider) ?? null)
+        : null,
     [selectedProvider, snapshot.entries],
   );
+  const availableModels = useMemo(
+    () => selectedProviderEntry?.models ?? [],
+    [selectedProviderEntry?.models],
+  );
   const selectedModelDef = useMemo(() => {
-    const models = selectedProviderEntry?.models ?? [];
-    return models.find((model) => model.id === selectedModel) ?? null;
-  }, [selectedModel, selectedProviderEntry]);
+    return availableModels.find((model) => model.id === selectedModel) ?? null;
+  }, [availableModels, selectedModel]);
   const thinkingOptions = useMemo(
     () => selectedModelDef?.thinkingOptions ?? [],
     [selectedModelDef?.thinkingOptions],
@@ -754,18 +766,12 @@ function WorkflowDispatchSheet({
   );
   const draftFeatures = useDraftAgentFeatures({
     serverId,
-    provider: (selectedProvider || null) as AgentProvider | null,
+    provider: selectedProvider,
     cwd,
-    modeId: selectedMode,
+    modeId: selectedMode || null,
     modelId: selectedModel || null,
-    thinkingOptionId: selectedEffort,
+    thinkingOptionId: selectedEffort || null,
   });
-  const fastFeature = useMemo(
-    () => draftFeatures.features.find((feature) => feature.id === "fast_mode"),
-    [draftFeatures.features],
-  );
-  const fastEnabled = fastFeature?.type === "toggle" ? Boolean(fastFeature.value) : false;
-
   const projectTargets = useMemo(() => {
     const all = buildScheduleProjectTargets(projects);
     if (!serverId) {
@@ -788,14 +794,14 @@ function WorkflowDispatchSheet({
 
   useEffect(() => {
     if (!selectedProvider && providerDefault) {
-      setSelectedProvider(providerDefault.provider);
+      setSelectedProvider(providerDefault.provider as AgentProvider);
       setSelectedModel(providerDefault.model);
     }
   }, [providerDefault, selectedProvider]);
 
   useEffect(() => {
     if (thinkingOptions.length === 0) {
-      setSelectedEffort(null);
+      setSelectedEffort("");
       return;
     }
     setSelectedEffort((current) => {
@@ -806,21 +812,21 @@ function WorkflowDispatchSheet({
         selectedModelDef?.defaultThinkingOptionId ??
         thinkingOptions.find((option) => option.isDefault)?.id ??
         thinkingOptions[0]?.id ??
-        null
+        ""
       );
     });
   }, [selectedModelDef?.defaultThinkingOptionId, thinkingOptions]);
 
   useEffect(() => {
     if (modeOptions.length === 0) {
-      setSelectedMode(null);
+      setSelectedMode("");
       return;
     }
     setSelectedMode((current) => {
       if (current && modeOptions.some((mode) => mode.id === current)) {
         return current;
       }
-      return selectedProviderEntry?.defaultModeId ?? modeOptions[0]?.id ?? null;
+      return selectedProviderEntry?.defaultModeId ?? modeOptions[0]?.id ?? "";
     });
   }, [modeOptions, selectedProviderEntry?.defaultModeId]);
 
@@ -846,26 +852,6 @@ function WorkflowDispatchSheet({
       title: t("workflows.dispatchTitleNamed", { name: definition.name }),
     }),
     [definition.name, t],
-  );
-
-  const renderModelTrigger = useCallback(
-    (input: {
-      selectedModelLabel: string;
-      disabled: boolean;
-      hovered: boolean;
-      pressed: boolean;
-      isOpen: boolean;
-    }): ReactElement => (
-      <SelectFieldTrigger
-        label={input.selectedModelLabel}
-        isPlaceholder={!selectedModel}
-        placeholder={input.selectedModelLabel}
-        disabled={input.disabled}
-        active={input.hovered || input.pressed || input.isOpen}
-        size="sm"
-      />
-    ),
-    [selectedModel],
   );
 
   const cwdLeading = useMemo(() => <Folder size={16} color={styles.cwdIcon.color} />, []);
@@ -908,14 +894,18 @@ function WorkflowDispatchSheet({
             if (selectedModel.trim()) {
               args.model = selectedModel.trim();
             }
-            if (selectedEffort?.trim()) {
+            if (selectedEffort.trim()) {
               args.effort = selectedEffort.trim();
             }
-            if (selectedMode?.trim()) {
+            if (selectedMode.trim()) {
               args.mode = selectedMode.trim();
             }
-            if (fastFeature) {
-              args.fast = fastEnabled;
+            const featureValues = collectAgentFeatureValues(draftFeatures.features);
+            if (featureValues) {
+              args.featureValues = featureValues;
+              if (typeof featureValues.fast_mode === "boolean") {
+                args.fast = featureValues.fast_mode;
+              }
             }
             void onDispatch({
               definitionId: definition.id,
@@ -934,8 +924,7 @@ function WorkflowDispatchSheet({
       cwd,
       definition.id,
       definition.name,
-      fastEnabled,
-      fastFeature,
+      draftFeatures.features,
       isDispatching,
       onDispatch,
       selectedEffort,
@@ -964,56 +953,50 @@ function WorkflowDispatchSheet({
               {renderCwdTrigger}
             </Pressable>
           </Field>
-          <Field
-            label={t("workflows.workspaceTitle")}
-            hint={t("workflows.workspaceTitleHint")}
-            hintWrap
-          >
-            <View style={styles.workspaceTitleRow}>
-              <Text
-                style={styles.workspaceTitlePrefix}
-                accessibilityRole="text"
-                accessibilityLabel={t("workflows.workspaceTitleEmojiLabel")}
-              >
-                {WORKFLOW_WORKSPACE_EMOJI_PREFIX.trimEnd()}
-              </Text>
-              <AdaptiveTextInput
-                value={workspaceTitleBody}
-                initialValue={workspaceTitleBody}
-                onChangeText={setWorkspaceTitleBody}
-                placeholder={t("workflows.workspaceTitlePlaceholder", { name: definition.name })}
-                style={styles.workspaceTitleInput}
-                testID="workflow-dispatch-workspace-title"
-              />
-            </View>
+          <Field label={t("workflows.workspaceTitle")}>
+            <WorkflowWorkspaceTitleField
+              value={workspaceTitleBody}
+              definitionName={definition.name}
+              onChangeText={setWorkspaceTitleBody}
+            />
           </Field>
-          <Field label={t("workflows.authoring.provider")}>
-            <CombinedModelSelector
-              providers={modelSelectorProviders}
+          <View style={styles.dispatchAgentControls} testID="workflow-dispatch-agent-controls">
+            <DraftAgentControls
+              providerDefinitions={providerDefinitions}
               selectedProvider={selectedProvider}
+              onSelectProvider={setSelectedProvider}
+              modeOptions={modeOptions}
+              selectedMode={selectedMode}
+              onSelectMode={setSelectedMode}
+              models={availableModels}
               selectedModel={selectedModel}
-              onSelect={(provider, modelId) => {
+              onSelectModel={setSelectedModel}
+              isModelLoading={snapshot.isLoading || snapshot.isFetching}
+              modelSelectorProviders={modelSelectorProviders}
+              isAllModelsLoading={snapshot.isLoading || snapshot.isFetching}
+              onSelectProviderAndModel={(provider, modelId) => {
                 setSelectedProvider(provider);
                 setSelectedModel(modelId);
               }}
-              isLoading={snapshot.isLoading || snapshot.isFetching}
-              serverId={serverId}
-              renderTrigger={renderModelTrigger}
-              triggerFill
+              thinkingOptions={thinkingOptions}
+              selectedThinkingOptionId={selectedEffort}
+              onSelectThinkingOption={setSelectedEffort}
+              features={draftFeatures.features}
+              onSetFeature={draftFeatures.setFeatureValue}
+              modelSelectorServerId={serverId}
+              isCompactLayout={isCompact}
             />
-          </Field>
-          <WorkflowDispatchAgentOptions
-            thinkingOptions={thinkingOptions}
-            modeOptions={modeOptions}
-            selectedEffort={selectedEffort}
-            selectedMode={selectedMode}
-            onSelectEffort={setSelectedEffort}
-            onSelectMode={setSelectedMode}
-            showFast={fastFeature?.type === "toggle"}
-            fastEnabled={fastEnabled}
-            onToggleFast={(value) => draftFeatures.setFeatureValue("fast_mode", value)}
-          />
-          <Field label={t("workflows.task")} hint={t("workflows.taskHint")} hintWrap>
+            <DraftAgentModeControl
+              placement="footer"
+              selectedProvider={selectedProvider}
+              providerDefinitions={providerDefinitions}
+              modeOptions={modeOptions}
+              selectedMode={selectedMode}
+              onSelectMode={setSelectedMode}
+              isCompactLayout={isCompact}
+            />
+          </View>
+          <Field label={t("workflows.task")}>
             <FormTextInput
               value={task}
               initialValue={task}
@@ -1050,100 +1033,51 @@ function isPaseoInternalPath(path: string): boolean {
   return normalized.includes("/.paseo/workflows") || normalized.includes("/.paseo/worktrees");
 }
 
-function WorkflowDispatchAgentOptions({
-  thinkingOptions,
-  modeOptions,
-  selectedEffort,
-  selectedMode,
-  onSelectEffort,
-  onSelectMode,
-  showFast,
-  fastEnabled,
-  onToggleFast,
+function WorkflowWorkspaceTitleField({
+  value,
+  definitionName,
+  onChangeText,
 }: {
-  thinkingOptions: Array<{ id: string; label?: string; isDefault?: boolean }>;
-  modeOptions: Array<{ id: string; label: string }>;
-  selectedEffort: string | null;
-  selectedMode: string | null;
-  onSelectEffort: (value: string | null) => void;
-  onSelectMode: (value: string | null) => void;
-  showFast: boolean;
-  fastEnabled: boolean;
-  onToggleFast: (value: boolean) => void;
-}): ReactElement | null {
+  value: string;
+  definitionName: string;
+  onChangeText: (value: string) => void;
+}): ReactElement {
   const { t } = useTranslation();
-  const effortSelectOptions = useMemo(
-    () =>
-      thinkingOptions.map((option) => ({
-        id: option.id,
-        label: formatThinkingOptionLabel(option),
-        value: option.id,
-      })),
-    [thinkingOptions],
-  );
-  const modeSelectOptions = useMemo(
-    () =>
-      modeOptions.map((mode) => ({
-        id: mode.id,
-        label: formatAgentModeLabel(mode),
-        value: mode.id,
-      })),
-    [modeOptions],
-  );
-  const selectedEffortDisplay = useMemo(() => {
-    const match = effortSelectOptions.find((option) => option.value === selectedEffort);
-    return match ? { label: match.label } : null;
-  }, [effortSelectOptions, selectedEffort]);
-  const selectedModeDisplay = useMemo(() => {
-    const match = modeSelectOptions.find((option) => option.value === selectedMode);
-    return match ? { label: match.label } : null;
-  }, [modeSelectOptions, selectedMode]);
-
-  if (effortSelectOptions.length === 0 && modeSelectOptions.length === 0 && !showFast) {
-    return null;
-  }
+  const [focused, setFocused] = useState(false);
 
   return (
-    <>
-      {effortSelectOptions.length > 0 ? (
-        <SelectField
-          label={t("workflows.dispatchEffort")}
-          value={selectedEffort}
-          selectedDisplay={selectedEffortDisplay}
-          options={effortSelectOptions}
-          onChange={onSelectEffort}
-          placeholder={t("workflows.dispatchEffort")}
-          emptyText={t("workflows.dispatchEffort")}
-          size="sm"
-          testID="workflow-dispatch-effort"
-        />
-      ) : null}
-      {modeSelectOptions.length > 0 ? (
-        <SelectField
-          label={t("workflows.dispatchMode")}
-          value={selectedMode}
-          selectedDisplay={selectedModeDisplay}
-          options={modeSelectOptions}
-          onChange={onSelectMode}
-          placeholder={t("workflows.dispatchMode")}
-          emptyText={t("workflows.dispatchMode")}
-          size="sm"
-          testID="workflow-dispatch-mode"
-        />
-      ) : null}
-      {showFast ? (
-        <Field label={t("workflows.dispatchFast")} hint={t("workflows.dispatchFastHint")}>
-          <View style={styles.fastRow}>
-            <Text style={styles.meta}>{t("workflows.dispatchFastLabel")}</Text>
-            <Switch
-              value={fastEnabled}
-              onValueChange={onToggleFast}
-              testID="workflow-dispatch-fast"
-            />
-          </View>
-        </Field>
-      ) : null}
-    </>
+    <Pressable
+      style={({ hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => [
+        styles.workspaceTitleRow,
+        resolveControlInteractionStyles(
+          {
+            controlRest: styles.workspaceTitleControlRest,
+            controlHover: styles.workspaceTitleControlHover,
+            controlActive: styles.workspaceTitleControlActive,
+            controlDisabled: styles.workspaceTitleControlDisabled,
+          },
+          { hovered, focused, disabled: false },
+        ),
+      ]}
+    >
+      <Text
+        style={styles.workspaceTitlePrefix}
+        accessibilityRole="text"
+        accessibilityLabel={t("workflows.workspaceTitleEmojiLabel")}
+      >
+        {WORKFLOW_WORKSPACE_EMOJI_PREFIX.trimEnd()}
+      </Text>
+      <AdaptiveTextInput
+        value={value}
+        initialValue={value}
+        onChangeText={onChangeText}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        placeholder={t("workflows.workspaceTitlePlaceholder", { name: definitionName })}
+        style={styles.workspaceTitleInput}
+        testID="workflow-dispatch-workspace-title"
+      />
+    </Pressable>
   );
 }
 
@@ -1942,6 +1876,12 @@ const styles = StyleSheet.create((theme) => ({
   dispatchBody: {
     gap: theme.spacing[4],
   },
+  dispatchAgentControls: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: theme.spacing[1],
+  },
   dispatchFooter: {
     flex: 1,
     flexDirection: "row",
@@ -1954,13 +1894,30 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     borderRadius: theme.borderRadius.md,
     backgroundColor: theme.colors.surface2,
     paddingLeft: theme.spacing[3],
     paddingRight: theme.spacing[3],
     minHeight: 40,
+  },
+  workspaceTitleControlRest: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    outlineWidth: 0,
+    outlineColor: "transparent",
+  },
+  workspaceTitleControlHover: {
+    borderColor: theme.colors.borderAccent,
+  },
+  workspaceTitleControlActive: {
+    borderColor: theme.colors.borderAccent,
+    outlineColor: theme.colors.accent,
+    outlineOffset: 1,
+    outlineStyle: "solid" as const,
+    outlineWidth: 2,
+  },
+  workspaceTitleControlDisabled: {
+    opacity: theme.opacity[50],
   },
   workspaceTitlePrefix: {
     color: theme.colors.foreground,
@@ -1973,13 +1930,9 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
     paddingVertical: theme.spacing[2],
-  },
-  fastRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.spacing[3],
-    minHeight: 40,
+    // Kill AdaptiveTextInput's leaf focus ring — chrome owns the ring.
+    outlineWidth: 0,
+    outlineColor: "transparent",
   },
   taskInput: {
     minHeight: 120,

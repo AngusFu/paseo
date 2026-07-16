@@ -2457,7 +2457,6 @@ export const es: TranslationResources = {
     projectEmpty: "No projects available",
     workspaceTitle: "Workspace name",
     workspaceTitlePlaceholder: "{{name}}",
-    workspaceTitleHint: "Sidebar label for this run’s workspace. The emoji prefix is fixed.",
     workspaceTitleEmojiLabel: "Workflow emoji prefix",
     browseCwd: "Browse",
     directoryPickerTitle: "Choose directory",
@@ -2477,8 +2476,6 @@ export const es: TranslationResources = {
     directoryPickerError: "Could not list directory",
     task: "Task",
     taskPlaceholder: "What should this workflow do?",
-    taskHint:
-      "Pick a project and model, then describe the task. Built-ins like autopilot require this.",
     runDetailTitle: "Run details",
     runTask: "Task: {{task}}",
     runNoTask: "No task / args provided",
@@ -2506,11 +2503,6 @@ export const es: TranslationResources = {
     deleteMessage: 'Delete "{{name}}"? This cannot be undone.',
     createFromBuiltin: "Create from built-in",
     forkedToast: 'Forked "{{name}}"',
-    dispatchEffort: "Effort",
-    dispatchMode: "Mode",
-    dispatchFast: "Fast",
-    dispatchFastLabel: "Fast mode",
-    dispatchFastHint: "Claude fast mode for this run's agent() defaults.",
     name: "Name",
     namePlaceholder: "My workflow",
     authoring: {

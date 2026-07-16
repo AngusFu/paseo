@@ -30,43 +30,163 @@ agents-workflow is a faithful superset — the notes below are authoring convent
 - `budget` — `{ total, spent(), remaining() }`.
 - `args` — see next section. **Default mental model: `args` is the user prompt** (a string), not a config bag.
 
-## `agent()` opts — model / effort / mode / fast
+## `agent()` opts — what each field is
 
-Paseo forwards these into `createAgent` / `paseo run`. Prefer **omitting** them so the run inherits dispatch defaults (UI / CLI). Set them only when a phase truly needs a different tier.
+Paseo forwards these into `createAgent` / `paseo run`. Prefer **omitting** them so the run inherits dispatch defaults (UI / CLI). Set them only when a phase truly needs a different tier — and only with ids you discovered on **this** host (next section).
 
-| Opt                                                                                | Meaning                                                            | Paseo mapping                                  |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------- |
-| `provider` / `model`                                                               | Provider + model                                                   | `--provider` / `--model`                       |
-| `effort`                                                                           | Thinking / reasoning option id (`low`…`max`, or provider-specific) | `--thinking` / createAgent `thinking`          |
-| `mode`                                                                             | Provider mode id (`plan` / `agent` / …)                            | `--mode` / createAgent `mode`                  |
-| `fast`                                                                             | Convenience for Claude-style fast mode                             | `featureValues.fast_mode`                      |
-| `featureValues`                                                                    | Arbitrary provider features                                        | createAgent `features` / `--feature key=value` |
-| `label` / `phase` / `schema` / `isolation` / `agentType` / `labels` / `maxRetries` | Unchanged Claude-Workflow opts                                     | as before                                      |
+| `agent(prompt, opts)` field                                                        | What value to put                                                         | Comes from discovery                                                           | Same as CLI / dispatch                |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------- |
+| `provider`                                                                         | Provider id string, e.g. `"claude"`, `"codex"`, `"cursor"`                | `providers[].id`                                                               | `--provider`                          |
+| `model`                                                                            | Model id for that provider, e.g. `"claude-opus-4-8"`, `"gpt-5.4"`         | `providers[].models[].id`                                                      | `--model`                             |
+| `effort`                                                                           | Thinking / reasoning **option id** for that model (not a free-form label) | `models[].thinkingOptions[].id` (or `thinkingOptionIds[]` in CLI inspect JSON) | `--thinking`                          |
+| `mode`                                                                             | Provider mode id, e.g. `"agent"`, `"plan"`, `"default"`                   | `providers[].modes[].id` (or `modeIds[]`)                                      | `--mode`                              |
+| `fast`                                                                             | `true` / omit — convenience **only** for Claude/Codex boolean `fast_mode` | feature probe: toggle `id: "fast_mode"`                                        | `--fast` / `--feature fast_mode=true` |
+| `featureValues`                                                                    | `{ [featureId]: boolean \| string }` — other toggles/selects              | `paseo provider features` / MCP `inspect_provider` → `features[]`              | `--feature key=value`                 |
+| `label` / `phase` / `schema` / `isolation` / `agentType` / `labels` / `maxRetries` | Unchanged Claude-Workflow opts                                            | —                                                                              | as before                             |
 
 ```js
-// Inherit dispatch defaults (usual):
+// Usual: inherit dispatch defaults (UI sheet / workflow run flags)
 await agent(`Fix:\n\n${TASK}`, { phase: "Implement", label: "impl" });
 
-// Per-call override when needed:
+// Per-call override — every id below must have been discovered first:
 await agent(prompt, {
   phase: "Plan",
-  effort: "high",
-  mode: "plan",
-  fast: true, // or featureValues: { fast_mode: true }
+  provider: "claude", // providers[].id
+  model: "claude-opus-4-8", // models[].id
+  effort: "high", // thinkingOptions[].id  ← NOT invented
+  mode: "plan", // modes[].id
+  fast: true, // Claude/Codex only; else use featureValues
+  // featureValues: { plan_mode: true },           // other toggles
+  // featureValues: { fast: "true" },              // Cursor select (string option id)
 });
 ```
 
-**Dispatch defaults** (UI “执行” sheet / `paseo workflow run`): `provider`, `model`, `effort` (CLI `--thinking`), `mode`, `fast`. Stored on the run record; applied as `PaseoHostBackend` defaults for every `agent()` that omits them. See `docs/workflow.md`.
+**Dispatch defaults** (UI “执行” sheet / `paseo workflow run`): `provider`, `model`, `effort` (CLI `--thinking`), `mode`, `fast`. Stored on the run; applied as `PaseoHostBackend` defaults for every `agent()` that omits them. See `docs/workflow.md`.
 
 ```bash
-# CLI — same defaults as the UI
 paseo workflow run <id> --cwd /repo --arg task="fix login" \
-  --provider claude --model opus --thinking high --mode agent --fast
+  --provider claude --model claude-opus-4-8 --thinking high --mode agent --fast
 
-# Bare agent run
 paseo run --provider claude --thinking high --mode agent \
   --feature fast_mode=true -- "fix login"
 ```
+
+## Discover ids before hard-coding (cascaded)
+
+**Do not invent** provider / model / effort / mode / feature ids. They differ by host install and selected model. Always query the **running daemon** with the installed `paseo` binary (not a checkout `npm run cli`). Inside a Paseo agent, use MCP instead (needs Inject Paseo tools).
+
+### Cascade (always this order)
+
+```
+1) Snapshot  → pick provider + mode + model + effort
+2) Features  → only after you know provider + model (+ mode/thinking if gated)
+3) Write     → agent() / dispatch flags using those exact ids
+```
+
+| Step | CLI                                                                           | MCP                                                                                     | You get                                              |
+| ---- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 1    | `paseo provider inspect --cwd <path> --json`                                  | `inspect_providers` `{ cwd }`                                                           | enabled providers → modes → models → thinkingOptions |
+| 1b   | `paseo provider inspect --provider <p> --cwd <path> --json`                   | `inspect_providers` `{ cwd, provider }`                                                 | same, one provider                                   |
+| 1c   | `paseo provider inspect --cwd <path> --all --json`                            | `inspect_providers` `{ cwd, all: true }`                                                | include disabled                                     |
+| 2    | `paseo provider features <p> --cwd <path> --model <id> [--mode] [--thinking]` | `inspect_provider` `{ provider, cwd, settings: { model, modeId?, thinkingOptionId? } }` | `features[]` toggles/selects                         |
+
+Piecewise equivalents of step 1: `provider ls` → `provider models <p> --thinking` (or MCP `list_providers` → `list_models`). Prefer `inspect` / `inspect_providers` so you do not chain three calls for the snapshot.
+
+### Demo — CLI cascade → `agent()` opts
+
+```bash
+# Step 1 — snapshot (cheap; no feature probes)
+paseo provider inspect --cwd "$PWD" --json
+```
+
+Example shape (abbreviated):
+
+```json
+{
+  "providers": [
+    {
+      "id": "claude",
+      "modeIds": ["default", "bypassPermissions"],
+      "modes": [{ "id": "default", "label": "Default" }],
+      "models": [
+        {
+          "id": "claude-opus-4-8",
+          "thinkingOptionIds": ["low", "medium", "high", "max"],
+          "defaultThinkingOptionId": "high"
+        }
+      ]
+    }
+  ]
+}
+```
+
+```bash
+# Step 2 — features for the chosen provider+model (draft probe)
+paseo provider features claude --cwd "$PWD" --model claude-opus-4-8 --json
+```
+
+```json
+[
+  { "id": "fast_mode", "type": "toggle", "value": "false" },
+  { "id": "plan_mode", "type": "toggle", "value": "false" }
+]
+```
+
+```js
+// Step 3 — map 1:1 into agent() (or omit and set the same ids on workflow run)
+await agent(`Investigate and fix:\n\n${TASK}`, {
+  phase: "Implement",
+  provider: "claude", // providers[].id
+  model: "claude-opus-4-8", // models[].id
+  effort: "high", // thinkingOptionIds / thinkingOptions[].id
+  mode: "default", // modeIds / modes[].id
+  fast: true, // because features has toggle fast_mode
+  // featureValues: { plan_mode: true },
+});
+```
+
+Cursor example (select feature, **not** `fast_mode`):
+
+```bash
+paseo provider inspect --provider cursor --cwd "$PWD" --json
+paseo provider features cursor --cwd "$PWD" --model composer-2 --mode agent --json
+# → feature { id: "fast", type: "select", options: "false …, true …" }
+```
+
+```js
+await agent(prompt, {
+  provider: "cursor",
+  model: "composer-2",
+  mode: "agent",
+  featureValues: { fast: "true" }, // select option id — string, not boolean fast_mode
+});
+```
+
+### Demo — MCP cascade (when you are already a Paseo agent)
+
+```
+# Step 1
+inspect_providers { cwd: "/path/to/repo" }
+  → pick providers[i].id
+  → pick providers[i].modes[j].id          → agent mode
+  → pick providers[i].models[k].id         → agent model
+  → pick models[k].thinkingOptions[n].id   → agent effort
+
+# Step 2 (only if you need features)
+inspect_provider {
+  provider: "claude",
+  cwd: "/path/to/repo",
+  settings: { model: "claude-opus-4-8", modeId: "default", thinkingOptionId: "high" }
+}
+  → features[].id + value / option ids     → fast / featureValues
+```
+
+### Rules
+
+- Prefer omitting `provider`/`model`/`effort`/`mode`/`fast` so **dispatch defaults** apply; hard-code only after lookup for this host.
+- Feature **ids are provider-specific** — Claude/Codex: boolean `fast_mode` (or `fast: true`). Cursor: select `fast` with string option ids. Never assume Cursor accepts `fast_mode`.
+- Empty `features` is normal (no knobs for that combo) — not a tool failure.
+- Live daemon required for models/features. `provider ls` without a daemon falls back to a static mode list only.
 
 ## `args` — it's the prompt (read this)
 
@@ -168,11 +288,16 @@ The script runs in a `node:vm` realm and is static-checked by `aw validate`. FOR
 
 ## Run · validate · test
 
-```
-cd packages/agents-workflow && npm run build
-node dist/cli.js validate <name|path>                 # static belt — MUST pass
-node dist/cli.js run <name> --backend mock            # dry-run (free)
-node dist/cli.js run <name> --backend paseo --args '{"ticketId":"PROJ-1","runtimeDir":"/tmp/r","key":"k"}' --wait-timeout 5m
+```bash
+# Static check (agents-workflow CLI — install @getpaseo/agents-workflow or use npx)
+aw validate <name|path>                 # MUST pass
+# or: npx --package=@getpaseo/agents-workflow aw validate <name|path>
+
+aw run <name> --backend mock            # dry-run (free)
+
+# Real dispatch via the user's Paseo daemon
+paseo workflow run <id> --cwd /path/to/repo --arg task="…" \
+  --provider claude --thinking high --mode agent
 ```
 
 Or via the Paseo Workflow page / `workflow.run.dispatch` RPC (daemon creates an isolated workspace per run). Dispatch can set default `provider` / `model` / `effort` / `mode` / `fast` for the whole run.
@@ -183,7 +308,7 @@ Or via the Paseo Workflow page / `workflow.run.dispatch` RPC (daemon creates an 
 2. **`args` = the prompt.** For task-like flows: string-guard
    (`typeof args === "string" && args.trim()`) → weave that string into `agent()` prompts.
    Missing → `return { error }`. Never invent `args.task` / `args.prompt`.
-3. Each phase = `phase('X')` + `agent(prompt, opts)`; null-guard every result (`if (!x) return {...}`). Prefer omitting `effort`/`mode`/`fast` so dispatch defaults apply; override only when a phase needs a different tier.
+3. Each phase = `phase('X')` + `agent(prompt, opts)`; null-guard every result (`if (!x) return {...}`). Prefer omitting `provider`/`model`/`effort`/`mode`/`fast` so dispatch defaults apply. If you hard-code them: cascade discover first (`inspect` → `features`) and map ids 1:1 (`provider`/`model`/`effort`/`mode`/`featureValues`).
 4. Schema: inline JSON Schema (DRY it with an in-file `S` map). File-producing phase → build a DISTINCT absolute path from `args.runtimeDir`/`args.key` (only when the caller passed an **object** args — not present for a bare task-string dispatch); never a bare dir, never a shared filename across parallel producers.
 5. Ordering (STR before deliver, secret-scan before egress) = just the order you write the `agent()` calls; no policy enforces it. Add an à-la-carte verifier for load-bearing outputs.
 6. Conditional skip / early exit = plain `if`/`return`.

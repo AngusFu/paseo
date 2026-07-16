@@ -82,6 +82,7 @@ import {
   type BrowserAutomationHostCapability,
 } from "@getpaseo/protocol/browser-automation/capabilities";
 import type { BrowserToolsBroker } from "./browser-tools/broker.js";
+import type { DaemonRuntimeConfig } from "./session/daemon/daemon-session.js";
 
 const WS_CLOSE_DAEMON_AUTH_FAILED = 4401;
 
@@ -415,19 +416,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly externalSessionsByKey: Map<string, SessionConnection> = new Map();
   private readonly serverId: string;
   private readonly daemonVersion: string;
-  private readonly daemonRuntimeConfig:
-    | {
-        listen: string | null;
-        appBaseUrl?: string;
-        relay: {
-          enabled: boolean;
-          endpoint: string;
-          publicEndpoint: string;
-          useTls: boolean;
-          publicUseTls: boolean;
-        };
-      }
-    | undefined;
+  private readonly daemonRuntimeConfig: DaemonRuntimeConfig | undefined;
   private readonly agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
   private readonly projectRegistry: ProjectRegistry;
@@ -522,18 +511,7 @@ export class VoiceAssistantWebSocketServer {
     github?: GitHubService,
     pushNotificationSender?: PushNotificationSender,
     providerSnapshotManager?: ProviderSnapshotManager,
-    daemonRuntimeConfig?: {
-      listen: string | null;
-      worktreesRoot?: string;
-      appBaseUrl?: string;
-      relay: {
-        enabled: boolean;
-        endpoint: string;
-        publicEndpoint: string;
-        useTls: boolean;
-        publicUseTls: boolean;
-      };
-    },
+    daemonRuntimeConfig?: DaemonRuntimeConfig,
     serviceProxyPublicBaseUrl?: string | null,
     browserToolsBroker?: BrowserToolsBroker | null,
     kanbanService?: KanbanService,
@@ -1284,6 +1262,8 @@ export class VoiceAssistantWebSocketServer {
       serverId: this.serverId,
       hostname: getHostname(),
       version: this.daemonVersion,
+      // COMPAT(desktopManaged): added in v0.1.X, remove optional parsing after 2027-01-16.
+      desktopManaged: this.daemonRuntimeConfig?.desktopManaged === true,
       ...(this.serverCapabilities ? { capabilities: this.serverCapabilities } : {}),
       features: {
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
@@ -1314,7 +1294,7 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(daemonDiagnostics): added in v0.1.100, remove gate after 2026-12-25 once daemon floor >= v0.1.100.
         daemonDiagnostics: true,
         // COMPAT(daemonSelfUpdate): added in v0.1.93, remove gate after 2026-12-13.
-        daemonSelfUpdate: true,
+        daemonSelfUpdate: this.daemonRuntimeConfig?.desktopManaged !== true,
         // COMPAT(agentForkContext): added in v0.1.102, remove gate after 2026-12-28.
         agentForkContext: true,
         // COMPAT(commandSchedules): added in v0.1.106, drop the gate when floor >= v0.1.106.

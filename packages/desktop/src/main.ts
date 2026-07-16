@@ -47,7 +47,7 @@ import {
   ensureNotificationCenterRegistration,
 } from "./features/notifications.js";
 import { registerOpenerHandlers } from "./features/opener.js";
-import { registerEditorTargetHandlers } from "./features/editor-targets.js";
+import { registerEditorTargetHandlers } from "./features/editor-targets/ipc.js";
 import { registerCodeServerHandlers, shutdownCodeServer } from "./features/code-server.js";
 import { setupApplicationMenu } from "./features/menu.js";
 import {

@@ -2,7 +2,7 @@ import { execFileSync, spawn as nodeSpawn } from "node:child_process";
 import { existsSync as nodeExistsSync } from "node:fs";
 import { connect as netConnect } from "node:net";
 import { ipcMain } from "electron";
-import { createExternalProcessEnv, resolveExecutable } from "./editor-targets.js";
+import { createExternalProcessEnv, resolveExecutable } from "./editor-targets/runtime.js";
 
 // A single, machine-global `code serve-web` instance. It serves any local
 // folder over http://127.0.0.1:19490/?folder=<abs-path>, so one process backs
@@ -130,7 +130,7 @@ export async function startCodeServer(
     return { running: true, url: CODE_SERVER_URL, port: CODE_SERVER_PORT };
   }
 
-  const executable = resolveExecutable("code", { env, existsSync, platform });
+  const executable = resolveExecutable(["code"], { env, pathExists: existsSync, platform });
   if (!executable) {
     throw new Error("VS Code CLI (`code`) was not found on PATH");
   }

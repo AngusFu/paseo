@@ -13,12 +13,15 @@ import { useTranslation } from "react-i18next";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useSessionStore, type ExplorerFile } from "@/stores/session-store";
+import { useWebScrollViewScrollbar } from "@/components/use-web-scrollbar";
+import { useWebScrollbarStyle } from "@/hooks/use-web-scrollbar-style";
 import { highlightCode, type HighlightToken } from "@getpaseo/highlight";
 import { syntaxTokenStyleFor } from "@/styles/syntax-token-styles";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { lineNumberGutterWidth } from "@/components/code-insets";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { isRenderedMarkdownFile } from "@/components/file-pane-render-mode";
+import { isWeb } from "@/constants/platform";
 import type { AttachmentMetadata } from "@/attachments/types";
 import { useAttachmentPreviewUrl } from "@/attachments/use-attachment-preview-url";
 import { persistAttachmentFromBytes } from "@/attachments/service";
@@ -40,6 +43,7 @@ interface CodeLineProps {
 interface FilePreviewBodyProps {
   preview: ExplorerFile | null;
   isLoading: boolean;
+  showDesktopWebScrollbar: boolean;
   isMobile: boolean;
   location: WorkspaceFileLocation;
   imagePreviewUri: string | null;
@@ -188,6 +192,7 @@ const codeLineStyles = StyleSheet.create((theme) => ({
 function FilePreviewBody({
   preview,
   isLoading,
+  showDesktopWebScrollbar,
   isMobile,
   location,
   imagePreviewUri,
@@ -199,6 +204,10 @@ function FilePreviewBody({
     preview?.kind === "text" && isRenderedMarkdownFile(filePath) && !location.lineStart;
 
   const previewScrollRef = useRef<RNScrollView>(null);
+  const webScrollbarStyle = useWebScrollbarStyle();
+  const scrollbar = useWebScrollViewScrollbar(previewScrollRef, {
+    enabled: showDesktopWebScrollbar,
+  });
 
   const highlightedLines = useMemo(() => {
     if (!preview || preview.kind !== "text" || isMarkdownFile) {
@@ -267,10 +276,15 @@ function FilePreviewBody({
             ref={previewScrollRef}
             style={styles.previewContent}
             contentContainerStyle={styles.previewMarkdownScrollContent}
-            showsVerticalScrollIndicator
+            onLayout={scrollbar.onLayout}
+            onScroll={scrollbar.onScroll}
+            onContentSizeChange={scrollbar.onContentSizeChange}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={!showDesktopWebScrollbar}
           >
             <MarkdownRenderer text={preview.content ?? ""} />
           </RNScrollView>
+          {scrollbar.overlay}
         </View>
       );
     }
@@ -304,7 +318,11 @@ function FilePreviewBody({
         <RNScrollView
           ref={previewScrollRef}
           style={styles.previewContent}
-          showsVerticalScrollIndicator
+          onLayout={scrollbar.onLayout}
+          onScroll={scrollbar.onScroll}
+          onContentSizeChange={scrollbar.onContentSizeChange}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={!showDesktopWebScrollbar}
         >
           {isMobile ? (
             <View style={styles.previewCodeScrollContent}>{codeLines}</View>
@@ -313,12 +331,14 @@ function FilePreviewBody({
               horizontal
               nestedScrollEnabled
               showsHorizontalScrollIndicator
+              style={webScrollbarStyle}
               contentContainerStyle={styles.previewCodeScrollContent}
             >
               {codeLines}
             </RNScrollView>
           )}
         </RNScrollView>
+        {scrollbar.overlay}
       </View>
     );
   }
@@ -339,7 +359,11 @@ function FilePreviewBody({
           ref={previewScrollRef}
           style={styles.previewContent}
           contentContainerStyle={styles.previewImageScrollContent}
-          showsVerticalScrollIndicator
+          onLayout={scrollbar.onLayout}
+          onScroll={scrollbar.onScroll}
+          onContentSizeChange={scrollbar.onContentSizeChange}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={!showDesktopWebScrollbar}
         >
           <RNImage
             source={imageSource ?? undefined}
@@ -347,6 +371,7 @@ function FilePreviewBody({
             resizeMode="contain"
           />
         </RNScrollView>
+        {scrollbar.overlay}
       </View>
     );
   }
@@ -370,6 +395,7 @@ export function FilePane({
 }) {
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
+  const showDesktopWebScrollbar = isWeb && !isMobile;
 
   const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
   const normalizedWorkspaceRoot = useMemo(() => workspaceRoot.trim(), [workspaceRoot]);
@@ -437,6 +463,7 @@ export function FilePane({
       <FilePreviewBody
         preview={query.data?.file ?? null}
         isLoading={query.isFetching}
+        showDesktopWebScrollbar={showDesktopWebScrollbar}
         isMobile={isMobile}
         location={location}
         imagePreviewUri={imagePreviewUri}

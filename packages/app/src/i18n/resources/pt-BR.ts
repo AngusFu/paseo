@@ -962,8 +962,6 @@ export const ptBR: TranslationResources = {
         hideFromSidebar: "Ocultar da barra lateral",
         archiving: "Arquivando...",
         hiding: "Ocultando...",
-        pin: "Fixar",
-        unpin: "Desafixar",
       },
       confirmations: {
         hideTitle: "Ocultar workspace?",

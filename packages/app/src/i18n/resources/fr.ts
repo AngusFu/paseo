@@ -971,8 +971,6 @@ export const fr: TranslationResources = {
         hideFromSidebar: "Masquer de la barre latérale",
         archiving: "Archivage...",
         hiding: "Dissimulation...",
-        pin: "Épingler",
-        unpin: "Désépingler",
       },
       confirmations: {
         hideTitle: "Masquer l'espace de travail?",

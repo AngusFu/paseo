@@ -71,7 +71,6 @@ import {
   buildSettingsHostSectionRoute,
   buildSettingsRoute,
 } from "@/utils/host-routes";
-import type { ShortcutKey } from "@/utils/format-shortcut";
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { SidebarCalloutSlot } from "./sidebar-callout-slot";
 import { SidebarWorkspaceList } from "./sidebar-workspace-list";
@@ -99,7 +98,6 @@ interface SidebarSharedProps {
   handleHome: () => void;
   handleSettings: () => void;
   labels: SidebarLabels;
-  newWorkspaceKeys: ShortcutKey[][] | null;
   handleAddHost: () => void;
   handleOpenHostSettings: (serverId: string) => void;
 }
@@ -235,7 +233,6 @@ export const LeftSidebar = memo(function LeftSidebar() {
     router.push(buildWorkflowsRoute());
   }, []);
 
-  const newWorkspaceKeys = useShortcutKeys("new-workspace");
   const labels = useMemo(
     (): SidebarLabels => ({
       addProject: t("sidebar.actions.addProject"),
@@ -269,7 +266,6 @@ export const LeftSidebar = memo(function LeftSidebar() {
     toggleProjectCollapsed,
     handleRefresh,
     labels,
-    newWorkspaceKeys,
   };
 
   if (isCompactLayout) {
@@ -547,7 +543,6 @@ function MobileSidebar({
   shortcutIndexByWorkspaceKey,
   toggleProjectCollapsed,
   handleRefresh,
-  newWorkspaceKeys,
   handleOpenProject,
   handleHome,
   handleSettings,
@@ -586,6 +581,11 @@ function MobileSidebar({
   const handleWorkspacePress = useCallback(() => {
     closeSidebar();
   }, [closeSidebar]);
+
+  const workspacesListHeader = useMemo(
+    () => <WorkspacesSectionHeader onBeforeNavigate={closeSidebar} />,
+    [closeSidebar],
+  );
 
   const mobileSidebarInsetStyle = useMemo(
     () => ({
@@ -673,7 +673,7 @@ function MobileSidebar({
             onWorkspacePress={handleWorkspacePress}
             onAddProject={handleOpenProject}
             parentGestureRef={closeGestureRef}
-            listHeaderComponent={workspacesSectionHeaderElement}
+            listHeaderComponent={workspacesListHeader}
           />
         )}
 
@@ -706,7 +706,6 @@ function DesktopSidebar({
   shortcutIndexByWorkspaceKey,
   toggleProjectCollapsed,
   handleRefresh,
-  newWorkspaceKeys,
   handleOpenProject,
   handleHome,
   handleSettings,
@@ -868,16 +867,15 @@ function DesktopSidebar({
 
 function WorkspacesSectionHeader({
   onBeforeNavigate,
-  newWorkspaceKeys,
 }: {
   // Called before navigating away (mobile closes the sidebar overlay first).
   onBeforeNavigate?: () => void;
-  newWorkspaceKeys: ReturnType<typeof useShortcutKeys>;
 }) {
   const { t } = useTranslation();
   const { theme } = useUnistyles();
   const setCommandCenterOpen = useKeyboardShortcutsStore((state) => state.setCommandCenterOpen);
   const commandCenterKeys = useShortcutKeys("toggle-command-center");
+  const newWorkspaceKeys = useShortcutKeys("new-workspace");
   const handleSearchPress = useCallback(() => setCommandCenterOpen(true), [setCommandCenterOpen]);
   const handleNewWorkspace = useNewWorkspaceNavigation(onBeforeNavigate);
   const handleHistory = useCallback(() => {

@@ -944,8 +944,6 @@ export const ar: TranslationResources = {
         hideFromSidebar: "إخفاء من الشريط الجانبي",
         archiving: "أرشفة...",
         hiding: "إخفاء...",
-        pin: "تثبيت",
-        unpin: "إلغاء التثبيت",
       },
       confirmations: {
         hideTitle: "إخفاء مساحة العمل؟",

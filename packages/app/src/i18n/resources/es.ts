@@ -971,8 +971,6 @@ export const es: TranslationResources = {
         hideFromSidebar: "Ocultar de la barra lateral",
         archiving: "Archivando...",
         hiding: "Ocultación...",
-        pin: "Fijar",
-        unpin: "Desfijar",
       },
       confirmations: {
         hideTitle: "¿Ocultar espacio de trabajo?",

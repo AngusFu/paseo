@@ -963,8 +963,6 @@ export const ru: TranslationResources = {
         hideFromSidebar: "Скрыть с боковой панели",
         archiving: "Архивирование...",
         hiding: "Скрытие...",
-        pin: "Закрепить",
-        unpin: "Открепить",
       },
       confirmations: {
         hideTitle: "Скрыть рабочее пространство?",

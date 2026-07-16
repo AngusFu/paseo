@@ -951,8 +951,6 @@ export const en = {
         hideFromSidebar: "Hide from sidebar",
         archiving: "Archiving...",
         hiding: "Hiding...",
-        pin: "Pin",
-        unpin: "Unpin",
       },
       confirmations: {
         hideTitle: "Hide workspace?",

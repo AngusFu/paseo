@@ -168,24 +168,30 @@ export function Autocomplete({
     });
   }, []);
 
+  // Key scroll resets on option *identity* (ids + order), not array reference.
+  // useAgentAutocomplete rebuilds a new options array on every keystroke even
+  // when the visible list is unchanged — pinning on that reference caused a
+  // visible flash (scroll→0 then pinToBottom) on each character.
+  const optionsIdentity = useMemo(() => options.map((option) => option.id).join("\0"), [options]);
+
   useEffect(() => {
     rowLayoutsRef.current.clear();
     scrollOffsetRef.current = 0;
-  }, [options]);
+  }, [optionsIdentity]);
 
   useEffect(() => {
     if (options.length === 0) {
       return;
     }
     pinToBottom();
-  }, [options, pinToBottom]);
+  }, [optionsIdentity, options.length, pinToBottom]);
 
   useEffect(() => {
     const raf = requestAnimationFrame(ensureActiveItemVisible);
     return () => {
       cancelAnimationFrame(raf);
     };
-  }, [ensureActiveItemVisible, options.length]);
+  }, [ensureActiveItemVisible, optionsIdentity]);
 
   const handleScrollViewLayout = useCallback(
     (event: LayoutChangeEvent) => {

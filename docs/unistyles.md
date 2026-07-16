@@ -219,6 +219,28 @@ Keep layout and typography in `StyleSheet.create`; move only the stale theme-dep
 
 The same rule applies to bottom-sheet component props such as `backgroundStyle` and `handleIndicatorStyle`: they are library props, not the direct React Native `style` prop Unistyles registers. Prefer a custom `backgroundComponent` that calls `useUnistyles()`, or pass a small inline object from the hook theme.
 
+## `padding: 0` On A Parent + `> *` Hash Collision
+
+Do **not** write an explicit `padding: 0` on a container just to document "children own their insets." Zero is already the default, and the explicit key participates in Unistyles' style hash. If that hash collides with a `withUnistyles` style (see "`withUnistyles` And The `> *` Child-Selector Leak" above), the emitted rule becomes:
+
+```css
+.unistyles_xxx > * {
+  padding: 0; /* and whatever else collided */
+}
+```
+
+Every **direct child** of that container then has its padding forced to 0 — including children that set their own `padding` / `paddingHorizontal`. Grandchildren are unaffected.
+
+Symptom we hit in `tool-call-details.tsx`: search `filePaths` rendered flush to the card edge even after giving the section View `paddingHorizontal: theme.spacing[3]`. The empty state in the **same** card looked correct — because it returns `<Text style={styles.emptyStateText}>` directly and is **not** a child of the `paddedContainer` / `fullBleedContainer` wrapper. Merging the section styles into a self-contained key did not help; the parent `> *` rule still won.
+
+Fix patterns (prefer in order):
+
+1. Omit `padding: 0` on the container (rely on the default).
+2. Put the inset on a **grandchild** (e.g. padding on the `Text`, like `emptyStateText` / `searchResultText`), not on the direct child of the `padding: 0` container.
+3. Give the container a distinctive shape so it cannot hash-collide with a `withUnistyles` style.
+
+If a theme-dependent inset "should" apply but does not, check whether the node is a direct child of a container that sets `padding: 0` before chasing module-scope arrays or layout bugs.
+
 ## Memoized Style Objects
 
 When a third-party library receives a plain style object, it is outside Unistyles' native tracking path. Make sure any memo that builds that style object depends on the actual theme values it reads.

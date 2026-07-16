@@ -1382,6 +1382,15 @@ function ToolCallDebugToggle({
 }) {
   const { t } = useTranslation();
   const { isDebugEnabled, toggleDebug } = useToolCallDebug();
+  // Match kanban filter chips: muted when off, foreground + accent border when on.
+  // Icon colour alone is too subtle on the shared surface2 pill.
+  const debugToggleStyle = useCallback(
+    (state: PressableStateCallbackType & { hovered?: boolean }) => [
+      buttonStyle(state),
+      isDebugEnabled ? stylesheet.collapseToggleButtonActive : null,
+    ],
+    [buttonStyle, isDebugEnabled],
+  );
   // Inspecting a payload means hovering it, which only exists on web.
   if (!isWeb) {
     return null;
@@ -1391,7 +1400,7 @@ function ToolCallDebugToggle({
   );
   return (
     <Pressable
-      style={buttonStyle}
+      style={debugToggleStyle}
       onPress={toggleDebug}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -1400,7 +1409,7 @@ function ToolCallDebugToggle({
     >
       <ThemedBug
         size={18}
-        uniProps={isDebugEnabled ? debugToggleActiveColorMapping : collapseToggleColorMapping}
+        uniProps={isDebugEnabled ? debugToggleActiveColorMapping : mutedColorMapping}
       />
     </Pressable>
   );
@@ -1862,6 +1871,12 @@ const stylesheet = StyleSheet.create((theme) => ({
   },
   collapseToggleButtonPressed: {
     opacity: 0.7,
+  },
+  // Active treatment for the tool-call debug toggle — same accent-border cue as
+  // kanban filter chips so on/off is readable at a glance.
+  collapseToggleButtonActive: {
+    borderColor: theme.colors.borderAccent,
+    backgroundColor: theme.colors.surface1,
   },
   toggleRow: {
     flexDirection: "row",

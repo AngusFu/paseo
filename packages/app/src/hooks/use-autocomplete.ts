@@ -19,6 +19,21 @@ interface UseAutocompleteResult {
   onKeyPress: (event: { key: string; preventDefault: () => void }) => boolean;
 }
 
+function clampSelectedIndex(input: {
+  isVisible: boolean;
+  optionsLength: number;
+  selectedIndex: number;
+  optionsPosition?: AutocompleteOptionsPosition;
+}): number {
+  if (!input.isVisible || input.optionsLength === 0) {
+    return -1;
+  }
+  if (input.selectedIndex < 0 || input.selectedIndex >= input.optionsLength) {
+    return getAutocompleteFallbackIndex(input.optionsLength, input.optionsPosition);
+  }
+  return input.selectedIndex;
+}
+
 export function useAutocomplete<TOption>(
   input: UseAutocompleteInput<TOption>,
 ): UseAutocompleteResult {
@@ -54,6 +69,15 @@ export function useAutocomplete<TOption>(
       return current;
     });
   }, [input.isVisible, input.options.length, input.query, input.optionsPosition]);
+
+  // Clamp during render so a stale -1/OOB index never reaches the popover for a
+  // frame (that used to clear the anchor and unmount the portal).
+  const resolvedSelectedIndex = clampSelectedIndex({
+    isVisible: input.isVisible,
+    optionsLength: input.options.length,
+    selectedIndex,
+    optionsPosition: input.optionsPosition,
+  });
 
   const onKeyPress = useCallback(
     (event: { key: string; preventDefault: () => void }) => {
@@ -114,7 +138,7 @@ export function useAutocomplete<TOption>(
   );
 
   return {
-    selectedIndex,
+    selectedIndex: resolvedSelectedIndex,
     onKeyPress,
   };
 }

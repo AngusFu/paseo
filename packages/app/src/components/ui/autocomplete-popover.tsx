@@ -68,7 +68,10 @@ export function AutocompletePopover({
   const openShift = useSharedValue(0);
 
   useEffect(() => {
-    if (!visible || (options.length > 0 && selectedIndex < 0)) {
+    // Only tear down the anchor when the popover is actually hidden. Do NOT
+    // clear on selectedIndex < 0 — that raced with query keystrokes (index
+    // resets through the effect) and unmounted the portal for a frame.
+    if (!visible) {
       setRelativeAnchorRect(null);
       return;
     }
@@ -106,8 +109,9 @@ export function AutocompletePopover({
     };
   }, [
     visible,
+    // Remeasure when the list gains/loses rows (height can change), but not on
+    // every selectedIndex tick — selection does not move the anchor.
     options.length,
-    selectedIndex,
     anchorRef,
     portalHostName,
     openShift,
@@ -136,7 +140,6 @@ export function AutocompletePopover({
   );
 
   if (!visible || !relativeAnchorRect || !baseStyle) return null;
-  if (options.length > 0 && selectedIndex < 0) return null;
 
   return (
     <Portal hostName={portalHostName}>

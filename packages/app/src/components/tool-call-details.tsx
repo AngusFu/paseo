@@ -550,7 +550,7 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
   const out: ReactNode[] = [];
   if (detail.content) {
     out.push(
-      <View key="search-content" style={SEARCH_SECTION_STYLE}>
+      <View key="search-content" style={styles.searchSection}>
         <ScrollView
           style={ds.scrollAreaStyle}
           contentContainerStyle={styles.scrollContent}
@@ -572,30 +572,45 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
     );
   }
   if (detail.filePaths && detail.filePaths.length > 0) {
+    // Padding lives on the Text (same pattern as emptyStateText), not on a
+    // wrapper View. Search sections render inside paddedContainer/fullBleedContainer
+    // which set `padding: 0`; a Unistyles `> *` hash-collision can zero the
+    // direct child's padding while leaving grandchild Text padding intact —
+    // see docs/unistyles.md. Also use pre-wrap so long paths wrap instead of
+    // clipping the right edge.
     out.push(
-      <View key="search-files" style={SEARCH_SECTION_STYLE}>
-        <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
-          {detail.filePaths.join("\n")}
-        </Text>
-      </View>,
+      <Text
+        key="search-files"
+        selectable
+        style={styles.searchResultText}
+        dataSet={CODE_SURFACE_DATASET}
+      >
+        {detail.filePaths.join("\n")}
+      </Text>,
     );
   }
   if (detail.webResults && detail.webResults.length > 0) {
     out.push(
-      <View key="search-web-results" style={SEARCH_SECTION_STYLE}>
-        <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
-          {detail.webResults.map((entry) => `${entry.title}\n${entry.url}`).join("\n\n")}
-        </Text>
-      </View>,
+      <Text
+        key="search-web-results"
+        selectable
+        style={styles.searchResultText}
+        dataSet={CODE_SURFACE_DATASET}
+      >
+        {detail.webResults.map((entry) => `${entry.title}\n${entry.url}`).join("\n\n")}
+      </Text>,
     );
   }
   if (detail.annotations && detail.annotations.length > 0) {
     out.push(
-      <View key="search-annotations" style={SEARCH_SECTION_STYLE}>
-        <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
-          {detail.annotations.join("\n\n")}
-        </Text>
-      </View>,
+      <Text
+        key="search-annotations"
+        selectable
+        style={styles.searchResultText}
+        dataSet={CODE_SURFACE_DATASET}
+      >
+        {detail.annotations.join("\n\n")}
+      </Text>,
     );
   }
   return out;
@@ -752,8 +767,8 @@ function buildDetailSections(
 function ErrorSection({ errorText }: { errorText: string }) {
   const { t } = useTranslation();
   return (
-    <View style={ERROR_SECTION_STYLE}>
-      <Text style={SECTION_TITLE_ERROR_STYLE}>{t("toolCallDetails.error")}</Text>
+    <View style={styles.errorSection}>
+      <Text style={styles.sectionTitleError}>{t("toolCallDetails.error")}</Text>
       <View style={styles.errorBox} dataSet={CODE_SURFACE_DATASET}>
         <View style={styles.errorContent}>
           <Text selectable style={SCROLL_TEXT_ERROR_STYLE}>
@@ -817,13 +832,15 @@ const styles = StyleSheet.create((theme) => {
   const insets = getCodeInsets(theme);
 
   return {
+    // Do not set `padding: 0` explicitly — it is already the default, and an
+    // identical `{ gap, padding: 0 }` hash can collide with a withUnistyles
+    // `> *` rule that forces padding:0 onto every direct child (wiping section
+    // insets). See docs/unistyles.md.
     paddedContainer: {
       gap: theme.spacing[4],
-      padding: 0,
     },
     fullBleedContainer: {
       gap: theme.spacing[2],
-      padding: 0,
     },
     groupHeader: {
       flexDirection: "row",
@@ -842,16 +859,36 @@ const styles = StyleSheet.create((theme) => {
     section: {
       gap: theme.spacing[2],
     },
-    // Search results are text (paths/URLs), not full-bleed code output — inset
-    // them horizontally like the error box so they don't sit flush to the edge.
+    // Wrapper for search *content* (ScrollView). Path/URL/annotation rows use
+    // searchResultText instead — padding on this View is unsafe under the
+    // paddedContainer `> *` collision (see above).
     searchSection: {
-      paddingHorizontal: theme.spacing[3],
+      gap: theme.spacing[2],
+      padding: theme.spacing[3],
+    },
+    // Paths/URLs/annotations: padding on the Text itself, matching emptyStateText
+    // (which is correctly inset in the same card). pre-wrap so long paths wrap.
+    searchResultText: {
+      fontFamily: theme.fontFamily.mono,
+      fontSize: theme.fontSize.code,
+      color: theme.colors.foreground,
+      lineHeight: 18,
+      padding: theme.spacing[3],
+      ...(isWeb
+        ? {
+            whiteSpace: "pre-wrap" as const,
+            overflowWrap: "anywhere" as const,
+          }
+        : null),
     },
     // The error box is a bordered alert, not full-bleed code output. Inset it
     // horizontally so it does not jut out to the card edge the way the shell/
     // diff sections (which intentionally bleed to fill width) do.
+    // Padding is on the inner errorBox via errorContent; this wrapper only
+    // needs gap. Avoid paddingHorizontal here — same `> *` collision risk.
     errorSection: {
-      paddingHorizontal: theme.spacing[3],
+      gap: theme.spacing[2],
+      marginHorizontal: theme.spacing[3],
     },
     fillHeight: {
       flex: 1,
@@ -870,8 +907,9 @@ const styles = StyleSheet.create((theme) => {
       lineHeight: 19,
       ...(isWeb ? { overflowWrap: "anywhere" as const } : {}),
     },
-    sectionTitle: {
-      color: theme.colors.foregroundMuted,
+    // Self-contained error title — avoid module-scope [sectionTitle, errorText].
+    sectionTitleError: {
+      color: theme.colors.destructive,
       fontSize: theme.fontSize.xs,
       fontWeight: theme.fontWeight.semibold,
       textTransform: "uppercase",
@@ -1014,9 +1052,6 @@ const styles = StyleSheet.create((theme) => {
           }
         : null),
     },
-    errorText: {
-      color: theme.colors.destructive,
-    },
     emptyStateText: {
       color: theme.colors.foregroundMuted,
       fontSize: theme.fontSize.sm,
@@ -1050,10 +1085,6 @@ const styles = StyleSheet.create((theme) => {
     },
   };
 });
-
-const SECTION_TITLE_ERROR_STYLE = [styles.sectionTitle, styles.errorText];
-const ERROR_SECTION_STYLE = [styles.section, styles.errorSection];
-const SEARCH_SECTION_STYLE = [styles.section, styles.searchSection];
 
 // Maps a shell token kind to its color style. `plain` tokens carry no override
 // so they inherit the surrounding scrollText foreground.

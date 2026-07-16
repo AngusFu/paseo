@@ -1,21 +1,48 @@
 // oxlint-disable react-perf/jsx-no-new-function-as-prop
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { Pressable, ScrollView, Text, View, type PressableStateCallbackType } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
-import { Pencil, Play, Plus, Sparkles, Trash2, Folder } from "lucide-react-native";
+import * as Clipboard from "expo-clipboard";
+import {
+  Copy,
+  GitFork,
+  Pencil,
+  Play,
+  Plus,
+  Sparkles,
+  Trash2,
+  Folder,
+  Info,
+} from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
 import type { WorkflowDefinition, WorkflowRun } from "@getpaseo/protocol/workflow/types";
-import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
+import {
+  AdaptiveModalSheet,
+  AdaptiveTextInput,
+  type SheetHeader,
+} from "@/components/adaptive-modal-sheet";
 import { CombinedModelSelector } from "@/components/combined-model-selector";
 import { MenuHeader } from "@/components/headers/menu-header";
 import { Button } from "@/components/ui/button";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { SelectFieldTrigger } from "@/components/ui/select-field";
+import { SelectField, SelectFieldTrigger } from "@/components/ui/select-field";
 import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { formatAgentModeLabel, formatThinkingOptionLabel } from "@/composer/agent-controls/utils";
 import { useToast } from "@/contexts/toast-context";
-import type { ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
+import type { AgentProvider, ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
+import { useDraftAgentFeatures } from "@/hooks/use-draft-agent-features";
 import { useFormPreferences } from "@/hooks/use-form-preferences";
 import { useProjects } from "@/hooks/use-projects";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
@@ -24,6 +51,8 @@ import {
   useWorkflowDefinitions,
 } from "@/hooks/use-workflow-definitions";
 import { useWorkflowMutations } from "@/hooks/use-workflow-mutations";
+import { useWorkflowRun } from "@/hooks/use-workflow-run";
+import { useWorkflowRunLogs } from "@/hooks/use-workflow-run-logs";
 import { useWorkflowRuns } from "@/hooks/use-workflow-runs";
 import { buildSelectableProviderSelectorProviders } from "@/provider-selection/provider-selection";
 import { resolveDefaultModelId } from "@/provider-selection/resolve-agent-form";
@@ -37,6 +66,10 @@ import { WorkflowDirectoryPickerSheet } from "@/screens/workflow-directory-picke
 import { summarizeWorkflowRun } from "@/screens/workflow-run-summary";
 import { buildScheduleProjectTargets } from "@/schedules/schedule-project-targets";
 import type { DispatchWorkflowRunInput } from "@getpaseo/protocol/workflow/types";
+import {
+  WORKFLOW_WORKSPACE_EMOJI_PREFIX,
+  formatWorkflowWorkspaceTitle,
+} from "@getpaseo/protocol/workflow/workspace-title";
 import { normalizeWorkspaceDescriptor, useSessionStore } from "@/stores/session-store";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { toErrorMessage } from "@/utils/error-messages";
@@ -79,8 +112,17 @@ function WorkflowScreenContent(): ReactElement {
           description: definition.description,
           source: definition.source,
         })
-        .catch(() => undefined),
-    [mutations],
+        .then(() => {
+          toast.show(t("workflows.forkedToast", { name: definition.name }), {
+            variant: "success",
+          });
+          setTab("definitions");
+          return undefined;
+        })
+        .catch((error: unknown) => {
+          toast.error(toErrorMessage(error));
+        }),
+    [mutations, t, toast],
   );
   const removeDefinition = useCallback(
     (definition: WorkflowDefinition) => {
@@ -165,7 +207,11 @@ function WorkflowScreenContent(): ReactElement {
           }
         />
       ) : null}
-      <WorkflowRunDetailSheet run={inspecting} onClose={() => setInspecting(null)} />
+      <WorkflowRunDetailSheet
+        serverId={serverId}
+        run={inspecting}
+        onClose={() => setInspecting(null)}
+      />
       <WorkflowEditSheet
         definition={editing}
         isSaving={mutations.isUpdating}
@@ -315,11 +361,22 @@ function WorkflowLists({
               <View style={styles.cardActions}>
                 <Button
                   variant="outline"
+                  leftIcon={Play}
                   size="sm"
+                  loading={isDispatching}
+                  onPress={() => onDispatch(definition)}
+                  testID={`workflow-builtin-run-${definition.id}`}
+                >
+                  {t("workflows.actions.dispatch")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  leftIcon={GitFork}
                   loading={isCreating}
                   onPress={() => onCopyBuiltin(definition)}
                 >
-                  {t("workflows.actions.copyBuiltin")}
+                  {t("workflows.actions.forkBuiltin")}
                 </Button>
               </View>
             </View>
@@ -331,50 +388,36 @@ function WorkflowLists({
       runs.length === 0 ? (
         <Text style={styles.empty}>{t("workflows.emptyRuns")}</Text>
       ) : (
-        <View style={styles.cardGrid}>
+        <View style={styles.runList}>
           {runs.map((run) => {
             const summary = summarizeWorkflowRun(run);
             const name = definitionNameById.get(run.definitionId) ?? run.definitionId;
+            const detail = summary.outcome ?? summary.task ?? t("workflows.runNoTask");
             return (
               <Pressable
                 key={run.id}
-                style={styles.card}
+                style={styles.runRow}
                 onPress={() => onInspectRun(run)}
                 testID={`workflow-run-${run.id}`}
               >
-                <View style={styles.cardBody}>
-                  <View style={styles.titleRow}>
-                    <Text
-                      style={
-                        summary.displayStatus === "failed"
-                          ? styles.runStatusFailed
-                          : styles.runStatus
-                      }
-                    >
-                      {t(`workflows.status.${summary.displayStatus}`)}
+                <Text
+                  style={
+                    summary.displayStatus === "failed" ? styles.runStatusFailed : styles.runStatus
+                  }
+                  numberOfLines={1}
+                >
+                  {t(`workflows.status.${summary.displayStatus}`)}
+                </Text>
+                <View style={styles.runRowBody}>
+                  <View style={styles.runRowTop}>
+                    <Text style={styles.runRowTitle} numberOfLines={1}>
+                      {name}
                     </Text>
                     <Text style={styles.meta}>{formatTimeAgo(new Date(run.queuedAt))}</Text>
                   </View>
-                  <Text style={styles.cardTitle} numberOfLines={2}>
-                    {name}
+                  <Text style={summary.outcome ? styles.errorText : styles.meta} numberOfLines={1}>
+                    {detail}
                   </Text>
-                  {summary.task ? (
-                    <Text style={styles.meta} numberOfLines={2}>
-                      {t("workflows.runTask", { task: summary.task })}
-                    </Text>
-                  ) : (
-                    <Text style={styles.meta}>{t("workflows.runNoTask")}</Text>
-                  )}
-                  {summary.outcome ? (
-                    <Text style={styles.errorText} numberOfLines={3}>
-                      {summary.outcome}
-                    </Text>
-                  ) : null}
-                  {summary.agentCalls !== null ? (
-                    <Text style={styles.meta}>
-                      {t("workflows.runAgentCalls", { count: summary.agentCalls })}
-                    </Text>
-                  ) : null}
                 </View>
               </Pressable>
             );
@@ -433,6 +476,35 @@ function resolveAuthoringProviderDefault(
   };
 }
 
+function WorkflowInfoTooltip({
+  accessibilityLabel,
+  text,
+  testID,
+}: {
+  accessibilityLabel: string;
+  text: string;
+  testID?: string;
+}): ReactElement {
+  return (
+    <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile>
+      <TooltipTrigger asChild>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel}
+          hitSlop={8}
+          style={styles.infoButton}
+          testID={testID}
+        >
+          <Info size={14} color={styles.infoIcon.color} />
+        </Pressable>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="start" offset={8} maxWidth={320}>
+        <Text style={styles.tooltipText}>{text}</Text>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function WorkflowAuthoringSheet({
   visible,
   serverId,
@@ -461,7 +533,19 @@ function WorkflowAuthoringSheet({
     () => buildSelectableProviderSelectorProviders(snapshot.entries),
     [snapshot.entries],
   );
-  const header = useMemo<SheetHeader>(() => ({ title: t("workflows.createTitle") }), [t]);
+  const header = useMemo<SheetHeader>(
+    () => ({
+      title: t("workflows.createTitle"),
+      actions: (
+        <WorkflowInfoTooltip
+          accessibilityLabel={t("workflows.authoring.hint")}
+          text={t("workflows.authoring.hint")}
+          testID="workflow-create-info"
+        />
+      ),
+    }),
+    [t],
+  );
 
   useEffect(() => {
     if (!visible) {
@@ -540,52 +624,80 @@ function WorkflowAuthoringSheet({
     }
   }, [client, onClose, prompt, selectedModel, selectedProvider, serverId, t]);
 
+  const footer = useMemo(
+    () => (
+      <View style={styles.authoringFooter}>
+        <Button
+          variant="default"
+          leftIcon={Sparkles}
+          disabled={!selectedProvider || isStarting}
+          loading={isStarting}
+          testID="workflow-create-start"
+          style={styles.authoringStartButton}
+          onPress={() => void startAuthoring().catch((error) => toast.error(toErrorMessage(error)))}
+        >
+          {t("workflows.actions.startAuthoring")}
+        </Button>
+      </View>
+    ),
+    [isStarting, selectedProvider, startAuthoring, t, toast],
+  );
+
   return (
     <AdaptiveModalSheet
       header={header}
       visible={visible}
       onClose={onClose}
+      footer={footer}
+      snapPoints={AUTHORING_SNAP_POINTS}
+      desktopHeight={AUTHORING_DESKTOP_HEIGHT}
+      scrollable={false}
       testID="workflow-create-sheet"
     >
-      <Text style={styles.sheetHeading}>{t("workflows.authoring.hint")}</Text>
-      <Field label={t("workflows.authoring.provider")}>
-        <CombinedModelSelector
-          providers={modelSelectorProviders}
-          selectedProvider={selectedProvider}
-          selectedModel={selectedModel}
-          onSelect={(provider, modelId) => {
-            setSelectedProvider(provider);
-            setSelectedModel(modelId);
-          }}
-          isLoading={snapshot.isLoading || snapshot.isFetching}
-          serverId={serverId}
-          renderTrigger={renderModelTrigger}
-          triggerFill
-        />
-      </Field>
-      <Field label={t("workflows.authoring.prompt")} hint={t("workflows.authoring.promptHint")}>
-        <FormTextInput
-          value={prompt}
-          initialValue={prompt}
-          onChangeText={setPrompt}
-          multiline
-          numberOfLines={5}
-          textAlignVertical="top"
-        />
-      </Field>
-      <Button
-        leftIcon={Sparkles}
-        disabled={!selectedProvider || isStarting}
-        loading={isStarting}
-        onPress={() => void startAuthoring().catch((error) => toast.error(toErrorMessage(error)))}
-      >
-        {t("workflows.actions.startAuthoring")}
-      </Button>
+      <View style={styles.authoringBody}>
+        <Field label={t("workflows.authoring.provider")}>
+          <CombinedModelSelector
+            providers={modelSelectorProviders}
+            selectedProvider={selectedProvider}
+            selectedModel={selectedModel}
+            onSelect={(provider, modelId) => {
+              setSelectedProvider(provider);
+              setSelectedModel(modelId);
+            }}
+            isLoading={snapshot.isLoading || snapshot.isFetching}
+            serverId={serverId}
+            renderTrigger={renderModelTrigger}
+            triggerFill
+          />
+        </Field>
+        <View style={styles.promptField}>
+          <View style={styles.promptLabelRow}>
+            <Text style={styles.promptLabel}>{t("workflows.authoring.prompt")}</Text>
+            <WorkflowInfoTooltip
+              accessibilityLabel={t("workflows.authoring.promptHint")}
+              text={t("workflows.authoring.promptHint")}
+              testID="workflow-create-prompt-info"
+            />
+          </View>
+          <FormTextInput
+            value={prompt}
+            initialValue={prompt}
+            resetKey={visible ? "open" : "closed"}
+            onChangeText={setPrompt}
+            multiline
+            numberOfLines={12}
+            textAlignVertical="top"
+            style={styles.authoringPromptInput}
+          />
+        </View>
+      </View>
     </AdaptiveModalSheet>
   );
 }
 
 const WORKFLOW_DISPATCH_SNAP_POINTS = ["70%", "92%"];
+const AUTHORING_SNAP_POINTS = ["78%", "94%"];
+const AUTHORING_DESKTOP_HEIGHT = "72%" as const;
 
 function WorkflowDispatchSheet({
   definition,
@@ -604,11 +716,14 @@ function WorkflowDispatchSheet({
   const { preferences } = useFormPreferences();
   const { projects } = useProjects();
   const [task, setTask] = useState("");
+  const [workspaceTitleBody, setWorkspaceTitleBody] = useState(definition.name);
   const [cwd, setCwd] = useState<string | null>(null);
   const [cwdLabel, setCwdLabel] = useState<string | null>(null);
   const [pickingDirectory, setPickingDirectory] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
+  const [selectedEffort, setSelectedEffort] = useState<string | null>(null);
+  const [selectedMode, setSelectedMode] = useState<string | null>(null);
 
   const snapshot = useProvidersSnapshot(serverId, {
     enabled: Boolean(serverId),
@@ -621,6 +736,35 @@ function WorkflowDispatchSheet({
     () => buildSelectableProviderSelectorProviders(snapshot.entries),
     [snapshot.entries],
   );
+  const selectedProviderEntry = useMemo(
+    () => snapshot.entries?.find((entry) => entry.provider === selectedProvider) ?? null,
+    [selectedProvider, snapshot.entries],
+  );
+  const selectedModelDef = useMemo(() => {
+    const models = selectedProviderEntry?.models ?? [];
+    return models.find((model) => model.id === selectedModel) ?? null;
+  }, [selectedModel, selectedProviderEntry]);
+  const thinkingOptions = useMemo(
+    () => selectedModelDef?.thinkingOptions ?? [],
+    [selectedModelDef?.thinkingOptions],
+  );
+  const modeOptions = useMemo(
+    () => selectedProviderEntry?.modes ?? [],
+    [selectedProviderEntry?.modes],
+  );
+  const draftFeatures = useDraftAgentFeatures({
+    serverId,
+    provider: (selectedProvider || null) as AgentProvider | null,
+    cwd,
+    modeId: selectedMode,
+    modelId: selectedModel || null,
+    thinkingOptionId: selectedEffort,
+  });
+  const fastFeature = useMemo(
+    () => draftFeatures.features.find((feature) => feature.id === "fast_mode"),
+    [draftFeatures.features],
+  );
+  const fastEnabled = fastFeature?.type === "toggle" ? Boolean(fastFeature.value) : false;
 
   const projectTargets = useMemo(() => {
     const all = buildScheduleProjectTargets(projects);
@@ -648,6 +792,37 @@ function WorkflowDispatchSheet({
       setSelectedModel(providerDefault.model);
     }
   }, [providerDefault, selectedProvider]);
+
+  useEffect(() => {
+    if (thinkingOptions.length === 0) {
+      setSelectedEffort(null);
+      return;
+    }
+    setSelectedEffort((current) => {
+      if (current && thinkingOptions.some((option) => option.id === current)) {
+        return current;
+      }
+      return (
+        selectedModelDef?.defaultThinkingOptionId ??
+        thinkingOptions.find((option) => option.isDefault)?.id ??
+        thinkingOptions[0]?.id ??
+        null
+      );
+    });
+  }, [selectedModelDef?.defaultThinkingOptionId, thinkingOptions]);
+
+  useEffect(() => {
+    if (modeOptions.length === 0) {
+      setSelectedMode(null);
+      return;
+    }
+    setSelectedMode((current) => {
+      if (current && modeOptions.some((mode) => mode.id === current)) {
+        return current;
+      }
+      return selectedProviderEntry?.defaultModeId ?? modeOptions[0]?.id ?? null;
+    });
+  }, [modeOptions, selectedProviderEntry?.defaultModeId]);
 
   useEffect(() => {
     if (cwd || projectTargets.length === 0) {
@@ -733,9 +908,19 @@ function WorkflowDispatchSheet({
             if (selectedModel.trim()) {
               args.model = selectedModel.trim();
             }
+            if (selectedEffort?.trim()) {
+              args.effort = selectedEffort.trim();
+            }
+            if (selectedMode?.trim()) {
+              args.mode = selectedMode.trim();
+            }
+            if (fastFeature) {
+              args.fast = fastEnabled;
+            }
             void onDispatch({
               definitionId: definition.id,
               cwd: cwd.trim(),
+              workspaceTitle: formatWorkflowWorkspaceTitle(workspaceTitleBody, definition.name),
               args,
             });
           }}
@@ -748,12 +933,18 @@ function WorkflowDispatchSheet({
       canSubmit,
       cwd,
       definition.id,
+      definition.name,
+      fastEnabled,
+      fastFeature,
       isDispatching,
       onDispatch,
+      selectedEffort,
+      selectedMode,
       selectedModel,
       selectedProvider,
       t,
       task,
+      workspaceTitleBody,
     ],
   );
 
@@ -773,6 +964,29 @@ function WorkflowDispatchSheet({
               {renderCwdTrigger}
             </Pressable>
           </Field>
+          <Field
+            label={t("workflows.workspaceTitle")}
+            hint={t("workflows.workspaceTitleHint")}
+            hintWrap
+          >
+            <View style={styles.workspaceTitleRow}>
+              <Text
+                style={styles.workspaceTitlePrefix}
+                accessibilityRole="text"
+                accessibilityLabel={t("workflows.workspaceTitleEmojiLabel")}
+              >
+                {WORKFLOW_WORKSPACE_EMOJI_PREFIX.trimEnd()}
+              </Text>
+              <AdaptiveTextInput
+                value={workspaceTitleBody}
+                initialValue={workspaceTitleBody}
+                onChangeText={setWorkspaceTitleBody}
+                placeholder={t("workflows.workspaceTitlePlaceholder", { name: definition.name })}
+                style={styles.workspaceTitleInput}
+                testID="workflow-dispatch-workspace-title"
+              />
+            </View>
+          </Field>
           <Field label={t("workflows.authoring.provider")}>
             <CombinedModelSelector
               providers={modelSelectorProviders}
@@ -788,6 +1002,17 @@ function WorkflowDispatchSheet({
               triggerFill
             />
           </Field>
+          <WorkflowDispatchAgentOptions
+            thinkingOptions={thinkingOptions}
+            modeOptions={modeOptions}
+            selectedEffort={selectedEffort}
+            selectedMode={selectedMode}
+            onSelectEffort={setSelectedEffort}
+            onSelectMode={setSelectedMode}
+            showFast={fastFeature?.type === "toggle"}
+            fastEnabled={fastEnabled}
+            onToggleFast={(value) => draftFeatures.setFeatureValue("fast_mode", value)}
+          />
           <Field label={t("workflows.task")} hint={t("workflows.taskHint")} hintWrap>
             <FormTextInput
               value={task}
@@ -825,61 +1050,463 @@ function isPaseoInternalPath(path: string): boolean {
   return normalized.includes("/.paseo/workflows") || normalized.includes("/.paseo/worktrees");
 }
 
+function WorkflowDispatchAgentOptions({
+  thinkingOptions,
+  modeOptions,
+  selectedEffort,
+  selectedMode,
+  onSelectEffort,
+  onSelectMode,
+  showFast,
+  fastEnabled,
+  onToggleFast,
+}: {
+  thinkingOptions: Array<{ id: string; label?: string; isDefault?: boolean }>;
+  modeOptions: Array<{ id: string; label: string }>;
+  selectedEffort: string | null;
+  selectedMode: string | null;
+  onSelectEffort: (value: string | null) => void;
+  onSelectMode: (value: string | null) => void;
+  showFast: boolean;
+  fastEnabled: boolean;
+  onToggleFast: (value: boolean) => void;
+}): ReactElement | null {
+  const { t } = useTranslation();
+  const effortSelectOptions = useMemo(
+    () =>
+      thinkingOptions.map((option) => ({
+        id: option.id,
+        label: formatThinkingOptionLabel(option),
+        value: option.id,
+      })),
+    [thinkingOptions],
+  );
+  const modeSelectOptions = useMemo(
+    () =>
+      modeOptions.map((mode) => ({
+        id: mode.id,
+        label: formatAgentModeLabel(mode),
+        value: mode.id,
+      })),
+    [modeOptions],
+  );
+  const selectedEffortDisplay = useMemo(() => {
+    const match = effortSelectOptions.find((option) => option.value === selectedEffort);
+    return match ? { label: match.label } : null;
+  }, [effortSelectOptions, selectedEffort]);
+  const selectedModeDisplay = useMemo(() => {
+    const match = modeSelectOptions.find((option) => option.value === selectedMode);
+    return match ? { label: match.label } : null;
+  }, [modeSelectOptions, selectedMode]);
+
+  if (effortSelectOptions.length === 0 && modeSelectOptions.length === 0 && !showFast) {
+    return null;
+  }
+
+  return (
+    <>
+      {effortSelectOptions.length > 0 ? (
+        <SelectField
+          label={t("workflows.dispatchEffort")}
+          value={selectedEffort}
+          selectedDisplay={selectedEffortDisplay}
+          options={effortSelectOptions}
+          onChange={onSelectEffort}
+          placeholder={t("workflows.dispatchEffort")}
+          emptyText={t("workflows.dispatchEffort")}
+          size="sm"
+          testID="workflow-dispatch-effort"
+        />
+      ) : null}
+      {modeSelectOptions.length > 0 ? (
+        <SelectField
+          label={t("workflows.dispatchMode")}
+          value={selectedMode}
+          selectedDisplay={selectedModeDisplay}
+          options={modeSelectOptions}
+          onChange={onSelectMode}
+          placeholder={t("workflows.dispatchMode")}
+          emptyText={t("workflows.dispatchMode")}
+          size="sm"
+          testID="workflow-dispatch-mode"
+        />
+      ) : null}
+      {showFast ? (
+        <Field label={t("workflows.dispatchFast")} hint={t("workflows.dispatchFastHint")}>
+          <View style={styles.fastRow}>
+            <Text style={styles.meta}>{t("workflows.dispatchFastLabel")}</Text>
+            <Switch
+              value={fastEnabled}
+              onValueChange={onToggleFast}
+              testID="workflow-dispatch-fast"
+            />
+          </View>
+        </Field>
+      ) : null}
+    </>
+  );
+}
+
 function WorkflowRunDetailSheet({
-  run,
+  serverId,
+  run: initialRun,
   onClose,
 }: {
+  serverId: string | null;
   run: WorkflowRun | null;
   onClose: () => void;
 }): ReactElement {
   const { t } = useTranslation();
+  const liveQuery = useWorkflowRun(initialRun ? serverId : null, initialRun?.id ?? null, {
+    initial: initialRun,
+  });
+  const run = liveQuery.run ?? initialRun;
   const summary = run ? summarizeWorkflowRun(run) : null;
+  const live = liveQuery.live;
+  const logs = useWorkflowRunLogs(run ? serverId : null, run?.id ?? null, { live });
+  const [showDebug, setShowDebug] = useState(false);
   const header = useMemo<SheetHeader>(() => ({ title: t("workflows.runDetailTitle") }), [t]);
+
+  useEffect(() => {
+    if (!initialRun) {
+      setShowDebug(false);
+    }
+  }, [initialRun]);
 
   return (
     <AdaptiveModalSheet
       header={header}
-      visible={run !== null}
+      visible={initialRun !== null}
       onClose={onClose}
       testID="workflow-run-detail-sheet"
     >
-      {run ? (
-        <View style={styles.detailStack}>
-          <Text
-            style={summary?.displayStatus === "failed" ? styles.runStatusFailed : styles.cardTitle}
-          >
-            {t(`workflows.status.${summary?.displayStatus ?? run.status}`)}
-          </Text>
-          <Text style={styles.meta}>
-            {t("workflows.runQueuedAt", { time: formatTimeAgo(new Date(run.queuedAt)) })}
-          </Text>
-          {summary?.task ? (
-            <Field label={t("workflows.task")}>
-              <Text style={styles.detailBody}>{summary.task}</Text>
-            </Field>
-          ) : (
-            <Text style={styles.meta}>{t("workflows.runNoTask")}</Text>
-          )}
-          {summary?.outcome ? (
-            <Field label={t("workflows.runOutcome")}>
-              <Text style={styles.errorText}>{summary.outcome}</Text>
-            </Field>
-          ) : null}
-          {summary?.agentCalls !== null && summary ? (
-            <Text style={styles.meta}>
-              {t("workflows.runAgentCalls", { count: summary.agentCalls })}
-            </Text>
-          ) : null}
-          <Field label={t("workflows.runArgs")}>
-            <Text style={styles.detailMono}>{JSON.stringify(run.args ?? {}, null, 2)}</Text>
-          </Field>
-          <Field label={t("workflows.runResult")}>
-            <Text style={styles.detailMono}>{JSON.stringify(run.result ?? null, null, 2)}</Text>
-          </Field>
-        </View>
+      {run && summary ? (
+        <WorkflowRunDetailBody
+          run={run}
+          summary={summary}
+          live={live}
+          logs={logs}
+          showDebug={showDebug}
+          onToggleDebug={() => setShowDebug((current) => !current)}
+        />
       ) : null}
     </AdaptiveModalSheet>
   );
+}
+
+function WorkflowRunDetailBody({
+  run,
+  summary,
+  live,
+  logs,
+  showDebug,
+  onToggleDebug,
+}: {
+  run: WorkflowRun;
+  summary: ReturnType<typeof summarizeWorkflowRun>;
+  live: boolean;
+  logs: ReturnType<typeof useWorkflowRunLogs>;
+  showDebug: boolean;
+  onToggleDebug: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const argsText = JSON.stringify(run.args ?? {}, null, 2);
+  const resultText = JSON.stringify(summary.resultPayload ?? null, null, 2);
+
+  return (
+    <View style={styles.detailStack}>
+      <Text style={summary.displayStatus === "failed" ? styles.runStatusFailed : styles.cardTitle}>
+        {t(`workflows.status.${summary.displayStatus}`)}
+      </Text>
+      <Text style={styles.meta}>
+        {t("workflows.runQueuedAt", { time: formatTimeAgo(new Date(run.queuedAt)) })}
+      </Text>
+
+      <View style={styles.detailSection}>
+        <Text style={styles.detailSectionLabel}>{t("workflows.task")}</Text>
+        {summary.task ? (
+          <Text style={styles.detailBody}>{summary.task}</Text>
+        ) : (
+          <Text style={styles.meta}>{t("workflows.runNoTask")}</Text>
+        )}
+      </View>
+
+      {summary.outcome ? (
+        <WorkflowDetailPanel
+          title={t("workflows.runOutcome")}
+          copyText={summary.outcome}
+          testID="workflow-run-outcome-panel"
+        >
+          <View style={styles.detailPanelPadded}>
+            <Text style={styles.errorText}>{summary.outcome}</Text>
+            {summary.staleTaskContract ? (
+              <Text style={styles.detailHint}>{t("workflows.runStaleTaskContractHint")}</Text>
+            ) : null}
+          </View>
+        </WorkflowDetailPanel>
+      ) : null}
+
+      {summary.agentCalls !== null ? (
+        <Text style={styles.meta}>
+          {t("workflows.runAgentCalls", { count: summary.agentCalls })}
+        </Text>
+      ) : null}
+
+      <WorkflowRunEventLog
+        entries={logs.entries}
+        isLoading={logs.isLoading}
+        isFetchingMore={logs.isFetchingMore}
+        isError={logs.isError}
+        hasMore={logs.hasMore}
+        live={live}
+        onLoadMore={logs.loadMore}
+        emptyLabel={live ? t("workflows.runLogsEmpty") : t("workflows.runLogsEmptyFinished")}
+        loadingLabel={t("workflows.runLogsLoading")}
+        loadMoreLabel={t("workflows.runLogsLoadMore")}
+        errorLabel={t("workflows.runLogsError")}
+        title={t("workflows.runLogs")}
+      />
+
+      <Pressable
+        onPress={onToggleDebug}
+        style={styles.debugToggle}
+        testID="workflow-run-debug-toggle"
+      >
+        <Text style={styles.debugToggleText}>
+          {showDebug ? t("workflows.runHideDebug") : t("workflows.runShowDebug")}
+        </Text>
+      </Pressable>
+      {showDebug ? (
+        <>
+          <WorkflowDetailPanel
+            title={t("workflows.runArgs")}
+            copyText={argsText}
+            testID="workflow-run-args-panel"
+          >
+            <ScrollView
+              style={styles.detailJsonViewport}
+              contentContainerStyle={styles.logViewportContent}
+              nestedScrollEnabled
+            >
+              <Text style={styles.detailMono}>{argsText}</Text>
+            </ScrollView>
+          </WorkflowDetailPanel>
+          <WorkflowDetailPanel
+            title={t("workflows.runResult")}
+            copyText={resultText}
+            testID="workflow-run-result-panel"
+          >
+            <ScrollView
+              style={styles.detailJsonViewport}
+              contentContainerStyle={styles.logViewportContent}
+              nestedScrollEnabled
+            >
+              <Text style={styles.detailMono}>{resultText}</Text>
+            </ScrollView>
+          </WorkflowDetailPanel>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function WorkflowDetailPanel({
+  title,
+  chromeMeta,
+  copyText,
+  testID,
+  children,
+}: {
+  title: string;
+  chromeMeta?: "live" | number | null;
+  copyText: string;
+  testID?: string;
+  children: ReactNode;
+}): ReactElement {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const canCopy = copyText.trim().length > 0;
+  let chromeMetaNode: ReactNode = null;
+  if (chromeMeta === "live") {
+    chromeMetaNode = (
+      <View style={styles.logLivePill}>
+        <View style={styles.logLiveDot} />
+        <Text style={styles.logLiveText}>{t("workflows.runLogsLive")}</Text>
+      </View>
+    );
+  } else if (typeof chromeMeta === "number") {
+    chromeMetaNode = <Text style={styles.logChromeCount}>{String(chromeMeta)}</Text>;
+  }
+
+  return (
+    <View style={styles.logPanel} testID={testID}>
+      <View style={styles.logChrome}>
+        <Text style={styles.logChromeTitle}>{title}</Text>
+        <View style={styles.logChromeRight}>
+          {chromeMetaNode}
+          <Pressable
+            onPress={() => {
+              if (!canCopy) return;
+              void (async () => {
+                await Clipboard.setStringAsync(copyText);
+                toast.copied();
+              })();
+            }}
+            disabled={!canCopy}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t("common.actions.copy")}
+            style={canCopy ? styles.copyButton : styles.copyButtonDisabled}
+            testID={testID ? `${testID}-copy` : undefined}
+          >
+            <Copy size={14} color={styles.copyIcon.color} />
+          </Pressable>
+        </View>
+      </View>
+      <View style={styles.detailPanelBody}>{children}</View>
+    </View>
+  );
+}
+
+function WorkflowRunEventLog({
+  title,
+  entries,
+  isLoading,
+  isFetchingMore,
+  isError,
+  hasMore,
+  live,
+  onLoadMore,
+  emptyLabel,
+  loadingLabel,
+  loadMoreLabel,
+  errorLabel,
+}: {
+  title: string;
+  entries: Array<{ seq: number; ts: string; level: string; event: string; message: string }>;
+  isLoading: boolean;
+  isFetchingMore: boolean;
+  isError: boolean;
+  hasMore: boolean;
+  live: boolean;
+  onLoadMore: () => void;
+  emptyLabel: string;
+  loadingLabel: string;
+  loadMoreLabel: string;
+  errorLabel: string;
+}): ReactElement {
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    if (!live || entries.length === 0) return;
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    });
+  }, [entries.length, live]);
+
+  let placeholder = emptyLabel;
+  if (isError) {
+    placeholder = errorLabel;
+  } else if (isLoading) {
+    placeholder = loadingLabel;
+  }
+
+  const copyText =
+    entries.length > 0
+      ? entries
+          .map(
+            (entry) =>
+              `${formatLogTime(entry.ts)} ${formatLogLevel(entry.level)} ${entry.event}  ${entry.message}`,
+          )
+          .join("\n")
+      : `# ${placeholder}`;
+
+  return (
+    <WorkflowDetailPanel
+      title={title}
+      chromeMeta={live ? "live" : entries.length}
+      copyText={copyText}
+      testID="workflow-run-event-log"
+    >
+      <ScrollView
+        ref={scrollRef}
+        style={styles.logViewport}
+        contentContainerStyle={styles.logViewportContent}
+        nestedScrollEnabled
+      >
+        {entries.length === 0 ? (
+          <Text style={styles.logPlaceholder}>{`# ${placeholder}`}</Text>
+        ) : (
+          entries.map((entry) => (
+            <Text key={entry.seq} style={styles.logLine}>
+              <Text style={styles.logTime}>{formatLogTime(entry.ts)}</Text>
+              <Text style={styles.logGap}> </Text>
+              <Text style={logLevelStyle(entry.level)}>{formatLogLevel(entry.level)}</Text>
+              <Text style={styles.logGap}> </Text>
+              <Text style={styles.logEvent}>{entry.event}</Text>
+              <Text style={styles.logGap}> </Text>
+              <Text
+                style={
+                  entry.level === "error" || entry.level === "warn"
+                    ? styles.logMessageError
+                    : styles.logMessage
+                }
+              >
+                {entry.message}
+              </Text>
+            </Text>
+          ))
+        )}
+      </ScrollView>
+      {hasMore ? (
+        <Pressable
+          onPress={onLoadMore}
+          disabled={isFetchingMore}
+          style={styles.logFooter}
+          testID="workflow-run-logs-load-more"
+        >
+          <Text style={styles.logFooterText}>{isFetchingMore ? loadingLabel : loadMoreLabel}</Text>
+        </Pressable>
+      ) : null}
+    </WorkflowDetailPanel>
+  );
+}
+
+function formatLogLevel(level: string): string {
+  switch (level) {
+    case "error":
+      return "ERR ";
+    case "warn":
+      return "WARN";
+    case "debug":
+      return "DBG ";
+    default:
+      return "INFO";
+  }
+}
+
+function logLevelStyle(level: string) {
+  switch (level) {
+    case "error":
+      return styles.logLevelError;
+    case "warn":
+      return styles.logLevelWarn;
+    case "debug":
+      return styles.logLevelDebug;
+    default:
+      return styles.logLevelInfo;
+  }
+}
+
+function formatLogTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 function WorkflowEditSheet({
@@ -1047,29 +1674,270 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing[1],
     borderRadius: theme.borderRadius.sm,
   },
-  meta: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs },
-  errorText: { color: theme.colors.destructive, fontSize: theme.fontSize.xs },
-  runStatus: {
+  runList: {
+    gap: 0,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    overflow: "hidden",
+  },
+  runRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[3],
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.surface0,
+  },
+  runRowBody: { flex: 1, minWidth: 0, gap: 2 },
+  runRowTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing[2],
+  },
+  runRowTitle: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
+    flexShrink: 1,
+  },
+  meta: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs },
+  errorText: { color: theme.colors.destructive, fontSize: theme.fontSize.xs },
+  runStatus: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+    width: 72,
   },
   runStatusFailed: {
     color: theme.colors.destructive,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.medium,
+    width: 72,
   },
   detailStack: { gap: theme.spacing[3] },
+  detailSection: { gap: theme.spacing[2] },
+  detailSectionLabel: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
   detailBody: { color: theme.colors.foreground, fontSize: theme.fontSize.sm },
+  detailHint: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    lineHeight: Math.round(theme.fontSize.xs * 1.45),
+  },
+  logPanel: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    overflow: "hidden",
+    backgroundColor: theme.colors.surface2,
+  },
+  detailPanelBody: {},
+  detailPanelPadded: {
+    gap: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+  },
+  detailJsonViewport: {
+    minHeight: 96,
+    maxHeight: 280,
+  },
+  copyButton: {
+    padding: theme.spacing[1],
+  },
+  copyButtonDisabled: {
+    padding: theme.spacing[1],
+    opacity: 0.4,
+  },
+  copyIcon: {
+    color: theme.colors.foregroundMuted,
+  },
+  logChrome: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.surface1,
+  },
+  logChromeTitle: {
+    color: theme.colors.foregroundMuted,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  logChromeRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  logChromeCount: {
+    color: theme.colors.foregroundMuted,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+  },
+  logLivePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+  },
+  logLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: theme.colors.terminal.green,
+  },
+  logLiveText: {
+    color: theme.colors.terminal.green,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  logViewport: {
+    minHeight: 180,
+    maxHeight: 360,
+  },
+  logViewportContent: {
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+    gap: 2,
+  },
+  logPlaceholder: {
+    color: theme.colors.foregroundMuted,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+    lineHeight: Math.round(theme.fontSize.xs * 1.5),
+  },
+  logLine: {
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+    lineHeight: Math.round(theme.fontSize.xs * 1.5),
+  },
+  logGap: {
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+  },
+  logTime: {
+    color: theme.colors.foregroundMuted,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+  },
+  logLevelInfo: {
+    color: theme.colors.terminal.cyan,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
+  logLevelWarn: {
+    color: theme.colors.terminal.yellow,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
+  logLevelError: {
+    color: theme.colors.terminal.red,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
+  logLevelDebug: {
+    color: theme.colors.foregroundMuted,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+  },
+  logEvent: {
+    color: theme.colors.foreground,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+  },
+  logMessage: {
+    color: theme.colors.foregroundMuted,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+  },
+  logMessageError: {
+    color: theme.colors.terminal.red,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+  },
+  logFooter: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+    backgroundColor: theme.colors.surface1,
+  },
+  logFooterText: {
+    color: theme.colors.accentBright,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+  },
+  debugToggle: {
+    alignSelf: "flex-start",
+    paddingVertical: theme.spacing[1],
+  },
+  debugToggleText: {
+    color: theme.colors.accentBright,
+    fontSize: theme.fontSize.sm,
+  },
   detailMono: {
     color: theme.colors.foregroundMuted,
     fontFamily: theme.fontFamily.mono,
     fontSize: theme.fontSize.xs,
   },
-  sheetHeading: {
+  infoButton: {
+    padding: theme.spacing[1],
+  },
+  infoIcon: {
+    color: theme.colors.foregroundMuted,
+  },
+  tooltipText: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    lineHeight: Math.round(theme.fontSize.sm * 1.4),
+  },
+  authoringBody: {
+    flex: 1,
+    minHeight: 0,
+    gap: theme.spacing[4],
+  },
+  authoringFooter: {
+    flex: 1,
+    flexDirection: "row",
+  },
+  authoringStartButton: {
+    flex: 1,
+  },
+  promptField: {
+    flex: 1,
+    minHeight: 0,
+    gap: theme.spacing[2],
+  },
+  promptLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+  },
+  promptLabel: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
-    marginBottom: theme.spacing[2],
+  },
+  authoringPromptInput: {
+    flex: 1,
+    minHeight: 220,
   },
   dispatchBody: {
     gap: theme.spacing[4],
@@ -1081,6 +1949,37 @@ const styles = StyleSheet.create((theme) => ({
   },
   cwdIcon: {
     color: theme.colors.foregroundMuted,
+  },
+  workspaceTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface2,
+    paddingLeft: theme.spacing[3],
+    paddingRight: theme.spacing[3],
+    minHeight: 40,
+  },
+  workspaceTitlePrefix: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.base,
+    lineHeight: Math.round(theme.fontSize.base * 1.3),
+  },
+  workspaceTitleInput: {
+    flex: 1,
+    minWidth: 0,
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    paddingVertical: theme.spacing[2],
+  },
+  fastRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing[3],
+    minHeight: 40,
   },
   taskInput: {
     minHeight: 120,

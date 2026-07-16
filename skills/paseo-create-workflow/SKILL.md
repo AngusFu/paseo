@@ -28,6 +28,66 @@ agents-workflow is a faithful superset — the notes below are authoring convent
 - `parallel(fns)` — concurrent; a throwing thunk → `null` slot, call NEVER rejects → `.filter(Boolean)`.
 - `pipeline(items, ...stages)` — NO barrier, per-item independent chains; stage sig `(prev, originalItem, index)`; a stage throw drops THAT item to `null`, skips its rest.
 - `budget` — `{ total, spent(), remaining() }`.
+- `args` — see next section. **Default mental model: `args` is the user prompt** (a string), not a config bag.
+
+## `agent()` opts — model / effort / mode / fast
+
+Paseo forwards these into `createAgent` / `paseo run`. Prefer **omitting** them so the run inherits dispatch defaults (UI / CLI). Set them only when a phase truly needs a different tier.
+
+| Opt                                                                                | Meaning                                                            | Paseo mapping                                  |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------- |
+| `provider` / `model`                                                               | Provider + model                                                   | `--provider` / `--model`                       |
+| `effort`                                                                           | Thinking / reasoning option id (`low`…`max`, or provider-specific) | `--thinking` / createAgent `thinking`          |
+| `mode`                                                                             | Provider mode id (`plan` / `agent` / …)                            | `--mode` / createAgent `mode`                  |
+| `fast`                                                                             | Convenience for Claude-style fast mode                             | `featureValues.fast_mode`                      |
+| `featureValues`                                                                    | Arbitrary provider features                                        | createAgent `features` / `--feature key=value` |
+| `label` / `phase` / `schema` / `isolation` / `agentType` / `labels` / `maxRetries` | Unchanged Claude-Workflow opts                                     | as before                                      |
+
+```js
+// Inherit dispatch defaults (usual):
+await agent(`Fix:\n\n${TASK}`, { phase: "Implement", label: "impl" });
+
+// Per-call override when needed:
+await agent(prompt, {
+  phase: "Plan",
+  effort: "high",
+  mode: "plan",
+  fast: true, // or featureValues: { fast_mode: true }
+});
+```
+
+**Dispatch defaults** (UI “执行” sheet / `paseo workflow run`): `provider`, `model`, `effort` (CLI `--thinking`), `mode`, `fast`. Stored on the run record; applied as `PaseoHostBackend` defaults for every `agent()` that omits them. See `docs/workflow.md`.
+
+```bash
+# CLI — same defaults as the UI
+paseo workflow run <id> --cwd /repo --arg task="fix login" \
+  --provider claude --model opus --thinking high --mode agent --fast
+
+# Bare agent run
+paseo run --provider claude --thinking high --mode agent \
+  --feature fast_mode=true -- "fix login"
+```
+
+## `args` — it's the prompt (read this)
+
+For almost every Claude Code / Paseo builtin-style flow, **`args` is the task text the user typed** — the research question, bug description, `"high src/foo.ts"` review spec, etc. Treat it like the workflow's prompt input, not like `opts` or a typed API.
+
+```js
+// Canonical (matches Claude Code builtins):
+const TASK = typeof args === "string" && args.trim() ? args.trim() : "";
+if (!TASK) return { error: "No task provided. Pass the task description as args." };
+
+// Then weave TASK into agent() prompts:
+await agent(`Investigate and fix:\n\n${TASK}`, { phase: "Implement", effort: "high" });
+```
+
+**Hard rules**
+
+- Do **not** invent `args.task` / `args.prompt` / `args.query`. The string _is_ the prompt.
+- Do **not** require callers to pass `{ task: "..." }` for a simple run. If the script only needs a task, it reads a string.
+- Paseo UI may _store_ `{ task, provider, model, effort, mode, fast }` on the run record (those are host defaults for the backend). The daemon converts task-only dispatches into a **bare string** before the sandbox — your script still sees `args === "fix the flaky test"`. Per-call overrides: `agent(prompt, { effort: "high", mode: "agent", fast: true })`.
+
+**When `args` is not a string** (exception, not the default): the caller/CLI may pass a real JSON object or array — file lists, Kanban card fields, etc. Object args from a host may also carry `runtimeDir` / `key` for run-scoped artifact paths. Only then is `args.runtimeDir` meaningful; a task-string dispatch has neither field. Prefer designing task-like flows around the string prompt; reach for object args only when you truly need structured inputs.
 
 ## Editor types (IntelliSense on the globals)
 
@@ -41,12 +101,19 @@ primitives, `AgentCallOpts`, and the `meta` shape (`packages/agents-workflow/wor
 export const meta = { name: 'my-flow', description: '...', phases: [{ title: 'Scan' }] }
 
 phase('Scan')
-const r = await agent('find X', { schema: {...}, phase: 'Scan', effort: 'high' })  // opts typed
+const r = await agent('find X', {
+  schema: {...},
+  phase: 'Scan',
+  effort: 'high',
+  mode: 'agent',
+  fast: true,
+})  // opts typed — see AgentCallOpts in workflow.d.ts
 ```
 
 Reference path is relative to the flow file: builtin flows (`packages/agents-workflow/workflows/builtin/*.flow.js`)
 use `../../workflow.d.ts`. The `.d.ts` is self-contained (hand-mirrored from
-`src/engine.ts`); it is a comment, invisible to the engine/sandbox/validator.
+`src/engine.ts`); it is a comment, invisible to the engine/sandbox/validator. It documents
+the same `args`-as-prompt convention above, plus `effort` / `mode` / `fast` / `featureValues`.
 
 ## `meta` — MUST be a pure literal
 
@@ -108,14 +175,16 @@ node dist/cli.js run <name> --backend mock            # dry-run (free)
 node dist/cli.js run <name> --backend paseo --args '{"ticketId":"PROJ-1","runtimeDir":"/tmp/r","key":"k"}' --wait-timeout 5m
 ```
 
-Or via the Paseo Workflow page / `workflow.run.dispatch` RPC (daemon creates an isolated workspace per run).
+Or via the Paseo Workflow page / `workflow.run.dispatch` RPC (daemon creates an isolated workspace per run). Dispatch can set default `provider` / `model` / `effort` / `mode` / `fast` for the whole run.
 
 ## Authoring checklist
 
 1. `meta` pure literal + `phases`.
-2. Read `args`; guard missing inputs → `return { error }`.
-3. Each phase = `phase('X')` + `agent(prompt, opts)`; null-guard every result (`if (!x) return {...}`).
-4. Schema: inline JSON Schema (DRY it with an in-file `S` map). File-producing phase → build a DISTINCT absolute path from `args.runtimeDir`/`args.key`; never a bare dir, never a shared filename across parallel producers.
+2. **`args` = the prompt.** For task-like flows: string-guard
+   (`typeof args === "string" && args.trim()`) → weave that string into `agent()` prompts.
+   Missing → `return { error }`. Never invent `args.task` / `args.prompt`.
+3. Each phase = `phase('X')` + `agent(prompt, opts)`; null-guard every result (`if (!x) return {...}`). Prefer omitting `effort`/`mode`/`fast` so dispatch defaults apply; override only when a phase needs a different tier.
+4. Schema: inline JSON Schema (DRY it with an in-file `S` map). File-producing phase → build a DISTINCT absolute path from `args.runtimeDir`/`args.key` (only when the caller passed an **object** args — not present for a bare task-string dispatch); never a bare dir, never a shared filename across parallel producers.
 5. Ordering (STR before deliver, secret-scan before egress) = just the order you write the `agent()` calls; no policy enforces it. Add an à-la-carte verifier for load-bearing outputs.
 6. Conditional skip / early exit = plain `if`/`return`.
 7. `aw validate` clean → `run --backend mock` smoke → real backend / daemon dispatch.

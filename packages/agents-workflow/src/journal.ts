@@ -16,6 +16,9 @@ export interface AgentKeyOpts {
   schema?: SchemaInput;
   model?: string;
   effort?: string;
+  mode?: string;
+  fast?: boolean;
+  featureValues?: Record<string, unknown>;
   provider?: string;
   agentType?: string;
   // Finding 6 — these were MISSING from the key. two calls that differ ONLY in
@@ -34,6 +37,9 @@ export function agentKey(prompt: string, opts: AgentKeyOpts = {}): string {
       schema: opts.schema != null ? fingerprint(opts.schema) : null,
       model: opts.model ?? null,
       effort: opts.effort ?? null,
+      mode: opts.mode ?? null,
+      fast: opts.fast ?? null,
+      featureValues: opts.featureValues ?? null,
       provider: opts.provider ?? null,
       agentType: opts.agentType ?? null,
       label: opts.label ?? null,

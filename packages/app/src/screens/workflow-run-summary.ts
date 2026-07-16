@@ -8,6 +8,14 @@ export interface WorkflowRunSummary {
   displayStatus: WorkflowRunStatus;
   agentCalls: number | null;
   argsPreview: string | null;
+  /** Engine payload without the enclosing meta/stats envelope. */
+  resultPayload: unknown;
+  /**
+   * True when args carried a task but the script still returned the classic
+   * "No task provided" error — usually an outdated copied builtin that only
+   * accepts string `args`, not `{ task }`.
+   */
+  staleTaskContract: boolean;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -32,6 +40,24 @@ function extractNestedError(run: WorkflowRun): string | null {
   }
   const inner = asRecord(result.result);
   return readString(inner?.error) ?? readString(result.error);
+}
+
+function extractResultPayload(run: WorkflowRun): unknown {
+  const result = asRecord(run.result);
+  if (!result) {
+    return run.result;
+  }
+  if ("result" in result) {
+    return result.result ?? null;
+  }
+  return run.result;
+}
+
+function isNoTaskProvidedMessage(message: string | null): boolean {
+  if (!message) {
+    return false;
+  }
+  return /no task provided/i.test(message);
 }
 
 export function summarizeWorkflowRun(run: WorkflowRun): WorkflowRunSummary {
@@ -61,6 +87,8 @@ export function summarizeWorkflowRun(run: WorkflowRun): WorkflowRunSummary {
     displayStatus,
     agentCalls,
     argsPreview,
+    resultPayload: extractResultPayload(run),
+    staleTaskContract: Boolean(task && isNoTaskProvidedMessage(outcome)),
   };
 }
 

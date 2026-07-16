@@ -38,6 +38,8 @@ describe("summarizeWorkflowRun", () => {
       displayStatus: "failed",
       agentCalls: 0,
       argsPreview: '{"task":"fix the login bug"}',
+      resultPayload: { error: "No task provided" },
+      staleTaskContract: true,
     });
   });
 
@@ -54,6 +56,8 @@ describe("summarizeWorkflowRun", () => {
       outcome: null,
       displayStatus: "succeeded",
       agentCalls: 2,
+      resultPayload: { ok: true },
+      staleTaskContract: false,
     });
   });
 });

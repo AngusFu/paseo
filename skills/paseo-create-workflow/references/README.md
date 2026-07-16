@@ -14,12 +14,12 @@
 
 ## 留下的文件
 
-| 路径                              | 是什么                                                                        | 为何留                                                           |
-| --------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `workflow-full-report_2.1.207.md` | Claude Code **2.1.207** Workflow 工具逆向（prompt/schema/原语/10+1 内置全源） | **权威原语契约** —— `agents-workflow-authoring` 技能 STEP 0 引它 |
-| `workflow-full-report_2.1.150.md` | 同上 2.1.150 版                                                               | 版本 diff 参考（较旧）                                           |
-| `G0s.final.txt`                   | Workflow 工具完整 prompt（19k 字符，2.1.207）                                 | 编排方法论原文 —— 授权技能 STEP 0 引它                           |
-| `paseo-superset-plan.md`          | Kimi 的规划文档（paseo 映射 + interface-first 修订 + 路线图）                 | 设计记录                                                         |
+| 路径                              | 是什么                                                                        | 为何留                                                                                                      |
+| --------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `workflow-full-report_2.1.207.md` | Claude Code **2.1.207** Workflow 工具逆向（prompt/schema/原语/10+1 内置全源） | **权威原语契约** —— `agents-workflow-authoring` 技能 STEP 0 引它                                            |
+| `workflow-full-report_2.1.150.md` | 同上 2.1.150 版                                                               | 版本 diff 参考（较旧）                                                                                      |
+| `G0s.final.txt`                   | Workflow 工具完整 prompt（19k 字符，2.1.207）                                 | 编排方法论原文 —— 授权技能 STEP 0 引它                                                                      |
+| `paseo-superset-plan.md`          | Kimi 的规划文档（paseo 映射 + interface-first 修订 + 路线图）                 | 设计记录；§2.2 opts 映射已含 `mode`/`fast`/`featureValues`（活文档以 `SKILL.md` + `docs/workflow.md` 为准） |
 
 > 注：两份 `workflow-full-report_*.md` 里对 `workflows-2.1.{150,207}/*.ts` 的路径引用是**历史引文**（那些源目录已删），非活链接；已登记进 refcheck-ignore。
 

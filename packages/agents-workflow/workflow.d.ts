@@ -34,8 +34,14 @@ interface AgentCallOpts {
   schema?: object;
   /** Model override; omit to inherit the session/main-loop model. */
   model?: string;
-  /** Reasoning effort; omit to inherit the session effort. */
-  effort?: Effort;
+  /** Reasoning effort / thinking option id; omit to inherit the dispatch default. */
+  effort?: Effort | string;
+  /** Provider mode id (e.g. plan / agent); omit to inherit the dispatch default. */
+  mode?: string;
+  /** Convenience for Claude-style fast mode (`featureValues.fast_mode`). */
+  fast?: boolean;
+  /** Provider feature values (e.g. `{ fast_mode: true }`). */
+  featureValues?: Record<string, unknown>;
   /** Backend/provider override. */
   provider?: string;
   /** `"worktree"` runs the agent in a fresh isolated git worktree. */
@@ -100,5 +106,22 @@ declare function log(message: string): void;
 /** The run's token budget. */
 declare const budget: Budget;
 
-/** The value passed as the workflow's `args` input, verbatim (`undefined` if none). */
+/**
+ * The workflow's user prompt / task input, verbatim (`undefined` if none).
+ *
+ * Default mental model: **`args` is the prompt** — a string (task, research
+ * question, `"high [target]"` review spec). Claude Code builtins match that:
+ *
+ *   const TASK = typeof args === "string" && args.trim() ? args.trim() : "";
+ *   if (!TASK) return { error: "No task provided. Pass the task description as args." };
+ *
+ * Do **not** invent `args.task` / `args.prompt`. The string *is* the prompt.
+ * Paseo's UI may store `{ task, provider, model, effort, mode, fast }` on the
+ * run record (host defaults); the daemon converts task-only dispatches to a
+ * bare string before the sandbox runs. Per-call overrides still go on `agent()`.
+ *
+ * Objects / arrays are also valid when the caller passes structured data (file
+ * lists, Kanban card fields, etc.). Host object args may include `runtimeDir` and
+ * `key` for run-scoped artifact paths — those only exist when `args` is an object.
+ */
 declare const args: any;

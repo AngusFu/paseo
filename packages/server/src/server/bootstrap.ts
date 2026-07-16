@@ -121,6 +121,7 @@ import { LoopService } from "./loop-service.js";
 import { ScheduleService } from "./schedule/service.js";
 import { KanbanService } from "./kanban/service.js";
 import { WorkflowService } from "./workflow/service.js";
+import { createWorkflowPaseoAgentHost } from "./workflow/paseo-agent-host.js";
 import { DaemonConfigStore, type MutableDaemonConfig } from "./daemon-config-store.js";
 import { BrowserToolsBroker } from "./browser-tools/broker.js";
 import { DaemonConfigBrowserToolsPolicy } from "./browser-tools/policy.js";
@@ -987,6 +988,15 @@ export async function createPaseoDaemon(
     await emitWorkspaceUpdatesExternal([workspaceId]);
     return workspaceId;
   };
+  // One directory workspace per workflow run — shared by every host-backed agent.
+  workflowService.setEnsureAgentWorkspace(async ({ cwd, title }) => {
+    const workspace = await createLocalCheckoutWorkspace(
+      { cwd, title: title ?? null },
+      { projectRegistry, workspaceRegistry, workspaceGitService },
+    );
+    await emitWorkspaceUpdatesExternal([workspace.workspaceId]);
+    return workspace.workspaceId;
+  });
   const emitWorkspaceUpdateForCwdExternal = async (cwd: string) => {
     const workspaceIds = workspaceIdsOnCheckout(await workspaceRegistry.list(), cwd);
     await emitWorkspaceUpdatesExternal(workspaceIds);
@@ -1093,6 +1103,16 @@ export async function createPaseoDaemon(
   };
   const createAgent = (input: Parameters<typeof createAgentCommand>[1]) =>
     createAgentCommand(createAgentCommandDependencies, input);
+
+  // Workflow agents use the in-daemon host seam (createAgent + AgentManager),
+  // not a PATH `paseo` CLI subprocess — so provider/model from dispatch stick.
+  workflowService.setAgentHost(
+    createWorkflowPaseoAgentHost({
+      createAgent,
+      agentManager,
+      logger,
+    }),
+  );
 
   const loopService = new LoopService({
     paseoHome: config.paseoHome,

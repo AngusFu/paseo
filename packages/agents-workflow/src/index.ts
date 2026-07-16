@@ -5,7 +5,7 @@
 // `./schema-normalize.js`, …) — it is not part of the stable SDK.
 
 // ── engine ───────────────────────────────────────────────────────────────────
-export { createEngine, extractMeta } from "./engine.js";
+export { createEngine, extractMeta, resolveAgentFeatureValues } from "./engine.js";
 export type {
   Engine,
   EngineConfig,
@@ -27,6 +27,13 @@ export { MockBackend } from "./backends/mock.js";
 export type { MockBackendConfig, MockResponder, MockReply } from "./backends/mock.js";
 export { PaseoBackend } from "./backends/paseo.js";
 export type { PaseoBackendOptions, PaseoExec } from "./backends/paseo.js";
+export { PaseoHostBackend } from "./backends/paseo-host.js";
+export type {
+  PaseoHostBackendOptions,
+  PaseoAgentHost,
+  PaseoAgentHostRequest,
+  PaseoAgentHostResult,
+} from "./backends/paseo-host.js";
 
 // ── live progress data model (headless UI) ────────────────────────────────────
 export { createProgressModel } from "./progress-model.js";

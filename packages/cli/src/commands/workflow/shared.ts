@@ -190,6 +190,11 @@ export function parseWorkflowDispatchInput(
   definitionId: string,
   options: {
     arg?: string[];
+    provider?: string;
+    model?: string;
+    thinking?: string;
+    mode?: string;
+    fast?: boolean;
     cwd?: string;
     repoPath?: string;
   },
@@ -202,6 +207,25 @@ export function parseWorkflowDispatchInput(
     } satisfies CommandError;
   }
   const args = parseArgFlags(options.arg ?? []);
+  const provider = options.provider?.trim();
+  if (provider) {
+    args.provider = provider;
+  }
+  const model = options.model?.trim();
+  if (model) {
+    args.model = model;
+  }
+  const thinking = options.thinking?.trim();
+  if (thinking) {
+    args.effort = thinking;
+  }
+  const mode = options.mode?.trim();
+  if (mode) {
+    args.mode = mode;
+  }
+  if (options.fast === true) {
+    args.fast = true;
+  }
   return {
     definitionId: id,
     ...(Object.keys(args).length > 0 ? { args } : {}),

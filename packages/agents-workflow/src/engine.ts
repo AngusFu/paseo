@@ -46,12 +46,33 @@ export interface AgentCallOpts {
   phase?: string;
   schema?: SchemaInput;
   model?: string;
-  effort?: Effort;
+  /** Reasoning effort / thinking option id. */
+  effort?: Effort | string;
+  /** Provider mode id (e.g. plan / agent / ask). */
+  mode?: string;
+  /**
+   * Convenience for Claude `fast_mode` (and similar). Merged into
+   * `featureValues` as `{ fast_mode: true|false }`.
+   */
+  fast?: boolean;
+  /** Provider feature values (e.g. `{ fast_mode: true }`). */
+  featureValues?: Record<string, unknown>;
   provider?: string;
   isolation?: string;
   agentType?: string;
   labels?: Record<string, string>;
   maxRetries?: number;
+}
+
+/** Merge `fast` into `featureValues` for backend createAgent features. */
+export function resolveAgentFeatureValues(
+  opts: Pick<AgentCallOpts, "fast" | "featureValues">,
+): Record<string, unknown> | undefined {
+  const merged: Record<string, unknown> = { ...(opts.featureValues ?? {}) };
+  if (opts.fast != null) {
+    merged.fast_mode = opts.fast;
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 export type AgentFn = (prompt: string, opts?: AgentCallOpts) => Promise<unknown>;
@@ -218,6 +239,8 @@ export function createEngine(cfg: EngineConfig): Engine {
       phase: opts.phase ?? currentPhase ?? undefined,
       model: opts.model,
       effort: opts.effort,
+      mode: opts.mode,
+      featureValues: resolveAgentFeatureValues(opts),
       provider: opts.provider,
       isolation: opts.isolation,
       labels: opts.labels,
@@ -234,10 +257,11 @@ export function createEngine(cfg: EngineConfig): Engine {
     id: number,
     prompt: string,
     opts: AgentCallOpts & { schema: SchemaInput },
-  ): Promise<{ value: unknown; spent: number }> {
+  ): Promise<{ value: unknown; spent: number; error?: string }> {
     const norm = normalizeSchema(opts.schema);
     let suffix = "";
     let spent = 0;
+    let lastFailure = "structured output failed after retries";
     const maxRetries = opts.maxRetries ?? 2;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const spec = toSpec(
@@ -245,17 +269,26 @@ export function createEngine(cfg: EngineConfig): Engine {
         opts,
       );
       const r = await backend.run(spec);
-      const text = r && !r.error ? (r.text ?? "") : "";
       // Finding 4 — charge each attempt its REAL usage; only fall back to the
       // flat estimate for an attempt the backend gave no usage for.
       spent += r?.usage?.outputTokens || DEFAULT_EST_TOKENS;
-      const parsed = tryParseJson(text);
-      if (parsed.ok) {
-        const errs = norm.validate(parsed.value);
-        if (errs.length === 0) return { value: parsed.value, spent };
-        suffix = structuredRetrySuffix("schema validation failed: " + errs.join("; "));
+      if (r?.error) {
+        // Prefer the host/backend error (e.g. provider disabled) over a vague
+        // "not valid JSON" retry suffix — empty text from a failed create.
+        lastFailure = r.error;
+        suffix = structuredRetrySuffix(r.error);
       } else {
-        suffix = structuredRetrySuffix("not valid JSON: " + parsed.err);
+        const text = r?.text ?? "";
+        const parsed = tryParseJson(text);
+        if (parsed.ok) {
+          const errs = norm.validate(parsed.value);
+          if (errs.length === 0) return { value: parsed.value, spent };
+          lastFailure = "schema validation failed: " + errs.join("; ");
+          suffix = structuredRetrySuffix(lastFailure);
+        } else {
+          lastFailure = "not valid JSON: " + parsed.err;
+          suffix = structuredRetrySuffix(lastFailure);
+        }
       }
       if (attempt < maxRetries) {
         stats.structuredRetries++;
@@ -266,10 +299,11 @@ export function createEngine(cfg: EngineConfig): Engine {
           phase: opts.phase ?? currentPhase ?? undefined,
           model: opts.model,
           attempt: attempt + 1,
+          error: lastFailure,
         });
       }
     }
-    return { value: null, spent }; // all retries failed -> agent() returns null
+    return { value: null, spent, error: lastFailure };
   }
 
   // ---- the agent() primitive ----
@@ -327,7 +361,7 @@ export function createEngine(cfg: EngineConfig): Engine {
         });
         result = sc.value;
         charge = sc.spent;
-        if (sc.value === null) errorMsg = "structured output failed after retries";
+        if (sc.value === null) errorMsg = sc.error || "structured output failed after retries";
         else usage = { outputTokens: sc.spent };
       } else {
         result = await limit(async (): Promise<unknown> => {

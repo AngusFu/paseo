@@ -34,6 +34,12 @@ export function addRunOptions(cmd: Command): Command {
     )
     .option("--thinking <id>", "Thinking option ID to use for this run")
     .option("--mode <mode>", "Provider-specific mode (e.g., plan, default, bypass)")
+    .option(
+      "--feature <key=value>",
+      "Set a provider feature for this run (repeatable; value may be JSON, e.g. fast_mode=true)",
+      collectMultiple,
+      [],
+    )
     .option("--worktree <name>", "Create agent in a new git worktree")
     .option("--base <branch>", "Base branch for worktree (default: current branch)")
     .option(
@@ -98,6 +104,7 @@ export interface AgentRunOptions extends CommandOptions {
   model?: string;
   thinking?: string;
   mode?: string;
+  feature?: string[];
   worktree?: string;
   base?: string;
   workspace?: string;
@@ -363,6 +370,42 @@ function parseRunEnv(envFlags: string[] | undefined): Record<string, string> {
   });
 }
 
+function parseRunFeatures(featureFlags: string[] | undefined): Record<string, unknown> {
+  const features: Record<string, unknown> = {};
+  if (!featureFlags) {
+    return features;
+  }
+  for (const flag of featureFlags) {
+    const eqIndex = flag.indexOf("=");
+    if (eqIndex <= 0) {
+      throw {
+        code: "INVALID_FEATURE",
+        message: `Invalid feature format: ${flag}`,
+        details: "Features must be in key=value format (value may be JSON)",
+      } satisfies CommandError;
+    }
+    const key = flag.slice(0, eqIndex).trim();
+    const raw = flag.slice(eqIndex + 1);
+    if (!key) {
+      throw {
+        code: "INVALID_FEATURE",
+        message: `Invalid feature format: ${flag}`,
+        details: "Feature key cannot be empty",
+      } satisfies CommandError;
+    }
+    if (raw === "") {
+      features[key] = "";
+      continue;
+    }
+    try {
+      features[key] = JSON.parse(raw) as unknown;
+    } catch {
+      features[key] = raw;
+    }
+  }
+  return features;
+}
+
 function parseKeyValueFlags(
   flags: string[] | undefined,
   options: {
@@ -499,7 +542,9 @@ export async function runRunCommand(
 
     const labels = parseRunLabels(options.label);
     const env = parseRunEnv(options.env);
+    const featureValues = parseRunFeatures(options.feature);
     const requestEnv = Object.keys(env).length > 0 ? env : undefined;
+    const requestFeatureValues = Object.keys(featureValues).length > 0 ? featureValues : undefined;
 
     const workspace = await resolveRunWorkspace(client, options, cwd);
     const workspaceId = workspace.id;
@@ -518,6 +563,7 @@ export async function runRunCommand(
             modeId: options.mode,
             model: resolvedProviderModel.model,
             thinkingOptionId,
+            featureValues: requestFeatureValues,
             initialPrompt: structuredPrompt,
             outputSchema,
             images,
@@ -588,6 +634,7 @@ export async function runRunCommand(
       modeId: options.mode,
       model: resolvedProviderModel.model,
       thinkingOptionId,
+      featureValues: requestFeatureValues,
       initialPrompt: prompt,
       images,
       env: requestEnv,

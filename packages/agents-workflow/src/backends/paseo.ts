@@ -40,10 +40,26 @@ export interface PaseoBackendOptions {
   defaultProvider?: string;
   /** model used when a spec carries none. omitted from args when unset. */
   defaultModel?: string;
+  /** --thinking value used when a spec carries none. */
+  defaultEffort?: string;
+  /** --mode value used when a spec carries none. */
+  defaultMode?: string;
+  /**
+   * Default feature values. Only `fast_mode` is currently forwarded to the CLI
+   * (`--feature fast_mode=true`) once `paseo run` supports `--feature`.
+   */
+  defaultFeatureValues?: Record<string, unknown>;
   /** --wait-timeout value (e.g. "5m"). omitted from args when unset. */
   waitTimeout?: string;
   /** --cwd value. omitted from args when unset. */
   cwd?: string;
+  /**
+   * Pin every `paseo run` to this existing workspace (`--workspace`). Without
+   * it, each bare `paseo run` mints a new directory workspace for the same cwd
+   * — disastrous for workflows (1 agent() + structured retries = N workspaces).
+   * Ignored when `spec.isolation === "worktree"` (CLI forbids combining the two).
+   */
+  workspaceId?: string;
   /**
    * Fix I — after a successful run, fetch REAL token usage via one extra
    * `paseo inspect --json <id>` exec (a metadata call, no LLM cost). default
@@ -69,8 +85,12 @@ export class PaseoBackend extends AgentBackend {
   private readonly exec: PaseoExec;
   private readonly defaultProvider: string;
   private readonly defaultModel?: string;
+  private readonly defaultEffort?: string;
+  private readonly defaultMode?: string;
+  private readonly defaultFeatureValues?: Record<string, unknown>;
   private readonly waitTimeout?: string;
   private readonly cwd?: string;
+  private readonly workspaceId?: string;
   private readonly fetchUsage: boolean;
 
   constructor(opts: PaseoBackendOptions = {}) {
@@ -78,8 +98,12 @@ export class PaseoBackend extends AgentBackend {
     this.exec = opts.exec ?? defaultPaseoExec;
     this.defaultProvider = opts.defaultProvider ?? "claude";
     this.defaultModel = opts.defaultModel;
+    this.defaultEffort = opts.defaultEffort;
+    this.defaultMode = opts.defaultMode;
+    this.defaultFeatureValues = opts.defaultFeatureValues;
     this.waitTimeout = opts.waitTimeout;
     this.cwd = opts.cwd;
+    this.workspaceId = opts.workspaceId;
     this.fetchUsage = opts.fetchUsage ?? true;
   }
 
@@ -97,7 +121,24 @@ export class PaseoBackend extends AgentBackend {
     const args = ["run", "--json", "--provider", spec.provider ?? this.defaultProvider];
     const model = spec.model ?? this.defaultModel;
     if (model) args.push("--model", model);
-    if (spec.isolation === "worktree") args.push("--worktree", worktreeName(spec));
+    const effort = (spec.effort ?? this.defaultEffort)?.toString().trim();
+    if (effort) args.push("--thinking", effort);
+    const mode = (spec.mode ?? this.defaultMode)?.trim();
+    if (mode) args.push("--mode", mode);
+    const featureValues = {
+      ...(this.defaultFeatureValues ?? {}),
+      ...(spec.featureValues ?? {}),
+    };
+    for (const [key, value] of Object.entries(featureValues)) {
+      if (value === undefined) continue;
+      args.push("--feature", `${key}=${stringifyFeatureValue(value)}`);
+    }
+    // --worktree and --workspace are mutually exclusive in the CLI.
+    if (spec.isolation === "worktree") {
+      args.push("--worktree", worktreeName(spec));
+    } else if (this.workspaceId) {
+      args.push("--workspace", this.workspaceId);
+    }
     if (this.waitTimeout) args.push("--wait-timeout", this.waitTimeout);
     if (this.cwd) args.push("--cwd", this.cwd);
     for (const [k, v] of Object.entries(spec.labels ?? {})) {
@@ -117,9 +158,12 @@ export class PaseoBackend extends AgentBackend {
       flagLike(spec.provider) ??
       flagLike(spec.model) ??
       flagLike(this.defaultProvider) ??
-      flagLike(this.defaultModel);
+      flagLike(this.defaultModel) ??
+      (spec.isolation === "worktree" ? null : flagLike(this.workspaceId));
     if (bad != null)
-      return { error: `paseo: unsafe provider/model value "${bad}" (flag-like or invalid)` };
+      return {
+        error: `paseo: unsafe provider/model/workspace value "${bad}" (flag-like or invalid)`,
+      };
     try {
       const stdout = await this.exec(this.buildArgs(spec));
       const env = parsePaseoJson(stdout);
@@ -301,6 +345,13 @@ function lastJsonValue(s: string): string | null {
     }
   }
   return result;
+}
+
+function stringifyFeatureValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  return JSON.stringify(value);
 }
 
 // pull the FIRST JSON object out of stdout. fast path: the whole (trimmed)

@@ -88,6 +88,24 @@ describe("PaseoBackend.buildArgs", () => {
     expect(new PaseoBackend().buildArgs(spec()).includes("--model")).toBe(false);
   });
 
+  it("forwards effort/mode/featureValues as --thinking/--mode/--feature", () => {
+    const args = new PaseoBackend({
+      defaultEffort: "medium",
+      defaultMode: "default",
+      defaultFeatureValues: { fast_mode: false },
+    }).buildArgs(
+      spec({
+        effort: "high",
+        mode: "plan",
+        featureValues: { fast_mode: true },
+      }),
+    );
+    expect(args[args.indexOf("--thinking") + 1]).toBe("high");
+    expect(args[args.indexOf("--mode") + 1]).toBe("plan");
+    expect(args.includes("--feature")).toBe(true);
+    expect(args[args.indexOf("--feature") + 1]).toBe("fast_mode=true");
+  });
+
   it("uses defaultModel when the spec omits model", () => {
     const args = new PaseoBackend({ defaultModel: "claude-sonnet-4-6" }).buildArgs(spec());
     expect(args[args.indexOf("--model") + 1]).toBe("claude-sonnet-4-6");
@@ -120,6 +138,20 @@ describe("PaseoBackend.buildArgs", () => {
     const args = b.buildArgs(spec());
     expect(args[args.indexOf("--wait-timeout") + 1]).toBe("5m");
     expect(args[args.indexOf("--cwd") + 1]).toBe("/repo");
+  });
+
+  it("pins --workspace for every run when workspaceId is configured", () => {
+    const b = new PaseoBackend({ workspaceId: "wks_abc123", cwd: "/repo" });
+    const args = b.buildArgs(spec());
+    expect(args[args.indexOf("--workspace") + 1]).toBe("wks_abc123");
+    expect(args.includes("--worktree")).toBe(false);
+  });
+
+  it("omits --workspace when isolation=worktree (CLI forbids combining them)", () => {
+    const b = new PaseoBackend({ workspaceId: "wks_abc123" });
+    const args = b.buildArgs(spec({ isolation: "worktree", phase: "Plan" }));
+    expect(args.includes("--workspace")).toBe(false);
+    expect(args[args.indexOf("--worktree") + 1]).toBe("flow2-plan");
   });
 
   it("flattens labels as repeated --label k=v", () => {

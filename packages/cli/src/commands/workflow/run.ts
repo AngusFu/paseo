@@ -14,6 +14,11 @@ import {
 
 export interface WorkflowRunOptions extends WorkflowCommandOptions {
   arg?: string[];
+  provider?: string;
+  model?: string;
+  thinking?: string;
+  mode?: string;
+  fast?: boolean;
   cwd?: string;
   repoPath?: string;
 }

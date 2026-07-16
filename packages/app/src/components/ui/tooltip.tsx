@@ -12,6 +12,7 @@ import {
   type PropsWithChildren,
   type ReactElement,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Dimensions,
   Platform,
@@ -30,6 +31,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { FloatingSurface } from "@/components/ui/floating";
 import { isWeb } from "@/constants/platform";
+import { getOverlayRoot, OVERLAY_Z, raiseOverlayRoot } from "@/lib/overlay-root";
 
 type Side = "top" | "bottom" | "left" | "right";
 type Align = "start" | "center" | "end";
@@ -512,28 +514,43 @@ export function TooltipContent({
 
   if (!ctx.open || !ctx.enabled) return null;
 
-  // On web, avoid React Native's <Modal/> implementation (it uses <dialog> and can
-  // steal focus / disrupt hover). Rendering via Portal + position:fixed keeps the
-  // exact same positioning math as DropdownMenu, without hover feedback loops.
+  // On web, avoid React Native's <Modal/> (it uses <dialog> and can steal focus /
+  // disrupt hover). Always mount into #overlay-root — the same host as
+  // AdaptiveModalSheet — so tooltips stack above desktop sheets.
+  //
+  // Do NOT key off `useBottomSheetModalInternal().hostName`: BottomSheetModalProvider
+  // always exposes a hostName app-wide, even when no sheet is open. Using that host
+  // parks the tooltip under the overlay-root modal and recreates the "clipped by
+  // the card" bug.
+  const floatingContent = (
+    <View pointerEvents="none" style={styles.portalOverlay}>
+      <FloatingSurface
+        pointerEvents="none"
+        entering={FadeIn.duration(80)}
+        exiting={FadeOut.duration(80)}
+        collapsable={false}
+        testID={testID}
+        onLayout={handleLayout}
+        style={contentStyle}
+        frameStyle={frameStyle}
+      >
+        {children}
+      </FloatingSurface>
+    </View>
+  );
+
   if (isWeb) {
-    return (
-      <Portal hostName={bottomSheetInternal?.hostName}>
-        <View pointerEvents="none" style={styles.portalOverlay}>
-          <FloatingSurface
-            pointerEvents="none"
-            entering={FadeIn.duration(80)}
-            exiting={FadeOut.duration(80)}
-            collapsable={false}
-            testID={testID}
-            onLayout={handleLayout}
-            style={contentStyle}
-            frameStyle={frameStyle}
-          >
-            {children}
-          </FloatingSurface>
-        </View>
-      </Portal>
-    );
+    if (typeof document !== "undefined") {
+      raiseOverlayRoot();
+      return createPortal(floatingContent, getOverlayRoot());
+    }
+    return floatingContent;
+  }
+
+  // Native: prefer the active bottom-sheet portal when present so the tooltip
+  // shares the sheet window; otherwise use a transparent Modal.
+  if (bottomSheetInternal?.hostName) {
+    return <Portal hostName={bottomSheetInternal.hostName}>{floatingContent}</Portal>;
   }
 
   return (
@@ -570,7 +587,7 @@ const styles = StyleSheet.create((theme) => ({
     right: 0,
     bottom: 0,
     left: 0,
-    zIndex: 1000,
+    zIndex: OVERLAY_Z.floating,
   },
   content: {
     paddingVertical: theme.spacing[1],
@@ -580,6 +597,6 @@ const styles = StyleSheet.create((theme) => ({
     borderWidth: theme.borderWidth[1],
     borderColor: theme.colors.borderAccent,
     ...theme.shadow.md,
-    zIndex: 1000,
+    zIndex: OVERLAY_Z.floating,
   },
 }));

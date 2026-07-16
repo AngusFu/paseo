@@ -24,9 +24,13 @@ safety layers left.
 - `src/backends/mock.ts` - `MockBackend`, the reference backend (default). zero
   infra, virtual-time latency, deterministic for tests. the engine can't tell it
   apart from a real one.
+- `src/backends/paseo-host.ts` - `PaseoHostBackend` + `PaseoAgentHost` seam for
+  in-daemon / protocol-backed runs (preferred for Paseo workflows). Forwards
+  `effort`/`mode`/`featureValues` (thinking, mode, features) to the host.
 - `src/backends/paseo.ts` - `PaseoBackend`, runs each agent via the `paseo run`
-  CLI against a local paseo daemon. RESOLVES (never rejects) with `{ error }` on
-  any failure so the engine maps it to `agent()===null` uniformly.
+  CLI against a local paseo daemon (`--thinking`/`--mode`/`--feature`).
+  RESOLVES (never rejects) with `{ error }` on any failure so the engine maps
+  it to `agent()===null` uniformly.
 - `src/journal.ts` - `Journal` + `agentKey()`. resume cache: every completed
   `agent()` call is recorded under a deterministic key of (prompt, opts incl.
   schema/model/effort/label/phase). in-memory by default, optionally
@@ -59,7 +63,10 @@ safety layers left.
   it (`/// <reference path="…/workflow.d.ts" />`) to get editor IntelliSense +
   type-checking on the 8 injected globals, `AgentCallOpts`, and the `meta` shape.
   Self-contained (no imports), hand-mirrored from `src/engine.ts`; it's a comment,
-  invisible to the engine.
+  invisible to the engine. Documents the Claude Code `args`-as-string convention
+  (do not invent `args.task` in builtin-style flows).
+- `PaseoHostBackend` — daemon workflow path: injected `PaseoAgentHost`
+  (createAgent + wait). Prefer this over shelling `paseo` on PATH.
 
 ## run it
 
@@ -166,10 +173,10 @@ process/require/fs. genuine containment for the workflow body.
 
 resume is the engine's Journal, NOT a checkpoint/gate model. every completed
 `agent()` call is recorded under `agentKey(prompt, opts)` — a sha256 of the
-prompt plus (schema fingerprint, model, effort, provider, agentType, label,
-phase). on resume, a call whose key already has a cached result returns
-instantly WITHOUT hitting the backend, mirroring Claude's "unchanged
-(prompt, opts) prefix returns cached" protocol.
+prompt plus (schema fingerprint, model, effort, mode, fast, featureValues,
+provider, agentType, label, phase). on resume, a call whose key already has a
+cached result returns instantly WITHOUT hitting the backend, mirroring Claude's
+"unchanged (prompt, opts) prefix returns cached" protocol.
 
 - idempotent replay: cached results come back verbatim; no gates, no sentinels,
   no artifact re-stat.

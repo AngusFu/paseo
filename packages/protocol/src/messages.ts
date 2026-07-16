@@ -122,6 +122,8 @@ import {
   WorkflowRunGetResponseSchema,
   WorkflowRunListRequestSchema,
   WorkflowRunListResponseSchema,
+  WorkflowRunLogsRequestSchema,
+  WorkflowRunLogsResponseSchema,
 } from "./workflow/rpc-schemas.js";
 import {
   LoopRunRequestSchema,
@@ -2379,6 +2381,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   WorkflowRunGetRequestSchema,
   WorkflowRunDispatchRequestSchema,
   WorkflowRunCancelRequestSchema,
+  WorkflowRunLogsRequestSchema,
   KanbanRuleListRequestSchema,
   KanbanRuleCreateRequestSchema,
   KanbanRuleUpdateRequestSchema,
@@ -4708,6 +4711,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkflowRunGetResponseSchema,
   WorkflowRunDispatchResponseSchema,
   WorkflowRunCancelResponseSchema,
+  WorkflowRunLogsResponseSchema,
   KanbanRuleListResponseSchema,
   KanbanRuleCreateResponseSchema,
   KanbanRuleUpdateResponseSchema,

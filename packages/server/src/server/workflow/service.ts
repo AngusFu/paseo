@@ -9,6 +9,8 @@ import {
   listWorkflows,
   MockBackend,
   PaseoBackend,
+  PaseoHostBackend,
+  type PaseoAgentHost,
 } from "@getpaseo/agents-workflow";
 import {
   WorkflowDefinitionSchema,
@@ -21,9 +23,14 @@ import {
   type WorkflowDefinition,
   type WorkflowRun,
 } from "@getpaseo/protocol/workflow/types";
+import { formatWorkflowWorkspaceTitle } from "@getpaseo/protocol/workflow/workspace-title";
 import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
+import type { Logger } from "pino";
+import type { WorkflowLogEntry } from "@getpaseo/protocol/workflow/types";
 import { expandUserPath } from "../path-utils.js";
+import { WorkflowEventLog, type WorkflowEventLogWriteInput } from "./event-log.js";
 import { WorkflowQueue } from "./queue.js";
+import { paginateLogEntries, reconstructRunHistory } from "./run-history.js";
 import { WorkflowStore } from "./store.js";
 
 const CREATE_WORKFLOW_SKILL = "paseo-create-workflow";
@@ -104,9 +111,126 @@ export function extractWorkflowResultError(result: unknown): string | null {
   return null;
 }
 
+/** Annotate script-level errors with the last host/backend agent error. */
+export function mergeWorkflowError(
+  nestedError: string | null,
+  agentErrors: readonly string[],
+): string | null {
+  let lastAgentError: string | null = null;
+  for (let i = agentErrors.length - 1; i >= 0; i--) {
+    const item = agentErrors[i]?.trim();
+    if (item) {
+      lastAgentError = item;
+      break;
+    }
+  }
+  if (!nestedError) {
+    return lastAgentError;
+  }
+  if (!lastAgentError || nestedError.includes(lastAgentError)) {
+    return nestedError;
+  }
+  return `${nestedError} — ${lastAgentError}`;
+}
 function readArgString(args: Record<string, unknown>, key: string): string | undefined {
   const value = args[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readArgBoolean(args: Record<string, unknown>, key: string): boolean | undefined {
+  const value = args[key];
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1") {
+      return true;
+    }
+    if (normalized === "false" || normalized === "0") {
+      return false;
+    }
+  }
+  return undefined;
+}
+
+function readArgFeatureValues(args: Record<string, unknown>): Record<string, unknown> | undefined {
+  const raw = args.featureValues;
+  const featureValues =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? { ...(raw as Record<string, unknown>) }
+      : {};
+  const fast = readArgBoolean(args, "fast");
+  if (fast != null) {
+    featureValues.fast_mode = fast;
+  }
+  return Object.keys(featureValues).length > 0 ? featureValues : undefined;
+}
+
+export function resolveWorkflowWorkspaceTitle(
+  definition: WorkflowDefinition,
+  run: WorkflowRun,
+): string {
+  const body = readArgString(run.args, "workspaceTitle") ?? definition.name;
+  return formatWorkflowWorkspaceTitle(body, definition.name);
+}
+
+/**
+ * Shape of `args` passed into the workflow sandbox.
+ *
+ * Claude Code builtins read a bare string (`typeof args === "string" ? args : ""`).
+ * The app/CLI store `{ task, provider, model }` on the run record for the UI;
+ * provider/model are applied to `PaseoBackend` defaults separately. When there is
+ * no other structured payload, pass the task string into the engine so those
+ * builtins see the CC-native shape. Multi-field dispatches (Kanban, custom
+ * objects) keep the full object (plus runtimeDir/key).
+ */
+export function buildWorkflowEngineArgs(input: {
+  args: Record<string, unknown>;
+  workspacePath: string;
+  runId: string;
+}): unknown {
+  const merged: Record<string, unknown> = {
+    ...input.args,
+    runtimeDir: input.workspacePath,
+    key: input.runId,
+  };
+  const task =
+    readArgString(merged, "task") ??
+    readArgString(merged, "prompt") ??
+    readArgString(merged, "title");
+
+  // Keys that are either the task text, already consumed as backend defaults,
+  // or host bookkeeping — not a structured script payload on their own.
+  const passthroughKeys = new Set([
+    "task",
+    "prompt",
+    "title",
+    "provider",
+    "model",
+    "effort",
+    "thinking",
+    "mode",
+    "fast",
+    "featureValues",
+    "workspaceTitle",
+    "runtimeDir",
+    "key",
+  ]);
+  const hasStructuredPayload = Object.entries(merged).some(([key, value]) => {
+    if (passthroughKeys.has(key)) {
+      return false;
+    }
+    if (value == null || value === "") {
+      return false;
+    }
+    return true;
+  });
+
+  if (task && !hasStructuredPayload) {
+    return task;
+  }
+  return merged;
 }
 
 export function matchesKanbanWorkflowRule(
@@ -133,23 +257,73 @@ export function matchesKanbanWorkflowRule(
   return true;
 }
 
+export type EnsureWorkflowAgentWorkspace = (input: {
+  cwd: string;
+  runId: string;
+  title?: string | null;
+}) => Promise<string>;
+
 export interface WorkflowServiceOptions {
   paseoHome: string;
   maxConcurrency?: number;
   runner?: (definition: WorkflowDefinition, run: WorkflowRun) => Promise<unknown>;
+  /**
+   * Mint (or resolve) ONE Paseo workspace for a run's agent `cwd`. Wired by the
+   * daemon so every agent in the run shares one workspace instead of minting
+   * a twin per attempt.
+   */
+  ensureAgentWorkspace?: EnsureWorkflowAgentWorkspace;
+  /**
+   * Protocol/host seam for running agents in-daemon (createAgent + AgentManager).
+   * Preferred over shelling out to a PATH `paseo` CLI.
+   */
+  agentHost?: PaseoAgentHost;
+  logger?: Logger;
 }
 
 export class WorkflowService {
   private readonly store: WorkflowStore;
+  private readonly eventLog: WorkflowEventLog;
   private readonly queue: WorkflowQueue;
   private readonly paseoHome: string;
-  private readonly runner: (definition: WorkflowDefinition, run: WorkflowRun) => Promise<unknown>;
+  private readonly customRunner:
+    | ((definition: WorkflowDefinition, run: WorkflowRun) => Promise<unknown>)
+    | null;
+  private readonly logger: Logger | null;
+  private ensureAgentWorkspace: EnsureWorkflowAgentWorkspace | undefined;
+  private agentHost: PaseoAgentHost | undefined;
 
   constructor(options: WorkflowServiceOptions) {
     this.paseoHome = options.paseoHome;
-    this.store = new WorkflowStore(join(options.paseoHome, "workflows"));
+    const workflowsDir = join(options.paseoHome, "workflows");
+    this.store = new WorkflowStore(workflowsDir);
+    this.eventLog = new WorkflowEventLog(workflowsDir);
     this.queue = new WorkflowQueue({ maxConcurrency: options.maxConcurrency });
-    this.runner = options.runner ?? ((definition, run) => this.runEngine(definition, run));
+    this.customRunner = options.runner ?? null;
+    this.ensureAgentWorkspace = options.ensureAgentWorkspace;
+    this.agentHost = options.agentHost;
+    this.logger = options.logger?.child({ module: "workflow-service" }) ?? null;
+  }
+
+  private async log(input: WorkflowEventLogWriteInput): Promise<void> {
+    try {
+      await this.eventLog.append(input);
+    } catch (err) {
+      this.logger?.warn({ err, event: input.event }, "workflow event log append failed");
+    }
+  }
+
+  /**
+   * Late-bind workspace minting after registries are ready (bootstrap creates
+   * WorkflowService before project/workspace stores exist).
+   */
+  setEnsureAgentWorkspace(ensure: EnsureWorkflowAgentWorkspace): void {
+    this.ensureAgentWorkspace = ensure;
+  }
+
+  /** Late-bind the in-daemon PaseoAgentHost after AgentManager is ready. */
+  setAgentHost(host: PaseoAgentHost): void {
+    this.agentHost = host;
   }
 
   async listDefinitions(): Promise<WorkflowDefinition[]> {
@@ -185,19 +359,69 @@ export class WorkflowService {
   }
 
   async getDefinition(id: string): Promise<WorkflowDefinition | null> {
-    return this.store.getDefinition(id);
+    const stored = await this.store.getDefinition(id);
+    if (stored) {
+      return stored;
+    }
+    // Builtins are templates that can also be dispatched directly (id = builtin:<name>).
+    if (!id.startsWith("builtin:")) {
+      return null;
+    }
+    const builtins = await this.listBuiltins();
+    return builtins.find((definition) => definition.id === id) ?? null;
   }
 
   async createDefinition(input: CreateWorkflowDefinitionInput): Promise<WorkflowDefinition> {
-    return this.store.createDefinition(input);
+    const definition = await this.store.createDefinition(input);
+    await this.log({
+      event: "definition.create",
+      message: `created ${definition.name}`,
+      definitionId: definition.id,
+      data: { name: definition.name },
+    });
+    return definition;
   }
 
   async updateDefinition(input: UpdateWorkflowDefinitionInput): Promise<WorkflowDefinition | null> {
-    return this.store.updateDefinition(input);
+    const definition = await this.store.updateDefinition(input);
+    if (definition) {
+      await this.log({
+        event: "definition.update",
+        message: `updated ${definition.name}`,
+        definitionId: definition.id,
+      });
+    }
+    return definition;
   }
 
   async deleteDefinition(id: string): Promise<boolean> {
-    return this.store.deleteDefinition(id);
+    const ok = await this.store.deleteDefinition(id);
+    if (ok) {
+      await this.log({
+        event: "definition.delete",
+        message: `deleted ${id}`,
+        definitionId: id,
+      });
+    }
+    return ok;
+  }
+
+  async listRunLogs(
+    runId: string,
+    options: { afterSeq?: number; limit?: number } = {},
+  ): Promise<{ entries: WorkflowLogEntry[]; nextSeq: number; hasMore: boolean }> {
+    // Prefer the append-only events.jsonl when the daemon wrote one.
+    if (await this.eventLog.hasRunLogs(runId)) {
+      return this.eventLog.readRunLogs(runId, options);
+    }
+    // Historical runs (or a daemon that never emitted events): rebuild a timeline
+    // from the run record + engine journal so the detail sheet is never empty.
+    const run = await this.store.getRun(runId);
+    if (!run) {
+      return { entries: [], nextSeq: options.afterSeq ?? 0, hasMore: false };
+    }
+    const history = await reconstructRunHistory(run);
+    return paginateLogEntries(history, options);
   }
 
   async listRuns(): Promise<WorkflowRun[]> {
@@ -209,18 +433,26 @@ export class WorkflowService {
   }
 
   async dispatch(input: DispatchWorkflowRunInput): Promise<WorkflowRun> {
-    const definition = await this.store.getDefinition(input.definitionId);
+    const definition = await this.getDefinition(input.definitionId);
     if (!definition) {
       throw new Error(`Workflow definition not found: ${input.definitionId}`);
     }
     const id = `wfr_${randomUUID()}`;
     const runDir = join(this.paseoHome, "workflows", "runs", id);
     await mkdir(runDir, { recursive: true });
+    const workspaceTitle = formatWorkflowWorkspaceTitle(
+      input.workspaceTitle?.trim() || definition.name,
+      definition.name,
+    );
+    const args: Record<string, unknown> = {
+      ...input.args,
+      workspaceTitle,
+    };
     const run: WorkflowRun = {
       id,
       definitionId: definition.id,
       status: "queued",
-      args: input.args ?? {},
+      args,
       cwd: input.cwd ? expandUserPath(input.cwd) : runDir,
       workspaceId: null,
       workspacePath: runDir,
@@ -231,17 +463,37 @@ export class WorkflowService {
       error: null,
     };
     await this.store.createRun(run);
+    await this.log({
+      event: "run.queued",
+      message: `queued ${definition.name}`,
+      runId: run.id,
+      definitionId: definition.id,
+      data: {
+        cwd: run.cwd,
+        provider: readArgString(run.args, "provider") ?? null,
+        model: readArgString(run.args, "model") ?? null,
+      },
+    });
     void this.queue.enqueue(() => this.execute(definition, run));
     return run;
   }
 
   async cancel(id: string): Promise<WorkflowRun | null> {
-    return this.store.updateRun(id, (run) => {
+    const updated = await this.store.updateRun(id, (run) => {
       if (run.status !== "queued") {
         return run;
       }
       return { ...run, status: "cancelled", endedAt: new Date().toISOString() };
     });
+    if (updated?.status === "cancelled") {
+      await this.log({
+        event: "run.cancelled",
+        message: "cancelled while queued",
+        runId: id,
+        definitionId: updated.definitionId,
+      });
+    }
+    return updated;
   }
 
   async listRules(): Promise<KanbanWorkflowRule[]> {
@@ -295,45 +547,236 @@ export class WorkflowService {
     if (!run || run.status === "cancelled") {
       return;
     }
+    await this.log({
+      event: "run.start",
+      message: `start ${definition.name} via ${this.describeBackend()}`,
+      runId: run.id,
+      definitionId: definition.id,
+      data: {
+        cwd: run.cwd,
+        provider: readArgString(run.args, "provider") ?? null,
+        model: readArgString(run.args, "model") ?? null,
+        backend: this.describeBackend(),
+      },
+    });
     try {
-      const result = await this.runner(definition, run);
+      const { result, agentErrors } = await this.runnerWithAgentErrors(definition, run);
       const nestedError = extractWorkflowResultError(result);
+      const error = mergeWorkflowError(nestedError, agentErrors);
       await this.store.updateRun(run.id, (current) => ({
         ...current,
-        status: nestedError ? "failed" : "succeeded",
+        status: error ? "failed" : "succeeded",
         endedAt: new Date().toISOString(),
         result,
-        error: nestedError,
+        error,
       }));
+      await this.log({
+        level: error ? "error" : "info",
+        event: error ? "run.failed" : "run.succeeded",
+        message: error ?? "succeeded",
+        runId: run.id,
+        definitionId: definition.id,
+        data: { workspaceId: run.workspaceId, agentErrors },
+      });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.log({
+        level: "error",
+        event: "run.crashed",
+        message,
+        runId: run.id,
+        definitionId: definition.id,
+      });
       await this.store.updateRun(run.id, (current) => ({
         ...current,
         status: "failed",
         endedAt: new Date().toISOString(),
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       }));
     }
   }
 
-  private async runEngine(definition: WorkflowDefinition, run: WorkflowRun): Promise<unknown> {
+  private describeBackend(): string {
+    if (process.env.PASEO_WORKFLOW_BACKEND === "mock") return "mock";
+    if (this.agentHost) return "paseo-host";
+    return "paseo-cli";
+  }
+
+  private async runnerWithAgentErrors(
+    definition: WorkflowDefinition,
+    run: WorkflowRun,
+  ): Promise<{ result: unknown; agentErrors: string[] }> {
+    if (this.customRunner) {
+      return { result: await this.customRunner(definition, run), agentErrors: [] };
+    }
+    return this.runEngine(definition, run);
+  }
+
+  private async runEngine(
+    definition: WorkflowDefinition,
+    run: WorkflowRun,
+  ): Promise<{ result: unknown; agentErrors: string[] }> {
     const provider = readArgString(run.args, "provider");
     const model = readArgString(run.args, "model");
-    const backend =
-      process.env.PASEO_WORKFLOW_BACKEND === "mock"
-        ? new MockBackend()
-        : new PaseoBackend({
-            cwd: run.cwd,
-            ...(provider ? { defaultProvider: provider } : {}),
-            ...(model ? { defaultModel: model } : {}),
-          });
-    const journal = new Journal({ path: join(run.workspacePath, "journal.jsonl") });
-    const engine = createEngine({ backend, journal });
-    try {
-      return await engine.run(definition.source, {
-        args: { ...run.args, runtimeDir: run.workspacePath, key: run.id },
+    const effort = readArgString(run.args, "effort") ?? readArgString(run.args, "thinking");
+    const mode = readArgString(run.args, "mode");
+    const featureValues = readArgFeatureValues(run.args);
+    const workspaceId = await this.resolveRunAgentWorkspace(definition, run);
+    const agentErrors: string[] = [];
+
+    if (!workspaceId && process.env.PASEO_WORKFLOW_BACKEND !== "mock" && this.agentHost) {
+      throw new Error(
+        "workflow agent workspace missing — ensureAgentWorkspace was not wired or failed",
+      );
+    }
+
+    await this.log({
+      event: "run.backend",
+      message: `${this.describeBackend()} provider=${provider ?? "-"} model=${model ?? "-"} effort=${effort ?? "-"} mode=${mode ?? "-"}`,
+      runId: run.id,
+      definitionId: definition.id,
+      data: { workspaceId, cwd: run.cwd, featureValues: featureValues ?? null },
+    });
+
+    const backendOptions = {
+      cwd: run.cwd,
+      ...(workspaceId ? { workspaceId } : {}),
+      ...(provider ? { defaultProvider: provider } : {}),
+      ...(model ? { defaultModel: model } : {}),
+      ...(effort ? { defaultEffort: effort } : {}),
+      ...(mode ? { defaultMode: mode } : {}),
+      ...(featureValues ? { defaultFeatureValues: featureValues } : {}),
+    };
+    let backend;
+    if (process.env.PASEO_WORKFLOW_BACKEND === "mock") {
+      backend = new MockBackend();
+    } else if (this.agentHost) {
+      backend = new PaseoHostBackend({
+        host: this.wrapHostWithRunLogs(this.agentHost, run, definition.id),
+        ...backendOptions,
       });
+    } else {
+      backend = new PaseoBackend(backendOptions);
+    }
+
+    const journal = new Journal({ path: join(run.workspacePath, "journal.jsonl") });
+    const engine = createEngine({
+      backend,
+      journal,
+      onAgentEvent: (event) => {
+        if (event.type === "error" && event.error) {
+          agentErrors.push(event.error);
+          void this.log({
+            level: "error",
+            event: "agent.error",
+            message: event.error,
+            runId: run.id,
+            definitionId: definition.id,
+            data: { label: event.label ?? null, phase: event.phase ?? null },
+          });
+        } else if (event.type === "retry" && event.error) {
+          void this.log({
+            level: "warn",
+            event: "agent.retry",
+            message: event.error,
+            runId: run.id,
+            definitionId: definition.id,
+            data: {
+              label: event.label ?? null,
+              attempt: event.attempt ?? null,
+            },
+          });
+        }
+      },
+    });
+    try {
+      const result = await engine.run(definition.source, {
+        args: buildWorkflowEngineArgs({
+          args: run.args,
+          workspacePath: run.workspacePath,
+          runId: run.id,
+        }),
+      });
+      return { result, agentErrors };
     } finally {
       await engine.dispose();
     }
+  }
+
+  /**
+   * One Paseo workspace per workflow run for all `agent()` / structured retries.
+   * Persists `run.workspaceId` so the UI and cancel paths can see it.
+   */
+  private async resolveRunAgentWorkspace(
+    definition: WorkflowDefinition,
+    run: WorkflowRun,
+  ): Promise<string | null> {
+    if (run.workspaceId) {
+      return run.workspaceId;
+    }
+    if (!this.ensureAgentWorkspace) {
+      return null;
+    }
+    const workspaceId = await this.ensureAgentWorkspace({
+      cwd: run.cwd,
+      runId: run.id,
+      title: resolveWorkflowWorkspaceTitle(definition, run),
+    });
+    const updated = await this.store.updateRun(run.id, (current) => ({
+      ...current,
+      workspaceId,
+    }));
+    if (updated) {
+      run.workspaceId = workspaceId;
+    }
+    await this.log({
+      event: "run.workspace",
+      message: `workspace ${workspaceId}`,
+      runId: run.id,
+      definitionId: definition.id,
+      data: { workspaceId, cwd: run.cwd },
+    });
+    return workspaceId;
+  }
+
+  /** Log each host agent attempt into the dedicated workflow event stream. */
+  private wrapHostWithRunLogs(
+    host: PaseoAgentHost,
+    run: WorkflowRun,
+    definitionId: string,
+  ): PaseoAgentHost {
+    return {
+      runAgent: async (request) => {
+        await this.log({
+          event: "agent.start",
+          message:
+            `${request.provider}${request.model ? `/${request.model}` : ""} ${request.title ?? ""}`.trim(),
+          runId: run.id,
+          definitionId,
+          data: {
+            provider: request.provider,
+            model: request.model ?? null,
+            workspaceId: request.workspaceId ?? null,
+            isolation: request.isolation ?? null,
+          },
+        });
+        const result = await host.runAgent({
+          ...request,
+          labels: {
+            ...request.labels,
+            "paseo.workflow-run-id": run.id,
+          },
+        });
+        await this.log({
+          level: result.error ? "error" : "info",
+          event: result.error ? "agent.failed" : "agent.done",
+          message: result.error ?? `ok ${result.text?.length ?? 0}c`,
+          runId: run.id,
+          definitionId,
+          data: { agentId: result.agentId ?? null },
+        });
+        return result;
+      },
+    };
   }
 }

@@ -200,6 +200,23 @@ Do not treat `onChange(-1)` as a close by itself. In a stacked
 another pushed sheet. Close React state from `onDismiss`; use `onChange` only to
 track phase.
 
+## Gotcha 7 — Web tooltips must share the overlay root with AdaptiveModalSheet
+
+Desktop `AdaptiveModalSheet` portals into `#overlay-root` (`z-index: 9999` on
+`<body>`). A tooltip that mounts at an app-tree `@gorhom/portal` host paints
+**under** that entire overlay, so it looks clipped by the modal card (or dimmed
+by the backdrop).
+
+On web, `TooltipContent` always `createPortal`s into `getOverlayRoot()` with
+`OVERLAY_Z.floating` (above `OVERLAY_Z.modal`, below toasts) and calls
+`raiseOverlayRoot()`.
+
+Do **not** route web tooltips to `useBottomSheetModalInternal().hostName`.
+`BottomSheetModalProvider` exposes that hostName for the whole app, even when no
+sheet is open — using it parks the tooltip under `#overlay-root` and recreates
+the clip bug. Native still uses the bottom-sheet portal (or a transparent
+`Modal`) so tooltips share the sheet window.
+
 ## Recipe for a new anchored panel
 
 Before you write a new one, ask:

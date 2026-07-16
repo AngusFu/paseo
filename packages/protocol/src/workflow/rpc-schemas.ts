@@ -3,6 +3,7 @@ import {
   KanbanWorkflowFilterSchema,
   KanbanWorkflowRuleSchema,
   WorkflowDefinitionSchema,
+  WorkflowLogEntrySchema,
   WorkflowRunSchema,
 } from "./types.js";
 
@@ -70,11 +71,27 @@ export const WorkflowRunDispatchRequestSchema = z.object({
   args: z.record(z.string(), z.unknown()).optional(),
   cwd: z.string().optional(),
   repoPath: z.string().optional(),
+  workspaceTitle: z.string().optional(),
 });
 export const WorkflowRunCancelRequestSchema = z.object({
   type: z.literal("workflow.run.cancel.request"),
   requestId: z.string(),
   runId: z.string(),
+});
+export const WorkflowRunLogsRequestSchema = z.object({
+  type: z.literal("workflow.run.logs.request"),
+  requestId: z.string(),
+  runId: z.string(),
+  /** Exclusive lower bound — return entries with `seq > afterSeq`. */
+  afterSeq: z.number().optional(),
+  /** Page size (server clamps; default applies when omitted). */
+  limit: z.number().int().positive().optional(),
+});
+export const WorkflowRunLogsResultSchema = z.object({
+  entries: z.array(WorkflowLogEntrySchema),
+  nextSeq: z.number(),
+  /** True when more entries exist after this page (`seq > nextSeq`). */
+  hasMore: z.boolean().optional(),
 });
 export const KanbanRuleListRequestSchema = z.object({
   type: z.literal("kanban.rule.list.request"),
@@ -145,6 +162,10 @@ export const WorkflowRunDispatchResponseSchema = response(
 export const WorkflowRunCancelResponseSchema = response(
   "workflow.run.cancel.response",
   WorkflowRunSchema.nullable(),
+);
+export const WorkflowRunLogsResponseSchema = response(
+  "workflow.run.logs.response",
+  WorkflowRunLogsResultSchema,
 );
 export const KanbanRuleListResponseSchema = response(
   "kanban.rule.list.response",

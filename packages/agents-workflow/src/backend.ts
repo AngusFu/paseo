@@ -28,8 +28,22 @@ export interface AgentSpec {
   phase?: string;
   /** Model id (backend-interpreted). */
   model?: string;
-  /** Reasoning effort (backend-interpreted). */
-  effort?: Effort;
+  /**
+   * Reasoning effort / thinking option id (backend-interpreted).
+   * On Paseo this maps to `thinkingOptionId` / `paseo run --thinking`.
+   */
+  effort?: Effort | string;
+  /**
+   * Provider mode id (backend-interpreted).
+   * On Paseo this maps to `modeId` / `paseo run --mode`.
+   */
+  mode?: string;
+  /**
+   * Provider feature values (backend-interpreted).
+   * On Paseo this maps to createAgent `features` / session `featureValues`
+   * (e.g. `{ fast_mode: true }`).
+   */
+  featureValues?: Record<string, unknown>;
   /** Provider id (backend-interpreted; the superset's multi-provider field). */
   provider?: string;
   /** e.g. 'worktree'. */

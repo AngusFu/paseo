@@ -100,4 +100,27 @@ describe("parseWorkflowDispatchInput", () => {
       repoPath: "/repo",
     });
   });
+
+  test("folds convenience agent defaults into args", () => {
+    expect(
+      parseWorkflowDispatchInput("wf_1", {
+        arg: ["task=fix login"],
+        provider: "claude",
+        model: "opus",
+        thinking: "high",
+        mode: "agent",
+        fast: true,
+      }),
+    ).toEqual({
+      definitionId: "wf_1",
+      args: {
+        task: "fix login",
+        provider: "claude",
+        model: "opus",
+        effort: "high",
+        mode: "agent",
+        fast: true,
+      },
+    });
+  });
 });

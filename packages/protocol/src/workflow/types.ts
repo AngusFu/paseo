@@ -36,6 +36,22 @@ export const WorkflowRunSchema = z.object({
 });
 export type WorkflowRun = z.infer<typeof WorkflowRunSchema>;
 
+/** Append-only workflow event log entry (per-run + global jsonl). */
+export const WorkflowLogLevelSchema = z.enum(["debug", "info", "warn", "error"]);
+export type WorkflowLogLevel = z.infer<typeof WorkflowLogLevelSchema>;
+
+export const WorkflowLogEntrySchema = z.object({
+  seq: z.number(),
+  ts: z.string(),
+  level: WorkflowLogLevelSchema,
+  event: z.string(),
+  message: z.string(),
+  runId: z.string().optional(),
+  definitionId: z.string().optional(),
+  data: z.record(z.string(), z.unknown()).optional(),
+});
+export type WorkflowLogEntry = z.infer<typeof WorkflowLogEntrySchema>;
+
 export const KanbanWorkflowFilterSchema = z.object({
   labelsAny: z.array(z.string()).optional(),
   titleRegex: z.string().optional(),
@@ -73,6 +89,8 @@ export interface DispatchWorkflowRunInput {
   args?: Record<string, unknown>;
   cwd?: string;
   repoPath?: string;
+  /** Display title for the Paseo workspace minted for this run's agents. */
+  workspaceTitle?: string;
 }
 
 export interface CreateKanbanWorkflowRuleInput {

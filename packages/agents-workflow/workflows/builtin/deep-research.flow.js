@@ -126,11 +126,7 @@ const REPORT_SCHEMA = {
 
 // ─── Phase 0: Scope — decompose question into search angles ───
 phase("Scope");
-const QUESTION =
-  (typeof args === "string" && args.trim()) ||
-  (typeof args === "object" && args && typeof args.task === "string" && args.task.trim()) ||
-  (typeof args === "object" && args && typeof args.prompt === "string" && args.prompt.trim()) ||
-  "";
+const QUESTION = (typeof args === "string" && args.trim()) || "";
 if (!QUESTION) {
   return {
     error:

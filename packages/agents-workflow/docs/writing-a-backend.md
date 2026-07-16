@@ -12,8 +12,18 @@ abstract class AgentBackend {
 }
 ```
 
-`AgentSpec` 进(引擎已拼好 persona+task 的 `prompt` + `label`/`phase`/`model`/`effort`/`provider`/`isolation`/`labels`)。
+`AgentSpec` 进(引擎已拼好 persona+task 的 `prompt` +
+`label`/`phase`/`model`/`effort`/`mode`/`featureValues`/`provider`/`isolation`/`labels`)。
 `AgentResult` 出:`{ text?, error?, usage?: { outputTokens? } }`。
+
+Paseo 映射(供对照):
+
+| AgentSpec            | `paseo run` / createAgent          |
+| -------------------- | ---------------------------------- |
+| `effort`             | `--thinking` / `thinking`          |
+| `mode`               | `--mode` / `mode`                  |
+| `featureValues`      | `--feature key=value` / `features` |
+| `provider` / `model` | `--provider` / `--model`           |
 
 ## 三条铁律
 
@@ -35,7 +45,10 @@ export class MyBackend extends AgentBackend {
     try {
       const text = await callMyAgentSomehow(spec.prompt, {
         model: spec.model,
-        provider: spec.provider, // 自解释 spec 字段
+        provider: spec.provider,
+        effort: spec.effort,
+        mode: spec.mode,
+        featureValues: spec.featureValues,
       });
       return { text, usage: { outputTokens: countTokens(text) } };
     } catch (e) {
@@ -73,7 +86,8 @@ constructor(opts: { exec?: (args: string[]) => Promise<string>; ... } = {}) {
 ## 参考实现
 
 - `src/backends/mock.ts` —— 测试替身。`MockBackend.auto()` 从 prompt 里的 JSON Schema 合成 valid 实例(让任意 workflow 干跑到底);`.scripted({kw:reply})` 关键字映射。
-- `src/backends/paseo.ts` —— 真子进程(`paseo run --json` + logs 抓文本 + inspect 取 usage)。展示注入 exec、never-throws、多字段映射、flag 注入守卫。
+- `src/backends/paseo.ts` —— 真子进程(`paseo run --json` + logs 抓文本 + inspect 取 usage)。展示注入 exec、never-throws、多字段映射(`--thinking`/`--mode`/`--feature`)、flag 注入守卫。
+- `src/backends/paseo-host.ts` —— daemon 内注入 `PaseoAgentHost`(createAgent)，转发 `thinkingOptionId`/`modeId`/`featureValues`。
 
 ## 多 provider(P3+)
 

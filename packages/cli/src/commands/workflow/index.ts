@@ -74,6 +74,14 @@ export function createWorkflowCommand(): Command {
         collectMultiple,
         [],
       )
+      .option("--provider <provider>", "Default provider for agent() calls")
+      .option("--model <model>", "Default model for agent() calls")
+      .option(
+        "--thinking <id>",
+        "Default thinking/effort option id for agent() calls (also --arg effort=...)",
+      )
+      .option("--mode <mode>", "Default provider mode for agent() calls")
+      .option("--fast", "Enable Claude-style fast_mode for agent() calls")
       .option("--cwd <path>", "Working directory override")
       .option("--repo-path <path>", "Repo path hint for the run"),
   ).action(withOutput(runRunCommand));

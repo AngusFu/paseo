@@ -15,6 +15,7 @@ const RN_WEB_MODAL_Z_INDEX = 9999;
  *
  * Z-index scale within overlay root:
  * - Modal backdrop/content: 10
+ * - Floating (tooltips): 15
  * - Toast: 20
  */
 export function getOverlayRoot(): HTMLElement {
@@ -55,5 +56,6 @@ export function raiseOverlayRoot(): void {
 
 export const OVERLAY_Z = {
   modal: 10,
+  floating: 15,
   toast: 20,
 } as const;

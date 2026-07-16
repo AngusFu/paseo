@@ -1923,10 +1923,18 @@ export class Session {
             args: msg.args,
             cwd: msg.cwd,
             repoPath: msg.repoPath,
+            workspaceTitle: msg.workspaceTitle,
           }),
         );
       case "workflow.run.cancel.request":
         return this.handleWorkflowRequest(msg, () => this.workflowService.cancel(msg.runId));
+      case "workflow.run.logs.request":
+        return this.handleWorkflowRequest(msg, () =>
+          this.workflowService.listRunLogs(msg.runId, {
+            afterSeq: msg.afterSeq ?? 0,
+            ...(msg.limit !== undefined ? { limit: msg.limit } : {}),
+          }),
+        );
       case "kanban.rule.list.request":
         return this.handleWorkflowRequest(msg, () => this.workflowService.listRules());
       case "kanban.rule.create.request":

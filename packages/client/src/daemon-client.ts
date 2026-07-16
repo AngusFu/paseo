@@ -5342,6 +5342,7 @@ export class DaemonClient {
         ...(options.args !== undefined ? { args: options.args } : {}),
         ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
         ...(options.repoPath !== undefined ? { repoPath: options.repoPath } : {}),
+        ...(options.workspaceTitle !== undefined ? { workspaceTitle: options.workspaceTitle } : {}),
       },
     });
   }
@@ -5353,6 +5354,21 @@ export class DaemonClient {
     return this.sendNamespacedCorrelatedSessionRequest({
       requestId,
       message: { type: "workflow.run.cancel.request", runId },
+    });
+  }
+
+  async workflowRunLogs(
+    runId: string,
+    options?: { afterSeq?: number; limit?: number; requestId?: string },
+  ): Promise<Extract<SessionOutboundMessage, { type: "workflow.run.logs.response" }>["payload"]> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options?.requestId,
+      message: {
+        type: "workflow.run.logs.request",
+        runId,
+        ...(options?.afterSeq !== undefined ? { afterSeq: options.afterSeq } : {}),
+        ...(options?.limit !== undefined ? { limit: options.limit } : {}),
+      },
     });
   }
 

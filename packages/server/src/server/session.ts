@@ -1910,6 +1910,8 @@ export class Session {
         );
       case "workflow.definition.list_builtins.request":
         return this.handleWorkflowRequest(msg, () => this.workflowService.listBuiltins());
+      case "workflow.authoring.prepare.request":
+        return this.handleWorkflowRequest(msg, () => this.workflowService.prepareAuthoring());
       case "workflow.run.list.request":
         return this.handleWorkflowRequest(msg, () => this.workflowService.listRuns());
       case "workflow.run.get.request":

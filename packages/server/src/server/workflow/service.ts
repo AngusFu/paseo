@@ -1,20 +1,36 @@
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createEngine, Journal, MockBackend, PaseoBackend } from "@getpaseo/agents-workflow";
-import type {
-  CreateKanbanWorkflowRuleInput,
-  CreateWorkflowDefinitionInput,
-  DispatchWorkflowRunInput,
-  KanbanWorkflowRule,
-  UpdateKanbanWorkflowRuleInput,
-  UpdateWorkflowDefinitionInput,
-  WorkflowDefinition,
-  WorkflowRun,
+import {
+  createEngine,
+  Journal,
+  listWorkflows,
+  MockBackend,
+  PaseoBackend,
+} from "@getpaseo/agents-workflow";
+import {
+  WorkflowDefinitionSchema,
+  type CreateKanbanWorkflowRuleInput,
+  type CreateWorkflowDefinitionInput,
+  type DispatchWorkflowRunInput,
+  type KanbanWorkflowRule,
+  type UpdateKanbanWorkflowRuleInput,
+  type UpdateWorkflowDefinitionInput,
+  type WorkflowDefinition,
+  type WorkflowRun,
 } from "@getpaseo/protocol/workflow/types";
 import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 import { WorkflowQueue } from "./queue.js";
 import { WorkflowStore } from "./store.js";
+
+const AUTHORING_README = `# Paseo workflows
+
+Author \`*.flow.js\` definitions under \`definitions/\`.
+
+Use the \`paseo-create-workflow\` skill (or ask the agent in this workspace) to
+create or edit workflow scripts. Built-in templates live in the
+\`@getpaseo/agents-workflow\` package and can be copied into \`definitions/\`.
+`;
 
 export function matchesKanbanWorkflowRule(
   rule: KanbanWorkflowRule,
@@ -64,7 +80,34 @@ export class WorkflowService {
   }
 
   async listBuiltins(): Promise<WorkflowDefinition[]> {
-    return (await this.store.listDefinitions()).filter((definition) => definition.builtin);
+    const now = new Date().toISOString();
+    return listWorkflows()
+      .filter((workflow) => workflow.origin === "builtin")
+      .map((workflow) =>
+        WorkflowDefinitionSchema.parse({
+          id: `builtin:${workflow.name}`,
+          name: workflow.name,
+          description:
+            typeof workflow.meta.description === "string" ? workflow.meta.description : null,
+          source: workflow.source,
+          builtin: true,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      );
+  }
+
+  /** Ensure `$PASEO_HOME/workflows` exists for agent-authored `*.flow.js` definitions. */
+  async prepareAuthoring(): Promise<{ cwd: string }> {
+    const cwd = join(this.paseoHome, "workflows");
+    await mkdir(join(cwd, "definitions"), { recursive: true });
+    const readmePath = join(cwd, "README.md");
+    try {
+      await access(readmePath);
+    } catch {
+      await writeFile(readmePath, AUTHORING_README, "utf8");
+    }
+    return { cwd };
   }
 
   async getDefinition(id: string): Promise<WorkflowDefinition | null> {

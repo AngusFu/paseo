@@ -71,6 +71,27 @@ args: `{ cardId, title, url, externalId, labels, metadata, runtimeDir, key }`.
 
 Re-sync of an existing card does **not** re-trigger.
 
+## CLI
+
+`paseo workflow` talks to the daemon over the same RPCs as the app (requires
+`server_info.features.workflow`):
+
+```bash
+paseo workflow ls
+paseo workflow inspect <definitionId>
+paseo workflow create --name "Bug sweep" --source-file ./bug-sweep.flow.js
+paseo workflow update <definitionId> --name "Renamed"
+paseo workflow rm <definitionId>
+paseo workflow builtins
+paseo workflow run <definitionId> --arg cardId=ABC-1 --cwd /path/to/repo
+paseo workflow runs ls
+paseo workflow runs inspect <runId>
+paseo workflow runs cancel <runId>
+```
+
+For local script validation without the daemon, use `aw` from
+`@getpaseo/agents-workflow` (`aw list` / `aw validate` / `aw run`).
+
 ## Authoring
 
 Use `skills/paseo-create-workflow` or the Workflow page (copy builtin / blank

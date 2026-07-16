@@ -47,6 +47,13 @@ export const WorkflowDefinitionListBuiltinsRequestSchema = z.object({
   type: z.literal("workflow.definition.list_builtins.request"),
   requestId: z.string(),
 });
+export const WorkflowAuthoringPrepareRequestSchema = z.object({
+  type: z.literal("workflow.authoring.prepare.request"),
+  requestId: z.string(),
+});
+export const WorkflowAuthoringPrepareResultSchema = z.object({
+  cwd: z.string(),
+});
 export const WorkflowRunListRequestSchema = z.object({
   type: z.literal("workflow.run.list.request"),
   requestId: z.string(),
@@ -118,6 +125,10 @@ export const WorkflowDefinitionDeleteResponseSchema = response(
 export const WorkflowDefinitionListBuiltinsResponseSchema = response(
   "workflow.definition.list_builtins.response",
   z.array(WorkflowDefinitionSchema),
+);
+export const WorkflowAuthoringPrepareResponseSchema = response(
+  "workflow.authoring.prepare.response",
+  WorkflowAuthoringPrepareResultSchema,
 );
 export const WorkflowRunListResponseSchema = response(
   "workflow.run.list.response",

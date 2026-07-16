@@ -5238,6 +5238,18 @@ export class DaemonClient {
     });
   }
 
+  async workflowDefinitionGet(
+    definitionId: string,
+    requestId?: string,
+  ): Promise<
+    Extract<SessionOutboundMessage, { type: "workflow.definition.get.response" }>["payload"]
+  > {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workflow.definition.get.request", definitionId },
+    });
+  }
+
   async workflowDefinitionCreate(
     options: WorkflowDefinitionCreateOptions,
   ): Promise<
@@ -5279,6 +5291,17 @@ export class DaemonClient {
     });
   }
 
+  async workflowAuthoringPrepare(
+    requestId?: string,
+  ): Promise<
+    Extract<SessionOutboundMessage, { type: "workflow.authoring.prepare.response" }>["payload"]
+  > {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workflow.authoring.prepare.request" },
+    });
+  }
+
   async workflowDefinitionDelete(
     definitionId: string,
     requestId?: string,
@@ -5295,6 +5318,16 @@ export class DaemonClient {
     return this.sendNamespacedCorrelatedSessionRequest({
       requestId,
       message: { type: "workflow.run.list.request" },
+    });
+  }
+
+  async workflowRunGet(
+    runId: string,
+    requestId?: string,
+  ): Promise<Extract<SessionOutboundMessage, { type: "workflow.run.get.response" }>["payload"]> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workflow.run.get.request", runId },
     });
   }
 

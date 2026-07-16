@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { WorkflowQueue } from "./queue.js";
 import { WorkflowStore } from "./store.js";
-import { matchesKanbanWorkflowRule } from "./service.js";
+import { matchesKanbanWorkflowRule, WorkflowService } from "./service.js";
 import { KanbanStore } from "../kanban/store.js";
 
 const dirs: string[] = [];
@@ -38,6 +38,25 @@ describe("WorkflowStore", () => {
     });
     expect((await store.listDefinitions()).map((item) => item.id)).toEqual([definition.id]);
     expect(await store.getRun(run.id)).toEqual(run);
+  });
+});
+
+describe("WorkflowService builtins and authoring", () => {
+  it("lists package builtin workflows", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const service = new WorkflowService({ paseoHome: dir });
+    const builtins = await service.listBuiltins();
+    expect(builtins.length).toBeGreaterThan(0);
+    expect(builtins.every((item) => item.builtin && item.id.startsWith("builtin:"))).toBe(true);
+  });
+
+  it("prepares the authoring workspace under paseo home", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const service = new WorkflowService({ paseoHome: dir });
+    const prepared = await service.prepareAuthoring();
+    expect(prepared.cwd).toBe(join(dir, "workflows"));
   });
 });
 

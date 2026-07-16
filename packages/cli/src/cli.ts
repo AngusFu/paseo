@@ -9,6 +9,7 @@ import { createScheduleCommand } from "./commands/schedule/index.js";
 import { createKanbanCommand } from "./commands/kanban/index.js";
 import { createSpeechCommand } from "./commands/speech/index.js";
 import { createTerminalCommand } from "./commands/terminal/index.js";
+import { createWorkflowCommand } from "./commands/workflow/index.js";
 import { createWorktreeCommand } from "./commands/worktree/index.js";
 import { createHooksCommand } from "./commands/hooks.js";
 import { startCommand as daemonStartCommand } from "./commands/daemon/start.js";
@@ -161,6 +162,9 @@ export function createCli(): Command {
 
   // Kanban commands
   program.addCommand(createKanbanCommand());
+
+  // Workflow commands
+  program.addCommand(createWorkflowCommand());
 
   // Permission commands
   program.addCommand(createPermitCommand());

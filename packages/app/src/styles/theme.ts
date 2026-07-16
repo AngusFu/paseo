@@ -170,6 +170,7 @@ const lightSemanticColors = {
   foreground: "#1a1a1e",
   foregroundMuted: "#71717a",
   foregroundProse: "rgba(26, 26, 30, 0.72)",
+  foregroundExtraMuted: "#a1a1aa",
 
   // Controls
   scrollbarHandle: "#3f3f46", // zinc-700
@@ -248,6 +249,7 @@ interface DarkThemeConfig {
   surfaceSidebar: string;
   surfaceSidebarHover: string;
   foregroundMuted: string;
+  foregroundExtraMuted: string;
   scrollbarHandle: string;
   border: string;
   borderAccent: string;
@@ -289,6 +291,7 @@ function buildDarkSemanticColors(tint: DarkThemeConfig) {
     foreground: "#fafafa",
     foregroundMuted: tint.foregroundMuted,
     foregroundProse: "rgba(250, 250, 250, 0.78)",
+    foregroundExtraMuted: tint.foregroundExtraMuted,
 
     scrollbarHandle: tint.scrollbarHandle,
 
@@ -350,6 +353,7 @@ const paseoDarkColors = buildDarkSemanticColors({
   surfaceSidebar: "#141716",
   surfaceSidebarHover: "#1c1f1e",
   foregroundMuted: "#A1A5A4",
+  foregroundExtraMuted: "#717574",
   scrollbarHandle: "#717574",
   border: "#252B2A",
   borderAccent: "#2F3534",
@@ -369,6 +373,7 @@ const zincDarkColors = buildDarkSemanticColors({
   surfaceSidebar: "#131316",
   surfaceSidebarHover: "#1b1b1e",
   foregroundMuted: "#a1a1aa",
+  foregroundExtraMuted: "#71717a",
   scrollbarHandle: "#71717a",
   border: "#27272a",
   borderAccent: "#303036",
@@ -389,6 +394,7 @@ const midnightDarkColors = buildDarkSemanticColors({
   surfaceSidebar: "#121420",
   surfaceSidebarHover: "#1a1c28",
   foregroundMuted: "#9a9db0",
+  foregroundExtraMuted: "#6b6e82",
   scrollbarHandle: "#6b6e82",
   border: "#242636",
   borderAccent: "#2e3040",
@@ -408,6 +414,7 @@ const claudeDarkColors = buildDarkSemanticColors({
   surfaceSidebar: "#1a1918",
   surfaceSidebarHover: "#222120",
   foregroundMuted: "#ada9a5",
+  foregroundExtraMuted: "#78746f",
   scrollbarHandle: "#78746f",
   border: "#2c2a27",
   borderAccent: "#36332f",
@@ -427,6 +434,7 @@ const ghosttyDarkColors = buildDarkSemanticColors({
   surfaceSidebar: "#21252d",
   surfaceSidebarHover: "#292d36",
   foregroundMuted: "#c8ccd8",
+  foregroundExtraMuted: "#a0a4b2",
   scrollbarHandle: "#a0a4b2",
   border: "#353a47",
   borderAccent: "#3f4454",

@@ -162,7 +162,6 @@ test.describe("Worktree restore", () => {
       page.getByTestId(`workspace-deck-entry-${serverId}:${worktree.workspaceId}`),
     ).toHaveCount(1);
     expect(await fetchAgentArchivedAt(client, agent.id)).toBeNull();
->>>>>>> 5da6548af (Improve the archived workspace restore flow (#2002))
   });
 
   test("opening a recoverable archived workspace shows an explicit Restore action without mutating it", async ({

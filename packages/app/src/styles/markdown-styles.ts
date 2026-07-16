@@ -43,7 +43,7 @@ export function createMarkdownStyles(theme: Theme) {
 
     paragraph: {
       marginTop: 0,
-      marginBottom: theme.spacing[2],
+      marginBottom: theme.spacing[1.5],
       flexWrap: "wrap" as const,
       flexDirection: "row" as const,
       alignItems: "flex-start" as const,
@@ -326,7 +326,7 @@ export function createMarkdownStyles(theme: Theme) {
     hr: {
       backgroundColor: theme.colors.border,
       height: 1,
-      marginVertical: theme.spacing[6],
+      marginVertical: theme.spacing[3],
     },
 
     // =========================================================================
@@ -392,7 +392,7 @@ export function createCompactMarkdownStyles(theme: Theme) {
 
     paragraph: {
       ...baseStyles.paragraph,
-      marginBottom: theme.spacing[2],
+      marginBottom: theme.spacing[1.5],
     },
 
     code_inline: {

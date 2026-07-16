@@ -3708,6 +3708,7 @@ function WorkspaceScreenContent({
               client={client}
               serverId={normalizedServerId}
               cwd={workspaceDirectory}
+              workspaceId={normalizedWorkspaceId}
               onClose={closeImportSheet}
               onImportedAgent={handleImportedAgent}
             />

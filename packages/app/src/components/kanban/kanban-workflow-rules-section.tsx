@@ -23,9 +23,12 @@ function labelsFromInput(value: string): string[] | undefined {
 export function KanbanWorkflowRulesSection({
   serverId,
   sourceId,
+  /** When true, omit the section chrome (title/top border) — used as a sheet tab. */
+  asTab = false,
 }: {
   serverId: string;
   sourceId: string;
+  asTab?: boolean;
 }): ReactElement {
   const { t } = useTranslation();
   const { rules } = useKanbanWorkflowRules(serverId);
@@ -64,8 +67,8 @@ export function KanbanWorkflowRulesSection({
   }, [definitionId, enabled, labels, mutations, projectKey, sourceId, titleRegex]);
 
   return (
-    <View style={styles.section}>
-      <Text style={styles.title}>{t("kanban.workflowRules.title")}</Text>
+    <View style={asTab ? styles.tabBody : styles.section}>
+      {asTab ? null : <Text style={styles.title}>{t("kanban.workflowRules.title")}</Text>}
       {sourceRules.map((rule) => {
         const definition = definitions.find((item) => item.id === rule.workflowDefinitionId);
         return (
@@ -129,6 +132,9 @@ const styles = StyleSheet.create((theme) => ({
     borderTopColor: theme.colors.border,
     paddingTop: theme.spacing[4],
     marginTop: theme.spacing[2],
+  },
+  tabBody: {
+    gap: theme.spacing[3],
   },
   title: {
     color: theme.colors.foreground,

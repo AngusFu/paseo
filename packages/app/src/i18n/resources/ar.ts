@@ -2274,6 +2274,8 @@ export const ar: TranslationResources = {
       queryHint: "Jira = المسندة إليّ وغير المحلولة؛ GitLab = طلبات الدمج بانتظار مراجعتي.",
       createTitle: "مصدر جديد",
       editTitle: "تعديل المصدر",
+      tabSource: "المصدر",
+      tabWorkflowRules: "قواعد سير العمل",
       kind: "النوع",
       jira: "Jira",
       gitlab: "GitLab",

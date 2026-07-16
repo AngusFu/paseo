@@ -57,7 +57,10 @@ import { useWorkflowRun } from "@/hooks/use-workflow-run";
 import { useWorkflowRunLogs } from "@/hooks/use-workflow-run-logs";
 import { useWorkflowRuns } from "@/hooks/use-workflow-runs";
 import { buildSelectableProviderSelectorProviders } from "@/provider-selection/provider-selection";
-import { resolveDefaultModelId } from "@/provider-selection/resolve-agent-form";
+import {
+  resolveDefaultModelId,
+  resolvePreferredAgentModeId,
+} from "@/provider-selection/resolve-agent-form";
 import { useHostFeature } from "@/runtime/host-features";
 import {
   useHostRuntimeClient,
@@ -764,6 +767,13 @@ function WorkflowDispatchSheet({
     () => selectedProviderEntry?.modes ?? [],
     [selectedProviderEntry?.modes],
   );
+  const selectedProviderDefinition = useMemo(
+    () =>
+      selectedProvider
+        ? (providerDefinitions.find((entry) => entry.id === selectedProvider) ?? undefined)
+        : undefined,
+    [providerDefinitions, selectedProvider],
+  );
   const draftFeatures = useDraftAgentFeatures({
     serverId,
     provider: selectedProvider,
@@ -826,9 +836,25 @@ function WorkflowDispatchSheet({
       if (current && modeOptions.some((mode) => mode.id === current)) {
         return current;
       }
+      const preferredModeId = selectedProvider
+        ? preferences.providerPreferences?.[selectedProvider]?.mode
+        : undefined;
+      const resolved = resolvePreferredAgentModeId({
+        preferredModeId,
+        providerDef: selectedProviderDefinition,
+      });
+      if (resolved && modeOptions.some((mode) => mode.id === resolved)) {
+        return resolved;
+      }
       return selectedProviderEntry?.defaultModeId ?? modeOptions[0]?.id ?? "";
     });
-  }, [modeOptions, selectedProviderEntry?.defaultModeId]);
+  }, [
+    modeOptions,
+    preferences.providerPreferences,
+    selectedProvider,
+    selectedProviderDefinition,
+    selectedProviderEntry?.defaultModeId,
+  ]);
 
   useEffect(() => {
     if (cwd || projectTargets.length === 0) {

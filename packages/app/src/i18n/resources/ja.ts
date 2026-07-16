@@ -2301,6 +2301,8 @@ export const ja: TranslationResources = {
       queryHint: "Jira = 自分に割り当てられた未解決；GitLab = 自分のレビュー待ちの MR。",
       createTitle: "新しいソース",
       editTitle: "ソースを編集",
+      tabSource: "ソース",
+      tabWorkflowRules: "ワークフロールール",
       kind: "種類",
       jira: "Jira",
       gitlab: "GitLab",

@@ -8,6 +8,7 @@ import {
   buildProviderDefinitionMap,
   buildProviderDefinitionMapForStatuses,
   resolveDefaultModel,
+  resolvePreferredAgentModeId,
   INITIAL_USER_MODIFIED,
   PENDING_AGENT_FORM_RESOLUTION,
   type AgentFormReducerState,
@@ -117,6 +118,25 @@ describe("resolveDefaultModel", () => {
       { provider: "codex", id: "b", label: "B", isDefault: false },
     ];
     expect(resolveDefaultModel(models)?.id).toBe("a");
+  });
+});
+
+describe("resolvePreferredAgentModeId", () => {
+  it("prefers saved provider mode over the provider default", () => {
+    expect(
+      resolvePreferredAgentModeId({
+        preferredModeId: "bypassPermissions",
+        providerDef: TEST_CLAUDE_DEFINITION,
+      }),
+    ).toBe("bypassPermissions");
+  });
+
+  it("falls back to provider default when no saved mode exists", () => {
+    expect(
+      resolvePreferredAgentModeId({
+        providerDef: TEST_CLAUDE_DEFINITION,
+      }),
+    ).toBe("default");
   });
 });
 

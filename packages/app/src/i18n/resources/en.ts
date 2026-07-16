@@ -2284,6 +2284,8 @@ export const en = {
       queryHint: "Jira = assigned to me & unresolved; GitLab = MRs awaiting my review.",
       createTitle: "New source",
       editTitle: "Edit source",
+      tabSource: "Source",
+      tabWorkflowRules: "Workflow rules",
       kind: "Type",
       jira: "Jira",
       gitlab: "GitLab",

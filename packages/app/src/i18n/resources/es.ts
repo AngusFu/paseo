@@ -2321,6 +2321,8 @@ export const es: TranslationResources = {
       queryHint: "Jira = asignadas a mí y sin resolver; GitLab = MR pendientes de mi revisión.",
       createTitle: "Nueva fuente",
       editTitle: "Editar fuente",
+      tabSource: "Fuente",
+      tabWorkflowRules: "Reglas de workflow",
       kind: "Tipo",
       jira: "Jira",
       gitlab: "GitLab",

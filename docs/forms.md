@@ -91,6 +91,31 @@ Empty states are only typeable inside `loaded` — a fetch that "succeeded"
 before hosts connected is `connecting`, not empty. Query keys carry real fetch
 inputs (host set, connection statuses), never synthetic version counters.
 
+## Sheet footer actions (edit forms)
+
+Create/edit sheets that use `AdaptiveModalSheet`'s `footer` prop own **all**
+primary decisions in that footer — including Delete on edit. Agents keep
+putting Delete in the scrollable body; that is wrong and has been fixed more
+than once.
+
+Canonical layout (copy `kanban-connection-form-sheet.tsx` /
+`kanban-card-sheet.tsx` / `kanban-source-form-sheet.tsx`):
+
+```
+Edit:   [Delete destructive]  ……spring……  [Cancel secondary] [Save default]
+Create: [Cancel secondary flex:1] [Create default flex:1]
+```
+
+Rules:
+
+1. **Delete lives in `footer`, never in the sheet body** below fields.
+2. Edit: Delete on the far left (`variant="destructive"`), a `flex: 1` spring,
+   then Cancel + Save on the right (no `flex: 1` on those two — they size to
+   content). Create: no Delete; Cancel/Create each get `footerButton` (`flex: 1`).
+3. Delete still goes through `confirmDialog({ destructive: true })` before
+   mutating — the footer button is the intent affordance, not the final confirm.
+4. Do not park Delete as a body `ghost`/`outline` button under the last field.
+
 ## Anti-patterns (reject in review on sight)
 
 - `useEffect` choreography impersonating construct/hydrate/resolve/destroy.
@@ -100,3 +125,5 @@ inputs (host set, connection statuses), never synthetic version counters.
 - `isLoading`/`isEmpty` boolean bags where a load-state union belongs.
 - Conditional mounting of hint/error rows that shifts layout (subtext renders
   only when present, but the pattern for that lives in `Field`, not ad hoc).
+- Delete / destructive remove controls rendered in the sheet **body** instead
+  of the `footer` (see above).

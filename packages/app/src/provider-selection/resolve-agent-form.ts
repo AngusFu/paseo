@@ -158,7 +158,7 @@ export function resolveThinkingOptionId(args: {
 
 const normalizeSelectedModeId = normalizeSelectedModelId;
 
-function resolvePreferredModeId(input: {
+export function resolvePreferredAgentModeId(input: {
   initialModeId?: string | null;
   preferredModeId?: string | null;
   providerDef: AgentProviderDefinition | undefined;
@@ -289,7 +289,7 @@ function resolveModeId(input: {
     input;
   if (userModified) return currentModeId;
   if (!provider) return "";
-  return resolvePreferredModeId({
+  return resolvePreferredAgentModeId({
     initialModeId: initialValues?.modeId,
     preferredModeId: providerPrefs?.mode,
     providerDef,
@@ -464,7 +464,7 @@ function pickNextModeForProvider(input: {
   providerPrefs: ProviderPrefs | undefined;
 }): string {
   const { providerDef, providerPrefs } = input;
-  return resolvePreferredModeId({
+  return resolvePreferredAgentModeId({
     preferredModeId: providerPrefs?.mode,
     providerDef,
   });

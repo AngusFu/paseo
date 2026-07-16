@@ -2315,6 +2315,8 @@ export const ru: TranslationResources = {
       queryHint: "Jira = назначенные мне и нерешённые; GitLab = MR, ожидающие моего ревью.",
       createTitle: "Новый источник",
       editTitle: "Изменить источник",
+      tabSource: "Источник",
+      tabWorkflowRules: "Правила workflow",
       kind: "Тип",
       jira: "Jira",
       gitlab: "GitLab",

@@ -2329,6 +2329,8 @@ export const fr: TranslationResources = {
         "Jira = qui me sont assignées et non résolues ; GitLab = MR en attente de ma revue.",
       createTitle: "Nouvelle source",
       editTitle: "Modifier la source",
+      tabSource: "Source",
+      tabWorkflowRules: "Règles de workflow",
       kind: "Type",
       jira: "Jira",
       gitlab: "GitLab",

@@ -42,7 +42,9 @@ Foreground is for the thing being acted on: row titles, section headings, the se
 
 Accent is the one CTA per surface. A `<Button variant="default">` filled with `accent` appears at most once on a page. Most pages have zero — settings is mostly toggles and text, the workspace pane is mostly content, the chat composer is the input itself.
 
-Destructive is a color, not a click. Restart-daemon and remove-host are `<Button variant="outline">` in the row trailing slot; the destructive surface only appears inside the `confirmDialog` (`packages/app/src/screens/settings/host-page.tsx:541-547`). Workspace archive opens a confirm dialog before any red appears (`packages/app/src/components/sidebar-workspace-list.tsx`). Red appears after the user has indicated intent.
+Destructive is a color, not a click — with one sheet-footer exception. On list/detail rows, restart-daemon and remove-host are `<Button variant="outline">` in the trailing slot; the filled destructive surface only appears inside the `confirmDialog` (`packages/app/src/screens/settings/host-page.tsx:541-547`). Workspace archive opens a confirm dialog before any red appears (`packages/app/src/components/sidebar-workspace-list.tsx`). Red appears after the user has indicated intent.
+
+**Exception — edit `AdaptiveModalSheet` footers:** Delete belongs in the sheet `footer` as `variant="destructive"` on the far left (Cancel/Save on the right). It still must open `confirmDialog` before mutating. Never put Delete in the scrollable body. See [docs/forms.md](forms.md) “Sheet footer actions”.
 
 ---
 
@@ -58,7 +60,7 @@ The button is `<Button>` (`packages/app/src/components/ui/button.tsx`). It has f
 
 `ghost` is structural and non-committal — no border, no fill. Back arrows, header toggles, "Load more" footers (`packages/app/src/screens/sessions-screen.tsx:54-63`), more-affordances. Ghost is used when the affordance is part of the chrome, not a decision.
 
-`destructive` is filled with `destructive`. It only appears inside a confirm. The button on the page is `outline`; the destructive button is the confirm button inside the dialog.
+`destructive` is filled with `destructive`. On pages/rows, prefer `outline` and keep the filled destructive button inside `confirmDialog`. On edit sheet footers, Delete itself is `destructive` (far left) and still confirms via `confirmDialog` — see [docs/forms.md](forms.md).
 
 Sizes: `xs` for ultra-tight inline triggers. `sm` for any button sitting in a row. `md` is the page default. `lg` is reserved for large standalone CTAs.
 

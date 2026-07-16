@@ -75,6 +75,10 @@ New cards from sync can automatically enqueue a workflow run. See
   `(source.kind, externalId)`), matching enabled rules enqueue runs.
 - Re-sync updates do not re-trigger. Card-level `trigger` / status-change
   auto-loop remains a separate follow-up (still not executed).
+- App UX: edit-source sheet has two tabs — **Source** (query/connection/…) and
+  **Workflow rules** (`KanbanWorkflowRulesSection`). Rules mutate immediately;
+  the rules tab footer is Close only (no Save). Create-source has no rules tab
+  until the source exists.
 
 ## Card-level trigger (reserved, not executed)
 

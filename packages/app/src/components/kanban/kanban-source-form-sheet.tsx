@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactElement } from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
@@ -41,6 +41,8 @@ export interface KanbanSourceFormSheetProps {
 }
 
 const DEFAULT_POLL_SECONDS = "300";
+
+type SourceFormTab = "source" | "workflowRules";
 
 // Default (editable) query per kind, matching the intended semantics:
 // Jira = issues assigned to me and still open; GitLab = MRs awaiting my review.
@@ -500,6 +502,19 @@ export function KanbanSourceFormSheet({
   const { connections } = useKanbanConnections(serverId);
   const columnsSupported = useHostFeature(serverId, "kanbanColumns");
 
+  // While the sheet animates closed, the parent clears its state so `source`
+  // becomes undefined and `mode` flips to "create". Rendering off the live props
+  // during that fade-out flashes the default (source) tab. Freeze the values used
+  // for rendering to their last-open state so the closing frame stays identical.
+  const stickyMode = useRef(mode);
+  const stickySource = useRef(source);
+  if (visible) {
+    stickyMode.current = mode;
+    stickySource.current = source;
+  }
+  const renderMode = visible ? mode : stickyMode.current;
+  const renderSource = visible ? source : stickySource.current;
+
   const [kind, setKind] = useState<KanbanSourceKind>(source?.kind ?? "jira");
   const [name, setName] = useState(source?.name ?? "");
   const [query, setQuery] = useState(source?.query ?? DEFAULT_QUERY[source?.kind ?? "jira"]);
@@ -553,9 +568,11 @@ export function KanbanSourceFormSheet({
   const header = useMemo<SheetHeader>(
     () => ({
       title:
-        mode === "edit" ? t("kanban.sourceForm.editTitle") : t("kanban.sourceForm.createTitle"),
+        renderMode === "edit"
+          ? t("kanban.sourceForm.editTitle")
+          : t("kanban.sourceForm.createTitle"),
     }),
-    [mode, t],
+    [renderMode, t],
   );
 
   const kindOptions = useMemo<SegmentedControlOption<KanbanSourceKind>[]>(
@@ -624,12 +641,65 @@ export function KanbanSourceFormSheet({
   }, [handleSubmit]);
 
   const handleDelete = useKanbanSourceDelete({ source, mutations, onClose, setSubmitError });
+  const isEdit = renderMode === "edit" && renderSource !== undefined;
+  const [activeTab, setActiveTab] = useState<SourceFormTab>("source");
+  const showWorkflowRulesTab = isEdit && renderSource !== undefined;
+  const onWorkflowRulesTab = showWorkflowRulesTab && activeTab === "workflowRules";
 
-  const footer = useMemo(
-    () => (
+  const tabOptions = useMemo<SegmentedControlOption<SourceFormTab>[]>(
+    () => [
+      {
+        value: "source",
+        label: t("kanban.sourceForm.tabSource"),
+        testID: "kanban-source-tab-source",
+      },
+      {
+        value: "workflowRules",
+        label: t("kanban.sourceForm.tabWorkflowRules"),
+        testID: "kanban-source-tab-workflow-rules",
+      },
+    ],
+    [t],
+  );
+
+  const footer = useMemo(() => {
+    // Workflow-rules tab saves immediately via its own mutations — only Close.
+    if (onWorkflowRulesTab) {
+      return (
+        <View style={styles.footer}>
+          <Button
+            size={controlSize}
+            style={styles.footerButton}
+            variant="secondary"
+            onPress={onClose}
+            testID="kanban-source-rules-close"
+          >
+            {t("common.actions.close")}
+          </Button>
+        </View>
+      );
+    }
+
+    // Same layout as the connection sheet: destructive Delete on the far left,
+    // a spring, then Cancel/Save on the right. Create mode has no Delete and
+    // the two buttons split the row.
+    return (
       <View style={styles.footer}>
+        {isEdit ? (
+          <Button
+            size={controlSize}
+            variant="destructive"
+            onPress={handleDelete}
+            disabled={isSubmitting}
+            testID="kanban-source-delete"
+          >
+            {t("kanban.sources.delete")}
+          </Button>
+        ) : null}
+        {isEdit ? <View style={styles.footerSpring} /> : null}
         <Button
-          style={styles.footerButton}
+          size={controlSize}
+          style={isEdit ? undefined : styles.footerButton}
           variant="secondary"
           onPress={onClose}
           disabled={isSubmitting}
@@ -637,19 +707,29 @@ export function KanbanSourceFormSheet({
           {t("common.actions.cancel")}
         </Button>
         <Button
-          style={styles.footerButton}
+          size={controlSize}
+          style={isEdit ? undefined : styles.footerButton}
           variant="default"
           onPress={handleSubmitPress}
           disabled={!canSubmit}
           loading={isSubmitting}
           testID="kanban-source-submit"
         >
-          {mode === "edit" ? t("kanban.sourceForm.save") : t("kanban.sourceForm.create")}
+          {isEdit ? t("kanban.sourceForm.save") : t("kanban.sourceForm.create")}
         </Button>
       </View>
-    ),
-    [canSubmit, handleSubmitPress, isSubmitting, mode, onClose, t],
-  );
+    );
+  }, [
+    canSubmit,
+    controlSize,
+    handleDelete,
+    handleSubmitPress,
+    isEdit,
+    isSubmitting,
+    onClose,
+    onWorkflowRulesTab,
+    t,
+  ]);
 
   return (
     <AdaptiveModalSheet
@@ -660,123 +740,124 @@ export function KanbanSourceFormSheet({
       webScrollbar
       testID="kanban-source-form-sheet"
     >
-      <SourceKindField
-        mode={mode}
-        kind={kind}
-        onChange={handleKindChange}
-        options={kindOptions}
-        size={controlSize}
-      />
-
-      <Field label={t("kanban.sourceForm.name")}>
-        <FormTextInput
+      {showWorkflowRulesTab ? (
+        <SegmentedControl
           size={controlSize}
-          testID="kanban-source-name-input"
-          accessibilityLabel={t("kanban.sourceForm.name")}
-          initialValue={name}
-          value={name}
-          onChangeText={setName}
-          placeholder={t("kanban.sourceForm.namePlaceholder")}
-          autoCapitalize="none"
-          autoCorrect={false}
+          value={activeTab}
+          onValueChange={setActiveTab}
+          options={tabOptions}
+          testID="kanban-source-tabs"
         />
-      </Field>
-
-      <Field label={t("kanban.sourceForm.query")} hint={t("kanban.sourceForm.queryHint")}>
-        <FormTextInput
-          // Remount on kind change so the swapped-in default query is reflected.
-          key={`query-${kind}`}
-          size={controlSize}
-          testID="kanban-source-query-input"
-          accessibilityLabel={t("kanban.sourceForm.query")}
-          initialValue={query}
-          value={query}
-          onChangeText={setQuery}
-          placeholder={DEFAULT_QUERY[kind]}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </Field>
-
-      <ConnectionPicker
-        connections={kindConnections}
-        value={effectiveConnectionId}
-        onSelect={setConnectionId}
-      />
-
-      <Field label={t("kanban.sourceForm.pollEverySec")}>
-        <FormTextInput
-          size={controlSize}
-          testID="kanban-source-poll-input"
-          accessibilityLabel={t("kanban.sourceForm.pollEverySec")}
-          initialValue={pollEverySec}
-          value={pollEverySec}
-          onChangeText={setPollEverySec}
-          placeholder={DEFAULT_POLL_SECONDS}
-          keyboardType="number-pad"
-        />
-      </Field>
-
-      <Field label={t("kanban.sourceForm.enabled")}>
-        <Switch
-          value={enabled}
-          onValueChange={setEnabled}
-          accessibilityLabel={t("kanban.sourceForm.enabled")}
-          testID="kanban-source-enabled-switch"
-        />
-      </Field>
-
-      <Field
-        label={t("kanban.sourceForm.promptTemplate")}
-        hint={t("kanban.sourceForm.promptTemplateHint")}
-        hintWrap
-      >
-        {/* AdaptiveTextInput is uncontrolled and discards `value`; initialValue
-            seeds it, matching the dispatch-prompt input in the card detail sheet. */}
-        <FormTextInput
-          // Remount on kind change so the swapped-in default template shows.
-          key={`prompt-template-${kind}`}
-          size={controlSize}
-          testID="kanban-source-prompt-template-input"
-          accessibilityLabel={t("kanban.sourceForm.promptTemplate")}
-          initialValue={promptTemplate}
-          onChangeText={setPromptTemplate}
-          placeholder={t("kanban.sourceForm.promptTemplatePlaceholder")}
-          multiline
-          numberOfLines={4}
-          textAlignVertical="top"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </Field>
-
-      <StatusMappingBlock
-        columnsSupported={columnsSupported}
-        mode={mode}
-        serverId={serverId}
-        source={source}
-        kind={kind}
-        columnMap={columnMap}
-        onChangeColumnMap={setColumnMap}
-        controlSize={controlSize}
-      />
-
-      {mode === "edit" && source ? (
-        <KanbanWorkflowRulesSection serverId={serverId} sourceId={source.id} />
       ) : null}
 
-      {mode === "edit" && source ? (
-        <Button
-          variant="ghost"
-          onPress={handleDelete}
-          disabled={isSubmitting}
-          testID="kanban-source-delete"
-        >
-          {t("kanban.sources.delete")}
-        </Button>
-      ) : null}
+      {onWorkflowRulesTab && renderSource ? (
+        <KanbanWorkflowRulesSection serverId={serverId} sourceId={renderSource.id} asTab />
+      ) : (
+        <>
+          <SourceKindField
+            mode={mode}
+            kind={kind}
+            onChange={handleKindChange}
+            options={kindOptions}
+            size={controlSize}
+          />
 
-      {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
+          <Field label={t("kanban.sourceForm.name")}>
+            <FormTextInput
+              size={controlSize}
+              testID="kanban-source-name-input"
+              accessibilityLabel={t("kanban.sourceForm.name")}
+              initialValue={name}
+              value={name}
+              onChangeText={setName}
+              placeholder={t("kanban.sourceForm.namePlaceholder")}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </Field>
+
+          <Field label={t("kanban.sourceForm.query")} hint={t("kanban.sourceForm.queryHint")}>
+            <FormTextInput
+              // Remount on kind change so the swapped-in default query is reflected.
+              key={`query-${kind}`}
+              size={controlSize}
+              testID="kanban-source-query-input"
+              accessibilityLabel={t("kanban.sourceForm.query")}
+              initialValue={query}
+              value={query}
+              onChangeText={setQuery}
+              placeholder={DEFAULT_QUERY[kind]}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </Field>
+
+          <ConnectionPicker
+            connections={kindConnections}
+            value={effectiveConnectionId}
+            onSelect={setConnectionId}
+          />
+
+          <Field label={t("kanban.sourceForm.pollEverySec")}>
+            <FormTextInput
+              size={controlSize}
+              testID="kanban-source-poll-input"
+              accessibilityLabel={t("kanban.sourceForm.pollEverySec")}
+              initialValue={pollEverySec}
+              value={pollEverySec}
+              onChangeText={setPollEverySec}
+              placeholder={DEFAULT_POLL_SECONDS}
+              keyboardType="number-pad"
+            />
+          </Field>
+
+          <Field label={t("kanban.sourceForm.enabled")}>
+            <Switch
+              value={enabled}
+              onValueChange={setEnabled}
+              accessibilityLabel={t("kanban.sourceForm.enabled")}
+              testID="kanban-source-enabled-switch"
+            />
+          </Field>
+
+          <Field
+            label={t("kanban.sourceForm.promptTemplate")}
+            hint={t("kanban.sourceForm.promptTemplateHint")}
+            hintWrap
+          >
+            {/* AdaptiveTextInput is uncontrolled and discards `value`; initialValue
+                seeds it, matching the dispatch-prompt input in the card detail sheet. */}
+            <FormTextInput
+              // Remount on kind change so the swapped-in default template shows.
+              key={`prompt-template-${kind}`}
+              size={controlSize}
+              testID="kanban-source-prompt-template-input"
+              accessibilityLabel={t("kanban.sourceForm.promptTemplate")}
+              initialValue={promptTemplate}
+              onChangeText={setPromptTemplate}
+              placeholder={t("kanban.sourceForm.promptTemplatePlaceholder")}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </Field>
+
+          <StatusMappingBlock
+            columnsSupported={columnsSupported}
+            mode={mode}
+            serverId={serverId}
+            source={source}
+            kind={kind}
+            columnMap={columnMap}
+            onChangeColumnMap={setColumnMap}
+            controlSize={controlSize}
+          />
+
+          {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
+        </>
+      )}
     </AdaptiveModalSheet>
   );
 }
@@ -785,7 +866,12 @@ const styles = StyleSheet.create((theme) => ({
   footer: {
     flex: 1,
     flexDirection: "row",
+    alignItems: "center",
     gap: theme.spacing[3],
+  },
+  // Pushes the Cancel/Save pair to the right of the destructive Delete.
+  footerSpring: {
+    flex: 1,
   },
   footerButton: {
     flex: 1,

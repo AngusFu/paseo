@@ -2250,6 +2250,8 @@ export const zhCN: TranslationResources = {
       queryHint: "Jira = 指派给我且未完成；GitLab = 待我 review 的 MR。",
       createTitle: "新建来源",
       editTitle: "编辑来源",
+      tabSource: "来源",
+      tabWorkflowRules: "工作流规则",
       kind: "类型",
       jira: "Jira",
       gitlab: "GitLab",

@@ -43,6 +43,8 @@ import {
   ChevronRight,
   ExternalLink,
   GitPullRequest,
+  Pin,
+  PinOff,
   Settings,
   MoreVertical,
   Plus,
@@ -143,6 +145,8 @@ const DEFAULT_STATUS_DOT_OFFSET = 0;
 const EMPHASIZED_STATUS_DOT_OFFSET = -1;
 const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedGitPullRequest = withUnistyles(GitPullRequest);
+const ThemedPin = withUnistyles(Pin);
+const ThemedPinOff = withUnistyles(PinOff);
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedCircleAlert = withUnistyles(CircleAlert);
 const ThemedSyncedLoader = withUnistyles(SyncedLoader);
@@ -620,6 +624,63 @@ function ProjectKebabMenu({
   );
 }
 
+function WorkspacePinToggle({
+  workspaceKey,
+  isPinned,
+  rowHovered,
+  onTogglePin,
+}: {
+  workspaceKey: string;
+  isPinned: boolean;
+  rowHovered: boolean;
+  onTogglePin: () => void;
+}) {
+  const { t } = useTranslation();
+  const [isHovered, setIsHovered] = useState(false);
+  const handleHoverIn = useCallback(() => setIsHovered(true), []);
+  const handleHoverOut = useCallback(() => setIsHovered(false), []);
+  const handlePress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      onTogglePin();
+    },
+    [onTogglePin],
+  );
+  const buttonStyle = useCallback(
+    ({ pressed }: PressableStateCallbackType) => [
+      styles.pinButton,
+      (isHovered || pressed) && styles.pinButtonHovered,
+    ],
+    [isHovered],
+  );
+  return (
+    <Pressable
+      onPress={handlePress}
+      onHoverIn={handleHoverIn}
+      onHoverOut={handleHoverOut}
+      hitSlop={6}
+      // Drop the button role on web so this renders a <div>, not a <button>
+      // nested inside the row's <button> (invalid HTML → hydration error). Keep
+      // it on native for a11y — same gating as the row's other corner controls.
+      accessibilityRole={platformIsWeb ? undefined : "button"}
+      accessibilityLabel={t(
+        isPinned ? "sidebar.workspace.actions.unpin" : "sidebar.workspace.actions.pin",
+      )}
+      testID={`sidebar-workspace-pin-${workspaceKey}`}
+      style={buttonStyle}
+    >
+      {isPinned && (rowHovered || isHovered) ? (
+        <ThemedPinOff size={13} uniProps={foregroundColorMapping} />
+      ) : (
+        <ThemedPin
+          size={13}
+          uniProps={isPinned || isHovered ? foregroundColorMapping : foregroundMutedColorMapping}
+        />
+      )}
+    </Pressable>
+  );
+}
+
 function WorkspaceRowRightGroup({
   workspace,
   isHovered,
@@ -665,6 +726,14 @@ function WorkspaceRowRightGroup({
 
   return (
     <>
+      {onTogglePin && (isHovered || isTouchPlatform) ? (
+        <WorkspacePinToggle
+          workspaceKey={workspace.workspaceKey}
+          isPinned={Boolean(isPinned)}
+          rowHovered={isHovered}
+          onTogglePin={onTogglePin}
+        />
+      ) : null}
       {isCreating ? (
         <Text style={styles.workspaceCreatingText}>{t("sidebar.workspace.status.creating")}</Text>
       ) : null}
@@ -2938,6 +3007,17 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
     flexShrink: 0,
+  },
+  pinButton: {
+    width: 20,
+    height: 20,
+    borderRadius: theme.borderRadius.sm,
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pinButtonHovered: {
+    backgroundColor: theme.colors.surface3,
   },
   statusDotNeedsInput: {
     backgroundColor: theme.colors.palette.amber[500],

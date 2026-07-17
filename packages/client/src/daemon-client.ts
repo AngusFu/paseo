@@ -21,6 +21,7 @@ import type {
   UpdateKanbanWorkflowRuleInput,
   UpdateWorkflowDefinitionInput,
 } from "@getpaseo/protocol/workflow/types";
+import type { AgentAttentionNotificationPayload } from "@getpaseo/protocol/agent-attention-notification";
 import {
   AgentCreateFailedStatusPayloadSchema,
   AgentCreatedStatusPayloadSchema,
@@ -340,6 +341,14 @@ export interface SendMessageOptions {
   messageId?: string;
   images?: Array<{ data: string; mimeType: string }>;
   attachments?: SendAgentMessageRequest["attachments"];
+}
+
+export interface AgentAttentionRequiredNotification {
+  agentId: string;
+  reason: "finished" | "error" | "permission";
+  timestamp: string;
+  shouldNotify: boolean;
+  notification?: AgentAttentionNotificationPayload;
 }
 
 type AgentConfigOverrides = Partial<Omit<AgentSessionConfig, "provider" | "cwd">>;
@@ -1702,6 +1711,31 @@ export class DaemonClient {
     };
   }
 
+  onAgentAttentionRequired(
+    handler: (notification: AgentAttentionRequiredNotification) => void,
+  ): () => void {
+    const unsubscribeLegacy = this.on("agent_stream", (message) => {
+      if (message.payload.event.type !== "attention_required") {
+        return;
+      }
+      const event = message.payload.event;
+      handler({
+        agentId: message.payload.agentId,
+        reason: event.reason,
+        timestamp: event.timestamp,
+        shouldNotify: event.shouldNotify,
+        ...(event.notification ? { notification: event.notification } : {}),
+      });
+    });
+    const unsubscribeDedicated = this.on("agent_attention_required", (message) => {
+      handler(message.payload);
+    });
+    return () => {
+      unsubscribeLegacy();
+      unsubscribeDedicated();
+    };
+  }
+
   // ============================================================================
   // Core Send Helpers
   // ============================================================================
@@ -2909,6 +2943,35 @@ export class DaemonClient {
       throw new Error(payload.error);
     }
     return payload;
+  }
+
+  async setAgentTimelineSubscription(agentIds: string[]): Promise<void> {
+    // COMPAT(selectiveAgentTimeline): added in v0.1.106. Old daemons keep their
+    // legacy global stream and do not understand this RPC. Remove after
+    // 2027-01-12 once the supported daemon floor is >= v0.1.106.
+    if (!this.lastServerInfoMessage?.features?.selectiveAgentTimeline) {
+      return;
+    }
+
+    const requestId = this.createRequestId();
+    const normalizedAgentIds = [...new Set(agentIds)].sort();
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.timeline.set_subscription.request",
+      agentIds: normalizedAgentIds,
+      requestId,
+    });
+
+    await this.sendRequest({
+      requestId,
+      message,
+      options: { skipQueue: true },
+      select: (response) => {
+        if (response.type !== "agent.timeline.set_subscription.response") {
+          return null;
+        }
+        return response.payload.requestId === requestId ? response.payload : null;
+      },
+    });
   }
 
   async buildAgentForkContext(

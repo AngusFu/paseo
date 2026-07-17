@@ -2,6 +2,7 @@ import equal from "fast-deep-equal";
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import type { ViewedTimelineUiBridge } from "@/timeline/viewed-timeline-sync";
 import type { AgentDirectoryEntry } from "@/types/agent-directory";
 import {
   handoffCreatedAgentUserMessageToStream,
@@ -341,6 +342,8 @@ export interface SessionState {
 
   // Daemon client (immutable reference)
   client: DaemonClient | null;
+  clientGeneration: number;
+  viewedTimelineSync: ViewedTimelineUiBridge | null;
 
   // Server metadata (from server_info handshake)
   serverInfo: DaemonServerInfo | null;
@@ -406,11 +409,16 @@ interface SessionStoreState {
 // Action types
 interface SessionStoreActions {
   // Session management
-  initializeSession: (serverId: string, client: DaemonClient | null) => void;
+  initializeSession: (
+    serverId: string,
+    client: DaemonClient | null,
+    clientGeneration?: number,
+  ) => void;
   restoreSessionReplica: (serverId: string, replica: SessionReplica) => void;
   clearSession: (serverId: string) => void;
   getSession: (serverId: string) => SessionState | undefined;
-  updateSessionClient: (serverId: string, client: DaemonClient) => void;
+  updateSessionClient: (serverId: string, client: DaemonClient, clientGeneration?: number) => void;
+  setViewedTimelineSync: (serverId: string, sync: ViewedTimelineUiBridge | null) => void;
   updateSessionServerInfo: (serverId: string, info: DaemonServerInfo) => void;
 
   // Audio state
@@ -548,10 +556,16 @@ type SessionStore = SessionStoreState & SessionStoreActions;
 const agentLastActivityCoalescer = createAgentLastActivityCoalescer();
 
 // Helper to create initial session state
-function createInitialSessionState(serverId: string, client: DaemonClient | null): SessionState {
+function createInitialSessionState(
+  serverId: string,
+  client: DaemonClient | null,
+  clientGeneration = 0,
+): SessionState {
   return {
     serverId,
     client,
+    clientGeneration,
+    viewedTimelineSync: null,
     serverInfo: null,
     hasHydratedAgents: false,
     hasHydratedWorkspaces: false,
@@ -654,7 +668,7 @@ export const useSessionStore = create<SessionStore>()(
       agentLastActivity: new Map(),
 
       // Session management
-      initializeSession: (serverId, client) => {
+      initializeSession: (serverId, client, clientGeneration) => {
         set((prev) => {
           if (prev.sessions[serverId]) {
             return prev;
@@ -663,7 +677,7 @@ export const useSessionStore = create<SessionStore>()(
             ...prev,
             sessions: {
               ...prev.sessions,
-              [serverId]: createInitialSessionState(serverId, client),
+              [serverId]: createInitialSessionState(serverId, client, clientGeneration),
             },
           };
         });
@@ -748,7 +762,7 @@ export const useSessionStore = create<SessionStore>()(
         });
       },
 
-      updateSessionClient: (serverId, client) => {
+      updateSessionClient: (serverId, client, clientGeneration = 0) => {
         set((prev) => {
           const session = prev.sessions[serverId];
 
@@ -756,7 +770,7 @@ export const useSessionStore = create<SessionStore>()(
             return prev;
           }
 
-          if (session.client === client) {
+          if (session.client === client && session.clientGeneration === clientGeneration) {
             return prev;
           }
 
@@ -767,7 +781,24 @@ export const useSessionStore = create<SessionStore>()(
               [serverId]: {
                 ...session,
                 client,
+                clientGeneration,
               },
+            },
+          };
+        });
+      },
+
+      setViewedTimelineSync: (serverId, viewedTimelineSync) => {
+        set((prev) => {
+          const session = prev.sessions[serverId];
+          if (!session || session.viewedTimelineSync === viewedTimelineSync) {
+            return prev;
+          }
+          return {
+            ...prev,
+            sessions: {
+              ...prev.sessions,
+              [serverId]: { ...session, viewedTimelineSync },
             },
           };
         });

@@ -1,15 +1,23 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
 import { z } from "zod";
+
+const ChangeRequestLookupTargetSchema = z.object({
+  headRef: z.string().min(1),
+  headRepositoryOwner: z.string().min(1).optional(),
+  changeRequestNumber: z.number().int().positive().optional(),
+});
 
 const PaseoWorktreeMetadataV1Schema = z.object({
   version: z.literal(1),
   baseRefName: z.string().min(1),
+  changeRequestLookupTarget: ChangeRequestLookupTargetSchema.optional(),
 });
 
 const PaseoWorktreeMetadataV2Schema = z.object({
   version: z.literal(2),
   baseRefName: z.string().min(1),
+  changeRequestLookupTarget: ChangeRequestLookupTargetSchema.optional(),
   firstAgentBranchAutoName: z
     .discriminatedUnion("status", [
       z.object({
@@ -36,6 +44,9 @@ const PaseoWorktreeMetadataSchema = z.union([
 ]);
 
 export type PaseoWorktreeMetadata = z.infer<typeof PaseoWorktreeMetadataSchema>;
+export type PaseoWorktreeChangeRequestLookupTarget = z.infer<
+  typeof ChangeRequestLookupTargetSchema
+>;
 
 function getGitDirForWorktreeRoot(worktreeRoot: string): string {
   const gitPath = join(worktreeRoot, ".git");
@@ -89,15 +100,22 @@ function assertValidBaseRefName(baseRefName: string): void {
 
 export function writePaseoWorktreeMetadata(
   worktreeRoot: string,
-  options: { baseRefName: string },
+  options: {
+    baseRefName: string;
+    changeRequestLookupTarget?: PaseoWorktreeChangeRequestLookupTarget;
+  },
 ): void {
   const baseRefName = normalizeBaseRefName(options.baseRefName);
   assertValidBaseRefName(baseRefName);
 
-  const metadataPath = getPaseoWorktreeMetadataPath(worktreeRoot);
-  mkdirSync(join(getGitDirForWorktreeRoot(worktreeRoot), "paseo"), { recursive: true });
-  const metadata: PaseoWorktreeMetadata = { version: 1, baseRefName };
-  writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+  const metadata: PaseoWorktreeMetadata = {
+    version: 1,
+    baseRefName,
+    ...(options.changeRequestLookupTarget
+      ? { changeRequestLookupTarget: options.changeRequestLookupTarget }
+      : {}),
+  };
+  writePaseoWorktreeMetadataFile(worktreeRoot, metadata);
 }
 
 // Repoint an existing checkout's base ref (e.g. after the user reselects a base
@@ -136,11 +154,12 @@ export function writePaseoWorktreeRuntimeMetadata(
     throw new Error("Cannot persist worktree runtime metadata: missing base metadata");
   }
 
-  const metadataPath = getPaseoWorktreeMetadataPath(worktreeRoot);
-  mkdirSync(join(getGitDirForWorktreeRoot(worktreeRoot), "paseo"), { recursive: true });
   const next: PaseoWorktreeMetadata = {
     version: 2,
     baseRefName: current.baseRefName,
+    ...(current.changeRequestLookupTarget
+      ? { changeRequestLookupTarget: current.changeRequestLookupTarget }
+      : {}),
     ...(current.version === 2 && current.firstAgentBranchAutoName
       ? { firstAgentBranchAutoName: current.firstAgentBranchAutoName }
       : {}),
@@ -148,7 +167,7 @@ export function writePaseoWorktreeRuntimeMetadata(
       worktreePort: options.worktreePort,
     },
   };
-  writeFileSync(metadataPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  writePaseoWorktreeMetadataFile(worktreeRoot, next);
 }
 
 export function writePaseoWorktreeFirstAgentBranchAutoNameMetadata(
@@ -168,6 +187,9 @@ export function writePaseoWorktreeFirstAgentBranchAutoNameMetadata(
   writePaseoWorktreeMetadataFile(worktreeRoot, {
     version: 2,
     baseRefName: current.baseRefName,
+    ...(current.changeRequestLookupTarget
+      ? { changeRequestLookupTarget: current.changeRequestLookupTarget }
+      : {}),
     firstAgentBranchAutoName: {
       status: "pending",
       placeholderBranchName,
@@ -188,6 +210,9 @@ export function markPaseoWorktreeFirstAgentBranchAutoNameAttempted(
   const next: PaseoWorktreeMetadata = {
     version: 2,
     baseRefName: current.baseRefName,
+    ...(current.changeRequestLookupTarget
+      ? { changeRequestLookupTarget: current.changeRequestLookupTarget }
+      : {}),
     firstAgentBranchAutoName: {
       status: "attempted",
       placeholderBranchName: current.firstAgentBranchAutoName.placeholderBranchName,
@@ -234,5 +259,7 @@ function writePaseoWorktreeMetadataFile(
 ): void {
   const metadataPath = getPaseoWorktreeMetadataPath(worktreeRoot);
   mkdirSync(join(getGitDirForWorktreeRoot(worktreeRoot), "paseo"), { recursive: true });
-  writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+  const tempPath = `${metadataPath}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tempPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+  renameSync(tempPath, metadataPath);
 }

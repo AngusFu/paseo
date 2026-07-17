@@ -215,6 +215,7 @@ import {
   GitHubCommandError,
   type GitHubService,
 } from "../services/github-service.js";
+import type { ForgeService } from "../services/forge-service.js";
 import type { ProviderUsageService } from "../services/quota-fetcher/service.js";
 import {
   summarizeFetchWorkspacesEntries,
@@ -469,7 +470,7 @@ export interface SessionOptions {
   llamaService: LlamaService;
   loopService: LoopService;
   checkoutDiffManager: CheckoutDiffManager;
-  github?: GitHubService;
+  github?: ForgeService;
   createAgentMcpTransport?: AgentMcpTransportFactory;
   // Injected so tests can substitute the git branch rename without module mocks;
   // defaults to the real checkout-git implementation.
@@ -599,7 +600,7 @@ export class Session {
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
   private readonly filesystem: SessionFileSystem;
-  private readonly github: GitHubService;
+  private readonly github: ForgeService;
   private readonly renameCurrentBranch: typeof renameCurrentBranchDefault;
   private readonly workspaceGitService: WorkspaceGitService;
   private readonly workspaceAutoName: WorkspaceAutoName;
@@ -741,7 +742,6 @@ export class Session {
     this.workspaceGitService = workspaceGitService;
     this.gitMutation = createGitMutationService({
       workspaceGitService: this.workspaceGitService,
-      github: this.github,
       logger: this.sessionLogger,
     });
     this.workspaceAutoName = workspaceAutoName;
@@ -1707,16 +1707,19 @@ export class Session {
         return this.checkoutSession.handleCheckoutPrCreateRequest(msg);
       case "checkout_pr_merge_request":
         return this.checkoutSession.handleCheckoutPrMergeRequest(msg);
+      case "checkout.forge.set_auto_merge.request":
       case "checkout.github.set_auto_merge.request":
-        return this.checkoutSession.handleCheckoutGithubSetAutoMergeRequest(msg);
+        return this.checkoutSession.handleCheckoutForgeSetAutoMergeRequest(msg);
+      case "checkout.forge.get_check_details.request":
       case "checkout.github.get_check_details.request":
-        return this.checkoutSession.handleCheckoutGithubGetCheckDetailsRequest(msg);
+        return this.checkoutSession.handleCheckoutForgeGetCheckDetailsRequest(msg);
       case "checkout_pr_status_request":
         return this.checkoutSession.handleCheckoutPrStatusRequest(msg);
       case "pull_request_timeline_request":
         return this.checkoutSession.handlePullRequestTimelineRequest(msg);
+      case "forge.search.request":
       case "github_search_request":
-        return this.checkoutSession.handleGitHubSearchRequest(msg);
+        return this.checkoutSession.handleForgeSearchRequest(msg);
       case "stash_save_request":
         return this.checkoutSession.handleStashSaveRequest(msg);
       case "stash_pop_request":
@@ -3843,7 +3846,6 @@ export class Session {
         checkoutExistingBranch: (cwd, branch) =>
           this.gitMutation.checkoutExistingBranch(cwd, branch),
         createBranchFromBase: (params) => this.gitMutation.createBranchFromBase(params),
-        github: this.github,
       },
       config,
       gitOptions,
@@ -4589,9 +4591,9 @@ export class Session {
     snapshot: WorkspaceGitRuntimeSnapshot,
   ): NonNullable<WorkspaceDescriptorPayload["githubRuntime"]> {
     return {
-      featuresEnabled: snapshot.github.featuresEnabled,
-      pullRequest: snapshot.github.pullRequest,
-      error: snapshot.github.error,
+      featuresEnabled: snapshot.forge.featuresEnabled,
+      pullRequest: snapshot.forge.pullRequest,
+      error: snapshot.forge.error,
     };
   }
 
@@ -4614,6 +4616,10 @@ export class Session {
       diffStat: snapshot.git.diffStat ?? null,
       gitRuntime: this.buildWorkspaceGitRuntimePayload(snapshot) ?? undefined,
       githubRuntime: this.buildWorkspaceGitHubRuntimePayload(snapshot),
+      // Reuse the forge already resolved on the snapshot (probe-aware; GitHub-only
+      // resolves to "github") so the sidebar/hover-card brand mark matches the
+      // status projection without a second resolve.
+      forge: snapshot.forge.forge,
     };
   }
 
@@ -5468,7 +5474,7 @@ export class Session {
     });
     await this.emitWorkspaceUpdateForWorkspaceId(workspace.workspaceId);
     void this.workspaceGitService
-      .getSnapshot(workspace.cwd, { force: true, includeGitHub: true, reason: "open_project" })
+      .getSnapshot(workspace.cwd, { force: true, includeForge: true, reason: "open_project" })
       .catch((error) => {
         this.sessionLogger.warn(
           { err: error, cwd: workspace.cwd },
@@ -5523,6 +5529,7 @@ export class Session {
         worktreeSlug: source.worktreeSlug,
         action: source.action,
         refName: source.refName,
+        checkoutSource: source.checkoutSource,
         githubPrNumber: source.githubPrNumber,
         firstAgentContext: request.firstAgentContext,
       },
@@ -5636,7 +5643,7 @@ export class Session {
       void this.workspaceGitService
         .getSnapshot(workspace.cwd, {
           force: true,
-          includeGitHub: true,
+          includeForge: true,
           reason: "open_project",
         })
         .catch((error) => {
@@ -5780,7 +5787,11 @@ export class Session {
     >,
   ): Promise<void> {
     try {
-      const repositories = await this.github.searchRepositories({
+      const searchRepositories = (this.github as Partial<GitHubService>).searchRepositories;
+      if (!searchRepositories) {
+        throw new Error("GitHub repository search is unavailable");
+      }
+      const repositories = await searchRepositories.call(this.github, {
         cwd: homedir(),
         query: request.query,
         limit: request.limit,

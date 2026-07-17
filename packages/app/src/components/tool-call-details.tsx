@@ -528,12 +528,19 @@ function FetchDetailSection({ url, result, ds }: FetchDetailProps) {
   );
 }
 
-function PlainTextSection({ text }: { text: string }) {
+function ScrollablePlainTextSection({ text, ds }: { text: string; ds: DetailStyles }) {
   return (
-    <View style={styles.plainTextSection}>
-      <Text selectable style={styles.plainText}>
-        {text}
-      </Text>
+    <View style={styles.section}>
+      <ScrollView
+        style={ds.scrollAreaStyle}
+        contentContainerStyle={styles.scrollContent}
+        nestedScrollEnabled
+        showsVerticalScrollIndicator
+      >
+        <Text selectable style={styles.plainText}>
+          {text}
+        </Text>
+      </ScrollView>
     </View>
   );
 }
@@ -634,13 +641,7 @@ function buildUnknownSections(detail: UnknownDetail, ds: DetailStyles, t: TFunct
     typeof detail.input === "string" && detail.output === null ? detail.input : null;
 
   if (plainInputText !== null) {
-    return [
-      <View key="unknown-plain-text" style={styles.plainTextSection}>
-        <Text selectable style={styles.plainText}>
-          {plainInputText}
-        </Text>
-      </View>,
-    ];
+    return [<ScrollablePlainTextSection key="unknown-plain-text" text={plainInputText} ds={ds} />];
   }
 
   const sectionsFromTopLevel = [
@@ -756,7 +757,7 @@ function buildDetailSections(
   }
   if (detail.type === "plain_text") {
     if (!detail.text) return [];
-    return [<PlainTextSection key="plain-text" text={detail.text} />];
+    return [<ScrollablePlainTextSection key="plain-text" text={detail.text} ds={ds} />];
   }
   if (detail.type === "unknown") {
     return buildUnknownSections(detail, ds, t);
@@ -893,12 +894,6 @@ const styles = StyleSheet.create((theme) => {
     fillHeight: {
       flex: 1,
       minHeight: 0,
-    },
-    plainTextSection: {
-      gap: theme.spacing[2],
-      padding: theme.spacing[3],
-      minWidth: 0,
-      flexShrink: 1,
     },
     plainText: {
       fontFamily: theme.fontFamily.ui,

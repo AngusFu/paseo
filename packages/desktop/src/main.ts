@@ -55,14 +55,17 @@ import {
   decideBrowserWindowOpenRequest,
   getPaseoBrowserIdForWebContents,
   getPaseoBrowserWebContents,
+  getPaseoBrowserWebContentsForHostWindow,
+  getPaseoBrowserWebviewRegistry,
   listRegisteredPaseoBrowserIds,
   isPaseoBrowserWebviewAttach,
   preparePaseoBrowserWebContents,
   PendingBrowserWindowOpenRequests,
   registerBrowserWebviewNavigationGuards,
-  unregisterPaseoBrowser,
+  unregisterPaseoBrowserFromHost,
   registerAttachedPaseoBrowser,
   setWorkspaceActivePaseoBrowserId,
+  unregisterPaseoBrowserHost,
 } from "./features/browser-webviews/index.js";
 import {
   importCookiesFromChrome,
@@ -92,6 +95,7 @@ import {
 import { runDesktopStartup } from "./desktop-startup.js";
 import { autoUpdateInstalledSkills } from "./integrations/skills/index.js";
 import { registerBrowserAutomationIpc } from "./features/browser-automation/ipc.js";
+import { BrowserKeyboard } from "./features/browser-keyboard/index.js";
 
 const DEV_SERVER_URL = process.env.EXPO_DEV_URL ?? "http://localhost:8081";
 const APP_SCHEME = "paseo";
@@ -100,35 +104,6 @@ const DISABLE_SINGLE_INSTANCE_LOCK = process.env.PASEO_DISABLE_SINGLE_INSTANCE_L
 const APP_NAME = process.env.PASEO_TEST_APP_NAME?.trim() || "Paseo";
 const pendingBrowserWindowOpenRequests = new PendingBrowserWindowOpenRequests();
 
-const BROWSER_SHORTCUT_EVENT = "paseo:event:browser-shortcut";
-const BROWSER_FORWARDED_KEY_EVENT = "paseo:event:browser-forwarded-key";
-
-const FORWARDED_PASEO_SHORTCUT_KEYS = new Set([
-  "b",
-  "e",
-  "w",
-  "t",
-  "k",
-  "o",
-  "/",
-  "\\",
-  ",",
-  ".",
-  "1",
-  "2",
-  "3",
-  "4",
-  "5",
-  "6",
-  "7",
-  "8",
-  "9",
-  "enter",
-  "arrowleft",
-  "arrowright",
-  "arrowup",
-  "arrowdown",
-]);
 app.setName(APP_NAME);
 
 interface AttachedBrowserInput {
@@ -176,29 +151,8 @@ function readActiveBrowserInput(
   return { workspaceId: record.workspaceId.trim(), browserId: browserId || null };
 }
 
-function isBrowserRefreshInput(input: Electron.Input): boolean {
-  if (input.type !== "keyDown" || input.alt || input.shift) {
-    return false;
-  }
-  return (input.meta || input.control) && input.key.toLowerCase() === "r";
-}
-
-function isBrowserLocationInput(input: Electron.Input): boolean {
-  if (input.type !== "keyDown" || input.alt || input.shift) {
-    return false;
-  }
-  return (input.meta || input.control) && input.key.toLowerCase() === "l";
-}
-
-function isForwardablePaseoShortcutInput(input: Electron.Input): boolean {
-  if (input.type !== "keyDown") {
-    return false;
-  }
-  if (!input.meta && !input.control) {
-    return false;
-  }
-  return FORWARDED_PASEO_SHORTCUT_KEYS.has(input.key.toLowerCase());
-}
+const browserKeyboard = new BrowserKeyboard(getPaseoBrowserWebviewRegistry());
+browserKeyboard.registerIpc();
 
 function showBrowserWebviewContextMenu(
   win: BrowserWindow,
@@ -439,6 +393,11 @@ ipcMain.handle("paseo:browser:register-attached", (event, rawInput: unknown) => 
   if (!registered) {
     throw new Error("Attached browser registration was rejected");
   }
+  const guest = webContents.fromId(input.webContentsId);
+  if (!guest) {
+    throw new Error("Attached browser guest disappeared after registration");
+  }
+  browserKeyboard.attach({ contents: guest, hostContents: event.sender });
   log.info("[browser-webview] registered", {
     browserId: input.browserId,
     webContentsId: input.webContentsId,
@@ -452,13 +411,19 @@ ipcMain.handle("paseo:browser:register-attached", (event, rawInput: unknown) => 
   }
 });
 
-ipcMain.handle("paseo:browser:unregister-workspace-browser", async (_event, browserId: unknown) => {
+ipcMain.handle("paseo:browser:unregister-workspace-browser", async (event, browserId: unknown) => {
   if (typeof browserId === "string" && browserId.trim().length > 0) {
     const normalizedBrowserId = browserId.trim();
     closeInlineDevtoolsForBrowser(normalizedBrowserId);
-    unregisterPaseoBrowser(normalizedBrowserId);
+    const hasOtherHost = getPaseoBrowserWebviewRegistry().hasBrowserInOtherHostWindow(
+      event.sender.id,
+      normalizedBrowserId,
+    );
+    unregisterPaseoBrowserFromHost(event.sender.id, normalizedBrowserId);
     // COMPAT(browserProfile): added in v0.1.108; remove after 2027-01-15.
-    const legacyProfile = getLegacyPaseoBrowserProfileSession(session, normalizedBrowserId);
+    const legacyProfile = hasOtherHost
+      ? null
+      : getLegacyPaseoBrowserProfileSession(session, normalizedBrowserId);
     if (legacyProfile) {
       try {
         await clearPaseoBrowserProfile({
@@ -476,14 +441,14 @@ ipcMain.handle("paseo:browser:unregister-workspace-browser", async (_event, brow
   }
 });
 
-ipcMain.handle("paseo:browser:set-workspace-active-browser", (_event, rawInput: unknown) => {
+ipcMain.handle("paseo:browser:set-workspace-active-browser", (event, rawInput: unknown) => {
   const input = readActiveBrowserInput(rawInput);
   if (input) {
-    setWorkspaceActivePaseoBrowserId(input);
+    setWorkspaceActivePaseoBrowserId({ ...input, hostWebContentsId: event.sender.id });
   }
 });
 
-ipcMain.handle("paseo:browser:open-devtools", (_event, browserId: unknown) => {
+ipcMain.handle("paseo:browser:open-devtools", (event, browserId: unknown) => {
   if (typeof browserId !== "string" || browserId.trim().length === 0) {
     const result = {
       ok: false,
@@ -494,7 +459,7 @@ ipcMain.handle("paseo:browser:open-devtools", (_event, browserId: unknown) => {
     log.warn("[browser-devtools] open-devtools.invalid", result);
     return result;
   }
-  const contents = getPaseoBrowserWebContents(browserId);
+  const contents = getPaseoBrowserWebContentsForHostWindow(browserId, event.sender.id);
   if (!contents) {
     const result = {
       ok: false,
@@ -763,11 +728,11 @@ ipcMain.handle("paseo:browser:clear-profile", async (_event, rawLegacyBrowserIds
 
 ipcMain.handle(
   "paseo:browser:capture-element",
-  async (_event, browserId: unknown, rect: unknown) => {
+  async (event, browserId: unknown, rect: unknown) => {
     if (typeof browserId !== "string" || browserId.trim().length === 0) {
       return null;
     }
-    const contents = getPaseoBrowserWebContents(browserId);
+    const contents = getPaseoBrowserWebContentsForHostWindow(browserId, event.sender.id);
     if (!contents || contents.isDestroyed()) {
       return null;
     }
@@ -887,6 +852,10 @@ function getPreloadPath(): string {
   return path.join(__dirname, "preload.js");
 }
 
+function getBrowserKeyboardPreloadPath(): string {
+  return path.join(__dirname, "features", "browser-keyboard", "guest-preload.js");
+}
+
 function getAppDistDir(): string {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, "app-dist");
@@ -990,6 +959,8 @@ async function createWindow(
   pendingOpenProjectStore.set(webContentsId, options.pendingOpenProjectPath);
   mainWindow.on("closed", () => {
     pendingOpenProjectStore.delete(webContentsId);
+    unregisterPaseoBrowserHost(webContentsId);
+    browserKeyboard.detachHost(webContentsId);
   });
 
   if (devWorktreeName) {
@@ -1014,7 +985,9 @@ async function createWindow(
       return;
     }
     webPreferences.nodeIntegration = false;
-    webPreferences.nodeIntegrationInSubFrames = false;
+    // The sandboxed keyboard preload must run in every frame so focused iframes keep
+    // the same page-first shortcut boundary. Node integration remains disabled.
+    webPreferences.nodeIntegrationInSubFrames = true;
     webPreferences.nodeIntegrationInWorker = false;
     webPreferences.contextIsolation = true;
     webPreferences.sandbox = true;
@@ -1025,42 +998,12 @@ async function createWindow(
     delete params.preload;
     delete (webPreferences as { preloadURL?: string }).preloadURL;
     delete (params as { preloadURL?: string }).preloadURL;
+    webPreferences.preload = getBrowserKeyboardPreloadPath();
   });
   mainWindow.webContents.on("did-attach-webview", (_event, contents) => {
     preparePaseoBrowserWebContents(contents);
     contents.once("destroyed", () => {
       pendingBrowserWindowOpenRequests.delete(contents.id);
-    });
-    contents.on("before-input-event", (event, input) => {
-      if (isBrowserRefreshInput(input)) {
-        event.preventDefault();
-        if (contents.isLoadingMainFrame()) {
-          contents.stop();
-        } else {
-          contents.reload();
-        }
-        return;
-      }
-      if (isBrowserLocationInput(input)) {
-        event.preventDefault();
-        const focusedBrowserId = getPaseoBrowserIdForWebContents(contents);
-        mainWindow.webContents.send(BROWSER_SHORTCUT_EVENT, {
-          action: "focus-url",
-          ...(focusedBrowserId ? { browserId: focusedBrowserId } : {}),
-        });
-        return;
-      }
-      if (isForwardablePaseoShortcutInput(input)) {
-        event.preventDefault();
-        mainWindow.webContents.send(BROWSER_FORWARDED_KEY_EVENT, {
-          key: input.key,
-          code: input.code,
-          meta: input.meta,
-          control: input.control,
-          shift: input.shift,
-          alt: input.alt,
-        });
-      }
     });
     installBrowserWindowOpenHandler({
       contents,

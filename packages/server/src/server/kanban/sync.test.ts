@@ -888,6 +888,51 @@ describe("KanbanSyncService", () => {
     expect(clean?.hasUnresolvedThreads).toBe(false);
   });
 
+  test("GitLab sync fetches approval state for open MRs (never for merged/closed ones) and stores it on metadata", async () => {
+    const gitlabResponse = [
+      { iid: 1, project_id: 42, title: "Needs review", state: "opened" },
+      { iid: 2, project_id: 42, title: "Already merged", state: "merged" },
+    ];
+    const approvalsCalls: string[] = [];
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/merge_requests/1/approvals")) {
+        approvalsCalls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ approved: false, approvals_left: 2 }),
+        };
+      }
+      if (url.includes("/api/v4/merge_requests")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => gitlabResponse };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+      query: "state=all",
+    });
+
+    const result = await syncService.sync(source);
+    const byId = new Map(result.cards.map((card) => [card.externalId, card]));
+
+    // Only the still-open MR gets an approvals lookup.
+    expect(approvalsCalls).toHaveLength(1);
+    expect(byId.get("gitlab:42!1")?.metadata?.approvals).toEqual({
+      approved: false,
+      approvalsLeft: 2,
+    });
+    // Merged MR never triggers the approvals request — it's a moot concept
+    // once terminal — and its metadata carries approvals: null instead.
+    expect(byId.get("gitlab:42!2")?.metadata?.approvals).toBeNull();
+  });
+
   test("a merged MR forces a user-pinned card to done, overriding the manual drag", async () => {
     const cardSource = {
       kind: "gitlab" as const,
@@ -975,6 +1020,54 @@ describe("KanbanSyncService", () => {
     const card = result.cards[0];
     expect(card.sourceCreatedAt).toBe("2026-01-01T00:00:00.000Z");
     expect(card.sourceUpdatedAt).toBe("2026-02-01T00:00:00.000Z");
+  });
+
+  test("Jira Cloud sync requests the issuetype field and stores it on card metadata", async () => {
+    const { credentialRefForConnection } = await import("./oauth.js");
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({
+        issues: [
+          {
+            key: "PROJ-1",
+            fields: {
+              summary: "Typed issue",
+              status: { name: "To Do", statusCategory: { key: "new" } },
+              issuetype: { name: "Bug", iconUrl: "https://x.atlassian.net/bug.svg" },
+            },
+          },
+        ],
+      }),
+    })) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const connection = await store.createConnection({
+      kind: "jira",
+      name: "Jira Cloud",
+      baseUrl: "https://x.atlassian.net",
+      email: "me@corp.com",
+    });
+    await secrets.set(credentialRefForConnection(connection.id), {
+      method: "token",
+      token: "jira-api-token",
+    });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "My todos",
+      connectionId: connection.id,
+      query: "assignee = currentUser()",
+    });
+
+    const result = await syncService.sync(source);
+    const [url] = fetchImpl.mock.calls[0];
+    expect(url).toContain("issuetype");
+    const card = result.cards[0];
+    expect(card.metadata?.issuetype).toEqual({
+      name: "Bug",
+      iconUrl: "https://x.atlassian.net/bug.svg",
+    });
   });
 
   test("paginates Jira Server/DC search via startAt until a short page ends it", async () => {

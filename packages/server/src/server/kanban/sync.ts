@@ -27,6 +27,11 @@ interface JiraIssue {
     // param); returned by default on Server/DC.
     created?: string;
     updated?: string;
+    // Issue type (Bug/Story/Task/...) — icon + name for the app's future type
+    // glyph. Fetched explicitly on Cloud (see the fields param); returned by
+    // default on Server/DC. Epic-specific customfields are deliberately not
+    // captured here (unstable field IDs per Jira instance).
+    issuetype?: { name?: string; iconUrl?: string };
     [key: string]: unknown;
   };
 }
@@ -77,6 +82,14 @@ interface GitlabMergeRequest {
   // False when the MR has open blocking discussion threads. Present on the MR
   // list endpoint, so detecting unresolved threads costs no extra request.
   blocking_discussions_resolved?: boolean;
+}
+
+// GitLab's approvals endpoint — the list endpoint never returns approval
+// state (CE and EE alike), so "has this MR collected its required approvals"
+// needs its own request per open MR (see fetchGitlabApprovalState below).
+interface GitlabApprovalState {
+  approved: boolean;
+  approvalsLeft: number;
 }
 
 // GitLab MR list responses don't carry one canonical "status" field the way
@@ -253,7 +266,14 @@ export class KanbanSyncService {
     );
     const cards: StoredKanbanCard[] = [];
     for (const mr of mergeRequests) {
-      const { cardSource, payload } = await this.buildGitlabUpsert(baseUrl, source, mr);
+      // Only still-open MRs need an approvals lookup — merged/closed ones are
+      // terminal and the stats bar's "pending review" backlog only counts
+      // what's still awaiting approval right now.
+      const approvals =
+        mr.state === "opened"
+          ? await this.fetchGitlabApprovalState(baseUrl, mr.project_id, mr.iid, token)
+          : null;
+      const { cardSource, payload } = await this.buildGitlabUpsert(baseUrl, source, mr, approvals);
       seenExternalIds.add(cardSource.externalId);
       const card = await this.store.upsertCardBySource(cardSource, payload);
       cards.push(card);
@@ -357,7 +377,9 @@ export class KanbanSyncService {
     headers: Record<string, string>,
   ): Promise<{ issues: JiraIssue[]; truncated: boolean }> {
     const jql = encodeURIComponent(query);
-    const fields = encodeURIComponent("summary,status,assignee,labels,priority,created,updated");
+    const fields = encodeURIComponent(
+      "summary,status,assignee,labels,priority,created,updated,issuetype",
+    );
     const issues: JiraIssue[] = [];
     let nextPageToken: string | undefined;
     let truncated = false;
@@ -493,6 +515,7 @@ export class KanbanSyncService {
     baseUrl: string,
     source: StoredKanbanSource,
     mr: GitlabMergeRequest,
+    approvals: GitlabApprovalState | null,
   ): Promise<{
     cardSource: Extract<KanbanCardSource, { kind: "gitlab" }>;
     payload: UpsertKanbanCardBySourcePayload;
@@ -525,7 +548,16 @@ export class KanbanSyncService {
         theme: "gitlab-mr",
         labels: mr.labels,
         assignee: mr.assignee?.name ?? null,
-        metadata: mr as unknown as Record<string, unknown>,
+        // Spread first so the raw MR object's own keys (merged_at, closed_at,
+        // detailed_merge_status, etc. — the API returns more than the
+        // GitlabMergeRequest interface declares, and it all rides along
+        // as-is) still win over nothing; `approvals` is the one field the
+        // list endpoint never includes at any GitLab edition, so it's merged
+        // in on top instead of coming from `mr` itself.
+        metadata: {
+          ...(mr as unknown as Record<string, unknown>),
+          approvals,
+        },
         sourceCreatedAt: mr.created_at ?? null,
         sourceUpdatedAt: mr.updated_at ?? null,
         hasUnresolvedThreads: mr.blocking_discussions_resolved === false,
@@ -571,7 +603,9 @@ export class KanbanSyncService {
         if (!mr || (mr.state !== "merged" && mr.state !== "closed")) {
           continue;
         }
-        const { cardSource, payload } = await this.buildGitlabUpsert(baseUrl, source, mr);
+        // This path only ever runs for now-terminal MRs (checked above) —
+        // approvals is a moot concept once merged/closed.
+        const { cardSource, payload } = await this.buildGitlabUpsert(baseUrl, source, mr, null);
         moved.push(await this.store.upsertCardBySource(cardSource, payload));
       } catch (error) {
         this.logger?.warn(
@@ -581,6 +615,41 @@ export class KanbanSyncService {
       }
     }
     return moved;
+  }
+
+  // Best-effort: an approvals-endpoint failure (network hiccup, an instance
+  // that has approvals disabled, a stale token missing the extra scope) must
+  // not fail the whole sync the way the primary MR list request does — the
+  // card still gets everything else, just without an approvals verdict.
+  private async fetchGitlabApprovalState(
+    baseUrl: string,
+    projectId: number | string,
+    mrIid: number | string,
+    token: string | null,
+  ): Promise<GitlabApprovalState | null> {
+    const base = trimTrailingSlash(baseUrl);
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (token) {
+      headers["PRIVATE-TOKEN"] = token;
+    }
+    const url = `${base}/api/v4/projects/${encodeURIComponent(String(projectId))}/merge_requests/${encodeURIComponent(String(mrIid))}/approvals`;
+    try {
+      const response = await this.fetchImpl(url, { headers });
+      if (!response.ok) {
+        return null;
+      }
+      const body = (await response.json()) as { approved?: boolean; approvals_left?: number };
+      return {
+        approved: body.approved === true,
+        approvalsLeft: body.approvals_left ?? 0,
+      };
+    } catch (error) {
+      this.logger?.warn(
+        { err: error, projectId, mrIid },
+        "Kanban GitLab approval state fetch failed",
+      );
+      return null;
+    }
   }
 
   private async fetchGitlabMergeRequestById(

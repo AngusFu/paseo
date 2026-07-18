@@ -2217,6 +2217,10 @@ export const es: TranslationResources = {
     tabs: {
       overview: "Resumen",
     },
+    jira: {
+      highPriority: "Prioridad alta",
+      groupByAssignee: "Agrupar por responsable",
+    },
     overview: {
       unresolvedThreads: "Debates sin resolver",
       stale: "Estancadas (7d+)",
@@ -2232,8 +2236,17 @@ export const es: TranslationResources = {
     gitlabColumns: {
       draft: "Borrador",
       open: "Abierto",
+      approved: "Aprobado",
       merged: "Fusionado",
       closed: "Cerrado",
+    },
+    gitlabStats: {
+      merged7d: "{{count}} fusionadas (7d)",
+      merged30d: "{{count}} fusionadas (30d)",
+      avgTimeToMerge: "Tiempo medio de fusión {{duration}}",
+      avgTimeToMergeEmpty: "Sin fusiones (30d)",
+      pendingReview: "{{count}} pendientes de revisión",
+      unresolvedDiscussions: "{{count}} sin resolver",
     },
     card: {
       open: "Abrir enlace",
@@ -2302,6 +2315,10 @@ export const es: TranslationResources = {
       newColumnPlaceholder: "Nombre de la nueva columna",
       addColumn: "Añadir columna",
       create: "Añadir",
+    },
+    column: {
+      collapse: "Contraer columna",
+      expand: "Expandir columna",
     },
     columnDelete: {
       title: "Eliminar columna",

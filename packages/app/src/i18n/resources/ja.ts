@@ -2195,6 +2195,10 @@ export const ja: TranslationResources = {
     tabs: {
       overview: "概要",
     },
+    jira: {
+      highPriority: "優先度: 高",
+      groupByAssignee: "担当者でグループ化",
+    },
     overview: {
       unresolvedThreads: "未解決の議論",
       stale: "停滞(7日以上)",
@@ -2210,8 +2214,17 @@ export const ja: TranslationResources = {
     gitlabColumns: {
       draft: "下書き",
       open: "オープン",
+      approved: "承認済み",
       merged: "マージ済み",
       closed: "クローズ",
+    },
+    gitlabStats: {
+      merged7d: "{{count}} 件マージ済み(7日)",
+      merged30d: "{{count}} 件マージ済み(30日)",
+      avgTimeToMerge: "平均マージ時間 {{duration}}",
+      avgTimeToMergeEmpty: "過去30日にマージなし",
+      pendingReview: "{{count}} 件レビュー待ち",
+      unresolvedDiscussions: "{{count}} 件未解決",
     },
     card: {
       open: "リンクを開く",
@@ -2280,6 +2293,10 @@ export const ja: TranslationResources = {
       newColumnPlaceholder: "新しい列名",
       addColumn: "列を追加",
       create: "追加",
+    },
+    column: {
+      collapse: "列を折りたたむ",
+      expand: "列を展開する",
     },
     columnDelete: {
       title: "列を削除",

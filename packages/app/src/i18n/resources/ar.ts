@@ -2168,6 +2168,10 @@ export const ar: TranslationResources = {
     tabs: {
       overview: "نظرة عامة",
     },
+    jira: {
+      highPriority: "أولوية عالية",
+      groupByAssignee: "تجميع حسب المسؤول",
+    },
     overview: {
       unresolvedThreads: "مناقشات غير محلولة",
       stale: "راكدة (7 أيام+)",
@@ -2183,8 +2187,17 @@ export const ar: TranslationResources = {
     gitlabColumns: {
       draft: "مسودة",
       open: "مفتوح",
+      approved: "معتمد",
       merged: "مدموج",
       closed: "مغلق",
+    },
+    gitlabStats: {
+      merged7d: "{{count}} مدموجة (7 أيام)",
+      merged30d: "{{count}} مدموجة (30 يومًا)",
+      avgTimeToMerge: "متوسط وقت الدمج {{duration}}",
+      avgTimeToMergeEmpty: "لا عمليات دمج (30 يومًا)",
+      pendingReview: "{{count}} بانتظار المراجعة",
+      unresolvedDiscussions: "{{count}} غير محلولة",
     },
     card: {
       open: "فتح الرابط",
@@ -2253,6 +2266,10 @@ export const ar: TranslationResources = {
       newColumnPlaceholder: "اسم العمود الجديد",
       addColumn: "إضافة عمود",
       create: "إضافة",
+    },
+    column: {
+      collapse: "طي العمود",
+      expand: "توسيع العمود",
     },
     columnDelete: {
       title: "حذف العمود",

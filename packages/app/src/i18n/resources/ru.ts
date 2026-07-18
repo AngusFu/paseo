@@ -2210,6 +2210,10 @@ export const ru: TranslationResources = {
     tabs: {
       overview: "Обзор",
     },
+    jira: {
+      highPriority: "Высокий приоритет",
+      groupByAssignee: "Группировать по исполнителю",
+    },
     overview: {
       unresolvedThreads: "Нерешённые обсуждения",
       stale: "Зависшие (7д+)",
@@ -2225,8 +2229,17 @@ export const ru: TranslationResources = {
     gitlabColumns: {
       draft: "Черновик",
       open: "Открыт",
+      approved: "Одобрен",
       merged: "Слит",
       closed: "Закрыт",
+    },
+    gitlabStats: {
+      merged7d: "{{count}} слито (7 дн.)",
+      merged30d: "{{count}} слито (30 дн.)",
+      avgTimeToMerge: "Среднее время слияния {{duration}}",
+      avgTimeToMergeEmpty: "Нет слияний (30 дн.)",
+      pendingReview: "{{count}} ожидают ревью",
+      unresolvedDiscussions: "{{count}} не решено",
     },
     card: {
       open: "Открыть ссылку",
@@ -2295,6 +2308,10 @@ export const ru: TranslationResources = {
       newColumnPlaceholder: "Название нового столбца",
       addColumn: "Добавить столбец",
       create: "Добавить",
+    },
+    column: {
+      collapse: "Свернуть столбец",
+      expand: "Развернуть столбец",
     },
     columnDelete: {
       title: "Удалить столбец",

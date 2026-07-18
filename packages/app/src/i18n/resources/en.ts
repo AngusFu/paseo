@@ -2178,6 +2178,10 @@ export const en = {
     tabs: {
       overview: "Overview",
     },
+    jira: {
+      highPriority: "High priority",
+      groupByAssignee: "Group by assignee",
+    },
     overview: {
       unresolvedThreads: "Unresolved discussions",
       stale: "Stale (7d+)",
@@ -2193,8 +2197,17 @@ export const en = {
     gitlabColumns: {
       draft: "Draft",
       open: "Open",
+      approved: "Approved",
       merged: "Merged",
       closed: "Closed",
+    },
+    gitlabStats: {
+      merged7d: "{{count}} merged (7d)",
+      merged30d: "{{count}} merged (30d)",
+      avgTimeToMerge: "Avg merge time {{duration}}",
+      avgTimeToMergeEmpty: "No merges (30d)",
+      pendingReview: "{{count}} pending review",
+      unresolvedDiscussions: "{{count}} unresolved",
     },
     card: {
       open: "Open link",
@@ -2263,6 +2276,10 @@ export const en = {
       newColumnPlaceholder: "New column name",
       addColumn: "Add column",
       create: "Add",
+    },
+    column: {
+      collapse: "Collapse column",
+      expand: "Expand column",
     },
     columnDelete: {
       title: "Delete column",

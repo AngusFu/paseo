@@ -2145,6 +2145,10 @@ export const zhCN: TranslationResources = {
     tabs: {
       overview: "总览",
     },
+    jira: {
+      highPriority: "高优先级",
+      groupByAssignee: "按负责人分组",
+    },
     overview: {
       unresolvedThreads: "未解决的讨论",
       stale: "滞留(7天以上)",
@@ -2160,8 +2164,17 @@ export const zhCN: TranslationResources = {
     gitlabColumns: {
       draft: "草稿",
       open: "打开",
+      approved: "已批准",
       merged: "已合并",
       closed: "已关闭",
+    },
+    gitlabStats: {
+      merged7d: "近7天已合并 {{count}} 个",
+      merged30d: "近30天已合并 {{count}} 个",
+      avgTimeToMerge: "平均合入耗时 {{duration}}",
+      avgTimeToMergeEmpty: "近30天无合入",
+      pendingReview: "{{count}} 个待评审",
+      unresolvedDiscussions: "{{count}} 个未解决讨论",
     },
     card: {
       open: "打开链接",
@@ -2230,6 +2243,10 @@ export const zhCN: TranslationResources = {
       newColumnPlaceholder: "新列名称",
       addColumn: "添加列",
       create: "添加",
+    },
+    column: {
+      collapse: "折叠列",
+      expand: "展开列",
     },
     columnDelete: {
       title: "删除列",

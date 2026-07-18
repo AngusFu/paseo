@@ -5,20 +5,25 @@ import {
   KanbanStatusBoard,
   type KanbanStatusBucket,
 } from "@/components/kanban/kanban-status-board";
+import { KanbanGitlabStats } from "@/components/kanban/kanban-gitlab-stats";
 
-type GitlabBucketKey = "draft" | "open" | "merged" | "closed";
-// Fixed lane order — GitLab MRs always get all four lanes rendered, even
+type GitlabBucketKey = "draft" | "open" | "approved" | "merged" | "closed";
+// Fixed lane order — GitLab MRs always get all five lanes rendered, even
 // empty ones (unlike the Jira board's fully dynamic column set), since the
-// MR lifecycle is the same four stops for every source.
-const BUCKET_ORDER: GitlabBucketKey[] = ["draft", "open", "merged", "closed"];
+// MR lifecycle is the same five stops for every source.
+const BUCKET_ORDER: GitlabBucketKey[] = ["draft", "open", "approved", "merged", "closed"];
 
-// Reads {state, draft} off a synced GitLab MR card's raw metadata blob
-// (packages/server/src/server/kanban/sync.ts stores the GitLab API MR object
-// there). Pure + defensive: metadata is `Record<string, unknown> | undefined`
-// on the wire, so every field is narrowed before use instead of assumed.
-// `state` is GitLab's own opened/merged/closed; an "opened" MR still marked
-// draft gets its own Draft lane ahead of Open, matching how MR authors think
-// about their own queue.
+// Reads {state, draft, approvals} off a synced GitLab MR card's raw metadata
+// blob (packages/server/src/server/kanban/sync.ts stores the GitLab API MR
+// object there, plus an `approvals` field it fetches separately since the MR
+// list endpoint never includes approval state). Pure + defensive: metadata is
+// `Record<string, unknown> | undefined` on the wire, so every field is
+// narrowed before use instead of assumed. `state` is GitLab's own
+// opened/merged/closed; an "opened" MR still marked draft gets its own Draft
+// lane ahead of Open, matching how MR authors think about their own queue. An
+// opened, non-draft MR only lands in Approved once `approvals.approved` is
+// explicitly true — missing/null approvals (fetch failed, or not yet
+// resolved) or `approved: false` both fall back to Open rather than guessing.
 function readGitlabBucket(metadata: Record<string, unknown> | undefined): GitlabBucketKey | null {
   const state = metadata?.state;
   if (typeof state !== "string") {
@@ -31,19 +36,26 @@ function readGitlabBucket(metadata: Record<string, unknown> | undefined): Gitlab
     return "closed";
   }
   if (state === "opened") {
-    return metadata?.draft === true ? "draft" : "open";
+    if (metadata?.draft === true) {
+      return "draft";
+    }
+    const approvals = metadata?.approvals as { approved?: unknown } | null | undefined;
+    return approvals?.approved === true ? "approved" : "open";
   }
   return null;
 }
 
 /**
- * GitLab source-kind view: four fixed lanes (Draft / Open / Merged / Closed)
- * derived from the MR's real state + draft flag, not Paseo's generic
- * pending/wip/done buckets. Unlike the Jira view, all four lanes always
- * render (even with zero cards) since GitLab's MR lifecycle is fixed. Cards
- * synced before the raw state metadata was stored (or any card this parser
- * can't read) fall back to a lane named after the legacy KanbanStatus so
- * nothing silently disappears from the board.
+ * GitLab source-kind view: five fixed lanes (Draft / Open / Approved / Merged
+ * / Closed) derived from the MR's real state + draft flag + approval state,
+ * not Paseo's generic pending/wip/done buckets. Unlike the Jira view, all
+ * five lanes always render (even with zero cards) since GitLab's MR
+ * lifecycle is fixed. Cards synced before the raw state metadata was stored
+ * (or any card this parser can't read) fall back to a lane named after the
+ * legacy KanbanStatus so nothing silently disappears from the board. A
+ * read-only stats strip (KanbanGitlabStats) sits above the lanes:
+ * merged-in-7d/30d, average time-to-merge, pending-review backlog,
+ * unresolved-discussion count.
  */
 export function KanbanGitlabBoard({
   cards,
@@ -78,11 +90,14 @@ export function KanbanGitlabBoard({
   }, [cards, t]);
 
   return (
-    <KanbanStatusBoard
-      buckets={buckets}
-      serverId={serverId}
-      cardDetailSupported={cardDetailSupported}
-      mutations={mutations}
-    />
+    <>
+      <KanbanGitlabStats cards={cards} />
+      <KanbanStatusBoard
+        buckets={buckets}
+        serverId={serverId}
+        cardDetailSupported={cardDetailSupported}
+        mutations={mutations}
+      />
+    </>
   );
 }

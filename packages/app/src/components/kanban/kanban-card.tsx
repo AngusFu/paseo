@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo, useRef, useState, type ReactElement } from "react";
 import {
+  Image,
   Pressable,
   Text,
   View,
@@ -20,6 +21,8 @@ import { openExternalUrl } from "@/utils/open-external-url";
 const THEME_ICON_SIZE = 16;
 const LINK_ICON_SIZE = 12;
 const PRIORITY_ICON_SIZE = 12;
+const AVATAR_SIZE = 16;
+const ISSUE_TYPE_ICON_SIZE = 16;
 
 // Max labels rendered as chips before collapsing the rest into a "+N" chip.
 const MAX_VISIBLE_LABELS = 2;
@@ -34,6 +37,48 @@ function cardIssueKey(source: KanbanCardSource): string | null {
     return `!${source.mrIid}`;
   }
   return null;
+}
+
+// Real Jira assignee avatar (board-density parity with Jira's own board —
+// P3). Reads the raw Jira user object sync.ts already stores in
+// card.metadata.assignee; pure + defensive since metadata is
+// `Record<string, unknown> | undefined` on the wire. null for anything else
+// (GitLab/manual cards, or a Jira card whose metadata predates this field),
+// which just means the existing plain-text assignee name keeps rendering.
+function jiraAssigneeAvatarUrl(card: StoredKanbanCard): string | null {
+  if (card.source.kind !== "jira") {
+    return null;
+  }
+  const assignee = card.metadata?.assignee;
+  if (typeof assignee !== "object" || assignee === null || Array.isArray(assignee)) {
+    return null;
+  }
+  const avatarUrls = (assignee as Record<string, unknown>).avatarUrls;
+  if (typeof avatarUrls !== "object" || avatarUrls === null || Array.isArray(avatarUrls)) {
+    return null;
+  }
+  const url = (avatarUrls as Record<string, unknown>)["24x24"];
+  return typeof url === "string" && url.length > 0 ? url : null;
+}
+
+// Real Jira issue-type icon (Bug/Story/Task glyph — board-density parity
+// with Jira's own board, P3). Reads sync.ts's metadata.issuetype{name,
+// iconUrl}. null when the field is absent — older cards synced before this
+// field was captured, or any non-Jira card — which means no icon renders
+// (not a placeholder; see kanban-card.tsx render site).
+function jiraIssueTypeIcon(card: StoredKanbanCard): { name: string; iconUrl: string } | null {
+  if (card.source.kind !== "jira") {
+    return null;
+  }
+  const issuetype = card.metadata?.issuetype;
+  if (typeof issuetype !== "object" || issuetype === null || Array.isArray(issuetype)) {
+    return null;
+  }
+  const { name, iconUrl } = issuetype as Record<string, unknown>;
+  if (typeof iconUrl !== "string" || iconUrl.length === 0) {
+    return null;
+  }
+  return { name: typeof name === "string" && name.length > 0 ? name : iconUrl, iconUrl };
 }
 
 export interface KanbanCardDropHandler {
@@ -106,6 +151,13 @@ export const KanbanCard = memo(function KanbanCard({
   const visibleLabels = labels.slice(0, MAX_VISIBLE_LABELS);
   const hiddenLabelCount = labels.length - visibleLabels.length;
   const hasMeta = Boolean(card.assignee) || labels.length > 0 || Boolean(card.priority);
+  const avatarUrl = useMemo(() => jiraAssigneeAvatarUrl(card), [card]);
+  const avatarSource = useMemo(() => (avatarUrl ? { uri: avatarUrl } : null), [avatarUrl]);
+  const issueType = useMemo(() => jiraIssueTypeIcon(card), [card]);
+  const issueTypeSource = useMemo(
+    () => (issueType ? { uri: issueType.iconUrl } : null),
+    [issueType],
+  );
   const priorityVisual = useMemo(() => {
     if (card.priority === "high") {
       return { icon: ChevronsUp, color: styles.priorityHigh.color };
@@ -219,6 +271,13 @@ export const KanbanCard = memo(function KanbanCard({
           >
             <View style={styles.header}>
               <themeVisual.icon size={THEME_ICON_SIZE} color={iconColor} />
+              {issueTypeSource ? (
+                <Image
+                  source={issueTypeSource}
+                  style={styles.issueTypeIcon}
+                  accessibilityLabel={issueType?.name}
+                />
+              ) : null}
               {issueKey ? (
                 <View style={styles.issueKeyChip}>
                   <Text style={styles.issueKeyText}>{issueKey}</Text>
@@ -237,9 +296,18 @@ export const KanbanCard = memo(function KanbanCard({
             {hasMeta ? (
               <View style={styles.metaRow}>
                 {card.assignee ? (
-                  <Text style={styles.assignee} numberOfLines={1}>
-                    {card.assignee}
-                  </Text>
+                  <View style={styles.assigneeGroup}>
+                    {avatarSource ? (
+                      <Image
+                        source={avatarSource}
+                        style={styles.avatar}
+                        accessibilityLabel={card.assignee}
+                      />
+                    ) : null}
+                    <Text style={styles.assignee} numberOfLines={1}>
+                      {card.assignee}
+                    </Text>
+                  </View>
                 ) : null}
                 {visibleLabels.map((label) => (
                   <View key={label} style={styles.labelChip}>
@@ -328,6 +396,10 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     gap: theme.spacing[1.5],
   },
+  issueTypeIcon: {
+    width: ISSUE_TYPE_ICON_SIZE,
+    height: ISSUE_TYPE_ICON_SIZE,
+  },
   // Matches the StatusBadge pill shell (rounded, bordered) so the ticket key
   // and the status tag read as one family — only the mono font differs. Kept in
   // sync with the identical copy in kanban-card-detail-sheet.tsx.
@@ -365,6 +437,17 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     flexWrap: "wrap",
     gap: theme.spacing[1.5],
+  },
+  assigneeGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexShrink: 1,
+    gap: theme.spacing[1],
+  },
+  avatar: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: theme.borderRadius.full,
   },
   assignee: {
     flexShrink: 1,

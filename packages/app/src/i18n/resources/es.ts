@@ -2241,12 +2241,12 @@ export const es: TranslationResources = {
       closed: "Cerrado",
     },
     gitlabStats: {
-      merged7d: "{{count}} fusionadas (7d)",
-      merged30d: "{{count}} fusionadas (30d)",
-      avgTimeToMerge: "Tiempo medio de fusión {{duration}}",
+      merged7d: "Fusionadas (7d)",
+      merged30d: "Fusionadas (30d)",
+      avgTimeToMerge: "Tiempo medio de fusión",
       avgTimeToMergeEmpty: "Sin fusiones (30d)",
-      pendingReview: "{{count}} pendientes de revisión",
-      unresolvedDiscussions: "{{count}} sin resolver",
+      pendingReview: "Pendientes de revisión",
+      unresolvedDiscussions: "Sin resolver",
     },
     card: {
       open: "Abrir enlace",

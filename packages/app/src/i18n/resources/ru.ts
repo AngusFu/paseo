@@ -2234,12 +2234,12 @@ export const ru: TranslationResources = {
       closed: "Закрыт",
     },
     gitlabStats: {
-      merged7d: "{{count}} слито (7 дн.)",
-      merged30d: "{{count}} слито (30 дн.)",
-      avgTimeToMerge: "Среднее время слияния {{duration}}",
+      merged7d: "Слито (7 дн.)",
+      merged30d: "Слито (30 дн.)",
+      avgTimeToMerge: "Среднее время слияния",
       avgTimeToMergeEmpty: "Нет слияний (30 дн.)",
-      pendingReview: "{{count}} ожидают ревью",
-      unresolvedDiscussions: "{{count}} не решено",
+      pendingReview: "Ожидают ревью",
+      unresolvedDiscussions: "Не решено",
     },
     card: {
       open: "Открыть ссылку",

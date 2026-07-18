@@ -2202,12 +2202,12 @@ export const en = {
       closed: "Closed",
     },
     gitlabStats: {
-      merged7d: "{{count}} merged (7d)",
-      merged30d: "{{count}} merged (30d)",
-      avgTimeToMerge: "Avg merge time {{duration}}",
+      merged7d: "Merged (7d)",
+      merged30d: "Merged (30d)",
+      avgTimeToMerge: "Avg merge time",
       avgTimeToMergeEmpty: "No merges (30d)",
-      pendingReview: "{{count}} pending review",
-      unresolvedDiscussions: "{{count}} unresolved",
+      pendingReview: "Pending review",
+      unresolvedDiscussions: "Unresolved discussions",
     },
     card: {
       open: "Open link",

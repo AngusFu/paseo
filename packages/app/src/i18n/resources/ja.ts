@@ -2219,12 +2219,12 @@ export const ja: TranslationResources = {
       closed: "クローズ",
     },
     gitlabStats: {
-      merged7d: "{{count}} 件マージ済み(7日)",
-      merged30d: "{{count}} 件マージ済み(30日)",
-      avgTimeToMerge: "平均マージ時間 {{duration}}",
+      merged7d: "マージ済み(7日)",
+      merged30d: "マージ済み(30日)",
+      avgTimeToMerge: "平均マージ時間",
       avgTimeToMergeEmpty: "過去30日にマージなし",
-      pendingReview: "{{count}} 件レビュー待ち",
-      unresolvedDiscussions: "{{count}} 件未解決",
+      pendingReview: "レビュー待ち",
+      unresolvedDiscussions: "未解決",
     },
     card: {
       open: "リンクを開く",

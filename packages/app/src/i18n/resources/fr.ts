@@ -2247,12 +2247,12 @@ export const fr: TranslationResources = {
       closed: "Fermée",
     },
     gitlabStats: {
-      merged7d: "{{count}} fusionnées (7j)",
-      merged30d: "{{count}} fusionnées (30j)",
-      avgTimeToMerge: "Temps moyen de fusion {{duration}}",
+      merged7d: "Fusionnées (7j)",
+      merged30d: "Fusionnées (30j)",
+      avgTimeToMerge: "Temps moyen de fusion",
       avgTimeToMergeEmpty: "Aucune fusion (30j)",
-      pendingReview: "{{count}} en attente de revue",
-      unresolvedDiscussions: "{{count}} non résolues",
+      pendingReview: "En attente de revue",
+      unresolvedDiscussions: "Non résolues",
     },
     card: {
       open: "Ouvrir le lien",

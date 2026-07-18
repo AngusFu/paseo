@@ -2169,12 +2169,12 @@ export const zhCN: TranslationResources = {
       closed: "已关闭",
     },
     gitlabStats: {
-      merged7d: "近7天已合并 {{count}} 个",
-      merged30d: "近30天已合并 {{count}} 个",
-      avgTimeToMerge: "平均合入耗时 {{duration}}",
+      merged7d: "7 天合并",
+      merged30d: "30 天合并",
+      avgTimeToMerge: "平均合入耗时",
       avgTimeToMergeEmpty: "近30天无合入",
-      pendingReview: "{{count}} 个待评审",
-      unresolvedDiscussions: "{{count}} 个未解决讨论",
+      pendingReview: "待评审",
+      unresolvedDiscussions: "未解决讨论",
     },
     card: {
       open: "打开链接",

@@ -2226,12 +2226,12 @@ export const ptBR: TranslationResources = {
       closed: "Fechado",
     },
     gitlabStats: {
-      merged7d: "{{count}} mescladas (7d)",
-      merged30d: "{{count}} mescladas (30d)",
-      avgTimeToMerge: "Tempo médio de merge {{duration}}",
+      merged7d: "Mescladas (7d)",
+      merged30d: "Mescladas (30d)",
+      avgTimeToMerge: "Tempo médio de merge",
       avgTimeToMergeEmpty: "Sem merges (30d)",
-      pendingReview: "{{count}} aguardando revisão",
-      unresolvedDiscussions: "{{count}} não resolvidas",
+      pendingReview: "Aguardando revisão",
+      unresolvedDiscussions: "Não resolvidas",
     },
     card: {
       open: "Abrir link",

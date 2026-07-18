@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactElement,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { Pressable, Text, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { StyleSheet } from "react-native-unistyles";
@@ -15,7 +8,7 @@ import equal from "fast-deep-equal";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import type { AgentProvider, ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
-import { CombinedModelSelector } from "@/components/combined-model-selector";
+import { collectAgentFeatureValues } from "@/components/agent-launch-fields";
 import { buildSelectableProviderSelectorProviders } from "@/provider-selection/provider-selection";
 import type {
   KanbanCardDetail,
@@ -35,14 +28,13 @@ import type { FieldControlSize } from "@/components/ui/control-geometry";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import {
-  SelectField,
-  SelectFieldTrigger,
-  type SelectFieldOption,
-} from "@/components/ui/select-field";
+import { SelectField, type SelectFieldOption } from "@/components/ui/select-field";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { DraftAgentControls } from "@/composer/agent-controls";
+import { DraftAgentModeControl } from "@/composer/agent-controls/mode-control";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
+import { useDraftAgentFeatures } from "@/hooks/use-draft-agent-features";
 import { useFormPreferences } from "@/hooks/use-form-preferences";
 import {
   kanbanCardCommentsQueryKey,
@@ -53,7 +45,10 @@ import { useKanbanCardSummary } from "@/hooks/use-kanban-card-summary";
 import { useKanbanWriteback } from "@/hooks/use-kanban-writeback";
 import { useKanbanSources } from "@/hooks/use-kanban-sources";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
-import { resolveDefaultModelId } from "@/provider-selection/resolve-agent-form";
+import {
+  resolveDefaultModelId,
+  resolvePreferredAgentModeId,
+} from "@/provider-selection/resolve-agent-form";
 import { useHostFeature } from "@/runtime/host-features";
 import { useHostRuntimeClient, useHosts } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
@@ -63,6 +58,7 @@ import { toErrorMessage } from "@/utils/error-messages";
 import { renderDefaultPrompt, renderPromptTemplate } from "@/utils/kanban-prompt-template";
 import { formatTimeAgo } from "@/utils/time";
 import { openExternalUrl } from "@/utils/open-external-url";
+import { buildProviderDefinitions } from "@/utils/provider-definitions";
 import { requireWorkspaceDirectory } from "@/utils/workspace-directory";
 
 const THEME_ICON_SIZE = 16;
@@ -303,13 +299,19 @@ function buildDispatchCommand(
   prompt: string,
   provider: string,
   model: string,
+  thinkingOptionId: string,
+  mode: string,
 ): string {
   const cwdArg = cwd ? `--cwd "${escapeCommandQuotes(cwd)}" ` : "";
   const worktreeArg = plan.worktree ? `--worktree "${escapeCommandQuotes(plan.worktree)}" ` : "";
   const titleArg = plan.title ? `--title "${escapeCommandQuotes(plan.title)}" ` : "";
   const providerArg = provider ? `--provider "${escapeCommandQuotes(provider)}" ` : "";
   const modelArg = model ? `--model "${escapeCommandQuotes(model)}" ` : "";
-  return `paseo run ${cwdArg}${worktreeArg}${titleArg}${providerArg}${modelArg}"${escapeCommandQuotes(prompt)}"`;
+  const thinkingArg = thinkingOptionId
+    ? `--thinking "${escapeCommandQuotes(thinkingOptionId)}" `
+    : "";
+  const modeArg = mode ? `--mode "${escapeCommandQuotes(mode)}" ` : "";
+  return `paseo run ${cwdArg}${worktreeArg}${titleArg}${providerArg}${modelArg}${thinkingArg}${modeArg}"${escapeCommandQuotes(prompt)}"`;
 }
 
 function sortCommentsAscending(
@@ -1174,11 +1176,16 @@ function DispatchActions({
   const toast = useToast();
   const client = useHostRuntimeClient(serverId ?? "");
   const { preferences } = useFormPreferences();
+  const isCompact = useIsCompactFormFactor();
   const cwd = workspace?.cwd ?? null;
   const snapshot = useProvidersSnapshot(serverId, { enabled: Boolean(serverId && cwd), cwd });
   const providerDefault = useMemo(
     () => resolveDispatchProviderDefault(preferences.provider, snapshot.entries),
     [preferences.provider, snapshot.entries],
+  );
+  const providerDefinitions = useMemo(
+    () => buildProviderDefinitions(snapshot.entries),
+    [snapshot.entries],
   );
   const modelSelectorProviders = useMemo(
     () => buildSelectableProviderSelectorProviders(snapshot.entries),
@@ -1187,44 +1194,108 @@ function DispatchActions({
 
   const [prompt, setPrompt] = useState(plan.prompt);
   const [isRunSheetVisible, setIsRunSheetVisible] = useState(false);
-  // Provider/model start from the resolved default and stay wherever the user
-  // moves them. Seed once, when the default first resolves and nothing is chosen.
-  const [selectedProvider, setSelectedProvider] = useState("");
+  // Provider/model/thinking/mode all start from the resolved default and stay
+  // wherever the user moves them. Seed once, when the default first resolves
+  // and nothing is chosen — same DraftAgentControls wiring as the workflow
+  // dispatch sheet (docs/workflow.md "Dispatch reuses composer
+  // DraftAgentControls").
+  const [selectedProvider, setSelectedProvider] = useState<AgentProvider | null>(null);
   const [selectedModel, setSelectedModel] = useState("");
+  const [selectedEffort, setSelectedEffort] = useState("");
+  const [selectedMode, setSelectedMode] = useState("");
+
+  const selectedProviderEntry = useMemo(
+    () =>
+      selectedProvider
+        ? (snapshot.entries?.find((entry) => entry.provider === selectedProvider) ?? null)
+        : null,
+    [selectedProvider, snapshot.entries],
+  );
+  const availableModels = useMemo(
+    () => selectedProviderEntry?.models ?? [],
+    [selectedProviderEntry?.models],
+  );
+  const selectedModelDef = useMemo(
+    () => availableModels.find((model) => model.id === selectedModel) ?? null,
+    [availableModels, selectedModel],
+  );
+  const thinkingOptions = useMemo(
+    () => selectedModelDef?.thinkingOptions ?? [],
+    [selectedModelDef?.thinkingOptions],
+  );
+  const modeOptions = useMemo(
+    () => selectedProviderEntry?.modes ?? [],
+    [selectedProviderEntry?.modes],
+  );
+  const selectedProviderDefinition = useMemo(
+    () =>
+      selectedProvider
+        ? (providerDefinitions.find((entry) => entry.id === selectedProvider) ?? undefined)
+        : undefined,
+    [providerDefinitions, selectedProvider],
+  );
+  const draftFeatures = useDraftAgentFeatures({
+    serverId,
+    provider: selectedProvider,
+    cwd,
+    modeId: selectedMode || null,
+    modelId: selectedModel || null,
+    thinkingOptionId: selectedEffort || null,
+  });
+
   useEffect(() => {
     if (!selectedProvider && providerDefault) {
-      setSelectedProvider(providerDefault.provider);
+      setSelectedProvider(providerDefault.provider as AgentProvider);
       setSelectedModel(providerDefault.model);
     }
   }, [providerDefault, selectedProvider]);
 
-  const handleSelectModel = useCallback((provider: AgentProvider, modelId: string) => {
-    setSelectedProvider(provider);
-    setSelectedModel(modelId);
-  }, []);
+  useEffect(() => {
+    if (thinkingOptions.length === 0) {
+      setSelectedEffort("");
+      return;
+    }
+    setSelectedEffort((current) => {
+      if (current && thinkingOptions.some((option) => option.id === current)) {
+        return current;
+      }
+      return (
+        selectedModelDef?.defaultThinkingOptionId ??
+        thinkingOptions.find((option) => option.isDefault)?.id ??
+        thinkingOptions[0]?.id ??
+        ""
+      );
+    });
+  }, [selectedModelDef?.defaultThinkingOptionId, thinkingOptions]);
 
-  // Full-width trigger matching the workspace dropdown above, so the dispatch
-  // controls line up instead of the model chip floating at its own width.
-  const renderModelTrigger = useCallback(
-    (input: {
-      selectedModelLabel: string;
-      disabled: boolean;
-      isOpen: boolean;
-      hovered: boolean;
-      pressed: boolean;
-    }): ReactNode => (
-      <SelectFieldTrigger
-        label={input.selectedModelLabel}
-        isPlaceholder={!selectedModel}
-        placeholder={input.selectedModelLabel}
-        disabled={input.disabled}
-        active={input.hovered || input.pressed || input.isOpen}
-        size="sm"
-        testID="kanban-card-detail-dispatch-provider-trigger"
-      />
-    ),
-    [selectedModel],
-  );
+  useEffect(() => {
+    if (modeOptions.length === 0) {
+      setSelectedMode("");
+      return;
+    }
+    setSelectedMode((current) => {
+      if (current && modeOptions.some((mode) => mode.id === current)) {
+        return current;
+      }
+      const preferredModeId = selectedProvider
+        ? preferences.providerPreferences?.[selectedProvider]?.mode
+        : undefined;
+      const resolved = resolvePreferredAgentModeId({
+        preferredModeId,
+        providerDef: selectedProviderDefinition,
+      });
+      if (resolved && modeOptions.some((mode) => mode.id === resolved)) {
+        return resolved;
+      }
+      return selectedProviderEntry?.defaultModeId ?? modeOptions[0]?.id ?? "";
+    });
+  }, [
+    modeOptions,
+    preferences.providerPreferences,
+    selectedProvider,
+    selectedProviderDefinition,
+    selectedProviderEntry?.defaultModeId,
+  ]);
 
   const selectedProviderLabel = useMemo(() => {
     const match = modelSelectorProviders.find((entry) => entry.id === selectedProvider);
@@ -1239,14 +1310,28 @@ function DispatchActions({
   }, [selectedProviderLabel, selectedModel]);
 
   const dispatchCommand = useMemo(
-    () => buildDispatchCommand(plan, cwd, prompt, selectedProvider, selectedModel),
-    [plan, cwd, prompt, selectedProvider, selectedModel],
+    () =>
+      buildDispatchCommand(
+        plan,
+        cwd,
+        prompt,
+        selectedProvider ?? "",
+        selectedModel,
+        selectedEffort,
+        selectedMode,
+      ),
+    [plan, cwd, prompt, selectedProvider, selectedModel, selectedEffort, selectedMode],
   );
 
   const handleCopyDispatch = useCallback(() => {
     void Clipboard.setStringAsync(dispatchCommand);
     toast.copied();
   }, [dispatchCommand, toast]);
+
+  const handleSelectProviderAndModel = useCallback((provider: AgentProvider, modelId: string) => {
+    setSelectedProvider(provider);
+    setSelectedModel(modelId);
+  }, []);
 
   const handleOpenRunSheet = useCallback(() => setIsRunSheetVisible(true), []);
   const handleCloseRunSheet = useCallback(() => setIsRunSheetVisible(false), []);
@@ -1270,9 +1355,13 @@ function DispatchActions({
       workspaceId: workspacePayload.workspace.id,
       workspaceDirectory: workspacePayload.workspace.workspaceDirectory,
     });
+    const featureValues = collectAgentFeatureValues(draftFeatures.features);
     const created = await client.createAgent({
       provider: selectedProvider,
       model: selectedModel || undefined,
+      modeId: selectedMode || undefined,
+      thinkingOptionId: selectedEffort || undefined,
+      ...(featureValues ? { featureValues } : {}),
       cwd: workspaceDirectory,
       workspaceId: workspacePayload.workspace.id,
       ...(plan.title ? { title: plan.title } : {}),
@@ -1280,21 +1369,60 @@ function DispatchActions({
     });
     toast.show(t("kanban.cardDetail.dispatchRunSuccess"), { variant: "success" });
     onDispatched?.(created.id);
-  }, [client, onDispatched, plan, prompt, selectedProvider, selectedModel, t, toast, workspace]);
+  }, [
+    client,
+    draftFeatures.features,
+    onDispatched,
+    plan,
+    prompt,
+    selectedEffort,
+    selectedMode,
+    selectedProvider,
+    selectedModel,
+    t,
+    toast,
+    workspace,
+  ]);
 
   return (
     <>
       <Field label={t("kanban.cardDetail.dispatchRunConfirmProvider")}>
-        <CombinedModelSelector
-          providers={modelSelectorProviders}
-          selectedProvider={selectedProvider}
-          selectedModel={selectedModel}
-          onSelect={handleSelectModel}
-          isLoading={snapshot.isLoading || snapshot.isFetching}
-          serverId={serverId}
-          renderTrigger={renderModelTrigger}
-          triggerFill
-        />
+        <View
+          style={styles.dispatchAgentControls}
+          testID="kanban-card-detail-dispatch-agent-controls"
+        >
+          <DraftAgentControls
+            providerDefinitions={providerDefinitions}
+            selectedProvider={selectedProvider}
+            onSelectProvider={setSelectedProvider}
+            modeOptions={modeOptions}
+            selectedMode={selectedMode}
+            onSelectMode={setSelectedMode}
+            models={availableModels}
+            selectedModel={selectedModel}
+            onSelectModel={setSelectedModel}
+            isModelLoading={snapshot.isLoading || snapshot.isFetching}
+            modelSelectorProviders={modelSelectorProviders}
+            isAllModelsLoading={snapshot.isLoading || snapshot.isFetching}
+            onSelectProviderAndModel={handleSelectProviderAndModel}
+            thinkingOptions={thinkingOptions}
+            selectedThinkingOptionId={selectedEffort}
+            onSelectThinkingOption={setSelectedEffort}
+            features={draftFeatures.features}
+            onSetFeature={draftFeatures.setFeatureValue}
+            modelSelectorServerId={serverId}
+            isCompactLayout={isCompact}
+          />
+          <DraftAgentModeControl
+            placement="footer"
+            selectedProvider={selectedProvider}
+            providerDefinitions={providerDefinitions}
+            modeOptions={modeOptions}
+            selectedMode={selectedMode}
+            onSelectMode={setSelectedMode}
+            isCompactLayout={isCompact}
+          />
+        </View>
       </Field>
       <Field label={t("kanban.cardDetail.dispatchPromptLabel")}>
         {/* AdaptiveTextInput is intentionally uncontrolled and discards `value`;
@@ -1626,6 +1754,15 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.primary,
     fontSize: theme.fontSize.xs,
     textDecorationLine: "underline",
+  },
+  // Chip row (provider/model, thinking, mode) — mirrors the composer/workflow
+  // dispatch sheet's DraftAgentControls layout (docs/workflow.md "Dispatch
+  // reuses composer DraftAgentControls").
+  dispatchAgentControls: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: theme.spacing[1],
   },
   dispatchBlock: {
     borderWidth: 1,

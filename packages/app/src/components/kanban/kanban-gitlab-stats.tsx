@@ -107,47 +107,68 @@ export interface KanbanGitlabStatsProps {
   cards: StoredKanbanCard[];
 }
 
+interface StatTileProps {
+  value: string;
+  label: string;
+  testID: string;
+}
+
+// One "value line" (large, primary color) + "label line" (small, muted)
+// tile — matches KanbanOverviewFocusRow's focusStat tiles in kanban-screen.tsx.
+function StatTile({ value, label, testID }: StatTileProps): ReactElement {
+  return (
+    <View style={styles.tile} testID={testID}>
+      <Text style={styles.tileValue}>{value}</Text>
+      <Text style={styles.tileLabel}>{label}</Text>
+    </View>
+  );
+}
+
 /**
  * Read-only stats strip above the GitLab MR board: merged-in-7d/30d counts,
  * average time-to-merge over the last 30 days, still-open non-draft count
  * ("pending review"), and unresolved-discussion count. Computed entirely from
- * the already-synced card set — no protocol/RPC addition.
+ * the already-synced card set — no protocol/RPC addition. Each stat renders
+ * as a value+label tile rather than a sentence, so the numbers actually read
+ * as statistics instead of being buried in prose.
  */
 export function KanbanGitlabStats({ cards }: KanbanGitlabStatsProps): ReactElement {
   const { t } = useTranslation();
   const summary = useMemo(() => summarizeGitlabCards(cards, new Date()), [cards]);
+  const avgTimeToMergeValue =
+    summary.avgTimeToMergeMs === null ? "—" : formatDuration(summary.avgTimeToMergeMs);
+  const avgTimeToMergeLabel =
+    summary.avgTimeToMergeMs === null
+      ? t("kanban.gitlabStats.avgTimeToMergeEmpty")
+      : t("kanban.gitlabStats.avgTimeToMerge");
 
   return (
-    <View style={styles.row}>
-      <View style={styles.pill}>
-        <Text style={styles.pillText}>
-          {t("kanban.gitlabStats.merged7d", { count: summary.merged7d })}
-        </Text>
-      </View>
-      <View style={styles.pill}>
-        <Text style={styles.pillText}>
-          {t("kanban.gitlabStats.merged30d", { count: summary.merged30d })}
-        </Text>
-      </View>
-      <View style={styles.pill}>
-        <Text style={styles.pillText}>
-          {summary.avgTimeToMergeMs === null
-            ? t("kanban.gitlabStats.avgTimeToMergeEmpty")
-            : t("kanban.gitlabStats.avgTimeToMerge", {
-                duration: formatDuration(summary.avgTimeToMergeMs),
-              })}
-        </Text>
-      </View>
-      <View style={styles.pill}>
-        <Text style={styles.pillText}>
-          {t("kanban.gitlabStats.pendingReview", { count: summary.pendingReview })}
-        </Text>
-      </View>
-      <View style={styles.pill}>
-        <Text style={styles.pillText}>
-          {t("kanban.gitlabStats.unresolvedDiscussions", { count: summary.unresolvedDiscussions })}
-        </Text>
-      </View>
+    <View style={styles.row} testID="kanban-gitlab-stats">
+      <StatTile
+        testID="kanban-gitlab-stats-merged7d"
+        value={String(summary.merged7d)}
+        label={t("kanban.gitlabStats.merged7d")}
+      />
+      <StatTile
+        testID="kanban-gitlab-stats-merged30d"
+        value={String(summary.merged30d)}
+        label={t("kanban.gitlabStats.merged30d")}
+      />
+      <StatTile
+        testID="kanban-gitlab-stats-avg-time-to-merge"
+        value={avgTimeToMergeValue}
+        label={avgTimeToMergeLabel}
+      />
+      <StatTile
+        testID="kanban-gitlab-stats-pending-review"
+        value={String(summary.pendingReview)}
+        label={t("kanban.gitlabStats.pendingReview")}
+      />
+      <StatTile
+        testID="kanban-gitlab-stats-unresolved-discussions"
+        value={String(summary.unresolvedDiscussions)}
+        label={t("kanban.gitlabStats.unresolvedDiscussions")}
+      />
     </View>
   );
 }
@@ -157,16 +178,32 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: theme.spacing[2],
-    paddingHorizontal: theme.spacing[1],
+    // Match the screen's row padding (tabs/actions) and the board content
+    // below so the tiles share the same left edge.
+    paddingHorizontal: { xs: theme.spacing[3], md: theme.spacing[6] },
+    marginTop: theme.spacing[3],
     paddingBottom: theme.spacing[2],
   },
-  pill: {
-    backgroundColor: theme.colors.surface2,
-    borderRadius: theme.borderRadius.full,
-    paddingHorizontal: theme.spacing[3],
+  tile: {
+    // Hug content — flexGrow would stretch five tiny numbers across the full
+    // row width, which reads as five bloated empty cards on wide screens.
+    flexGrow: 0,
+    alignSelf: "flex-start",
+    minWidth: 96,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface1,
+    paddingHorizontal: theme.spacing[2],
     paddingVertical: theme.spacing[1],
   },
-  pillText: {
+  tileValue: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.base,
+    fontWeight: theme.fontWeight.semibold,
+    lineHeight: 20,
+  },
+  tileLabel: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
   },

@@ -2192,12 +2192,12 @@ export const ar: TranslationResources = {
       closed: "مغلق",
     },
     gitlabStats: {
-      merged7d: "{{count}} مدموجة (7 أيام)",
-      merged30d: "{{count}} مدموجة (30 يومًا)",
-      avgTimeToMerge: "متوسط وقت الدمج {{duration}}",
+      merged7d: "مدموجة (7 أيام)",
+      merged30d: "مدموجة (30 يومًا)",
+      avgTimeToMerge: "متوسط وقت الدمج",
       avgTimeToMergeEmpty: "لا عمليات دمج (30 يومًا)",
-      pendingReview: "{{count}} بانتظار المراجعة",
-      unresolvedDiscussions: "{{count}} غير محلولة",
+      pendingReview: "بانتظار المراجعة",
+      unresolvedDiscussions: "غير محلولة",
     },
     card: {
       open: "فتح الرابط",

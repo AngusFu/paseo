@@ -1,5 +1,10 @@
 import { useCallback } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+  type QueryKey,
+} from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type {
   DaemonClient,
@@ -7,6 +12,7 @@ import type {
   KanbanColumnReorderOptions,
   KanbanColumnUpdateOptions,
 } from "@getpaseo/client/internal/daemon-client";
+import type { KanbanColumn } from "@getpaseo/protocol/kanban/types";
 import { kanbanCardsQueryBaseKey } from "@/hooks/use-kanban-cards";
 import { kanbanColumnsQueryBaseKey } from "@/hooks/use-kanban-columns";
 import { useSessionStore } from "@/stores/session-store";
@@ -29,6 +35,22 @@ export interface UseKanbanColumnMutationsResult {
   isUpdating: boolean;
   isReordering: boolean;
   isDeleting: boolean;
+}
+
+interface ColumnListSnapshot {
+  previous: Array<[QueryKey, KanbanColumn[] | undefined]>;
+}
+
+function snapshotColumns(queryClient: QueryClient): ColumnListSnapshot {
+  return {
+    previous: queryClient.getQueriesData<KanbanColumn[]>({ queryKey: kanbanColumnsQueryBaseKey }),
+  };
+}
+
+function restoreColumns(queryClient: QueryClient, snapshot: ColumnListSnapshot): void {
+  for (const [queryKey, previous] of snapshot.previous) {
+    queryClient.setQueryData(queryKey, previous);
+  }
 }
 
 function requireClient(serverId: string, unavailableMessage: string): DaemonClient {
@@ -86,6 +108,33 @@ export function useKanbanColumnMutations({
       const payload = await client.kanbanColumnReorder(input);
       if (payload.error) {
         throw new Error(payload.error);
+      }
+    },
+    // Column move-left/right fires two of these (swap with the neighbor) with
+    // no round trip in between — optimistic update so both sides of the swap
+    // reflect immediately instead of waiting on two sequential invalidations.
+    onMutate: async (input): Promise<ColumnListSnapshot> => {
+      await queryClient.cancelQueries({ queryKey: kanbanColumnsQueryBaseKey });
+      const snapshot = snapshotColumns(queryClient);
+      queryClient.setQueriesData<KanbanColumn[]>(
+        { queryKey: kanbanColumnsQueryBaseKey },
+        (current) => {
+          if (!current) {
+            return current;
+          }
+          const next = [...current];
+          const index = next.findIndex((column) => column.id === input.id);
+          if (index !== -1) {
+            next[index] = { ...next[index], order: input.order };
+          }
+          return next.sort((a, b) => a.order - b.order);
+        },
+      );
+      return snapshot;
+    },
+    onError: (_error, _input, context) => {
+      if (context) {
+        restoreColumns(queryClient, context);
       }
     },
     onSettled: invalidateColumns,

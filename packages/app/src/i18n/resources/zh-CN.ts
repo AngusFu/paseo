@@ -2139,8 +2139,16 @@ export const zhCN: TranslationResources = {
   kanban: {
     title: "看板",
     empty: "暂无卡片",
+    emptyFiltered: "没有符合筛选条件的卡片",
     loadError: "无法加载卡片",
     unsupported: "请更新主机以使用看板。",
+    tabs: {
+      overview: "总览",
+    },
+    overview: {
+      unresolvedThreads: "未解决的讨论",
+      stale: "滞留(7天以上)",
+    },
     columns: {
       pending: "待处理",
       wip: "进行中",
@@ -2148,6 +2156,12 @@ export const zhCN: TranslationResources = {
       skip: "已跳过",
       fail: "失败",
       abort: "已中止",
+    },
+    gitlabColumns: {
+      draft: "草稿",
+      open: "打开",
+      merged: "已合并",
+      closed: "已关闭",
     },
     card: {
       open: "打开链接",
@@ -2163,6 +2177,11 @@ export const zhCN: TranslationResources = {
       move: "移动",
       sync: "同步",
       sources: "来源",
+      clearFilters: "清除筛选",
+    },
+    sync: {
+      succeeded: "已同步 {{count}} 个来源",
+      failed: "{{count}} 个来源同步失败:{{names}}",
     },
     filters: {
       trigger: "筛选",
@@ -2385,6 +2404,14 @@ export const zhCN: TranslationResources = {
       dispatchRunConfirmPrompt: "提示词",
       dispatchRunConfirmConfirm: "运行",
       dispatchRunSuccess: "Agent 已派发",
+      status: "状态",
+      replyPlaceholder: "添加评论…",
+      replySend: "发送",
+    },
+    transitions: {
+      pick: "移动到",
+      loadError: "无法加载状态流转",
+      empty: "没有可用的状态流转",
     },
   },
   workflows: {
@@ -2449,6 +2476,13 @@ export const zhCN: TranslationResources = {
     runLogsLive: "Live",
     runLogsLoadMore: "加载更多",
     runLogsError: "加载失败",
+    runLogsJumpToLatest: "跳到最新",
+    runOpenWorkspace: "打开 workspace",
+    runCancelTitle: "取消运行？",
+    runCancelMessage: "取消这次工作流运行？已开始的工作可能不会立刻停止。",
+    runCancelFailed: "取消失败",
+    runCancelling: "取消中…",
+    runAgainFailed: "重新运行失败",
     createFromBuiltin: "从内置模板创建",
     forkedToast: "已 Fork「{{name}}」",
     name: "名称",
@@ -2481,6 +2515,8 @@ export const zhCN: TranslationResources = {
       save: "保存",
       dispatch: "执行",
       confirmDispatch: "开始执行",
+      cancelRun: "取消运行",
+      runAgain: "重新运行",
     },
     status: {
       queued: "排队中",

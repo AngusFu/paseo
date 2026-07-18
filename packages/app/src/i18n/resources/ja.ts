@@ -2189,8 +2189,16 @@ export const ja: TranslationResources = {
   kanban: {
     title: "カンバン",
     empty: "カードがまだありません",
+    emptyFiltered: "条件に一致するカードがありません",
     loadError: "カードを読み込めませんでした",
     unsupported: "カンバンを使うにはホストを更新してください。",
+    tabs: {
+      overview: "概要",
+    },
+    overview: {
+      unresolvedThreads: "未解決の議論",
+      stale: "停滞(7日以上)",
+    },
     columns: {
       pending: "保留",
       wip: "進行中",
@@ -2198,6 +2206,12 @@ export const ja: TranslationResources = {
       skip: "スキップ",
       fail: "失敗",
       abort: "中止",
+    },
+    gitlabColumns: {
+      draft: "下書き",
+      open: "オープン",
+      merged: "マージ済み",
+      closed: "クローズ",
     },
     card: {
       open: "リンクを開く",
@@ -2213,6 +2227,11 @@ export const ja: TranslationResources = {
       move: "移動",
       sync: "同期",
       sources: "ソース",
+      clearFilters: "フィルターをクリア",
+    },
+    sync: {
+      succeeded: "{{count}} 件のソースを同期しました",
+      failed: "{{count}} 件のソースで同期に失敗しました: {{names}}",
     },
     filters: {
       trigger: "フィルター",
@@ -2435,6 +2454,14 @@ export const ja: TranslationResources = {
       dispatchRunConfirmPrompt: "プロンプト",
       dispatchRunConfirmConfirm: "実行",
       dispatchRunSuccess: "エージェントを実行しました",
+      status: "ステータス",
+      replyPlaceholder: "コメントを追加…",
+      replySend: "送信",
+    },
+    transitions: {
+      pick: "移動先",
+      loadError: "遷移を読み込めませんでした",
+      empty: "利用可能な遷移がありません",
     },
   },
   workflows: {
@@ -2499,6 +2526,13 @@ export const ja: TranslationResources = {
     runLogsLive: "Live",
     runLogsLoadMore: "Load more",
     runLogsError: "failed to load events",
+    runLogsJumpToLatest: "Jump to latest",
+    runOpenWorkspace: "Open workspace",
+    runCancelTitle: "Cancel run?",
+    runCancelMessage: "Cancel this workflow run? Work already started may not stop instantly.",
+    runCancelFailed: "Couldn't cancel the run",
+    runCancelling: "Cancelling…",
+    runAgainFailed: "Couldn't start a new run",
     description: "Description",
     descriptionPlaceholder: "Optional description",
     source: "Source (.flow.js)",
@@ -2531,6 +2565,8 @@ export const ja: TranslationResources = {
       save: "Save",
       dispatch: "Dispatch",
       confirmDispatch: "Run",
+      cancelRun: "Cancel run",
+      runAgain: "Run again",
     },
     status: {
       queued: "Queued",

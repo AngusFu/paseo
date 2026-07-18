@@ -2217,8 +2217,16 @@ export const fr: TranslationResources = {
   kanban: {
     title: "Kanban",
     empty: "Aucune carte pour l'instant",
+    emptyFiltered: "Aucune carte ne correspond aux filtres",
     loadError: "Impossible de charger les cartes",
     unsupported: "Mettez à jour l'hôte pour utiliser Kanban.",
+    tabs: {
+      overview: "Aperçu",
+    },
+    overview: {
+      unresolvedThreads: "Discussions non résolues",
+      stale: "Stagnantes (7j+)",
+    },
     columns: {
       pending: "En attente",
       wip: "En cours",
@@ -2226,6 +2234,12 @@ export const fr: TranslationResources = {
       skip: "Ignoré",
       fail: "Échoué",
       abort: "Annulé",
+    },
+    gitlabColumns: {
+      draft: "Brouillon",
+      open: "Ouverte",
+      merged: "Fusionnée",
+      closed: "Fermée",
     },
     card: {
       open: "Ouvrir le lien",
@@ -2241,6 +2255,11 @@ export const fr: TranslationResources = {
       move: "Déplacer",
       sync: "Synchroniser",
       sources: "Sources",
+      clearFilters: "Effacer les filtres",
+    },
+    sync: {
+      succeeded: "{{count}} sources synchronisées",
+      failed: "Échec de synchronisation pour {{count}} sources : {{names}}",
     },
     filters: {
       trigger: "Filtres",
@@ -2465,6 +2484,14 @@ export const fr: TranslationResources = {
       dispatchRunConfirmPrompt: "Invite",
       dispatchRunConfirmConfirm: "Exécuter",
       dispatchRunSuccess: "Agent envoyé",
+      status: "Statut",
+      replyPlaceholder: "Ajouter un commentaire…",
+      replySend: "Envoyer",
+    },
+    transitions: {
+      pick: "Déplacer vers",
+      loadError: "Impossible de charger les transitions",
+      empty: "Aucune transition disponible",
     },
   },
   workflows: {
@@ -2529,6 +2556,13 @@ export const fr: TranslationResources = {
     runLogsLive: "Live",
     runLogsLoadMore: "Load more",
     runLogsError: "failed to load events",
+    runLogsJumpToLatest: "Jump to latest",
+    runOpenWorkspace: "Open workspace",
+    runCancelTitle: "Cancel run?",
+    runCancelMessage: "Cancel this workflow run? Work already started may not stop instantly.",
+    runCancelFailed: "Couldn't cancel the run",
+    runCancelling: "Cancelling…",
+    runAgainFailed: "Couldn't start a new run",
     description: "Description",
     descriptionPlaceholder: "Optional description",
     source: "Source (.flow.js)",
@@ -2561,6 +2595,8 @@ export const fr: TranslationResources = {
       save: "Save",
       dispatch: "Dispatch",
       confirmDispatch: "Run",
+      cancelRun: "Cancel run",
+      runAgain: "Run again",
     },
     status: {
       queued: "Queued",

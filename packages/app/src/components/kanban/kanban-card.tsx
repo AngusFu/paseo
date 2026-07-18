@@ -37,7 +37,7 @@ function cardIssueKey(source: KanbanCardSource): string | null {
 }
 
 export interface KanbanCardDropHandler {
-  (params: { cardId: string; fromColumnId: string; absoluteX: number }): void;
+  (params: { cardId: string; fromColumnId: string; absoluteX: number; absoluteY: number }): void;
 }
 
 interface KanbanCardProps {
@@ -51,7 +51,7 @@ interface KanbanCardProps {
   /** Touch-down: board re-measures column bounds before any movement. */
   onDragBegin: () => void;
   /** Drag activated: board raises this card's column above its siblings. */
-  onDragStart: (columnId: string) => void;
+  onDragStart: (columnId: string, cardId: string) => void;
   /** Each drag frame: board resolves and highlights the hovered column. */
   onDragUpdate: (absoluteX: number) => void;
   /** Drag settled/cancelled: board clears drag + drop-target state. */
@@ -162,7 +162,7 @@ export const KanbanCard = memo(function KanbanCard({
     .onStart(() => {
       dragging.value = true;
       runOnJS(markDragged)();
-      runOnJS(onDragStart)(columnId);
+      runOnJS(onDragStart)(columnId, card.id);
     })
     .onUpdate((event) => {
       translateX.value = event.translationX;
@@ -174,6 +174,7 @@ export const KanbanCard = memo(function KanbanCard({
         cardId: card.id,
         fromColumnId: columnId,
         absoluteX: event.absoluteX,
+        absoluteY: event.absoluteY,
       });
       translateX.value = 0;
       translateY.value = 0;

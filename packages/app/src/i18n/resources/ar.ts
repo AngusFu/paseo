@@ -2162,8 +2162,16 @@ export const ar: TranslationResources = {
   kanban: {
     title: "كانبان",
     empty: "لا توجد بطاقات بعد",
+    emptyFiltered: "لا توجد بطاقات مطابقة للمرشحات",
     loadError: "تعذّر تحميل البطاقات",
     unsupported: "قم بتحديث المضيف لاستخدام كانبان.",
+    tabs: {
+      overview: "نظرة عامة",
+    },
+    overview: {
+      unresolvedThreads: "مناقشات غير محلولة",
+      stale: "راكدة (7 أيام+)",
+    },
     columns: {
       pending: "قيد الانتظار",
       wip: "قيد التنفيذ",
@@ -2171,6 +2179,12 @@ export const ar: TranslationResources = {
       skip: "تم التخطي",
       fail: "فشل",
       abort: "أُلغي",
+    },
+    gitlabColumns: {
+      draft: "مسودة",
+      open: "مفتوح",
+      merged: "مدموج",
+      closed: "مغلق",
     },
     card: {
       open: "فتح الرابط",
@@ -2186,6 +2200,11 @@ export const ar: TranslationResources = {
       move: "نقل",
       sync: "مزامنة",
       sources: "المصادر",
+      clearFilters: "مسح المرشحات",
+    },
+    sync: {
+      succeeded: "تمت مزامنة {{count}} مصدر",
+      failed: "فشلت مزامنة {{count}} مصدر: {{names}}",
     },
     filters: {
       trigger: "التصفية",
@@ -2408,6 +2427,14 @@ export const ar: TranslationResources = {
       dispatchRunConfirmPrompt: "الطلب",
       dispatchRunConfirmConfirm: "تشغيل",
       dispatchRunSuccess: "تم تنفيذ الوكيل",
+      status: "الحالة",
+      replyPlaceholder: "أضف تعليقًا...",
+      replySend: "إرسال",
+    },
+    transitions: {
+      pick: "نقل إلى",
+      loadError: "تعذّر تحميل الانتقالات",
+      empty: "لا توجد انتقالات متاحة",
     },
   },
   workflows: {
@@ -2472,6 +2499,13 @@ export const ar: TranslationResources = {
     runLogsLive: "Live",
     runLogsLoadMore: "Load more",
     runLogsError: "failed to load events",
+    runLogsJumpToLatest: "Jump to latest",
+    runOpenWorkspace: "Open workspace",
+    runCancelTitle: "Cancel run?",
+    runCancelMessage: "Cancel this workflow run? Work already started may not stop instantly.",
+    runCancelFailed: "Couldn't cancel the run",
+    runCancelling: "Cancelling…",
+    runAgainFailed: "Couldn't start a new run",
     description: "Description",
     descriptionPlaceholder: "Optional description",
     source: "Source (.flow.js)",
@@ -2504,6 +2538,8 @@ export const ar: TranslationResources = {
       save: "Save",
       dispatch: "Dispatch",
       confirmDispatch: "Run",
+      cancelRun: "Cancel run",
+      runAgain: "Run again",
     },
     status: {
       queued: "Queued",

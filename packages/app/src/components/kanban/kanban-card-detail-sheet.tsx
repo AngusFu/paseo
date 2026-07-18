@@ -12,6 +12,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { ArrowUpRight, Copy, Pencil, Play, Rocket, RotateCw } from "lucide-react-native";
 import equal from "fast-deep-equal";
+import { useQueryClient } from "@tanstack/react-query";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import type { AgentProvider, ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
 import { CombinedModelSelector } from "@/components/combined-model-selector";
@@ -21,6 +22,7 @@ import type {
   KanbanCardDetailAttachment,
   KanbanCardDetailComment,
   KanbanCardSource,
+  KanbanCardTransition,
   KanbanSourceKind,
   StoredKanbanCard,
   StoredKanbanSource,
@@ -42,11 +44,17 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
 import { useFormPreferences } from "@/hooks/use-form-preferences";
-import { useKanbanCardComments, useKanbanCardDetail } from "@/hooks/use-kanban-card-detail";
+import {
+  kanbanCardCommentsQueryKey,
+  useKanbanCardComments,
+  useKanbanCardDetail,
+} from "@/hooks/use-kanban-card-detail";
 import { useKanbanCardSummary } from "@/hooks/use-kanban-card-summary";
+import { useKanbanWriteback } from "@/hooks/use-kanban-writeback";
 import { useKanbanSources } from "@/hooks/use-kanban-sources";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { resolveDefaultModelId } from "@/provider-selection/resolve-agent-form";
+import { useHostFeature } from "@/runtime/host-features";
 import { useHostRuntimeClient, useHosts } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 import type { HostProfile } from "@/types/host-connection";
@@ -562,7 +570,15 @@ function KanbanCardDetailBody({
       </View>
     );
   }
-  return <LoadedBody card={card} detail={detail} serverId={serverId} visible={visible} />;
+  return (
+    <LoadedBody
+      card={card}
+      detail={detail}
+      serverId={serverId}
+      visible={visible}
+      onTransitioned={onRetry}
+    />
+  );
 }
 
 function UnsupportedBody({ card }: { card: StoredKanbanCard }): ReactElement {
@@ -588,11 +604,13 @@ function LoadedBody({
   detail,
   serverId,
   visible,
+  onTransitioned,
 }: {
   card: StoredKanbanCard;
   detail: KanbanCardDetail | null;
   serverId: string | null;
   visible: boolean;
+  onTransitioned: () => void;
 }): ReactElement {
   const { t } = useTranslation();
 
@@ -621,6 +639,13 @@ function LoadedBody({
     <>
       <CardMetaGroup detail={detail} />
 
+      <TransitionSection
+        card={card}
+        serverId={serverId}
+        externalStatus={detail?.externalStatus ?? null}
+        onTransitioned={onTransitioned}
+      />
+
       {detail && detail.labels.length > 0 ? <LabelChips labels={detail.labels} /> : null}
 
       <CardSummarySection
@@ -644,8 +669,198 @@ function LoadedBody({
           commentCount={detail?.commentCount ?? null}
           attachmentBaseUrl={attachmentBaseUrl}
         />
+        <CommentReplyInput card={card} serverId={serverId} />
       </View>
     </>
+  );
+}
+
+// Real comment post-back (kanbanWriteBack capability + Jira cards only, no
+// fallback path). Invalidates the comments query on success rather than
+// holding a refetch handle from CommentsSection — that hook instance lives
+// inside that sibling component, out of reach here.
+function CommentReplyInput({
+  card,
+  serverId,
+}: {
+  card: StoredKanbanCard;
+  serverId: string | null;
+}): ReactElement | null {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const writeBackSupported = useHostFeature(serverId, "kanbanWriteBack");
+  const writeback = useKanbanWriteback({ serverId: serverId ?? "" });
+  const [body, setBody] = useState("");
+  // FormTextInput is uncontrolled (initialValue + onChangeText) — bump this
+  // to force a remount and clear the field after a successful send.
+  const [nonce, setNonce] = useState(0);
+
+  const handleSend = useCallback(() => {
+    const trimmed = body.trim();
+    if (!trimmed || !serverId) {
+      return;
+    }
+    void writeback
+      .addComment(card.id, trimmed)
+      .then(() => {
+        setBody("");
+        setNonce((current) => current + 1);
+        void queryClient.invalidateQueries({
+          queryKey: kanbanCardCommentsQueryKey(serverId, card.id),
+        });
+        return undefined;
+      })
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : String(error));
+      });
+  }, [body, card.id, queryClient, serverId, toast, writeback]);
+
+  if (!writeBackSupported || card.source.kind !== "jira") {
+    return null;
+  }
+
+  return (
+    <View style={styles.replyBox}>
+      <FormTextInput
+        key={nonce}
+        size="sm"
+        initialValue=""
+        onChangeText={setBody}
+        placeholder={t("kanban.cardDetail.replyPlaceholder")}
+        multiline
+        numberOfLines={3}
+        textAlignVertical="top"
+        style={styles.replyInput}
+        testID="kanban-card-detail-reply-input"
+      />
+      <Button
+        size="sm"
+        variant="default"
+        style={styles.replySend}
+        onPress={handleSend}
+        disabled={body.trim().length === 0}
+        loading={writeback.isAddingComment}
+        testID="kanban-card-detail-reply-send"
+      >
+        {t("kanban.cardDetail.replySend")}
+      </Button>
+    </View>
+  );
+}
+
+// Real Jira status + one-tap transitions (kanbanWriteBack capability only —
+// no fallback path, per CLAUDE.md's feature-contract rule: old hosts simply
+// don't get this section). Fetches the issue's CURRENT legal transitions on
+// mount/card-change since Jira workflows only allow specific next moves from
+// wherever the ticket sits right now — same data the Jira board's drag and
+// native long-press picker use (kanban-jira-board.tsx).
+function TransitionSection({
+  card,
+  serverId,
+  externalStatus,
+  onTransitioned,
+}: {
+  card: StoredKanbanCard;
+  serverId: string | null;
+  externalStatus: string | null;
+  onTransitioned: () => void;
+}): ReactElement | null {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const writeBackSupported = useHostFeature(serverId, "kanbanWriteBack");
+  const isJiraCard = card.source.kind === "jira";
+  const writeback = useKanbanWriteback({ serverId: serverId ?? "" });
+  const [transitions, setTransitions] = useState<KanbanCardTransition[] | null>(null);
+  const [isError, setIsError] = useState(false);
+
+  useEffect(() => {
+    if (!writeBackSupported || !isJiraCard) {
+      return;
+    }
+    let cancelled = false;
+    setTransitions(null);
+    setIsError(false);
+    void writeback
+      .listTransitions(card.id)
+      .then((result) => {
+        if (!cancelled) {
+          setTransitions(result);
+        }
+        return undefined;
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsError(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+    // writeback is a fresh object every render (new useMutation instances) —
+    // only cardId/capability/kind should re-trigger the fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [writeBackSupported, isJiraCard, card.id]);
+
+  const handleSelect = useCallback(
+    (transition: KanbanCardTransition) => {
+      void writeback
+        .transitionCard({ cardId: card.id, transition })
+        .then(() => onTransitioned())
+        .catch((error) => {
+          toast.error(error instanceof Error ? error.message : String(error));
+        });
+    },
+    [card.id, onTransitioned, toast, writeback],
+  );
+
+  if (!writeBackSupported || !isJiraCard) {
+    return null;
+  }
+
+  return (
+    <View style={styles.metaGroup}>
+      <MetaRow label={t("kanban.cardDetail.status")} value={externalStatus ?? card.status} />
+      {isError ? <Text style={styles.mutedText}>{t("kanban.transitions.loadError")}</Text> : null}
+      {!isError && transitions === null ? (
+        <LoadingSpinner size="small" color={styles.spinner.color} />
+      ) : null}
+      {!isError && transitions && transitions.length > 0 ? (
+        <View style={styles.transitionRow}>
+          {transitions.map((transition) => (
+            <TransitionButton
+              key={transition.id}
+              transition={transition}
+              loading={writeback.isTransitioning}
+              onSelect={handleSelect}
+            />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function TransitionButton({
+  transition,
+  loading,
+  onSelect,
+}: {
+  transition: KanbanCardTransition;
+  loading: boolean;
+  onSelect: (transition: KanbanCardTransition) => void;
+}): ReactElement {
+  const handlePress = useCallback(() => onSelect(transition), [onSelect, transition]);
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      onPress={handlePress}
+      loading={loading}
+      testID={`kanban-card-detail-transition-${transition.id}`}
+    >
+      {transition.name}
+    </Button>
   );
 }
 
@@ -1335,6 +1550,11 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     gap: theme.spacing[2],
   },
+  transitionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing[2],
+  },
   metaLabel: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
@@ -1458,6 +1678,21 @@ const styles = StyleSheet.create((theme) => ({
   },
   commentList: {
     gap: theme.spacing[3],
+  },
+  replyBox: {
+    marginTop: theme.spacing[3],
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.surface1,
+    padding: theme.spacing[2],
+    gap: theme.spacing[2],
+  },
+  replyInput: {
+    minHeight: 64,
+  },
+  replySend: {
+    alignSelf: "flex-end",
   },
   comment: {
     borderTopWidth: 1,

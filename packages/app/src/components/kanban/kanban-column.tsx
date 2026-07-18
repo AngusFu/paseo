@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState, type ReactElement } from "react";
+import { memo, useCallback, useMemo, useRef, useState, type ReactElement } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import type {
@@ -22,12 +22,20 @@ interface KanbanColumnProps {
   isDragging: boolean;
   /** True while a drag hovers over this column (Jira-style drop highlight). */
   isDropTarget: boolean;
+  /** True while a write-back drag is active and this column is NOT a legal
+   * transition target for the card being dragged (dims it so the legal
+   * lane(s) read as the only valid drop zones). Never combined with
+   * isDropTarget — a dimmed column can't also be the hovered target. */
+  dimmed?: boolean;
   /** Registers this column's View with the board so it can be measured on drag. */
   onRegisterRef: (columnId: string, node: View | null) => void;
+  /** Registers one card's wrapper View with the board so its Y bounds can be
+   * measured on drag (for in-column insert-position hit-testing). */
+  onRegisterCardRef: (cardId: string, node: View | null) => void;
   /** Touch-down on a card: board re-measures column bounds. */
   onCardDragBegin: () => void;
   /** Drag activated: board raises the card's column. */
-  onCardDragStart: (columnId: string) => void;
+  onCardDragStart: (columnId: string, cardId: string) => void;
   /** Drag frame: board highlights the hovered column. */
   onCardDragUpdate: (absoluteX: number) => void;
   /** Drag settled/cancelled: board clears drag state. */
@@ -59,16 +67,37 @@ interface KanbanColumnProps {
  *
  * Scroll vs drag: on native the card Pan is disabled (drag is web-only), so the
  * ScrollView scrolls freely. On web, wheel/trackpad scrolls the list while the
- * card's long-press-activated Pan (activateAfterLongPress) only starts on hold,
- * so the two don't fight. The drop hit-test is on the outer column View's X
- * bounds, which the inner scroll doesn't change.
+ * card's pointer-drag Pan (minDistance(4)) only activates once the pointer has
+ * actually moved, so the two don't fight. The drop hit-test is on the outer
+ * column View's X bounds, which the inner scroll doesn't change.
  */
+// Reused across renders so each card's ref callback keeps a stable identity
+// (an inline arrow in the map below would re-fire the ref on every render).
+function useCardRefCallback(
+  onRegisterCardRef: (cardId: string, node: View | null) => void,
+): (cardId: string) => (node: View | null) => void {
+  const callbacksRef = useRef(new Map<string, (node: View | null) => void>());
+  return useCallback(
+    (cardId: string) => {
+      let callback = callbacksRef.current.get(cardId);
+      if (!callback) {
+        callback = (node) => onRegisterCardRef(cardId, node);
+        callbacksRef.current.set(cardId, callback);
+      }
+      return callback;
+    },
+    [onRegisterCardRef],
+  );
+}
+
 export const KanbanColumn = memo(function KanbanColumn({
   column,
   cards,
   isDragging,
   isDropTarget,
+  dimmed = false,
   onRegisterRef,
+  onRegisterCardRef,
   onCardDragBegin,
   onCardDragStart,
   onCardDragUpdate,
@@ -88,6 +117,7 @@ export const KanbanColumn = memo(function KanbanColumn({
   canDeleteColumn = false,
 }: KanbanColumnProps): ReactElement {
   const isCompact = useIsCompactFormFactor();
+  const getCardRefCallback = useCardRefCallback(onRegisterCardRef);
   const [isHovered, setIsHovered] = useState(false);
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
   const handlePointerLeave = useCallback(() => setIsHovered(false), []);
@@ -107,8 +137,9 @@ export const KanbanColumn = memo(function KanbanColumn({
       // Raise the dragging column (and its overflowing card) above neighbours,
       // which have opaque backgrounds and are painted after it.
       isDragging && styles.columnDragging,
+      dimmed && styles.columnDimmed,
     ],
-    [isDragging, isDropTarget],
+    [isDragging, isDropTarget, dimmed],
   );
 
   // While a card in this column is being dragged (web only), stop the list
@@ -162,20 +193,21 @@ export const KanbanColumn = memo(function KanbanColumn({
         showsVerticalScrollIndicator
       >
         {cards.map((card) => (
-          <KanbanCard
-            key={card.id}
-            card={card}
-            columnId={column.id}
-            onPress={onCardPress}
-            onLongPress={onCardLongPress}
-            onDispatch={onCardDispatch}
-            onDragBegin={onCardDragBegin}
-            onDragStart={onCardDragStart}
-            onDragUpdate={onCardDragUpdate}
-            onDragEnd={onCardDragEnd}
-            onDrop={onCardDrop}
-            dragEnabled={dragEnabled}
-          />
+          <View key={card.id} ref={getCardRefCallback(card.id)}>
+            <KanbanCard
+              card={card}
+              columnId={column.id}
+              onPress={onCardPress}
+              onLongPress={onCardLongPress}
+              onDispatch={onCardDispatch}
+              onDragBegin={onCardDragBegin}
+              onDragStart={onCardDragStart}
+              onDragUpdate={onCardDragUpdate}
+              onDragEnd={onCardDragEnd}
+              onDrop={onCardDrop}
+              dragEnabled={dragEnabled}
+            />
+          </View>
         ))}
       </ScrollView>
     </View>
@@ -209,6 +241,9 @@ const styles = StyleSheet.create((theme) => ({
   columnDropTarget: {
     borderColor: theme.colors.primary,
     backgroundColor: theme.colors.surface2,
+  },
+  columnDimmed: {
+    opacity: theme.opacity[50],
   },
   header: {
     flexDirection: "row",

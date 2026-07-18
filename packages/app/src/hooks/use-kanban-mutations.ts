@@ -21,12 +21,25 @@ export type CreateKanbanCardInput = Omit<KanbanCardCreateOptions, "requestId">;
 export type UpdateKanbanCardInput = Omit<KanbanCardUpdateOptions, "requestId">;
 export type MoveKanbanCardInput = Omit<KanbanCardMoveOptions, "requestId">;
 
+// Per-source sync outcome, surfaced to the UI instead of being swallowed —
+// one failing source must not hide the others' results.
+export interface KanbanSourceSyncResult {
+  id: string;
+  name: string;
+  ok: boolean;
+  error?: string;
+}
+
+export interface KanbanSyncSummary {
+  results: KanbanSourceSyncResult[];
+}
+
 export interface UseKanbanMutationsResult {
   createCard: (input: CreateKanbanCardInput) => Promise<void>;
   updateCard: (input: UpdateKanbanCardInput) => Promise<void>;
   moveCard: (input: MoveKanbanCardInput) => Promise<void>;
   deleteCard: (id: string) => Promise<void>;
-  syncSources: () => Promise<void>;
+  syncSources: () => Promise<KanbanSyncSummary>;
   isCreating: boolean;
   isUpdating: boolean;
   isMoving: boolean;
@@ -180,27 +193,36 @@ export function useKanbanMutations({ serverId }: { serverId: string }): UseKanba
   });
 
   const syncMutation = useMutation({
-    mutationFn: async (): Promise<void> => {
+    mutationFn: async (): Promise<KanbanSyncSummary> => {
       const client = requireClient(serverId, t("common.errors.daemonClientUnavailable"));
       const listPayload = await client.kanbanSourceList();
       if (listPayload.error) {
         throw new Error(listPayload.error);
       }
       // Sync every enabled source; one bad source must not block the rest — and
-      // a per-source failure must NOT reject this mutation. The daemon records
-      // each failure in that source's `lastSyncError`, which the sources list
-      // surfaces per-row after the invalidate below. Rejecting here would bubble
-      // up as an uncaught error and crash the app.
+      // a per-source failure must NOT reject this mutation. The daemon also
+      // records each failure in that source's `lastSyncError` (surfaced per-row
+      // in the sources sheet after the invalidate below), but the caller here
+      // gets every result back too so it can show one summary instead of
+      // silently swallowing failures.
+      const results: KanbanSourceSyncResult[] = [];
       for (const source of listPayload.sources) {
         if (!source.enabled) {
           continue;
         }
         try {
           await client.kanbanSourceSync(source.id);
-        } catch {
-          // Ignored: recorded server-side, shown per-row after invalidation.
+          results.push({ id: source.id, name: source.name, ok: true });
+        } catch (error) {
+          results.push({
+            id: source.id,
+            name: source.name,
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
+      return { results };
     },
     onSettled: invalidateCardsAndSources,
   });
@@ -233,8 +255,8 @@ export function useKanbanMutations({ serverId }: { serverId: string }): UseKanba
     [deleteMutation],
   );
 
-  const syncSources = useCallback(async (): Promise<void> => {
-    await syncMutation.mutateAsync();
+  const syncSources = useCallback(async (): Promise<KanbanSyncSummary> => {
+    return await syncMutation.mutateAsync();
   }, [syncMutation]);
 
   return {

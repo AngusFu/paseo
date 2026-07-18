@@ -2172,8 +2172,16 @@ export const en = {
   kanban: {
     title: "Kanban",
     empty: "No cards yet",
+    emptyFiltered: "No cards match your filters",
     loadError: "Unable to load cards",
     unsupported: "Update the host to use Kanban.",
+    tabs: {
+      overview: "Overview",
+    },
+    overview: {
+      unresolvedThreads: "Unresolved discussions",
+      stale: "Stale (7d+)",
+    },
     columns: {
       pending: "Pending",
       wip: "In progress",
@@ -2181,6 +2189,12 @@ export const en = {
       skip: "Skipped",
       fail: "Failed",
       abort: "Aborted",
+    },
+    gitlabColumns: {
+      draft: "Draft",
+      open: "Open",
+      merged: "Merged",
+      closed: "Closed",
     },
     card: {
       open: "Open link",
@@ -2196,6 +2210,11 @@ export const en = {
       move: "Move",
       sync: "Sync",
       sources: "Sources",
+      clearFilters: "Clear filters",
+    },
+    sync: {
+      succeeded: "Synced {{count}} sources",
+      failed: "Sync failed for {{count}} sources: {{names}}",
     },
     filters: {
       trigger: "Filters",
@@ -2418,6 +2437,14 @@ export const en = {
       dispatchRunConfirmPrompt: "Prompt",
       dispatchRunConfirmConfirm: "Run",
       dispatchRunSuccess: "Agent dispatched",
+      status: "Status",
+      replyPlaceholder: "Add a comment…",
+      replySend: "Send",
+    },
+    transitions: {
+      pick: "Move to",
+      loadError: "Couldn't load transitions",
+      empty: "No transitions available",
     },
   },
   workflows: {
@@ -2482,6 +2509,13 @@ export const en = {
     runLogsLive: "Live",
     runLogsLoadMore: "Load more",
     runLogsError: "failed to load events",
+    runLogsJumpToLatest: "Jump to latest",
+    runOpenWorkspace: "Open workspace",
+    runCancelTitle: "Cancel run?",
+    runCancelMessage: "Cancel this workflow run? Work already started may not stop instantly.",
+    runCancelFailed: "Couldn't cancel the run",
+    runCancelling: "Cancelling…",
+    runAgainFailed: "Couldn't start a new run",
     createFromBuiltin: "Create from built-in",
     forkedToast: 'Forked "{{name}}"',
     name: "Name",
@@ -2514,6 +2548,8 @@ export const en = {
       save: "Save",
       dispatch: "Dispatch",
       confirmDispatch: "Run",
+      cancelRun: "Cancel run",
+      runAgain: "Run again",
     },
     status: {
       queued: "Queued",

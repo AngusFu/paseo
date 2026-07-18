@@ -52,6 +52,7 @@ export interface UseKanbanCardFiltersResult {
   setDateRange: (value: KanbanCardDateRangeFilter) => void;
   clearDateRange: () => void;
   isActive: boolean;
+  clearAll: () => void;
   filteredCards: StoredKanbanCard[];
 }
 
@@ -171,6 +172,12 @@ export function useKanbanCardFilters(cards: StoredKanbanCard[]): UseKanbanCardFi
       sourceKind !== "all" ||
       assignee !== null ||
       dateRange !== KANBAN_DATE_RANGE_DEFAULT,
+    clearAll: () => {
+      setSearch("");
+      setSourceKind("all");
+      setAssignee(null);
+      setDateRange(KANBAN_DATE_RANGE_DEFAULT);
+    },
     filteredCards,
   };
 }

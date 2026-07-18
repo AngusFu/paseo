@@ -35,7 +35,8 @@ import { DraftAgentModeControl } from "@/composer/agent-controls/mode-control";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
 import { useDraftAgentFeatures } from "@/hooks/use-draft-agent-features";
-import { useFormPreferences } from "@/hooks/use-form-preferences";
+import { useFormPreferences, type FormPreferences } from "@/hooks/use-form-preferences";
+import { mergeCreateAgentSelectionPreferences } from "@/create-agent-preferences/preferences";
 import {
   kanbanCardCommentsQueryKey,
   useKanbanCardComments,
@@ -125,26 +126,33 @@ interface DispatchProviderDefault {
 
 // Mirrors the new-workspace flow's provider default: prefer the user's last-used
 // provider (from form preferences) if it's still ready on this host, otherwise
-// the first ready provider; model defaults to that provider's isDefault model
-// (see resolveDefaultModelId in provider-selection/resolve-agent-form.ts).
+// the first ready provider; model prefers the last-used model saved for that
+// provider, falling back to its isDefault model (see resolveDefaultModelId in
+// provider-selection/resolve-agent-form.ts).
 function resolveDispatchProviderDefault(
-  preferredProvider: string | undefined,
+  preferences: FormPreferences,
   entries: readonly ProviderSnapshotEntry[] | undefined,
 ): DispatchProviderDefault | null {
   if (!entries || entries.length === 0) {
     return null;
   }
   const ready = entries.filter((entry) => entry.status === "ready");
-  const preferred = preferredProvider
-    ? ready.find((entry) => entry.provider === preferredProvider)
+  const preferred = preferences.provider
+    ? ready.find((entry) => entry.provider === preferences.provider)
     : undefined;
   const entry = preferred ?? ready[0];
   if (!entry) {
     return null;
   }
+  const savedModel = preferences.providerPreferences?.[entry.provider]?.model;
+  const models = entry.models ?? null;
+  const model =
+    savedModel && models?.some((candidate) => candidate.id === savedModel)
+      ? savedModel
+      : resolveDefaultModelId(models);
   return {
     provider: entry.provider,
-    model: resolveDefaultModelId(entry.models ?? null),
+    model,
     label: entry.label ?? null,
   };
 }
@@ -1175,13 +1183,13 @@ function DispatchActions({
   const { t } = useTranslation();
   const toast = useToast();
   const client = useHostRuntimeClient(serverId ?? "");
-  const { preferences } = useFormPreferences();
+  const { preferences, updatePreferences } = useFormPreferences();
   const isCompact = useIsCompactFormFactor();
   const cwd = workspace?.cwd ?? null;
   const snapshot = useProvidersSnapshot(serverId, { enabled: Boolean(serverId && cwd), cwd });
   const providerDefault = useMemo(
-    () => resolveDispatchProviderDefault(preferences.provider, snapshot.entries),
-    [preferences.provider, snapshot.entries],
+    () => resolveDispatchProviderDefault(preferences, snapshot.entries),
+    [preferences, snapshot.entries],
   );
   const providerDefinitions = useMemo(
     () => buildProviderDefinitions(snapshot.entries),
@@ -1259,6 +1267,13 @@ function DispatchActions({
       if (current && thinkingOptions.some((option) => option.id === current)) {
         return current;
       }
+      // Last-used thinking for this provider+model beats the model default.
+      const saved = selectedProvider
+        ? preferences.providerPreferences?.[selectedProvider]?.thinkingByModel?.[selectedModel]
+        : undefined;
+      if (saved && thinkingOptions.some((option) => option.id === saved)) {
+        return saved;
+      }
       return (
         selectedModelDef?.defaultThinkingOptionId ??
         thinkingOptions.find((option) => option.isDefault)?.id ??
@@ -1266,7 +1281,13 @@ function DispatchActions({
         ""
       );
     });
-  }, [selectedModelDef?.defaultThinkingOptionId, thinkingOptions]);
+  }, [
+    preferences.providerPreferences,
+    selectedModel,
+    selectedModelDef?.defaultThinkingOptionId,
+    selectedProvider,
+    thinkingOptions,
+  ]);
 
   useEffect(() => {
     if (modeOptions.length === 0) {
@@ -1356,6 +1377,17 @@ function DispatchActions({
       workspaceDirectory: workspacePayload.workspace.workspaceDirectory,
     });
     const featureValues = collectAgentFeatureValues(draftFeatures.features);
+    // Remember this selection — the panel used to reopen on the first
+    // provider's default model because nothing ever wrote back.
+    void updatePreferences((current) =>
+      mergeCreateAgentSelectionPreferences({
+        preferences: current,
+        provider: selectedProvider,
+        modelId: selectedModel,
+        modeId: selectedMode,
+        thinkingOptionId: selectedEffort,
+      }),
+    );
     const created = await client.createAgent({
       provider: selectedProvider,
       model: selectedModel || undefined,
@@ -1381,6 +1413,7 @@ function DispatchActions({
     selectedModel,
     t,
     toast,
+    updatePreferences,
     workspace,
   ]);
 

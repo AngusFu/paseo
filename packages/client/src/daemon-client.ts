@@ -5376,10 +5376,19 @@ export class DaemonClient {
   }
 
   // COMPAT(workflow): added in v0.1.105. Requires server_info.features.workflow.
-  async workflowDefinitionList(requestId?: string): Promise<WorkflowDefinitionListPayload> {
+  // COMPAT(projectWorkflows): `cwd` added in v0.1.112 — a daemon with
+  // server_info.features.projectWorkflows also returns read-through `project:`
+  // definitions from `<cwd>/.paseo/workflows` and `<cwd>/.claude/workflows`.
+  async workflowDefinitionList(
+    requestId?: string,
+    options?: { cwd?: string },
+  ): Promise<WorkflowDefinitionListPayload> {
     return this.sendNamespacedCorrelatedSessionRequest({
       requestId,
-      message: { type: "workflow.definition.list.request" },
+      message: {
+        type: "workflow.definition.list.request",
+        ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}),
+      },
     });
   }
 

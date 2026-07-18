@@ -29,6 +29,11 @@ import type { Logger } from "pino";
 import type { WorkflowLogEntry, WorkflowLogLevel } from "@getpaseo/protocol/workflow/types";
 import { expandUserPath } from "../path-utils.js";
 import { WorkflowEventLog, type WorkflowEventLogWriteInput } from "./event-log.js";
+import {
+  PROJECT_DEFINITION_ID_PREFIX,
+  getProjectDefinition,
+  listProjectDefinitions,
+} from "./project-definitions.js";
 import { WorkflowQueue } from "./queue.js";
 import { paginateLogEntries, reconstructRunHistory } from "./run-history.js";
 import { WorkflowStore } from "./store.js";
@@ -358,8 +363,15 @@ export class WorkflowService {
     this.cancelWorkflowAgents = cancel;
   }
 
-  async listDefinitions(): Promise<WorkflowDefinition[]> {
-    return this.store.listDefinitions();
+  async listDefinitions(cwd?: string): Promise<WorkflowDefinition[]> {
+    const stored = await this.store.listDefinitions();
+    if (!cwd) {
+      return stored;
+    }
+    // Read-through project definitions (.paseo/workflows + .claude/workflows
+    // under cwd) — listed per-request, never imported into the store.
+    const project = await listProjectDefinitions(expandUserPath(cwd));
+    return [...stored, ...project];
   }
 
   async listBuiltins(): Promise<WorkflowDefinition[]> {
@@ -394,6 +406,11 @@ export class WorkflowService {
     const stored = await this.store.getDefinition(id);
     if (stored) {
       return stored;
+    }
+    // Project definitions resolve by reading the repo file fresh, so a
+    // dispatch always runs the current on-disk source.
+    if (id.startsWith(PROJECT_DEFINITION_ID_PREFIX)) {
+      return getProjectDefinition(id);
     }
     // Builtins are templates that can also be dispatched directly (id = builtin:<name>).
     if (!id.startsWith("builtin:")) {

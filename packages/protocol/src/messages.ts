@@ -2691,6 +2691,8 @@ export const ServerInfoStatusPayloadSchema = z
         kanbanSourceStatuses: z.boolean().optional(),
         // COMPAT(workflow): added in v0.1.105, drop the gate when floor >= v0.1.105.
         workflow: z.boolean().optional(),
+        // COMPAT(projectWorkflows): added in v0.1.112, drop the gate when floor >= v0.1.112.
+        projectWorkflows: z.boolean().optional(),
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
         localLlm: z.boolean().optional(),
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.

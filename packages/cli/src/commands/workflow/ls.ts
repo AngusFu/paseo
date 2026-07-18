@@ -11,14 +11,21 @@ import {
   type WorkflowDefinitionRow,
 } from "./shared.js";
 
+export interface WorkflowLsOptions extends WorkflowCommandOptions {
+  cwd?: string;
+}
+
 export async function runLsCommand(
-  options: WorkflowCommandOptions,
+  options: WorkflowLsOptions,
   _command: Command,
 ): Promise<ListResult<WorkflowDefinitionRow>> {
   const { client } = await connectWorkflowClient(options.host);
   try {
     assertWorkflowSupported(client);
-    const payload = await client.workflowDefinitionList();
+    // COMPAT(projectWorkflows): --cwd also lists read-through project
+    // definitions from <cwd>/.paseo/workflows and <cwd>/.claude/workflows.
+    const cwd = options.cwd?.trim();
+    const payload = await client.workflowDefinitionList(undefined, cwd ? { cwd } : undefined);
     const definitions = requireWorkflowValue(payload, "Failed to list workflow definitions");
     return {
       type: "list",

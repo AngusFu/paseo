@@ -48,6 +48,93 @@ describe("WorkflowStore", () => {
   });
 });
 
+describe("project workflow definitions (read-through)", () => {
+  const FLOW = (name: string): string =>
+    `export const meta = { name: ${JSON.stringify(name)}, description: "d" };\nreturn 1;\n`;
+
+  async function makeRepo(): Promise<string> {
+    const repo = await mkdtemp(join(tmpdir(), "paseo-project-wf-"));
+    dirs.push(repo);
+    return repo;
+  }
+
+  it("lists .paseo/workflows and .claude/workflows scripts with project origin", async () => {
+    const repo = await makeRepo();
+    await mkdir(join(repo, ".paseo", "workflows"), { recursive: true });
+    await mkdir(join(repo, ".claude", "workflows"), { recursive: true });
+    await writeFile(join(repo, ".paseo", "workflows", "review.flow.js"), FLOW("review"));
+    await writeFile(join(repo, ".claude", "workflows", "sweep.js"), FLOW("sweep"));
+    await writeFile(join(repo, ".claude", "workflows", "README.md"), "not a flow");
+    await writeFile(join(repo, ".claude", "workflows", "broken.js"), "no meta here");
+
+    const home = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(home);
+    const service = new WorkflowService({ paseoHome: home });
+    const listed = await service.listDefinitions(repo);
+    const project = listed.filter((definition) => definition.origin === "project");
+    expect(project.map((definition) => definition.name).sort()).toEqual(["review", "sweep"]);
+    expect(project.every((definition) => definition.id.startsWith("project:"))).toBe(true);
+    expect(project.every((definition) => definition.builtin === false)).toBe(true);
+    // without a cwd the list stays store-only (old-client behavior)
+    expect(
+      (await service.listDefinitions()).filter((definition) => definition.origin === "project"),
+    ).toEqual([]);
+  });
+
+  it(".paseo wins a name collision with .claude", async () => {
+    const repo = await makeRepo();
+    await mkdir(join(repo, ".paseo", "workflows"), { recursive: true });
+    await mkdir(join(repo, ".claude", "workflows"), { recursive: true });
+    await writeFile(join(repo, ".paseo", "workflows", "dup.flow.js"), FLOW("dup"));
+    await writeFile(join(repo, ".claude", "workflows", "dup.js"), FLOW("dup"));
+
+    const home = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(home);
+    const service = new WorkflowService({ paseoHome: home });
+    const project = (await service.listDefinitions(repo)).filter(
+      (definition) => definition.origin === "project",
+    );
+    expect(project).toHaveLength(1);
+    expect(project[0].sourcePath).toContain(join(".paseo", "workflows"));
+  });
+
+  it("getDefinition resolves a project: id by reading the file fresh", async () => {
+    const repo = await makeRepo();
+    await mkdir(join(repo, ".paseo", "workflows"), { recursive: true });
+    const file = join(repo, ".paseo", "workflows", "live.flow.js");
+    await writeFile(file, FLOW("live"));
+
+    const home = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(home);
+    const service = new WorkflowService({ paseoHome: home });
+    const id = `project:${file}`;
+    const first = await service.getDefinition(id);
+    expect(first?.name).toBe("live");
+
+    // edit the repo file — next resolve sees the new source, no re-import
+    await writeFile(file, FLOW("live").replace("return 1;", "return 2;"));
+    const second = await service.getDefinition(id);
+    expect(second?.source).toContain("return 2;");
+  });
+
+  it("rejects project: ids outside the allowed layout (no arbitrary file reads)", async () => {
+    const repo = await makeRepo();
+    const secret = join(repo, "secret.flow.js");
+    await writeFile(secret, FLOW("secret"));
+
+    const home = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(home);
+    const service = new WorkflowService({ paseoHome: home });
+    expect(await service.getDefinition(`project:${secret}`)).toBeNull();
+    expect(await service.getDefinition("project:../../etc/passwd")).toBeNull();
+    expect(
+      await service.getDefinition(
+        `project:${join(repo, ".paseo", "workflows", "..", "..", "secret.flow.js")}`,
+      ),
+    ).toBeNull();
+  });
+});
+
 describe("WorkflowService builtins and authoring", () => {
   it("lists package builtin workflows", async () => {
     const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));

@@ -53,12 +53,15 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
 import type { AgentProvider, ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
 import { useDraftAgentFeatures } from "@/hooks/use-draft-agent-features";
-import { useFormPreferences } from "@/hooks/use-form-preferences";
+import { useFormPreferences, type FormPreferences } from "@/hooks/use-form-preferences";
+import { mergeCreateAgentSelectionPreferences } from "@/create-agent-preferences/preferences";
 import { useProjects } from "@/hooks/use-projects";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import {
   useBuiltinWorkflowDefinitions,
+  useProjectWorkflowDefinitions,
   useWorkflowDefinitions,
+  type ProjectWorkflowDefinition,
 } from "@/hooks/use-workflow-definitions";
 import { useWorkflowMutations } from "@/hooks/use-workflow-mutations";
 import { useWorkflowRun } from "@/hooks/use-workflow-run";
@@ -104,6 +107,38 @@ export function WorkflowScreen(): ReactElement {
   return isFocused ? <WorkflowScreenContent /> : <View style={styles.container} />;
 }
 
+/**
+ * Read-through project workflows for every non-internal project registered on
+ * this host — feature-gated by server_info.features.projectWorkflows.
+ */
+function useScreenProjectWorkflows(
+  serverId: string | null,
+  active: boolean,
+): {
+  projectDefinitions: ProjectWorkflowDefinition[];
+  projectNameByCwd: ReadonlyMap<string, string>;
+} {
+  const supported = useHostFeature(serverId, "projectWorkflows");
+  const { projects } = useProjects();
+  const projectTargets = useMemo(
+    () =>
+      buildScheduleProjectTargets(projects).filter(
+        (target) => (!serverId || target.serverId === serverId) && !isPaseoInternalPath(target.cwd),
+      ),
+    [projects, serverId],
+  );
+  const projectCwds = useMemo(() => projectTargets.map((target) => target.cwd), [projectTargets]);
+  const projectNameByCwd = useMemo(
+    () => new Map(projectTargets.map((target) => [target.cwd, target.projectName])),
+    [projectTargets],
+  );
+  const { definitions } = useProjectWorkflowDefinitions(
+    active && supported ? serverId : null,
+    projectCwds,
+  );
+  return { projectDefinitions: definitions, projectNameByCwd };
+}
+
 function WorkflowScreenContent(): ReactElement {
   const { t } = useTranslation();
   const toast = useToast();
@@ -115,6 +150,7 @@ function WorkflowScreenContent(): ReactElement {
   const active = Boolean(serverId && status === "online" && supported);
   const definitions = useWorkflowDefinitions(active ? serverId : null);
   const builtins = useBuiltinWorkflowDefinitions(active ? serverId : null);
+  const { projectDefinitions, projectNameByCwd } = useScreenProjectWorkflows(serverId, active);
   const runs = useWorkflowRuns(active ? serverId : null);
   const mutations = useWorkflowMutations({ serverId: serverId ?? "" });
   const [createOpen, setCreateOpen] = useState(false);
@@ -188,6 +224,8 @@ function WorkflowScreenContent(): ReactElement {
         tab={tab}
         onTabChange={setTab}
         definitions={definitions.definitions}
+        projectDefinitions={projectDefinitions}
+        projectNameByCwd={projectNameByCwd}
         builtins={builtins.definitions}
         runs={runs.runs}
         isCreating={mutations.isCreating}
@@ -209,6 +247,7 @@ function WorkflowScreenContent(): ReactElement {
         <WorkflowDispatchSheet
           key={dispatching.id}
           definition={dispatching}
+          initialCwd={projectDefinitionRoot(dispatching)}
           serverId={serverId}
           isDispatching={mutations.isDispatching}
           onClose={() => setDispatching(null)}
@@ -257,6 +296,8 @@ function WorkflowLists({
   tab,
   onTabChange,
   definitions,
+  projectDefinitions,
+  projectNameByCwd,
   builtins,
   runs,
   isCreating,
@@ -272,6 +313,8 @@ function WorkflowLists({
   tab: WorkflowTab;
   onTabChange: (tab: WorkflowTab) => void;
   definitions: WorkflowDefinition[];
+  projectDefinitions: ProjectWorkflowDefinition[];
+  projectNameByCwd: ReadonlyMap<string, string>;
   builtins: WorkflowDefinition[];
   runs: WorkflowRun[];
   isCreating: boolean;
@@ -304,10 +347,22 @@ function WorkflowLists({
     return names;
   }, [builtins, definitions]);
 
+  // Group read-through project definitions by their repo root — rendered as
+  // per-project sections under the user's own definitions.
+  const projectGroups = useMemo(() => {
+    const groups = new Map<string, ProjectWorkflowDefinition[]>();
+    for (const definition of projectDefinitions) {
+      const list = groups.get(definition.projectCwd) ?? [];
+      list.push(definition);
+      groups.set(definition.projectCwd, list);
+    }
+    return [...groups.entries()];
+  }, [projectDefinitions]);
+
   let content: ReactElement;
   if (tab === "definitions") {
     content =
-      definitions.length === 0 ? (
+      definitions.length === 0 && projectGroups.length === 0 ? (
         <Text style={styles.empty}>{t("workflows.emptyDefinitions")}</Text>
       ) : (
         <View style={styles.cardGrid}>
@@ -359,6 +414,58 @@ function WorkflowLists({
                 >
                   {t("workflows.actions.dispatch")}
                 </Button>
+              </View>
+            </View>
+          ))}
+          {projectGroups.map(([projectCwd, group]) => (
+            <View key={projectCwd} style={styles.projectSection}>
+              <Text style={styles.projectSectionTitle} numberOfLines={1}>
+                {projectNameByCwd.get(projectCwd) ?? shortenPath(projectCwd)}
+              </Text>
+              <View style={styles.cardGrid}>
+                {group.map((definition) => (
+                  <View key={definition.id} style={styles.card}>
+                    <View style={styles.cardBody}>
+                      <View style={styles.titleRow}>
+                        <Text style={styles.cardTitle} numberOfLines={2}>
+                          {definition.name}
+                        </Text>
+                        <Text style={styles.badge}>{t("workflows.project")}</Text>
+                      </View>
+                      {definition.description ? (
+                        <Text style={styles.meta} numberOfLines={3}>
+                          {definition.description}
+                        </Text>
+                      ) : null}
+                      {definition.sourcePath ? (
+                        <Text style={styles.meta} numberOfLines={1}>
+                          {shortenPath(definition.sourcePath)}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <View style={styles.cardActions}>
+                      <Button
+                        variant="outline"
+                        leftIcon={Play}
+                        size="sm"
+                        loading={isDispatching}
+                        onPress={() => onDispatch(definition)}
+                        testID={`workflow-project-run-${definition.name}`}
+                      >
+                        {t("workflows.actions.dispatch")}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        leftIcon={GitFork}
+                        loading={isCreating}
+                        onPress={() => onCopyBuiltin(definition)}
+                      >
+                        {t("workflows.actions.forkBuiltin")}
+                      </Button>
+                    </View>
+                  </View>
+                ))}
               </View>
             </View>
           ))}
@@ -480,24 +587,49 @@ function WorkflowLists({
 }
 
 function resolveAuthoringProviderDefault(
-  preferredProvider: string | undefined,
+  preferences: FormPreferences,
   entries: readonly ProviderSnapshotEntry[] | undefined,
 ): { provider: string; model: string } | null {
   if (!entries || entries.length === 0) {
     return null;
   }
   const ready = entries.filter((entry) => entry.status === "ready");
-  const preferred = preferredProvider
-    ? ready.find((entry) => entry.provider === preferredProvider)
+  const preferred = preferences.provider
+    ? ready.find((entry) => entry.provider === preferences.provider)
     : undefined;
   const entry = preferred ?? ready[0];
   if (!entry) {
     return null;
   }
-  return {
-    provider: entry.provider,
-    model: resolveDefaultModelId(entry.models ?? null) ?? "",
-  };
+  // Last-used model for this provider wins over the provider's default —
+  // without this (and the submit-time write-back) the form reopened on the
+  // first provider's default model every time.
+  const savedModel = preferences.providerPreferences?.[entry.provider]?.model;
+  const models = entry.models ?? null;
+  const model =
+    savedModel && models?.some((candidate) => candidate.id === savedModel)
+      ? savedModel
+      : (resolveDefaultModelId(models) ?? "");
+  return { provider: entry.provider, model };
+}
+
+/**
+ * Repo root of a read-through project definition — its sourcePath minus the
+ * `.paseo/workflows` / `.claude/workflows` suffix. Used to default the
+ * dispatch cwd to the repo the script lives in.
+ */
+function projectDefinitionRoot(definition: WorkflowDefinition): string | null {
+  if (definition.origin !== "project" || !definition.sourcePath) {
+    return null;
+  }
+  const normalized = definition.sourcePath.replace(/\\/g, "/");
+  for (const marker of ["/.paseo/workflows/", "/.claude/workflows/"]) {
+    const index = normalized.indexOf(marker);
+    if (index > 0) {
+      return definition.sourcePath.slice(0, index);
+    }
+  }
+  return null;
 }
 
 function WorkflowInfoTooltip({
@@ -550,8 +682,8 @@ function WorkflowAuthoringSheet({
     enabled: Boolean(visible && serverId),
   });
   const providerDefault = useMemo(
-    () => resolveAuthoringProviderDefault(preferences.provider, snapshot.entries),
-    [preferences.provider, snapshot.entries],
+    () => resolveAuthoringProviderDefault(preferences, snapshot.entries),
+    [preferences, snapshot.entries],
   );
   const modelSelectorProviders = useMemo(
     () => buildSelectableProviderSelectorProviders(snapshot.entries),
@@ -723,19 +855,22 @@ const AUTHORING_DESKTOP_HEIGHT = "72%" as const;
 
 function WorkflowDispatchSheet({
   definition,
+  initialCwd,
   serverId,
   isDispatching,
   onClose,
   onDispatch,
 }: {
   definition: WorkflowDefinition;
+  /** Preselected run cwd (e.g. the repo a project definition lives in). */
+  initialCwd?: string | null;
   serverId: string | null;
   isDispatching: boolean;
   onClose: () => void;
   onDispatch: (input: DispatchWorkflowRunInput) => Promise<void> | void;
 }): ReactElement {
   const { t } = useTranslation();
-  const { preferences } = useFormPreferences();
+  const { preferences, updatePreferences } = useFormPreferences();
   const { projects } = useProjects();
   const isCompact = useIsCompactFormFactor();
   const [task, setTask] = useState("");
@@ -752,8 +887,8 @@ function WorkflowDispatchSheet({
     enabled: Boolean(serverId),
   });
   const providerDefault = useMemo(
-    () => resolveAuthoringProviderDefault(preferences.provider, snapshot.entries),
-    [preferences.provider, snapshot.entries],
+    () => resolveAuthoringProviderDefault(preferences, snapshot.entries),
+    [preferences, snapshot.entries],
   );
   const providerDefinitions = useMemo(
     () => buildProviderDefinitions(snapshot.entries),
@@ -836,6 +971,13 @@ function WorkflowDispatchSheet({
       if (current && thinkingOptions.some((option) => option.id === current)) {
         return current;
       }
+      // Last-used thinking for this provider+model beats the model default.
+      const saved = selectedProvider
+        ? preferences.providerPreferences?.[selectedProvider]?.thinkingByModel?.[selectedModel]
+        : undefined;
+      if (saved && thinkingOptions.some((option) => option.id === saved)) {
+        return saved;
+      }
       return (
         selectedModelDef?.defaultThinkingOptionId ??
         thinkingOptions.find((option) => option.isDefault)?.id ??
@@ -843,7 +985,13 @@ function WorkflowDispatchSheet({
         ""
       );
     });
-  }, [selectedModelDef?.defaultThinkingOptionId, thinkingOptions]);
+  }, [
+    preferences.providerPreferences,
+    selectedModel,
+    selectedModelDef?.defaultThinkingOptionId,
+    selectedProvider,
+    thinkingOptions,
+  ]);
 
   useEffect(() => {
     if (modeOptions.length === 0) {
@@ -875,7 +1023,17 @@ function WorkflowDispatchSheet({
   ]);
 
   useEffect(() => {
-    if (cwd || projectTargets.length === 0) {
+    if (cwd) {
+      return;
+    }
+    // A project definition preselects its own repo as the run cwd.
+    if (initialCwd) {
+      const match = projectTargets.find((target) => target.cwd === initialCwd);
+      setCwd(initialCwd);
+      setCwdLabel(match && !isPaseoInternalPath(initialCwd) ? match.projectName : null);
+      return;
+    }
+    if (projectTargets.length === 0) {
       return;
     }
     const preferred =
@@ -885,7 +1043,7 @@ function WorkflowDispatchSheet({
     }
     setCwd(preferred.cwd);
     setCwdLabel(isPaseoInternalPath(preferred.cwd) ? null : preferred.projectName);
-  }, [cwd, projectTargets]);
+  }, [cwd, initialCwd, projectTargets]);
 
   const cwdTriggerLabel = cwdLabel ?? (cwd ? shortenPath(cwd) : t("workflows.projectPlaceholder"));
   const cwdHint = cwd && cwdLabel && shortenPath(cwd) !== cwdLabel ? shortenPath(cwd) : undefined;
@@ -951,6 +1109,17 @@ function WorkflowDispatchSheet({
                 args.fast = featureValues.fast_mode;
               }
             }
+            // Remember this selection — the sheet used to reopen on the first
+            // provider's default model because nothing ever wrote back.
+            void updatePreferences((current) =>
+              mergeCreateAgentSelectionPreferences({
+                preferences: current,
+                provider: selectedProvider,
+                modelId: selectedModel,
+                modeId: selectedMode,
+                thinkingOptionId: selectedEffort,
+              }),
+            );
             void onDispatch({
               definitionId: definition.id,
               cwd: cwd.trim(),
@@ -977,6 +1146,7 @@ function WorkflowDispatchSheet({
       selectedProvider,
       t,
       task,
+      updatePreferences,
       workspaceTitleBody,
     ],
   );
@@ -1762,6 +1932,18 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: theme.spacing[3],
+  },
+  // Full-width row inside the card grid: a per-project group of read-through
+  // repo definitions, titled with the project name.
+  projectSection: {
+    width: "100%",
+    gap: theme.spacing[2],
+    marginTop: theme.spacing[2],
+  },
+  projectSectionTitle: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.semibold,
   },
   card: {
     width: {

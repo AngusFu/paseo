@@ -8,6 +8,14 @@ export const WorkflowDefinitionSchema = z.object({
   builtin: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  // COMPAT(projectWorkflows): added in v0.1.112. Where the definition lives:
+  // "store" ($PASEO_HOME), "builtin" (package), "project" (read-through from a
+  // repo's .paseo/workflows or .claude/workflows). Absent = store/builtin per
+  // the `builtin` flag (old daemons). Project definitions are read-only over
+  // the wire — fork to a user definition to edit.
+  origin: z.enum(["store", "builtin", "project"]).optional(),
+  // Absolute path of the backing file for origin "project".
+  sourcePath: z.string().optional(),
 });
 export type WorkflowDefinition = z.infer<typeof WorkflowDefinitionSchema>;
 

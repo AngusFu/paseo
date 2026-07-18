@@ -26,7 +26,10 @@ export type WorkflowRunDispatchOptions = DispatchWorkflowRunInput & {
 
 /** Structural subset of DaemonClient used by workflow CLI commands. */
 export interface WorkflowDaemonClient {
-  workflowDefinitionList(requestId?: string): Promise<NamespacedPayload<WorkflowDefinition[]>>;
+  workflowDefinitionList(
+    requestId?: string,
+    options?: { cwd?: string },
+  ): Promise<NamespacedPayload<WorkflowDefinition[]>>;
   workflowDefinitionGet(
     definitionId: string,
     requestId?: string,

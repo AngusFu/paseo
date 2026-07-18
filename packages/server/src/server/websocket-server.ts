@@ -1331,6 +1331,8 @@ export class VoiceAssistantWebSocketServer {
         kanbanSourceStatuses: true,
         // COMPAT(workflow): added in v0.1.105, drop the gate when floor >= v0.1.105.
         workflow: true,
+        // COMPAT(projectWorkflows): added in v0.1.112, drop the gate when floor >= v0.1.112.
+        projectWorkflows: true,
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
         localLlm: true,
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.

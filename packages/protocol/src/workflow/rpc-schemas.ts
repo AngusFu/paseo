@@ -17,6 +17,10 @@ function response<const Type extends string>(type: Type, value: z.ZodType) {
 export const WorkflowDefinitionListRequestSchema = z.object({
   type: z.literal("workflow.definition.list.request"),
   requestId: z.string(),
+  // COMPAT(projectWorkflows): added in v0.1.112. When set, the daemon also
+  // scans `<cwd>/.paseo/workflows` and `<cwd>/.claude/workflows` and returns
+  // read-through `project:` definitions alongside stored ones.
+  cwd: z.string().optional(),
 });
 export const WorkflowDefinitionGetRequestSchema = z.object({
   type: z.literal("workflow.definition.get.request"),

@@ -1897,7 +1897,7 @@ export class Session {
   private dispatchWorkflowMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
       case "workflow.definition.list.request":
-        return this.handleWorkflowRequest(msg, () => this.workflowService.listDefinitions());
+        return this.handleWorkflowRequest(msg, () => this.workflowService.listDefinitions(msg.cwd));
       case "workflow.definition.get.request":
         return this.handleWorkflowRequest(msg, () =>
           this.workflowService.getDefinition(msg.definitionId),

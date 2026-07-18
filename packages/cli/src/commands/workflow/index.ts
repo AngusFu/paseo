@@ -20,7 +20,13 @@ export function createWorkflowCommand(): Command {
   const workflow = new Command("workflow").description("Manage workflow definitions and runs");
 
   addJsonAndDaemonHostOptions(
-    workflow.command("ls").description("List workflow definitions"),
+    workflow
+      .command("ls")
+      .description("List workflow definitions")
+      .option(
+        "--cwd <path>",
+        "Also list project workflows from <cwd>/.paseo/workflows and <cwd>/.claude/workflows",
+      ),
   ).action(withOutput(runLsCommand));
 
   addJsonAndDaemonHostOptions(
@@ -67,7 +73,7 @@ export function createWorkflowCommand(): Command {
     workflow
       .command("run")
       .description("Dispatch a workflow run")
-      .argument("<definitionId>", "Definition ID")
+      .argument("<definitionId>", "Definition ID, or a path to a project *.flow.js script")
       .option(
         "--arg <key=value>",
         "Run argument (repeatable; value may be JSON)",

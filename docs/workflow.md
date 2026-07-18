@@ -63,6 +63,28 @@ Builtin flows are read-only from the package
 (`packages/agents-workflow/workflows/builtin/`, ids `builtin:<name>`). They can be
 **dispatched directly** as templates, or forked into a user definition to edit.
 
+## Project workflows (read-through)
+
+A repo can keep its own `*.flow.js` scripts in `.paseo/workflows/` or
+`.claude/workflows/` (Claude Code named workflows — same dialect, runs
+unchanged; on a name collision `.paseo` wins). Nothing is imported: the daemon
+lists them per-request (`workflow.definition.list.request` with a `cwd`) and
+resolves their ids (`project:<abs file path>`) by reading the repo file
+**fresh at dispatch time** — edit in the repo, dispatch runs the new source.
+Feature flag `server_info.features.projectWorkflows`; wire fields
+`origin: "project"` + `sourcePath` on the definition. Project definitions are
+read-only over the wire (update/delete RPCs don't apply) — the app shows them
+per-project with Fork; the CLI accepts a script path directly:
+
+```bash
+paseo workflow ls --cwd /path/to/repo          # includes project workflows
+paseo workflow run .paseo/workflows/review.flow.js --cwd . --arg task="..."
+```
+
+The daemon only reads files whose parent is a `.paseo/workflows` /
+`.claude/workflows` directory (absolute, normalized; `..` rejected) — see
+`packages/server/src/server/workflow/project-definitions.ts`.
+
 ## Run isolation
 
 Each run gets a dedicated directory under `runs/{runId}/` used as

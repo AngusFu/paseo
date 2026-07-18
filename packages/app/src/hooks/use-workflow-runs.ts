@@ -4,6 +4,12 @@ import { useHostRuntimeClient, useHostRuntimeConnectionStatuses } from "@/runtim
 
 export const workflowRunsQueryBaseKey = ["workflow", "runs"] as const;
 const EMPTY_RUNS: WorkflowRun[] = [];
+const ACTIVE_POLL_MS = 10_000;
+const IDLE_POLL_MS = 30_000;
+
+function hasLiveRun(runs: WorkflowRun[] | undefined): boolean {
+  return Boolean(runs?.some((run) => run.status === "queued" || run.status === "running"));
+}
 
 export function useWorkflowRuns(serverId: string | null) {
   const client = useHostRuntimeClient(serverId ?? "");
@@ -21,7 +27,9 @@ export function useWorkflowRuns(serverId: string | null) {
     },
     dataShape: "list",
     staleTimeMs: 5_000,
-    refetchInterval: 10_000,
+    // Poll faster while a run is queued/active, back off once the list is idle.
+    refetchInterval: (current) =>
+      hasLiveRun(current.state.data as WorkflowRun[] | undefined) ? ACTIVE_POLL_MS : IDLE_POLL_MS,
   });
   return {
     runs: query.data ?? EMPTY_RUNS,

@@ -8,7 +8,15 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { Pressable, ScrollView, Text, View, type PressableStateCallbackType } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type PressableStateCallbackType,
+} from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import {
@@ -74,7 +82,9 @@ import type { DispatchWorkflowRunInput } from "@getpaseo/protocol/workflow/types
 import {
   WORKFLOW_WORKSPACE_EMOJI_PREFIX,
   formatWorkflowWorkspaceTitle,
+  stripWorkflowWorkspaceEmojiPrefix,
 } from "@getpaseo/protocol/workflow/workspace-title";
+import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { normalizeWorkspaceDescriptor, useSessionStore } from "@/stores/session-store";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { toErrorMessage } from "@/utils/error-messages";
@@ -85,6 +95,9 @@ import { requireWorkspaceDirectory } from "@/utils/workspace-directory";
 import { shortenPath } from "@/utils/shorten-path";
 
 type WorkflowTab = "definitions" | "builtins" | "runs";
+
+/** How close to the bottom (px) counts as "at bottom" for log auto-scroll. */
+const LOG_BOTTOM_THRESHOLD = 48;
 
 export function WorkflowScreen(): ReactElement {
   const isFocused = useIsFocused();
@@ -216,7 +229,12 @@ function WorkflowScreenContent(): ReactElement {
       <WorkflowRunDetailSheet
         serverId={serverId}
         run={inspecting}
+        mutations={mutations}
         onClose={() => setInspecting(null)}
+        onRunAgain={(newRun) => {
+          setInspecting(newRun);
+          setTab("runs");
+        }}
       />
       <WorkflowEditSheet
         definition={editing}
@@ -1110,11 +1128,15 @@ function WorkflowWorkspaceTitleField({
 function WorkflowRunDetailSheet({
   serverId,
   run: initialRun,
+  mutations,
   onClose,
+  onRunAgain,
 }: {
   serverId: string | null;
   run: WorkflowRun | null;
+  mutations: ReturnType<typeof useWorkflowMutations>;
   onClose: () => void;
+  onRunAgain: (run: WorkflowRun) => void;
 }): ReactElement {
   const { t } = useTranslation();
   const liveQuery = useWorkflowRun(initialRun ? serverId : null, initialRun?.id ?? null, {
@@ -1133,11 +1155,25 @@ function WorkflowRunDetailSheet({
     }
   }, [initialRun]);
 
+  const footer = useMemo<ReactNode>(() => {
+    if (!run) return null;
+    return (
+      <WorkflowRunDetailFooter
+        run={run}
+        serverId={serverId}
+        mutations={mutations}
+        onClose={onClose}
+        onRunAgain={onRunAgain}
+      />
+    );
+  }, [run, serverId, mutations, onClose, onRunAgain]);
+
   return (
     <AdaptiveModalSheet
       header={header}
       visible={initialRun !== null}
       onClose={onClose}
+      footer={footer}
       testID="workflow-run-detail-sheet"
     >
       {run && summary ? (
@@ -1151,6 +1187,119 @@ function WorkflowRunDetailSheet({
         />
       ) : null}
     </AdaptiveModalSheet>
+  );
+}
+
+function WorkflowRunDetailFooter({
+  run,
+  serverId,
+  mutations,
+  onClose,
+  onRunAgain,
+}: {
+  run: WorkflowRun;
+  serverId: string | null;
+  mutations: ReturnType<typeof useWorkflowMutations>;
+  onClose: () => void;
+  onRunAgain: (run: WorkflowRun) => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [cancelRequested, setCancelRequested] = useState(false);
+  const [isRunningAgain, setIsRunningAgain] = useState(false);
+
+  useEffect(() => {
+    setCancelRequested(false);
+  }, [run.id]);
+
+  const cancelRun = useCallback(() => {
+    void confirmDialog({
+      title: t("workflows.runCancelTitle"),
+      message: t("workflows.runCancelMessage"),
+      confirmLabel: t("workflows.actions.cancelRun"),
+      cancelLabel: t("common.actions.cancel"),
+      destructive: true,
+    })
+      .then((confirmed) => {
+        if (!confirmed) return undefined;
+        setCancelRequested(true);
+        return mutations.cancel(run.id).catch((error: unknown) => {
+          setCancelRequested(false);
+          toast.error(toErrorMessage(error) || t("workflows.runCancelFailed"));
+        });
+      })
+      .catch((error: unknown) => {
+        toast.error(toErrorMessage(error));
+      });
+  }, [mutations, run.id, t, toast]);
+
+  const runAgain = useCallback(() => {
+    const storedTitle =
+      typeof run.args.workspaceTitle === "string" ? run.args.workspaceTitle : undefined;
+    setIsRunningAgain(true);
+    mutations
+      .dispatch({
+        definitionId: run.definitionId,
+        cwd: run.cwd,
+        args: run.args,
+        workspaceTitle: storedTitle ? stripWorkflowWorkspaceEmojiPrefix(storedTitle) : undefined,
+      })
+      .then((created) => onRunAgain(created))
+      .catch((error: unknown) => {
+        toast.error(toErrorMessage(error) || t("workflows.runAgainFailed"));
+      })
+      .finally(() => setIsRunningAgain(false));
+  }, [mutations, onRunAgain, run, t, toast]);
+
+  const openWorkspace = useCallback(() => {
+    if (!serverId || !run.workspaceId) return;
+    onClose();
+    navigateToWorkspace({ serverId, workspaceId: run.workspaceId });
+  }, [onClose, run, serverId]);
+
+  const canCancel = run.status === "queued" || run.status === "running";
+  const canRunAgain =
+    run.status === "succeeded" || run.status === "failed" || run.status === "cancelled";
+  const showCancelling = cancelRequested && canCancel;
+
+  return (
+    <View style={styles.runDetailFooter}>
+      {run.workspaceId ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          leftIcon={Folder}
+          onPress={openWorkspace}
+          testID="workflow-run-open-workspace"
+        >
+          {t("workflows.runOpenWorkspace")}
+        </Button>
+      ) : null}
+      {canCancel ? (
+        <Button
+          variant="destructive"
+          size="sm"
+          loading={showCancelling}
+          disabled={showCancelling}
+          onPress={cancelRun}
+          testID="workflow-run-cancel"
+        >
+          {showCancelling ? t("workflows.runCancelling") : t("workflows.actions.cancelRun")}
+        </Button>
+      ) : null}
+      {canRunAgain ? (
+        <Button
+          variant="default"
+          size="sm"
+          leftIcon={Play}
+          loading={isRunningAgain}
+          onPress={runAgain}
+          testID="workflow-run-again"
+        >
+          {t("workflows.actions.runAgain")}
+        </Button>
+      ) : null}
+    </View>
   );
 }
 
@@ -1355,14 +1504,31 @@ function WorkflowRunEventLog({
   loadMoreLabel: string;
   errorLabel: string;
 }): ReactElement {
+  const { t } = useTranslation();
   const scrollRef = useRef<ScrollView>(null);
+  const isAtBottomRef = useRef(true);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
   useEffect(() => {
-    if (!live || entries.length === 0) return;
+    if (!live || entries.length === 0 || !isAtBottomRef.current) return;
     requestAnimationFrame(() => {
       scrollRef.current?.scrollToEnd({ animated: true });
     });
   }, [entries.length, live]);
+
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    const atBottom = distanceFromBottom <= LOG_BOTTOM_THRESHOLD;
+    isAtBottomRef.current = atBottom;
+    setShowJumpToBottom(!atBottom);
+  }, []);
+
+  const jumpToBottom = useCallback(() => {
+    isAtBottomRef.current = true;
+    setShowJumpToBottom(false);
+    scrollRef.current?.scrollToEnd({ animated: true });
+  }, []);
 
   let placeholder = emptyLabel;
   if (isError) {
@@ -1388,36 +1554,49 @@ function WorkflowRunEventLog({
       copyText={copyText}
       testID="workflow-run-event-log"
     >
-      <ScrollView
-        ref={scrollRef}
-        style={styles.logViewport}
-        contentContainerStyle={styles.logViewportContent}
-        nestedScrollEnabled
-      >
-        {entries.length === 0 ? (
-          <Text style={styles.logPlaceholder}>{`# ${placeholder}`}</Text>
-        ) : (
-          entries.map((entry) => (
-            <Text key={entry.seq} style={styles.logLine}>
-              <Text style={styles.logTime}>{formatLogTime(entry.ts)}</Text>
-              <Text style={styles.logGap}> </Text>
-              <Text style={logLevelStyle(entry.level)}>{formatLogLevel(entry.level)}</Text>
-              <Text style={styles.logGap}> </Text>
-              <Text style={styles.logEvent}>{entry.event}</Text>
-              <Text style={styles.logGap}> </Text>
-              <Text
-                style={
-                  entry.level === "error" || entry.level === "warn"
-                    ? styles.logMessageError
-                    : styles.logMessage
-                }
-              >
-                {entry.message}
+      <View style={styles.logViewportWrapper}>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.logViewport}
+          contentContainerStyle={styles.logViewportContent}
+          nestedScrollEnabled
+          onScroll={handleScroll}
+          scrollEventThrottle={100}
+        >
+          {entries.length === 0 ? (
+            <Text style={styles.logPlaceholder}>{`# ${placeholder}`}</Text>
+          ) : (
+            entries.map((entry) => (
+              <Text key={entry.seq} style={styles.logLine}>
+                <Text style={styles.logTime}>{formatLogTime(entry.ts)}</Text>
+                <Text style={styles.logGap}> </Text>
+                <Text style={logLevelStyle(entry.level)}>{formatLogLevel(entry.level)}</Text>
+                <Text style={styles.logGap}> </Text>
+                <Text style={styles.logEvent}>{entry.event}</Text>
+                <Text style={styles.logGap}> </Text>
+                <Text
+                  style={
+                    entry.level === "error" || entry.level === "warn"
+                      ? styles.logMessageError
+                      : styles.logMessage
+                  }
+                >
+                  {entry.message}
+                </Text>
               </Text>
-            </Text>
-          ))
-        )}
-      </ScrollView>
+            ))
+          )}
+        </ScrollView>
+        {showJumpToBottom && entries.length > 0 ? (
+          <Pressable
+            onPress={jumpToBottom}
+            style={styles.logJumpToBottom}
+            testID="workflow-run-logs-jump-to-bottom"
+          >
+            <Text style={styles.logJumpToBottomText}>{t("workflows.runLogsJumpToLatest")}</Text>
+          </Pressable>
+        ) : null}
+      </View>
       {hasMore ? (
         <Pressable
           onPress={onLoadMore}
@@ -1766,9 +1945,26 @@ const styles = StyleSheet.create((theme) => ({
     letterSpacing: 0.6,
     textTransform: "uppercase",
   },
+  logViewportWrapper: {
+    position: "relative",
+  },
   logViewport: {
     minHeight: 180,
     maxHeight: 360,
+  },
+  logJumpToBottom: {
+    position: "absolute",
+    bottom: theme.spacing[2],
+    alignSelf: "center",
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[1],
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.accentBright,
+  },
+  logJumpToBottomText: {
+    color: theme.colors.background,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
   },
   logViewportContent: {
     paddingHorizontal: theme.spacing[3],
@@ -1877,6 +2073,11 @@ const styles = StyleSheet.create((theme) => ({
   authoringFooter: {
     flex: 1,
     flexDirection: "row",
+  },
+  runDetailFooter: {
+    flexDirection: "row",
+    gap: theme.spacing[2],
+    justifyContent: "flex-end",
   },
   authoringStartButton: {
     flex: 1,

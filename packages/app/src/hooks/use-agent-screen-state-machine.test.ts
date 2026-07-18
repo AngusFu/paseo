@@ -189,6 +189,24 @@ describe("deriveAgentScreenViewState", () => {
     expect(sync.ui).toBe("silent");
   });
 
+  it("keeps hydrated history visible while reconnect revalidation is pending", () => {
+    const memory = createBaseMemory({
+      hasRenderedReady: true,
+      lastReadyAgent: createAgent("agent-1"),
+    });
+    const input: AgentScreenMachineInput = {
+      ...createBaseInput(),
+      hasHydratedHistoryBefore: true,
+      needsAuthoritativeSync: true,
+    };
+
+    const result = deriveAgentScreenViewState({ input, memory });
+    const ready = expectReadyState(result.state);
+    const sync = expectCatchingUpSync(ready);
+
+    expect(sync.ui).toBe("silent");
+  });
+
   it("keeps sync errors non-blocking once the screen was ready", () => {
     const memory = createBaseMemory({
       hasRenderedReady: true,

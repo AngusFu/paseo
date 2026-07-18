@@ -148,9 +148,11 @@ function resolveAgentScreenSource(args: {
 function resolveCatchingUpUi(args: {
   hasOptimisticCreateContinuity: boolean;
   hasHydratedHistoryBefore: boolean;
+  needsAuthoritativeSync: boolean;
   hadInitialSyncFailure: boolean;
 }): "overlay" | "silent" {
   if (args.hasOptimisticCreateContinuity) return "silent";
+  if (args.hasHydratedHistoryBefore && args.needsAuthoritativeSync) return "silent";
   if (args.hasHydratedHistoryBefore) return "silent";
   if (args.hadInitialSyncFailure) return "silent";
   return "overlay";
@@ -173,6 +175,7 @@ function resolveAgentScreenSync(args: {
       ui: resolveCatchingUpUi({
         hasOptimisticCreateContinuity: hasOptimisticCreateContinuity(input),
         hasHydratedHistoryBefore: input.hasHydratedHistoryBefore,
+        needsAuthoritativeSync: input.needsAuthoritativeSync,
         hadInitialSyncFailure,
       }),
     };

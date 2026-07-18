@@ -491,6 +491,13 @@ function AgentPanelContent({
   const runtimeIsConnected = useHostRuntimeIsConnected(runtimeServerId);
   const runtimeConnectionStatus = useHostRuntimeConnectionStatus(runtimeServerId);
   const runtimeLastError = useHostRuntimeLastError(runtimeServerId);
+  const hasCachedAgent = useSessionStore((state) => {
+    if (!resolvedServerId || !resolvedAgentId) return false;
+    const session = state.sessions[resolvedServerId];
+    return Boolean(
+      session?.agents.has(resolvedAgentId) || session?.agentDetails.has(resolvedAgentId),
+    );
+  });
 
   const connectionServerId = resolvedServerId ?? null;
   const daemon = connectionServerId
@@ -505,7 +512,7 @@ function AgentPanelContent({
       : runtimeConnectionStatus;
   const lastConnectionError = runtimeLastError;
 
-  if (!resolvedServerId || !runtimeClient) {
+  if (!resolvedServerId || (!runtimeClient && !hasCachedAgent)) {
     return (
       <AgentSessionUnavailableState
         serverLabel={serverLabel}
@@ -542,7 +549,7 @@ function AgentPanelBody({
   serverId: string;
   agentId?: string;
   isPaneFocused: boolean;
-  client: NonNullable<ReturnType<typeof useHostRuntimeClient>>;
+  client: ReturnType<typeof useHostRuntimeClient>;
   isConnected: boolean;
   connectionStatus: HostRuntimeConnectionStatus;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
@@ -586,7 +593,7 @@ function AgentPanelBody({
       }
       return;
     }
-    if (!isConnected || !hasSession) {
+    if (!client || !isConnected || !hasSession) {
       return;
     }
     if (lookupState.tag === "loading" || lookupState.tag === "not_found") {
@@ -703,7 +710,7 @@ function ChatAgentContent({
   serverId: string;
   agentId?: string;
   isPaneFocused: boolean;
-  client: NonNullable<ReturnType<typeof useHostRuntimeClient>>;
+  client: ReturnType<typeof useHostRuntimeClient>;
   isConnected: boolean;
   connectionStatus: HostRuntimeConnectionStatus;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
@@ -982,7 +989,7 @@ function ChatAgentContent({
       }
       return;
     }
-    if (!isConnected || !hasSession) {
+    if (!client || !isConnected || !hasSession) {
       return;
     }
     if (missingAgentState.kind === "resolving" || missingAgentState.kind === "not_found") {

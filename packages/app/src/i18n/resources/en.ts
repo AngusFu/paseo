@@ -1763,6 +1763,7 @@ export const en = {
     },
     shortcuts: {
       dialogTitle: "Shortcuts",
+      searchPlaceholder: "Search shortcuts",
       unavailableOnMobile: "Keyboard shortcuts are only available on desktop",
       capturePrompt: "Press shortcut...",
       actions: {

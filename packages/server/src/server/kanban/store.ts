@@ -73,6 +73,9 @@ export interface UpsertKanbanCardBySourcePayload {
   status: KanbanStatus;
   columnId: string;
   theme: string;
+  // The StoredKanbanSource.id running this sync. Optional so old callers
+  // (tests, scripts) keep compiling; sync.ts always passes it.
+  sourceId?: string;
   labels?: string[];
   assignee?: string | null;
   priority?: KanbanPriority | null;
@@ -293,11 +296,12 @@ export class KanbanStore {
     });
   }
 
-  // Drag-to-column move. Always pins statusPinnedByUser so source sync stops
-  // overwriting status for this card. When input.columnId is given it takes
-  // priority and status is derived from that column's legacyStatus; otherwise
-  // (old clients) status alone picks the first column with a matching
-  // legacyStatus.
+  // Drag-to-column move. Pins statusPinnedByUser only when the card actually
+  // changes column/status, so source sync stops overwriting status for this
+  // card — an in-column reorder (same target, explicit order) must not pin.
+  // When input.columnId is given it takes priority and status is derived from
+  // that column's legacyStatus; otherwise (old clients) status alone picks the
+  // first column with a matching legacyStatus.
   async moveCard(input: MoveKanbanCardInput): Promise<StoredKanbanCard | null> {
     return this.serializeCardMutation(input.id, async () => {
       const current = await this.getCard(input.id);
@@ -305,6 +309,9 @@ export class KanbanStore {
         return null;
       }
       const { status, columnId } = await this.resolveMoveTarget(input);
+      const columnChanged =
+        status !== current.status ||
+        (current.columnId !== undefined && columnId !== current.columnId);
       const cards = await this.listCards();
       const order =
         input.order ??
@@ -317,11 +324,47 @@ export class KanbanStore {
         status,
         columnId,
         order,
-        statusPinnedByUser: true,
+        statusPinnedByUser: current.statusPinnedByUser || columnChanged,
         updatedAt: new Date().toISOString(),
       });
       await this.writeCard(next);
       return next;
+    });
+  }
+
+  // Applies the status/column a REAL upstream write (e.g. a Jira transition)
+  // already produced. Unlike moveCard/updateCard, this never pins
+  // statusPinnedByUser — the tracker is now authoritative for this card's
+  // status (the write-back call just changed it there), so there is nothing
+  // for a future source sync to diverge from. Explicitly clears any stale pin
+  // instead of leaving it, since the reason to keep one (a manual drag/edit
+  // that hadn't round-tripped to the tracker) no longer applies once a real
+  // write-back has happened.
+  async applyExternalTransition(
+    cardId: string,
+    next: { status: KanbanStatus; columnId: string; metadataStatus?: Record<string, unknown> },
+  ): Promise<StoredKanbanCard | null> {
+    return this.serializeCardMutation(cardId, async () => {
+      const current = await this.getCard(cardId);
+      if (!current) {
+        return null;
+      }
+      // Replace only the `status` key inside metadata (the raw Jira status
+      // object the board reads name/statusCategory off of) — every other
+      // metadata key (assignee, priority, etc.) is left untouched.
+      const metadata = next.metadataStatus
+        ? { ...current.metadata, status: next.metadataStatus }
+        : current.metadata;
+      const updated = StoredKanbanCardSchema.parse({
+        ...current,
+        status: next.status,
+        columnId: next.columnId,
+        metadata,
+        statusPinnedByUser: false,
+        updatedAt: new Date().toISOString(),
+      });
+      await this.writeCard(updated);
+      return updated;
     });
   }
 
@@ -387,6 +430,7 @@ export class KanbanStore {
           theme: payload.theme,
           source,
           externalId: source.externalId,
+          sourceId: payload.sourceId,
           order: this.nextOrderForColumn(cards, payload.columnId),
           statusPinnedByUser: false,
           labels: payload.labels,
@@ -409,6 +453,7 @@ export class KanbanStore {
         url: payload.url,
         theme: payload.theme,
         source,
+        sourceId: payload.sourceId ?? existing.sourceId,
         // Once the user drags the card, sync stops overwriting status/column —
         // unless this sync forces it (terminal MR merged/closed wins over a
         // manual drag).

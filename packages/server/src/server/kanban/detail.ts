@@ -4,13 +4,12 @@ import type {
   KanbanCardDetailAttachment,
   KanbanCardDetailComment,
   StoredKanbanCard,
-  StoredKanbanConnection,
-  StoredKanbanSource,
 } from "@getpaseo/protocol/kanban/types";
 import { KanbanStore } from "./store.js";
 import type { KanbanSecretsStore } from "./secrets-store.js";
 import type { KanbanOauthService } from "./oauth.js";
 import { jiraAuthHeaders, resolveKanbanToken, trimTrailingSlash } from "./credentials.js";
+import { resolveKanbanCardContext, type KanbanCardContext } from "./card-context.js";
 import { adfToMarkdown, type AdfMediaResolver } from "./adf-to-markdown.js";
 import { KanbanAttachmentTokenStore } from "./attachment-token-store.js";
 
@@ -115,13 +114,6 @@ export interface KanbanCardDetailServiceOptions {
 const COMMENT_PAGE_SIZE = 50;
 const DEFAULT_ATTACHMENT_TOKEN_TTL_MS = 10 * 60 * 1000;
 
-interface CardContext {
-  source: StoredKanbanSource;
-  connection: StoredKanbanConnection | null;
-  baseUrl: string;
-  token: string | null;
-}
-
 export class KanbanCardDetailService {
   private readonly store: KanbanStore;
   private readonly secrets: KanbanSecretsStore;
@@ -155,7 +147,10 @@ export class KanbanCardDetailService {
         return { detail: this.manualCardDetail(card), error: null };
       }
 
-      const context = await this.resolveCardContext(card);
+      const context = await resolveKanbanCardContext(
+        { store: this.store, secrets: this.secrets, oauthService: this.oauthService },
+        card,
+      );
       const detail =
         card.source.kind === "jira"
           ? await this.getJiraDetail(context, card.source.issueKey)
@@ -181,7 +176,10 @@ export class KanbanCardDetailService {
         return { comments: [], error: null };
       }
 
-      const context = await this.resolveCardContext(card);
+      const context = await resolveKanbanCardContext(
+        { store: this.store, secrets: this.secrets, oauthService: this.oauthService },
+        card,
+      );
       const comments =
         card.source.kind === "jira"
           ? await this.getJiraComments(context, card.source.issueKey)
@@ -249,54 +247,10 @@ export class KanbanCardDetailService {
     };
   }
 
-  // A card doesn't record which KanbanSource created it — only the tracker
-  // identity (issueKey / projectId+mrIid). Match by kind, then narrow by
-  // whether the card's URL sits under that source's instance baseUrl; if
-  // that's ambiguous or the card has no URL, fall back to the first source
-  // of that kind. Good enough for the common case (one source per instance);
-  // multiple same-kind sources pointed at different instances for the same
-  // card's tracker is not resolvable from the data we have today.
-  private async resolveSourceForCard(card: StoredKanbanCard): Promise<StoredKanbanSource> {
-    const sources = (await this.store.listSources()).filter(
-      (source) => source.kind === card.source.kind,
-    );
-    if (sources.length === 0) {
-      throw new Error(`No kanban source configured for ${card.source.kind} cards`);
-    }
-    if (sources.length === 1 || !card.url) {
-      return sources[0];
-    }
-    for (const source of sources) {
-      const connection = source.connectionId
-        ? await this.store.getConnection(source.connectionId)
-        : null;
-      const baseUrl = connection?.baseUrl ?? source.baseUrl;
-      if (baseUrl && card.url.startsWith(trimTrailingSlash(baseUrl))) {
-        return source;
-      }
-    }
-    return sources[0];
-  }
-
-  private async resolveCardContext(card: StoredKanbanCard): Promise<CardContext> {
-    const source = await this.resolveSourceForCard(card);
-    const connection = source.connectionId
-      ? await this.store.getConnection(source.connectionId)
-      : null;
-    const baseUrl = connection?.baseUrl ?? source.baseUrl;
-    if (!baseUrl) {
-      throw new Error("Kanban source has no connection and no baseUrl configured");
-    }
-    const token = await resolveKanbanToken({
-      source,
-      connection,
-      secrets: this.secrets,
-      oauthService: this.oauthService,
-    });
-    return { source, connection, baseUrl, token };
-  }
-
-  private async getJiraDetail(context: CardContext, issueKey: string): Promise<KanbanCardDetail> {
+  private async getJiraDetail(
+    context: KanbanCardContext,
+    issueKey: string,
+  ): Promise<KanbanCardDetail> {
     const base = trimTrailingSlash(context.baseUrl);
     const headers = jiraAuthHeaders(context.token, context.connection?.email ?? null);
     // Cloud (email present) uses the v3 API with ADF description/comment
@@ -328,7 +282,7 @@ export class KanbanCardDetailService {
   }
 
   private async getJiraComments(
-    context: CardContext,
+    context: KanbanCardContext,
     issueKey: string,
   ): Promise<KanbanCardDetailComment[]> {
     const base = trimTrailingSlash(context.baseUrl);
@@ -464,7 +418,7 @@ export class KanbanCardDetailService {
   }
 
   private async getGitlabDetail(
-    context: CardContext,
+    context: KanbanCardContext,
     projectId: string,
     mrIid: string,
   ): Promise<KanbanCardDetail> {
@@ -508,7 +462,7 @@ export class KanbanCardDetailService {
   }
 
   private async getGitlabComments(
-    context: CardContext,
+    context: KanbanCardContext,
     projectId: string,
     mrIid: string,
   ): Promise<KanbanCardDetailComment[]> {

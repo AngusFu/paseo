@@ -73,6 +73,7 @@ describe("KanbanSyncService", () => {
       url: "https://jira.example.com/browse/PROJ-1",
       assignee: "Ada Lovelace",
       statusPinnedByUser: false,
+      sourceId: source.id,
     });
 
     // Second sync of the same data is idempotent: still 2 cards on disk.
@@ -798,6 +799,46 @@ describe("KanbanSyncService", () => {
     ]);
   });
 
+  test("Jira Cloud pagination hitting the safety cap records a truncation warning", async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call += 1;
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        // Always claims more pages exist — a runaway query that never ends.
+        json: async () => ({
+          issues: [{ key: `PROJ-${call}`, fields: { summary: `Issue ${call}` } }],
+          nextPageToken: `page-${call + 1}`,
+        }),
+      };
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const connection = await store.createConnection({
+      kind: "jira",
+      name: "Jira Cloud",
+      baseUrl: "https://x.atlassian.net",
+      email: "me@corp.com",
+    });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Runaway query",
+      connectionId: connection.id,
+      query: "project = HUGE",
+    });
+
+    const result = await syncService.sync(source);
+
+    // Capped at MAX_SYNC_PAGES (20) requests, not one per every claimed page.
+    expect(fetchImpl).toHaveBeenCalledTimes(20);
+    // The 20 issues it DID fetch are still upserted — truncation isn't a hard failure.
+    expect(result.cards).toHaveLength(20);
+    expect(result.error).toContain("page cap");
+    expect(result.source?.lastSyncError).toContain("page cap");
+  });
+
   test("GitLab sync captures tracker timestamps and the unresolved-thread flag", async () => {
     const gitlabResponse = [
       {
@@ -841,6 +882,7 @@ describe("KanbanSyncService", () => {
     expect(withThreads?.sourceCreatedAt).toBe("2026-01-01T00:00:00.000Z");
     expect(withThreads?.sourceUpdatedAt).toBe("2026-02-01T00:00:00.000Z");
     expect(withThreads?.hasUnresolvedThreads).toBe(true);
+    expect(withThreads?.sourceId).toBe(source.id);
 
     const clean = byId.get("gitlab:42!2");
     expect(clean?.hasUnresolvedThreads).toBe(false);

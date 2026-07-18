@@ -7,6 +7,7 @@ import type {
   DeleteKanbanColumnInput,
   KanbanCardDetail,
   KanbanCardDetailComment,
+  KanbanCardTransition,
   KanbanColumn,
   KanbanExternalStatus,
   MoveKanbanCardInput,
@@ -22,6 +23,12 @@ import type {
 import { KanbanStore } from "./store.js";
 import { KanbanSyncService } from "./sync.js";
 import { KanbanCardDetailService, type KanbanAttachmentFetchResult } from "./detail.js";
+import {
+  KanbanCardWriteBackService,
+  type KanbanCardAddCommentResult,
+  type KanbanCardTransitionResult,
+} from "./writeback.js";
+import { KanbanSourceStatusService, type KanbanSourceStatusesResult } from "./source-statuses.js";
 import { KanbanSecretsStore, type KanbanOauthSecret, type KanbanSecret } from "./secrets-store.js";
 import { credentialRefForConnection, KanbanOauthService } from "./oauth.js";
 import { KanbanPollService } from "./poll.js";
@@ -68,6 +75,11 @@ export interface KanbanCardDetailResult {
 
 export interface KanbanCardCommentsResult {
   comments: KanbanCardDetailComment[] | null;
+  error: string | null;
+}
+
+export interface KanbanCardTransitionsResult {
+  transitions: KanbanCardTransition[] | null;
   error: string | null;
 }
 
@@ -162,6 +174,8 @@ export class KanbanService {
   private readonly secretsStore: KanbanSecretsStore;
   private readonly syncService: KanbanSyncService;
   private readonly detailService: KanbanCardDetailService;
+  private readonly writeBackService: KanbanCardWriteBackService;
+  private readonly sourceStatusService: KanbanSourceStatusService;
   private readonly oauthService: KanbanOauthService;
   private readonly pollService: KanbanPollService;
 
@@ -186,6 +200,20 @@ export class KanbanService {
       },
     });
     this.detailService = new KanbanCardDetailService({
+      store: this.store,
+      secrets: this.secretsStore,
+      fetchImpl,
+      oauthService: this.oauthService,
+      logger: options.logger,
+    });
+    this.writeBackService = new KanbanCardWriteBackService({
+      store: this.store,
+      secrets: this.secretsStore,
+      fetchImpl,
+      oauthService: this.oauthService,
+      logger: options.logger,
+    });
+    this.sourceStatusService = new KanbanSourceStatusService({
       store: this.store,
       secrets: this.secretsStore,
       fetchImpl,
@@ -246,6 +274,22 @@ export class KanbanService {
 
   async fetchAttachment(token: string): Promise<KanbanAttachmentFetchResult> {
     return this.detailService.fetchAttachment(token);
+  }
+
+  async listCardTransitions(cardId: string): Promise<KanbanCardTransitionsResult> {
+    return this.writeBackService.listTransitions(cardId);
+  }
+
+  async transitionCard(cardId: string, transitionId: string): Promise<KanbanCardTransitionResult> {
+    return this.writeBackService.applyTransition(cardId, transitionId);
+  }
+
+  async addCardComment(cardId: string, body: string): Promise<KanbanCardAddCommentResult> {
+    return this.writeBackService.addComment(cardId, body);
+  }
+
+  async sourceStatuses(sourceId: string): Promise<KanbanSourceStatusesResult> {
+    return this.sourceStatusService.listStatuses(sourceId);
   }
 
   async updateCard(input: UpdateKanbanCardInput): Promise<KanbanCardResult> {

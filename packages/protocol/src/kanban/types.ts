@@ -84,6 +84,12 @@ export const StoredKanbanCardSchema = z.object({
   source: KanbanCardSourceSchema,
   // (source.kind, externalId) idempotency key, e.g. "jira:PROJ-123". null for manual cards.
   externalId: z.string().nullable(),
+  // The StoredKanbanSource.id that synced this card, when known. Lets a
+  // multi-source-per-kind setup (two Jira sources, say) attribute a card to
+  // its exact source instead of guessing by kind — see resolveSourceForCard
+  // in card-context.ts, which this backfills over time as it stays optional
+  // for cards synced before this field existed (never migrated in bulk).
+  sourceId: z.string().optional(),
   // Sort position within a column (ascending). v1 appends: a new or moved card
   // takes max(order)+1 for its column, so a move never rewrites sibling cards.
   // The type is a float to leave room for future midpoint reinsertion.
@@ -357,3 +363,20 @@ export const KanbanCardDetailSchema = z.object({
   attachments: z.array(KanbanCardDetailAttachmentSchema).optional(),
 });
 export type KanbanCardDetail = z.infer<typeof KanbanCardDetailSchema>;
+
+// ---------------------------------------------------------------------------
+// Jira write-back (kanban.card.list_transitions / .transition / .add_comment).
+// Jira-only today — every RPC that takes these rejects non-jira cards with an
+// explicit error rather than silently no-op'ing.
+// ---------------------------------------------------------------------------
+
+// One legal move out of an issue's CURRENT status, as Jira's workflow allows
+// right now (not every status in the workflow — only the ones reachable from
+// here). `toStatusName` is the raw tracker status name the transition lands
+// on; absent when Jira didn't report a target (rare, but the API allows it).
+export const KanbanCardTransitionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  toStatusName: z.string().optional(),
+});
+export type KanbanCardTransition = z.infer<typeof KanbanCardTransitionSchema>;

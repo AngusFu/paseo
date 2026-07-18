@@ -16,6 +16,12 @@ function titleOf(column: KanbanColumn): string {
 function legacyStatusOf(column: KanbanColumn): KanbanStatus {
   return column.legacyStatus;
 }
+function orderedCardIds(cards: StoredKanbanCard[], ids: string[]): string[] {
+  return cards
+    .filter((card) => ids.includes(card.id))
+    .sort((a, b) => a.order - b.order)
+    .map((card) => card.id);
+}
 function isNotHidden(column: KanbanColumn): boolean {
   return !column.hidden;
 }
@@ -119,6 +125,27 @@ describe("KanbanStore", () => {
       const moved = await store.moveCard({ id: created.id, status: "wip" });
 
       expect(moved).toMatchObject({ id: created.id, status: "wip", statusPinnedByUser: true });
+    });
+
+    test("moveCard honors an explicit order (in-column insert position)", async () => {
+      const first = await store.createCard({ title: "First" });
+      const second = await store.createCard({ title: "Second" });
+      const third = await store.createCard({ title: "Third" });
+      expect([first.order, second.order, third.order]).toEqual([0, 1, 2]);
+
+      // Reinsert "third" between "first" and "second" via a midpoint order —
+      // this is what the app computes from the drop's Y position.
+      const moved = await store.moveCard({
+        id: third.id,
+        status: third.status,
+        order: (first.order + second.order) / 2,
+      });
+
+      expect(moved?.order).toBe(0.5);
+      const ordered = orderedCardIds(await store.listCards(), [first.id, second.id, third.id]);
+      expect(ordered).toEqual([first.id, third.id, second.id]);
+      // A pure in-column reorder must not pin the card away from source sync.
+      expect(moved?.statusPinnedByUser).toBe(false);
     });
 
     test("deleteCard removes the card from disk", async () => {
@@ -294,8 +321,12 @@ describe("KanbanStore", () => {
       const fromDisk = await reloaded.listCards();
       const fromDiskByExternalId = cardsByExternalId(fromDisk);
       expect(fromDisk).toHaveLength(2);
-      expect(fromDiskByExternalId.get("jira:PROJ-20")).toEqual(updated);
-      expect(fromDiskByExternalId.get("jira:PROJ-21")).toEqual(second);
+      // upsertCardBySource returns the stored card plus a `created` marker —
+      // strip it before comparing against what a fresh store reads from disk.
+      const { created: _updatedCreated, ...updatedCard } = updated;
+      const { created: _secondCreated, ...secondCard } = second;
+      expect(fromDiskByExternalId.get("jira:PROJ-20")).toEqual(updatedCard);
+      expect(fromDiskByExternalId.get("jira:PROJ-21")).toEqual(secondCard);
     });
 
     test("deleteCard removes the card from the cache too, not just disk", async () => {

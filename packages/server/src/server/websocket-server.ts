@@ -1325,6 +1325,10 @@ export class VoiceAssistantWebSocketServer {
         kanbanColumns: true,
         // COMPAT(kanbanCardDetail): added in v0.1.109, drop the gate when floor >= v0.1.109.
         kanbanCardDetail: true,
+        // COMPAT(kanbanWriteBack): added in v0.1.111, drop the gate when floor >= v0.1.111.
+        kanbanWriteBack: true,
+        // COMPAT(kanbanSourceStatuses): added in v0.1.111, drop the gate when floor >= v0.1.111.
+        kanbanSourceStatuses: true,
         // COMPAT(workflow): added in v0.1.105, drop the gate when floor >= v0.1.105.
         workflow: true,
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.

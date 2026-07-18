@@ -50,12 +50,16 @@ import {
   KanbanCardDeleteRequestSchema,
   KanbanCardDetailRequestSchema,
   KanbanCardCommentsRequestSchema,
+  KanbanCardListTransitionsRequestSchema,
+  KanbanCardTransitionRequestSchema,
+  KanbanCardAddCommentRequestSchema,
   KanbanSourceCreateRequestSchema,
   KanbanSourceListRequestSchema,
   KanbanSourceUpdateRequestSchema,
   KanbanSourceDeleteRequestSchema,
   KanbanSourceSyncRequestSchema,
   KanbanSourceListExternalStatusesRequestSchema,
+  KanbanSourceStatusesRequestSchema,
   KanbanConnectionCreateRequestSchema,
   KanbanConnectionListRequestSchema,
   KanbanConnectionUpdateRequestSchema,
@@ -74,12 +78,16 @@ import {
   KanbanCardDeleteResponseSchema,
   KanbanCardDetailResponseSchema,
   KanbanCardCommentsResponseSchema,
+  KanbanCardListTransitionsResponseSchema,
+  KanbanCardTransitionResponseSchema,
+  KanbanCardAddCommentResponseSchema,
   KanbanSourceCreateResponseSchema,
   KanbanSourceListResponseSchema,
   KanbanSourceUpdateResponseSchema,
   KanbanSourceDeleteResponseSchema,
   KanbanSourceSyncResponseSchema,
   KanbanSourceListExternalStatusesResponseSchema,
+  KanbanSourceStatusesResponseSchema,
   KanbanConnectionCreateResponseSchema,
   KanbanConnectionListResponseSchema,
   KanbanConnectionUpdateResponseSchema,
@@ -2416,12 +2424,16 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   KanbanCardDeleteRequestSchema,
   KanbanCardDetailRequestSchema,
   KanbanCardCommentsRequestSchema,
+  KanbanCardListTransitionsRequestSchema,
+  KanbanCardTransitionRequestSchema,
+  KanbanCardAddCommentRequestSchema,
   KanbanSourceCreateRequestSchema,
   KanbanSourceListRequestSchema,
   KanbanSourceUpdateRequestSchema,
   KanbanSourceDeleteRequestSchema,
   KanbanSourceSyncRequestSchema,
   KanbanSourceListExternalStatusesRequestSchema,
+  KanbanSourceStatusesRequestSchema,
   KanbanConnectionCreateRequestSchema,
   KanbanConnectionListRequestSchema,
   KanbanConnectionUpdateRequestSchema,
@@ -2673,6 +2685,10 @@ export const ServerInfoStatusPayloadSchema = z
         kanbanColumns: z.boolean().optional(),
         // COMPAT(kanbanCardDetail): added in v0.1.109, drop the gate when floor >= v0.1.109.
         kanbanCardDetail: z.boolean().optional(),
+        // COMPAT(kanbanWriteBack): added in v0.1.111, drop the gate when floor >= v0.1.111.
+        kanbanWriteBack: z.boolean().optional(),
+        // COMPAT(kanbanSourceStatuses): added in v0.1.111, drop the gate when floor >= v0.1.111.
+        kanbanSourceStatuses: z.boolean().optional(),
         // COMPAT(workflow): added in v0.1.105, drop the gate when floor >= v0.1.105.
         workflow: z.boolean().optional(),
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
@@ -4832,12 +4848,16 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   KanbanCardDeleteResponseSchema,
   KanbanCardDetailResponseSchema,
   KanbanCardCommentsResponseSchema,
+  KanbanCardListTransitionsResponseSchema,
+  KanbanCardTransitionResponseSchema,
+  KanbanCardAddCommentResponseSchema,
   KanbanSourceCreateResponseSchema,
   KanbanSourceListResponseSchema,
   KanbanSourceUpdateResponseSchema,
   KanbanSourceDeleteResponseSchema,
   KanbanSourceSyncResponseSchema,
   KanbanSourceListExternalStatusesResponseSchema,
+  KanbanSourceStatusesResponseSchema,
   KanbanConnectionCreateResponseSchema,
   KanbanConnectionListResponseSchema,
   KanbanConnectionUpdateResponseSchema,
@@ -5095,6 +5115,11 @@ export type KanbanCardMoveRequest = z.infer<typeof KanbanCardMoveRequestSchema>;
 export type KanbanCardDeleteRequest = z.infer<typeof KanbanCardDeleteRequestSchema>;
 export type KanbanCardDetailRequest = z.infer<typeof KanbanCardDetailRequestSchema>;
 export type KanbanCardCommentsRequest = z.infer<typeof KanbanCardCommentsRequestSchema>;
+export type KanbanCardListTransitionsRequest = z.infer<
+  typeof KanbanCardListTransitionsRequestSchema
+>;
+export type KanbanCardTransitionRequest = z.infer<typeof KanbanCardTransitionRequestSchema>;
+export type KanbanCardAddCommentRequest = z.infer<typeof KanbanCardAddCommentRequestSchema>;
 export type KanbanSourceCreateRequest = z.infer<typeof KanbanSourceCreateRequestSchema>;
 export type KanbanSourceListRequest = z.infer<typeof KanbanSourceListRequestSchema>;
 export type KanbanSourceUpdateRequest = z.infer<typeof KanbanSourceUpdateRequestSchema>;
@@ -5103,6 +5128,7 @@ export type KanbanSourceSyncRequest = z.infer<typeof KanbanSourceSyncRequestSche
 export type KanbanSourceListExternalStatusesRequest = z.infer<
   typeof KanbanSourceListExternalStatusesRequestSchema
 >;
+export type KanbanSourceStatusesRequest = z.infer<typeof KanbanSourceStatusesRequestSchema>;
 export type KanbanConnectionCreateRequest = z.infer<typeof KanbanConnectionCreateRequestSchema>;
 export type KanbanConnectionListRequest = z.infer<typeof KanbanConnectionListRequestSchema>;
 export type KanbanConnectionUpdateRequest = z.infer<typeof KanbanConnectionUpdateRequestSchema>;
@@ -5123,6 +5149,11 @@ export type KanbanCardMoveResponse = z.infer<typeof KanbanCardMoveResponseSchema
 export type KanbanCardDeleteResponse = z.infer<typeof KanbanCardDeleteResponseSchema>;
 export type KanbanCardDetailResponse = z.infer<typeof KanbanCardDetailResponseSchema>;
 export type KanbanCardCommentsResponse = z.infer<typeof KanbanCardCommentsResponseSchema>;
+export type KanbanCardListTransitionsResponse = z.infer<
+  typeof KanbanCardListTransitionsResponseSchema
+>;
+export type KanbanCardTransitionResponse = z.infer<typeof KanbanCardTransitionResponseSchema>;
+export type KanbanCardAddCommentResponse = z.infer<typeof KanbanCardAddCommentResponseSchema>;
 export type KanbanSourceCreateResponse = z.infer<typeof KanbanSourceCreateResponseSchema>;
 export type KanbanSourceListResponse = z.infer<typeof KanbanSourceListResponseSchema>;
 export type KanbanSourceUpdateResponse = z.infer<typeof KanbanSourceUpdateResponseSchema>;
@@ -5131,6 +5162,7 @@ export type KanbanSourceSyncResponse = z.infer<typeof KanbanSourceSyncResponseSc
 export type KanbanSourceListExternalStatusesResponse = z.infer<
   typeof KanbanSourceListExternalStatusesResponseSchema
 >;
+export type KanbanSourceStatusesResponse = z.infer<typeof KanbanSourceStatusesResponseSchema>;
 export type KanbanConnectionCreateResponse = z.infer<typeof KanbanConnectionCreateResponseSchema>;
 export type KanbanConnectionListResponse = z.infer<typeof KanbanConnectionListResponseSchema>;
 export type KanbanConnectionUpdateResponse = z.infer<typeof KanbanConnectionUpdateResponseSchema>;

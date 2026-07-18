@@ -5,12 +5,12 @@ import type {
   KanbanPriority,
   KanbanStatus,
   StoredKanbanCard,
-  StoredKanbanConnection,
   StoredKanbanSource,
 } from "@getpaseo/protocol/kanban/types";
 import { KanbanStore, type UpsertKanbanCardBySourcePayload } from "./store.js";
 import type { KanbanSecretsStore } from "./secrets-store.js";
-import { credentialRefForConnection, type KanbanOauthService } from "./oauth.js";
+import type { KanbanOauthService } from "./oauth.js";
+import { jiraAuthHeaders, resolveKanbanToken, trimTrailingSlash } from "./credentials.js";
 
 interface JiraIssue {
   key: string;
@@ -93,7 +93,7 @@ function gitlabExternalStatusKey(mr: GitlabMergeRequest): string {
 // Jira's 3-value statusCategory bucket, mapped to the matching default
 // column's legacyStatus. Unknown/missing category falls back to "pending"
 // ("new"), the least surprising default for a status Paseo hasn't seen.
-function jiraCategoryLegacyStatus(categoryKey: string | undefined): KanbanStatus {
+export function jiraCategoryLegacyStatus(categoryKey: string | undefined): KanbanStatus {
   if (categoryKey === "done") return "done";
   if (categoryKey === "indeterminate") return "wip";
   return "pending";
@@ -103,10 +103,6 @@ function jiraCategoryLegacyStatus(categoryKey: string | undefined): KanbanStatus
 // draft) is in progress, merged or closed is done.
 function gitlabCategoryLegacyStatus(mr: GitlabMergeRequest): KanbanStatus {
   return mr.state === "merged" || mr.state === "closed" ? "done" : "wip";
-}
-
-function trimTrailingSlash(url: string): string {
-  return url.endsWith("/") ? url.slice(0, -1) : url;
 }
 
 // GitLab MR state has a fixed, small vocabulary — no API call needed to list it.
@@ -125,7 +121,7 @@ interface JiraStatusEntry {
   statuses?: JiraStatusEntry[];
 }
 
-function parseJiraStatusesResponse(body: unknown): KanbanExternalStatus[] {
+export function parseJiraStatusesResponse(body: unknown): KanbanExternalStatus[] {
   if (!Array.isArray(body)) {
     return [];
   }
@@ -162,10 +158,6 @@ export interface KanbanSyncServiceOptions {
   logger?: pino.Logger;
   onCardCreated?: (card: StoredKanbanCard, source: StoredKanbanSource) => Promise<void>;
 }
-
-// An access token is refreshed once it's within this window of expiring,
-// rather than waiting for the provider to reject an already-stale request.
-const TOKEN_REFRESH_SKEW_MS = 60_000;
 
 // Safety cap on pagination loops (Jira and GitLab) so a runaway JQL/filter
 // can't make a single sync fetch unbounded pages. 20 pages * 100 per page.
@@ -205,45 +197,17 @@ export class KanbanSyncService {
         throw new Error("Kanban source has no connection and no baseUrl configured");
       }
 
-      const token = await this.resolveToken(source, connection);
-      const cards: StoredKanbanCard[] = [];
-      if (source.kind === "jira") {
-        const issues = await this.fetchJiraIssues(
-          baseUrl,
-          source.query,
-          token,
-          connection?.email ?? null,
-        );
-        for (const issue of issues) {
-          const { cardSource, payload } = await this.buildJiraUpsert(baseUrl, source, issue);
-          const card = await this.store.upsertCardBySource(cardSource, payload);
-          cards.push(card);
-          if (card.created) {
-            await this.onCardCreated?.(card, source);
-          }
-        }
-      } else {
-        const seenExternalIds = new Set<string>();
-        const mergeRequests = await this.fetchGitlabMergeRequests(baseUrl, source.query, token);
-        for (const mr of mergeRequests) {
-          const { cardSource, payload } = await this.buildGitlabUpsert(baseUrl, source, mr);
-          seenExternalIds.add(cardSource.externalId);
-          const card = await this.store.upsertCardBySource(cardSource, payload);
-          cards.push(card);
-          if (card.created) {
-            await this.onCardCreated?.(card, source);
-          }
-        }
-        cards.push(
-          ...(await this.reconcileTerminalGitlabCards(baseUrl, source, token, seenExternalIds)),
-        );
-      }
-
-      const updatedSource = await this.store.recordSourceSync(source.id, {
-        lastSyncAt: new Date().toISOString(),
-        lastSyncError: null,
+      const token = await resolveKanbanToken({
+        source,
+        connection,
+        secrets: this.secrets,
+        oauthService: this.oauthService,
       });
-      return { source: updatedSource, cards, error: null };
+      const { cards, truncated } =
+        source.kind === "jira"
+          ? await this.syncJiraCards(baseUrl, source, token, connection?.email ?? null)
+          : await this.syncGitlabCards(baseUrl, source, token);
+      return await this.recordSyncSuccess(source, cards, truncated);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger?.warn({ err: error, sourceId: source.id }, "Kanban source sync failed");
@@ -257,60 +221,75 @@ export class KanbanSyncService {
     }
   }
 
-  // Resolves the bearer/PAT value to send upstream. Primary route: the source
-  // points at a reusable connection, whose credential is keyed by
-  // credentialRefForConnection(connection.id) — refreshes an about-to-expire
-  // OAuth token first. Legacy route (no connection): looks up
-  // source.auth.credentialRef directly, falling back to an env var of the
-  // same name for scripts/tests that configure credentials that way
-  // (COMPAT(kanbanCredentials): pre-secrets-store v1 behavior, kept as a
-  // fallback rather than removed).
-  private async resolveToken(
+  private async syncJiraCards(
+    baseUrl: string,
     source: StoredKanbanSource,
-    connection: StoredKanbanConnection | null,
-  ): Promise<string | null> {
-    if (connection) {
-      return this.resolveConnectionToken(connection);
+    token: string | null,
+    email: string | null,
+  ): Promise<{ cards: StoredKanbanCard[]; truncated: boolean }> {
+    const { issues, truncated } = await this.fetchJiraIssues(baseUrl, source.query, token, email);
+    const cards: StoredKanbanCard[] = [];
+    for (const issue of issues) {
+      const { cardSource, payload } = await this.buildJiraUpsert(baseUrl, source, issue);
+      const card = await this.store.upsertCardBySource(cardSource, payload);
+      cards.push(card);
+      if (card.created) {
+        await this.onCardCreated?.(card, source);
+      }
     }
-    if (!source.auth) {
-      return null;
-    }
-    const secret = await this.secrets.get(source.auth.credentialRef);
-    if (!secret) {
-      const envValue = process.env[source.auth.credentialRef];
-      return envValue && envValue.length > 0 ? envValue : null;
-    }
-    return secret.method === "token" ? secret.token : secret.accessToken;
+    return { cards, truncated };
   }
 
-  private async resolveConnectionToken(connection: StoredKanbanConnection): Promise<string | null> {
-    const secret = await this.secrets.get(credentialRefForConnection(connection.id));
-    if (!secret) {
-      return null;
+  private async syncGitlabCards(
+    baseUrl: string,
+    source: StoredKanbanSource,
+    token: string | null,
+  ): Promise<{ cards: StoredKanbanCard[]; truncated: boolean }> {
+    const seenExternalIds = new Set<string>();
+    const { mergeRequests, truncated } = await this.fetchGitlabMergeRequests(
+      baseUrl,
+      source.query,
+      token,
+    );
+    const cards: StoredKanbanCard[] = [];
+    for (const mr of mergeRequests) {
+      const { cardSource, payload } = await this.buildGitlabUpsert(baseUrl, source, mr);
+      seenExternalIds.add(cardSource.externalId);
+      const card = await this.store.upsertCardBySource(cardSource, payload);
+      cards.push(card);
+      if (card.created) {
+        await this.onCardCreated?.(card, source);
+      }
     }
-    if (secret.method === "token") {
-      return secret.token;
-    }
-    const expiringSoon =
-      secret.expiresAt !== null &&
-      new Date(secret.expiresAt).getTime() - Date.now() < TOKEN_REFRESH_SKEW_MS;
-    if (expiringSoon && secret.refreshToken && this.oauthService) {
-      const refreshed = await this.oauthService.refreshAccessToken(connection, secret);
-      return refreshed.accessToken;
-    }
-    return secret.accessToken;
+    cards.push(
+      ...(await this.reconcileTerminalGitlabCards(baseUrl, source, token, seenExternalIds)),
+    );
+    return { cards, truncated };
   }
 
-  // Jira Cloud REST auth is HTTP Basic base64(email:apiToken). Jira Server/DC
-  // Personal Access Tokens use Bearer, so fall back to Bearer without an email.
-  private jiraAuthHeaders(token: string | null, email: string | null): Record<string, string> {
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (token) {
-      headers.Authorization = email
-        ? `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`
-        : `Bearer ${token}`;
+  // A truncated page walk isn't a hard failure (the cards it did fetch are
+  // valid), but silently dropping the tail of a runaway query is worse than
+  // surfacing it — record a warning on the same lastSyncError channel a real
+  // sync failure uses, so the source's sync-status row shows it.
+  private async recordSyncSuccess(
+    source: StoredKanbanSource,
+    cards: StoredKanbanCard[],
+    truncated: boolean,
+  ): Promise<KanbanSyncResult> {
+    const truncationWarning = truncated
+      ? `Sync hit the ${MAX_SYNC_PAGES * SYNC_PAGE_SIZE}-item page cap — some cards may be missing. Narrow the query to see everything.`
+      : null;
+    if (truncationWarning) {
+      this.logger?.warn(
+        { sourceId: source.id, cap: MAX_SYNC_PAGES * SYNC_PAGE_SIZE },
+        "Kanban sync hit its pagination cap; results may be incomplete",
+      );
     }
-    return headers;
+    const updatedSource = await this.store.recordSourceSync(source.id, {
+      lastSyncAt: new Date().toISOString(),
+      lastSyncError: truncationWarning,
+    });
+    return { source: updatedSource, cards, error: truncationWarning };
   }
 
   // Live-fetches the external tracker's status list for a column-mapping UI
@@ -334,8 +313,13 @@ export class KanbanSyncService {
     if (!baseUrl) {
       throw new Error("Kanban source has no connection and no baseUrl configured");
     }
-    const token = await this.resolveToken(source, connection);
-    const headers = this.jiraAuthHeaders(token, connection?.email ?? null);
+    const token = await resolveKanbanToken({
+      source,
+      connection,
+      secrets: this.secrets,
+      oauthService: this.oauthService,
+    });
+    const headers = jiraAuthHeaders(token, connection?.email ?? null);
     const base = trimTrailingSlash(baseUrl);
     const url = projectKey
       ? `${base}/rest/api/3/project/${encodeURIComponent(projectKey)}/statuses`
@@ -353,9 +337,9 @@ export class KanbanSyncService {
     query: string,
     token: string | null,
     email: string | null,
-  ): Promise<JiraIssue[]> {
+  ): Promise<{ issues: JiraIssue[]; truncated: boolean }> {
     const base = trimTrailingSlash(baseUrl);
-    const headers = this.jiraAuthHeaders(token, email);
+    const headers = jiraAuthHeaders(token, email);
     // An email means Jira Cloud (HTTP Basic auth). Jira Cloud removed the old
     // GET /rest/api/2/search (returns 410 Gone) in favour of the enhanced-JQL
     // /rest/api/3/search/jql, which returns only id/key unless `fields` is given.
@@ -371,11 +355,12 @@ export class KanbanSyncService {
     base: string,
     query: string,
     headers: Record<string, string>,
-  ): Promise<JiraIssue[]> {
+  ): Promise<{ issues: JiraIssue[]; truncated: boolean }> {
     const jql = encodeURIComponent(query);
     const fields = encodeURIComponent("summary,status,assignee,labels,priority,created,updated");
     const issues: JiraIssue[] = [];
     let nextPageToken: string | undefined;
+    let truncated = false;
     for (let page = 0; page < MAX_SYNC_PAGES; page++) {
       const pageTokenParam = nextPageToken
         ? `&nextPageToken=${encodeURIComponent(nextPageToken)}`
@@ -391,18 +376,24 @@ export class KanbanSyncService {
         break;
       }
       nextPageToken = body.nextPageToken;
+      if (page === MAX_SYNC_PAGES - 1) {
+        // Hit the safety cap with more pages still pending — the walk stops
+        // here, not because the query naturally ended.
+        truncated = true;
+      }
     }
-    return issues;
+    return { issues, truncated };
   }
 
   private async fetchJiraServerIssues(
     base: string,
     query: string,
     headers: Record<string, string>,
-  ): Promise<JiraIssue[]> {
+  ): Promise<{ issues: JiraIssue[]; truncated: boolean }> {
     const jql = encodeURIComponent(query);
     const issues: JiraIssue[] = [];
     let startAt = 0;
+    let truncated = false;
     for (let page = 0; page < MAX_SYNC_PAGES; page++) {
       const url = `${base}/rest/api/2/search?jql=${jql}&maxResults=${SYNC_PAGE_SIZE}&startAt=${startAt}`;
       const response = await this.fetchImpl(url, { headers });
@@ -417,15 +408,18 @@ export class KanbanSyncService {
       if (pageIssues.length < SYNC_PAGE_SIZE || reachedTotal) {
         break;
       }
+      if (page === MAX_SYNC_PAGES - 1) {
+        truncated = true;
+      }
     }
-    return issues;
+    return { issues, truncated };
   }
 
   private async fetchGitlabMergeRequests(
     baseUrl: string,
     query: string,
     token: string | null,
-  ): Promise<GitlabMergeRequest[]> {
+  ): Promise<{ mergeRequests: GitlabMergeRequest[]; truncated: boolean }> {
     const base = trimTrailingSlash(baseUrl);
     const headers: Record<string, string> = { Accept: "application/json" };
     if (token) {
@@ -435,6 +429,7 @@ export class KanbanSyncService {
     const perPage = Number(params.get("per_page")) || SYNC_PAGE_SIZE;
     params.set("per_page", String(perPage));
     const mergeRequests: GitlabMergeRequest[] = [];
+    let truncated = false;
     for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
       params.set("page", String(page));
       const url = `${base}/api/v4/merge_requests?${params.toString()}`;
@@ -447,8 +442,11 @@ export class KanbanSyncService {
       if (!body || body.length < perPage) {
         break;
       }
+      if (page === MAX_SYNC_PAGES) {
+        truncated = true;
+      }
     }
-    return mergeRequests;
+    return { mergeRequests, truncated };
   }
 
   private async buildJiraUpsert(
@@ -479,6 +477,7 @@ export class KanbanSyncService {
         url: `${trimTrailingSlash(baseUrl)}/browse/${issue.key}`,
         status: column.legacyStatus,
         columnId: column.id,
+        sourceId: source.id,
         theme: "jira",
         labels: fields.labels,
         assignee: fields.assignee?.displayName ?? null,
@@ -522,6 +521,7 @@ export class KanbanSyncService {
         url: mr.web_url ?? `${trimTrailingSlash(baseUrl)}/-/merge_requests/${mrIid}`,
         status: column.legacyStatus,
         columnId: column.id,
+        sourceId: source.id,
         theme: "gitlab-mr",
         labels: mr.labels,
         assignee: mr.assignee?.name ?? null,

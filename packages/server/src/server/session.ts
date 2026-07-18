@@ -1435,6 +1435,7 @@ export class Session {
       this.dispatchChatScheduleLoopMessage(msg) ??
       this.dispatchKanbanMessage(msg) ??
       this.dispatchKanbanColumnMessage(msg) ??
+      this.dispatchKanbanJiraMessage(msg) ??
       this.dispatchWorkflowMessage(msg) ??
       this.dispatchLlmMessage(msg) ??
       this.dispatchMiscMessage(msg);
@@ -1876,6 +1877,23 @@ export class Session {
     }
   }
 
+  // Jira write-back RPCs — split out for the same reason as
+  // dispatchKanbanColumnMessage (cyclomatic complexity).
+  private dispatchKanbanJiraMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "kanban.card.list_transitions.request":
+        return this.handleKanbanCardListTransitionsRequest(msg);
+      case "kanban.card.transition.request":
+        return this.handleKanbanCardTransitionRequest(msg);
+      case "kanban.card.add_comment.request":
+        return this.handleKanbanCardAddCommentRequest(msg);
+      case "kanban.source.statuses.request":
+        return this.handleKanbanSourceStatusesRequest(msg);
+      default:
+        return undefined;
+    }
+  }
+
   private dispatchWorkflowMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
       case "workflow.definition.list.request":
@@ -2079,6 +2097,46 @@ export class Session {
     this.emit({
       type: "kanban.card.comments.response",
       payload: { requestId: msg.requestId, comments: result.comments, error: result.error },
+    });
+  }
+
+  private async handleKanbanCardListTransitionsRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.card.list_transitions.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.listCardTransitions(msg.cardId);
+    this.emit({
+      type: "kanban.card.list_transitions.response",
+      payload: { requestId: msg.requestId, transitions: result.transitions, error: result.error },
+    });
+  }
+
+  private async handleKanbanCardTransitionRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.card.transition.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.transitionCard(msg.cardId, msg.transitionId);
+    this.emit({
+      type: "kanban.card.transition.response",
+      payload: { requestId: msg.requestId, card: result.card, error: result.error },
+    });
+  }
+
+  private async handleKanbanCardAddCommentRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.card.add_comment.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.addCardComment(msg.cardId, msg.body);
+    this.emit({
+      type: "kanban.card.add_comment.response",
+      payload: { requestId: msg.requestId, comment: result.comment, error: result.error },
+    });
+  }
+
+  private async handleKanbanSourceStatusesRequest(
+    msg: Extract<SessionInboundMessage, { type: "kanban.source.statuses.request" }>,
+  ): Promise<void> {
+    const result = await this.kanbanService.sourceStatuses(msg.sourceId);
+    this.emit({
+      type: "kanban.source.statuses.response",
+      payload: { requestId: msg.requestId, statuses: result.statuses, error: result.error },
     });
   }
 

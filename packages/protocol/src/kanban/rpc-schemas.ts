@@ -3,6 +3,7 @@ import {
   KanbanCardDetailCommentSchema,
   KanbanCardDetailSchema,
   KanbanCardSourceSchema,
+  KanbanCardTransitionSchema,
   KanbanCardTriggerSchema,
   KanbanColumnSchema,
   KanbanExternalStatusSchema,
@@ -101,6 +102,37 @@ export const KanbanCardCommentsRequestSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Jira write-back (see KanbanCardTransitionSchema doc in types.ts) — every
+// handler rejects a non-jira card with an explicit error.
+// ---------------------------------------------------------------------------
+
+// Legal transitions out of the issue's CURRENT status, fetched live (not
+// cached) since Jira workflow transitions depend on the issue's live state.
+export const KanbanCardListTransitionsRequestSchema = z.object({
+  type: z.literal("kanban.card.list_transitions.request"),
+  requestId: z.string(),
+  cardId: z.string(),
+});
+
+// Executes a transition, then re-fetches the issue and writes its new status
+// back onto the local card via the source's statusMap/columnMap — Jira is
+// authoritative, so this never pins statusPinnedByUser (see
+// KanbanStore.applyExternalTransition).
+export const KanbanCardTransitionRequestSchema = z.object({
+  type: z.literal("kanban.card.transition.request"),
+  requestId: z.string(),
+  cardId: z.string(),
+  transitionId: z.string(),
+});
+
+export const KanbanCardAddCommentRequestSchema = z.object({
+  type: z.literal("kanban.card.add_comment.request"),
+  requestId: z.string(),
+  cardId: z.string(),
+  body: z.string().min(1),
+});
+
+// ---------------------------------------------------------------------------
 // Source requests
 // ---------------------------------------------------------------------------
 
@@ -164,6 +196,17 @@ export const KanbanSourceListExternalStatusesRequestSchema = z.object({
   requestId: z.string(),
   sourceId: z.string(),
   projectKey: z.string().optional(),
+});
+
+// Full workflow status list for a Jira source: every status defined for the
+// project(s) this source's own cards belong to (derived from card issue keys,
+// not a caller-supplied projectKey) — including statuses with zero cards
+// right now, so the app can render a lane/column for every status Jira's
+// workflow defines. Jira-only; gitlab/manual sources get an explicit error.
+export const KanbanSourceStatusesRequestSchema = z.object({
+  type: z.literal("kanban.source.statuses.request"),
+  requestId: z.string(),
+  sourceId: z.string(),
 });
 
 // ---------------------------------------------------------------------------
@@ -334,6 +377,33 @@ export const KanbanCardCommentsResponseSchema = z.object({
   }),
 });
 
+export const KanbanCardListTransitionsResponseSchema = z.object({
+  type: z.literal("kanban.card.list_transitions.response"),
+  payload: z.object({
+    requestId: z.string(),
+    transitions: z.array(KanbanCardTransitionSchema).nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const KanbanCardTransitionResponseSchema = z.object({
+  type: z.literal("kanban.card.transition.response"),
+  payload: z.object({
+    requestId: z.string(),
+    card: StoredKanbanCardSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const KanbanCardAddCommentResponseSchema = z.object({
+  type: z.literal("kanban.card.add_comment.response"),
+  payload: z.object({
+    requestId: z.string(),
+    comment: KanbanCardDetailCommentSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
 // ---------------------------------------------------------------------------
 // Source responses
 // ---------------------------------------------------------------------------
@@ -391,6 +461,15 @@ export const KanbanSourceListExternalStatusesResponseSchema = z.object({
   payload: z.object({
     requestId: z.string(),
     statuses: z.array(KanbanExternalStatusSchema),
+    error: z.string().nullable(),
+  }),
+});
+
+export const KanbanSourceStatusesResponseSchema = z.object({
+  type: z.literal("kanban.source.statuses.response"),
+  payload: z.object({
+    requestId: z.string(),
+    statuses: z.array(KanbanExternalStatusSchema).nullable(),
     error: z.string().nullable(),
   }),
 });

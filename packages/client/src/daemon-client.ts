@@ -534,6 +534,18 @@ type KanbanCardCommentsPayload = Extract<
   SessionOutboundMessage,
   { type: "kanban.card.comments.response" }
 >["payload"];
+type KanbanCardListTransitionsPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.card.list_transitions.response" }
+>["payload"];
+type KanbanCardTransitionPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.card.transition.response" }
+>["payload"];
+type KanbanCardAddCommentPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.card.add_comment.response" }
+>["payload"];
 type LlmLocalStatusPayload = Extract<
   SessionOutboundMessage,
   { type: "llm.local.status.response" }
@@ -606,6 +618,10 @@ type KanbanConnectionOauthStartPayload = Extract<
 type KanbanSourceListExternalStatusesPayload = Extract<
   SessionOutboundMessage,
   { type: "kanban.source.list_external_statuses.response" }
+>["payload"];
+type KanbanSourceStatusesPayload = Extract<
+  SessionOutboundMessage,
+  { type: "kanban.source.statuses.response" }
 >["payload"];
 type KanbanColumnListPayload = Extract<
   SessionOutboundMessage,
@@ -5066,6 +5082,38 @@ export class DaemonClient {
     });
   }
 
+  async kanbanCardListTransitions(
+    cardId: string,
+    requestId?: string,
+  ): Promise<KanbanCardListTransitionsPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.card.list_transitions.request", cardId },
+    });
+  }
+
+  async kanbanCardTransition(
+    cardId: string,
+    transitionId: string,
+    requestId?: string,
+  ): Promise<KanbanCardTransitionPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.card.transition.request", cardId, transitionId },
+    });
+  }
+
+  async kanbanCardAddComment(
+    cardId: string,
+    body: string,
+    requestId?: string,
+  ): Promise<KanbanCardAddCommentPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.card.add_comment.request", cardId, body },
+    });
+  }
+
   async llmLocalStatus(requestId?: string): Promise<LlmLocalStatusPayload> {
     return this.sendNamespacedCorrelatedSessionRequest({
       requestId,
@@ -5166,6 +5214,21 @@ export class DaemonClient {
         sourceId,
         ...(projectKey !== undefined ? { projectKey } : {}),
       },
+    });
+  }
+
+  // COMPAT(kanbanSourceStatuses): added in v0.1.111. Requires
+  // server_info.features.kanbanSourceStatuses. Full workflow status list for
+  // a Jira source (every status, including ones with zero cards right now) —
+  // not the same as kanbanSourceListExternalStatuses above, which only lists
+  // statuses currently present (or a caller-given projectKey's) on the board.
+  async kanbanSourceStatuses(
+    sourceId: string,
+    requestId?: string,
+  ): Promise<KanbanSourceStatusesPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "kanban.source.statuses.request", sourceId },
     });
   }
 

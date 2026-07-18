@@ -116,6 +116,7 @@ interface PreparedSessionConfig {
 
 interface NormalizeConfigOptions {
   resolveDefaultModel?: boolean;
+  env?: Record<string, string>;
 }
 
 interface TimeoutOptions {
@@ -1027,7 +1028,11 @@ export class AgentManager {
     this.assertAcceptingAgentRegistrations();
     const resolvedAgentId = validateAgentId(agentId ?? this.idFactory(), "createAgent");
     await this.deleteAgentState(resolvedAgentId);
-    const { storedConfig, launchConfig } = await this.prepareSessionConfig(config, resolvedAgentId);
+    const { storedConfig, launchConfig } = await this.prepareSessionConfig(
+      config,
+      resolvedAgentId,
+      options?.env,
+    );
     this.requireEnabledProvider(storedConfig.provider);
     const client = await this.requireAvailableClient({
       provider: storedConfig.provider,
@@ -4085,15 +4090,25 @@ export class AgentManager {
     }
 
     if (!normalized.modeId) {
-      try {
-        normalized.modeId =
-          getAgentProviderDefinition(normalized.provider).defaultModeId ?? undefined;
-      } catch {
-        // Unknown provider
-      }
+      normalized.modeId = await this.resolveDefaultModeId(normalized, options.env);
     }
 
     return normalized;
+  }
+
+  private async resolveDefaultModeId(
+    config: AgentSessionConfig,
+    env?: Record<string, string>,
+  ): Promise<string | undefined> {
+    const providerDefault = await this.clients
+      .get(config.provider)
+      ?.resolveDefaultModeId?.({ config, env });
+    if (providerDefault) return providerDefault;
+    try {
+      return getAgentProviderDefinition(config.provider).defaultModeId ?? undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private async resolveDefaultModelId(config: AgentSessionConfig): Promise<string | undefined> {
@@ -4117,8 +4132,9 @@ export class AgentManager {
   private async prepareSessionConfig(
     config: AgentSessionConfig,
     agentId: string,
+    env?: Record<string, string>,
   ): Promise<PreparedSessionConfig> {
-    const storedConfig = await this.normalizeConfig(stripInternalPaseoMcpServer(config));
+    const storedConfig = await this.normalizeConfig(stripInternalPaseoMcpServer(config), { env });
     const launchConfig = this.applyDaemonAppendSystemPrompt(
       withRuntimePaseoMcpServer({
         config: storedConfig,

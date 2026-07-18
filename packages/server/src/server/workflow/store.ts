@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
   KanbanWorkflowRuleSchema,
@@ -13,7 +13,7 @@ import {
   type WorkflowDefinition,
   type WorkflowRun,
 } from "@getpaseo/protocol/workflow/types";
-import { writeJsonFileAtomic } from "../atomic-file.js";
+import { writeFileAtomic, writeJsonFileAtomic } from "../atomic-file.js";
 
 export class WorkflowStore {
   constructor(private readonly dir: string) {}
@@ -40,9 +40,13 @@ export class WorkflowStore {
         .filter((entry) => entry.endsWith(".json"))
         .map((entry) => this.readDefinition(entry.slice(0, -5))),
     );
-    return definitions.filter(
-      (definition): definition is WorkflowDefinition => definition !== null,
-    );
+    return definitions
+      .filter((definition): definition is WorkflowDefinition => definition !== null)
+      .sort((left, right) =>
+        // readdir order is filesystem-dependent (effectively random to the
+        // user) — present a stable, scannable case-insensitive name order.
+        left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
+      );
   }
 
   async getDefinition(id: string): Promise<WorkflowDefinition | null> {
@@ -211,7 +215,7 @@ export class WorkflowStore {
     await mkdir(this.definitionsDir, { recursive: true });
     const { source, ...metadata } = definition;
     await writeJsonFileAtomic(join(this.definitionsDir, `${definition.id}.json`), metadata);
-    await writeFile(join(this.definitionsDir, `${definition.id}.flow.js`), source, "utf8");
+    await writeFileAtomic(join(this.definitionsDir, `${definition.id}.flow.js`), source);
   }
 
   private async writeRules(rules: KanbanWorkflowRule[]): Promise<void> {

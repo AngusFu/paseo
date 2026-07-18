@@ -263,6 +263,228 @@ describe("WorkflowEventLog paging", () => {
   });
 });
 
+describe("WorkflowService.cancel", () => {
+  it("cancels a queued run before it ever executes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    let started = false;
+    const service = new WorkflowService({
+      paseoHome: dir,
+      maxConcurrency: 0, // never dequeues — the run stays "queued"
+      runner: async () => {
+        started = true;
+        return { ok: true };
+      },
+    });
+    const definition = await service.createDefinition({
+      name: "never-runs",
+      source: "export const meta = {};",
+    });
+    const run = await service.dispatch({ definitionId: definition.id, cwd: dir, args: {} });
+    const cancelled = await service.cancel(run.id);
+    expect(cancelled?.status).toBe("cancelled");
+    expect(started).toBe(false);
+  });
+
+  it("flags a running run and settles it as cancelled once the script stops", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    let releaseRun: () => void = () => {};
+    const runGate = new Promise<void>((resolve) => {
+      releaseRun = resolve;
+    });
+    const cancelAgentsCalls: Array<{ workspaceId: string; runId: string }> = [];
+    const service = new WorkflowService({
+      paseoHome: dir,
+      runner: async () => {
+        await runGate;
+        return { ok: true };
+      },
+      cancelWorkflowAgents: async (input) => {
+        cancelAgentsCalls.push(input);
+      },
+    });
+    const definition = await service.createDefinition({
+      name: "cancel-me",
+      source: "export const meta = {};",
+    });
+    const run = await service.dispatch({ definitionId: definition.id, cwd: dir, args: {} });
+
+    for (let i = 0; i < 50; i++) {
+      const latest = await service.getRun(run.id);
+      if (latest?.status === "running") break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    const midCancel = await service.cancel(run.id);
+    // Status write is left to execute()'s settlement — cancel() only flags it
+    // and (when a workspaceId is known) best-effort interrupts the in-flight
+    // agent. A custom runner never mints a workspace, so no interrupt fires.
+    expect(midCancel?.status).toBe("running");
+    expect(cancelAgentsCalls).toEqual([]);
+
+    releaseRun();
+    for (let i = 0; i < 50; i++) {
+      const latest = await service.getRun(run.id);
+      if (latest && latest.status !== "running") {
+        expect(latest.status).toBe("cancelled");
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("cancelled run did not settle");
+  });
+});
+
+describe("WorkflowService.recoverAfterRestart", () => {
+  it("re-enqueues a queued run left over from a prior daemon process", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const before = new WorkflowService({ paseoHome: dir, maxConcurrency: 0 });
+    const definition = await before.createDefinition({
+      name: "requeue-me",
+      source: "export const meta = {};",
+    });
+    const run = await before.dispatch({ definitionId: definition.id, cwd: dir, args: {} });
+    // Still queued — maxConcurrency: 0 never dequeues, simulating a run that
+    // never got its process-local queue slot before the daemon died.
+    expect((await before.getRun(run.id))?.status).toBe("queued");
+
+    const after = new WorkflowService({
+      paseoHome: dir,
+      runner: async () => ({ ok: true }),
+    });
+    await after.recoverAfterRestart();
+    for (let i = 0; i < 50; i++) {
+      const latest = await after.getRun(run.id);
+      if (latest && latest.status !== "queued") {
+        expect(latest.status).toBe("succeeded");
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("requeued run did not settle");
+  });
+
+  it("marks a stale running run failed instead of leaving it stuck", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const service = new WorkflowService({ paseoHome: dir });
+    const definition = await service.createDefinition({
+      name: "stale-running",
+      source: "export const meta = {};",
+    });
+    const store = new WorkflowStore(join(dir, "workflows"));
+    await store.createRun({
+      id: "wfr_stale",
+      definitionId: definition.id,
+      status: "running",
+      args: {},
+      cwd: dir,
+      workspaceId: null,
+      workspacePath: dir,
+      queuedAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      endedAt: null,
+      result: null,
+      error: null,
+    });
+
+    await service.recoverAfterRestart();
+    const recovered = await service.getRun("wfr_stale");
+    expect(recovered?.status).toBe("failed");
+    expect(recovered?.error).toBe("Interrupted by daemon restart");
+  });
+
+  it("fails out a queued run whose definition no longer exists", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const store = new WorkflowStore(join(dir, "workflows"));
+    await store.createRun({
+      id: "wfr_orphan",
+      definitionId: "wfd_missing",
+      status: "queued",
+      args: {},
+      cwd: dir,
+      workspaceId: null,
+      workspacePath: dir,
+      queuedAt: new Date().toISOString(),
+      startedAt: null,
+      endedAt: null,
+      result: null,
+      error: null,
+    });
+    const service = new WorkflowService({ paseoHome: dir });
+    await service.recoverAfterRestart();
+    const recovered = await service.getRun("wfr_orphan");
+    expect(recovered?.status).toBe("failed");
+    expect(recovered?.error).toContain("wfd_missing");
+  });
+});
+
+describe("WorkflowEventLog incremental cache", () => {
+  it("reads entries appended between polls without re-parsing prior lines", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const { WorkflowEventLog } = await import("./event-log.js");
+    const log = new WorkflowEventLog(join(dir, "workflows"));
+
+    await log.append({ event: "test.inc", message: "line 0", runId: "wfr_inc" });
+    const first = await log.readRunLogs("wfr_inc", { afterSeq: 0 });
+    expect(first.entries.map((e) => e.message)).toEqual(["line 0"]);
+
+    // Nothing changed on disk — must not throw, must return the same entry.
+    const unchanged = await log.readRunLogs("wfr_inc", { afterSeq: 0 });
+    expect(unchanged.entries.map((e) => e.message)).toEqual(["line 0"]);
+
+    // Multiple appends between two reads — the incremental reader must pick
+    // up all of them from the last consumed byte offset, not just the latest.
+    await log.append({ event: "test.inc", message: "line 1", runId: "wfr_inc" });
+    await log.append({ event: "test.inc", message: "line 2", runId: "wfr_inc" });
+    const second = await log.readRunLogs("wfr_inc", { afterSeq: first.nextSeq });
+    expect(second.entries.map((e) => e.message)).toEqual(["line 1", "line 2"]);
+    expect(second.hasMore).toBe(false);
+  });
+
+  it("resets and re-reads fully when the run log file shrinks (truncated/rebuilt)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const { WorkflowEventLog } = await import("./event-log.js");
+    const runDir = join(dir, "workflows", "runs", "wfr_shrink");
+    await mkdir(runDir, { recursive: true });
+    const eventsPath = join(runDir, "events.jsonl");
+    const log = new WorkflowEventLog(join(dir, "workflows"));
+
+    await log.append({
+      event: "test.shrink",
+      message: "long line before rebuild",
+      runId: "wfr_shrink",
+    });
+    const before = await log.readRunLogs("wfr_shrink", { afterSeq: 0 });
+    expect(before.entries).toHaveLength(1);
+
+    // Simulate the file being rebuilt smaller than the cached size.
+    await writeFile(
+      eventsPath,
+      `${JSON.stringify({ seq: 1, ts: new Date().toISOString(), level: "info", event: "rebuilt", message: "fresh" })}\n`,
+      "utf8",
+    );
+    const after = await log.readRunLogs("wfr_shrink", { afterSeq: 0 });
+    expect(after.entries.map((e) => e.event)).toEqual(["rebuilt"]);
+  });
+
+  it("hasRunLogs is false for a missing or empty run log and true once a valid line lands", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const { WorkflowEventLog } = await import("./event-log.js");
+    const log = new WorkflowEventLog(join(dir, "workflows"));
+
+    expect(await log.hasRunLogs("wfr_missing")).toBe(false);
+    await log.append({ event: "test.has", message: "hi", runId: "wfr_missing" });
+    expect(await log.hasRunLogs("wfr_missing")).toBe(true);
+  });
+});
+
 describe("WorkflowEventLog via service", () => {
   it("records definition and run lifecycle events", async () => {
     const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));

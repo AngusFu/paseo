@@ -120,7 +120,7 @@ import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { LoopService } from "./loop-service.js";
 import { ScheduleService } from "./schedule/service.js";
 import { KanbanService } from "./kanban/service.js";
-import { WorkflowService } from "./workflow/service.js";
+import { WORKFLOW_RUN_ID_LABEL, WorkflowService } from "./workflow/service.js";
 import { createWorkflowPaseoAgentHost } from "./workflow/paseo-agent-host.js";
 import { DaemonConfigStore, type MutableDaemonConfig } from "./daemon-config-store.js";
 import { BrowserToolsBroker } from "./browser-tools/broker.js";
@@ -1113,6 +1113,36 @@ export async function createPaseoDaemon(
       logger,
     }),
   );
+
+  // Best-effort interrupt for the in-flight host agent(s) of a "running" run
+  // being cancelled — the engine has no AbortSignal, so this is the only way
+  // to stop billable work already in flight (further agent() calls the
+  // script tries are short-circuited separately by WorkflowService itself).
+  workflowService.setCancelWorkflowAgents(async ({ workspaceId, runId }) => {
+    const targets = agentManager
+      .listAgents()
+      .filter(
+        (agent) =>
+          agent.workspaceId === workspaceId &&
+          agent.lifecycle === "running" &&
+          agent.labels[WORKFLOW_RUN_ID_LABEL] === runId,
+      );
+    for (const agent of targets) {
+      try {
+        const result = await agentManager.cancelAgentRun(agent.id);
+        if (result.status === "refused") {
+          await agentManager.archiveAgent(agent.id).catch(() => {});
+        }
+      } catch (err) {
+        logger.warn({ err, agentId: agent.id, runId }, "workflow cancel: agent interrupt failed");
+      }
+    }
+  });
+
+  // A prior daemon process may have died mid-run: queued runs lost their
+  // in-memory queue slot, and running runs have no process left executing
+  // them. Recover both now that the run/cancel seams above are wired.
+  await workflowService.recoverAfterRestart();
 
   const loopService = new LoopService({
     paseoHome: config.paseoHome,

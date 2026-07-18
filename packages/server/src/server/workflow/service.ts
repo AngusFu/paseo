@@ -26,7 +26,7 @@ import {
 import { formatWorkflowWorkspaceTitle } from "@getpaseo/protocol/workflow/workspace-title";
 import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 import type { Logger } from "pino";
-import type { WorkflowLogEntry } from "@getpaseo/protocol/workflow/types";
+import type { WorkflowLogEntry, WorkflowLogLevel } from "@getpaseo/protocol/workflow/types";
 import { expandUserPath } from "../path-utils.js";
 import { WorkflowEventLog, type WorkflowEventLogWriteInput } from "./event-log.js";
 import { WorkflowQueue } from "./queue.js";
@@ -34,6 +34,9 @@ import { paginateLogEntries, reconstructRunHistory } from "./run-history.js";
 import { WorkflowStore } from "./store.js";
 
 const CREATE_WORKFLOW_SKILL = "paseo-create-workflow";
+
+/** Label stamped on every host agent a workflow run spawns — used to find the run's in-flight agent(s) for cancellation. */
+export const WORKFLOW_RUN_ID_LABEL = "paseo.workflow-run-id";
 
 const AUTHORING_README = `# Paseo workflows
 
@@ -263,6 +266,18 @@ export type EnsureWorkflowAgentWorkspace = (input: {
   title?: string | null;
 }) => Promise<string>;
 
+/**
+ * Best-effort interrupt for whatever host agent(s) a running workflow is
+ * currently waiting on. Wired by the daemon (AgentManager.cancelAgentRun /
+ * archiveAgent over agents labeled with this run's id). The engine itself has
+ * no AbortSignal, so this is paired with a run-scoped cancellation flag that
+ * short-circuits any *further* agent() calls the script tries to make.
+ */
+export type CancelWorkflowRunAgents = (input: {
+  workspaceId: string;
+  runId: string;
+}) => Promise<void>;
+
 export interface WorkflowServiceOptions {
   paseoHome: string;
   maxConcurrency?: number;
@@ -278,6 +293,8 @@ export interface WorkflowServiceOptions {
    * Preferred over shelling out to a PATH `paseo` CLI.
    */
   agentHost?: PaseoAgentHost;
+  /** See `CancelWorkflowRunAgents`. */
+  cancelWorkflowAgents?: CancelWorkflowRunAgents;
   logger?: Logger;
 }
 
@@ -292,6 +309,15 @@ export class WorkflowService {
   private readonly logger: Logger | null;
   private ensureAgentWorkspace: EnsureWorkflowAgentWorkspace | undefined;
   private agentHost: PaseoAgentHost | undefined;
+  private cancelWorkflowAgents: CancelWorkflowRunAgents | undefined;
+  /**
+   * Runs that received a cancel request while already `running`. The engine
+   * has no abort signal, so this in-memory flag is the short-circuit: the
+   * host wrapper refuses any further agent() call for the run, and execute()
+   * forces the terminal status to "cancelled" once the script settles.
+   * Per-daemon-lifetime only — a restart mid-run already orphans the run.
+   */
+  private readonly cancelledRunIds = new Set<string>();
 
   constructor(options: WorkflowServiceOptions) {
     this.paseoHome = options.paseoHome;
@@ -302,6 +328,7 @@ export class WorkflowService {
     this.customRunner = options.runner ?? null;
     this.ensureAgentWorkspace = options.ensureAgentWorkspace;
     this.agentHost = options.agentHost;
+    this.cancelWorkflowAgents = options.cancelWorkflowAgents;
     this.logger = options.logger?.child({ module: "workflow-service" }) ?? null;
   }
 
@@ -324,6 +351,11 @@ export class WorkflowService {
   /** Late-bind the in-daemon PaseoAgentHost after AgentManager is ready. */
   setAgentHost(host: PaseoAgentHost): void {
     this.agentHost = host;
+  }
+
+  /** Late-bind the in-flight-agent interrupt seam (see `CancelWorkflowRunAgents`). */
+  setCancelWorkflowAgents(cancel: CancelWorkflowRunAgents): void {
+    this.cancelWorkflowAgents = cancel;
   }
 
   async listDefinitions(): Promise<WorkflowDefinition[]> {
@@ -432,6 +464,69 @@ export class WorkflowService {
     return this.store.getRun(id);
   }
 
+  /**
+   * Recover run state after a daemon restart. Call once at bootstrap, after
+   * `ensureAgentWorkspace`/`agentHost`/`cancelWorkflowAgents` are wired so a
+   * re-enqueued run can actually execute:
+   * - `queued` runs are re-enqueued (their in-memory queue slot was lost).
+   * - `running` runs are stale — the process that was executing them is gone
+   *   — so they're marked `failed` with an interruption error, same as
+   *   `LoopService.initialize()` does for `loops.json`.
+   */
+  async recoverAfterRestart(): Promise<void> {
+    // listRuns is newest-first (UI order) — re-enqueue oldest-first so the
+    // restored queue keeps the original FIFO dispatch order.
+    const runs = (await this.store.listRuns())
+      .slice()
+      .sort((left, right) => left.queuedAt.localeCompare(right.queuedAt));
+    for (const run of runs) {
+      if (run.status === "running") {
+        await this.store.updateRun(run.id, (current) =>
+          current.status === "running"
+            ? {
+                ...current,
+                status: "failed",
+                endedAt: new Date().toISOString(),
+                error: "Interrupted by daemon restart",
+              }
+            : current,
+        );
+        await this.log({
+          level: "warn",
+          event: "run.interrupted",
+          message: "run was interrupted by daemon restart",
+          runId: run.id,
+          definitionId: run.definitionId,
+        });
+        continue;
+      }
+      if (run.status !== "queued") {
+        continue;
+      }
+      const definition = await this.getDefinition(run.definitionId);
+      if (!definition) {
+        await this.store.updateRun(run.id, (current) =>
+          current.status === "queued"
+            ? {
+                ...current,
+                status: "failed",
+                endedAt: new Date().toISOString(),
+                error: `Workflow definition not found: ${run.definitionId}`,
+              }
+            : current,
+        );
+        continue;
+      }
+      await this.log({
+        event: "run.requeued",
+        message: "re-queued after daemon restart",
+        runId: run.id,
+        definitionId: run.definitionId,
+      });
+      void this.queue.enqueue(() => this.execute(definition, run));
+    }
+  }
+
   async dispatch(input: DispatchWorkflowRunInput): Promise<WorkflowRun> {
     const definition = await this.getDefinition(input.definitionId);
     if (!definition) {
@@ -478,22 +573,59 @@ export class WorkflowService {
     return run;
   }
 
+  /**
+   * Cancel a run. `queued` runs are marked cancelled immediately (the queue's
+   * `execute()` guard skips them when their slot comes up). `running` runs
+   * can't be aborted mid-engine (no AbortSignal in `@getpaseo/agents-workflow`),
+   * so this: (1) flags the run so the host wrapper refuses further agent()
+   * calls, (2) best-effort interrupts whatever host agent is currently in
+   * flight via `cancelWorkflowAgents`, and (3) leaves the terminal status
+   * write to `execute()` once the (now agent()-starved) script actually
+   * settles — see the `cancelledRunIds` field doc.
+   */
   async cancel(id: string): Promise<WorkflowRun | null> {
-    const updated = await this.store.updateRun(id, (run) => {
+    const afterQueuedAttempt = await this.store.updateRun(id, (run) => {
       if (run.status !== "queued") {
         return run;
       }
       return { ...run, status: "cancelled", endedAt: new Date().toISOString() };
     });
-    if (updated?.status === "cancelled") {
+    if (!afterQueuedAttempt) {
+      return null;
+    }
+    if (afterQueuedAttempt.status === "cancelled") {
       await this.log({
         event: "run.cancelled",
         message: "cancelled while queued",
         runId: id,
-        definitionId: updated.definitionId,
+        definitionId: afterQueuedAttempt.definitionId,
       });
+      return afterQueuedAttempt;
     }
-    return updated;
+    if (afterQueuedAttempt.status === "running") {
+      this.cancelledRunIds.add(id);
+      await this.log({
+        event: "run.cancel_requested",
+        message: "cancellation requested while running",
+        runId: id,
+        definitionId: afterQueuedAttempt.definitionId,
+      });
+      if (afterQueuedAttempt.workspaceId && this.cancelWorkflowAgents) {
+        try {
+          await this.cancelWorkflowAgents({
+            workspaceId: afterQueuedAttempt.workspaceId,
+            runId: id,
+          });
+        } catch (err) {
+          this.logger?.warn(
+            { err, runId: id },
+            "workflow cancel: failed to interrupt in-flight agent",
+          );
+        }
+      }
+      return (await this.store.getRun(id)) ?? afterQueuedAttempt;
+    }
+    return afterQueuedAttempt;
   }
 
   async listRules(): Promise<KanbanWorkflowRule[]> {
@@ -561,38 +693,62 @@ export class WorkflowService {
     });
     try {
       const { result, agentErrors } = await this.runnerWithAgentErrors(definition, run);
+      const cancelled = this.cancelledRunIds.has(run.id);
       const nestedError = extractWorkflowResultError(result);
       const error = mergeWorkflowError(nestedError, agentErrors);
+      let status: WorkflowRun["status"];
+      let level: WorkflowLogLevel;
+      let event: string;
+      let message: string;
+      if (cancelled) {
+        status = "cancelled";
+        level = "warn";
+        event = "run.cancelled";
+        message = "cancelled while running";
+      } else if (error) {
+        status = "failed";
+        level = "error";
+        event = "run.failed";
+        message = error;
+      } else {
+        status = "succeeded";
+        level = "info";
+        event = "run.succeeded";
+        message = "succeeded";
+      }
       await this.store.updateRun(run.id, (current) => ({
         ...current,
-        status: error ? "failed" : "succeeded",
+        status,
         endedAt: new Date().toISOString(),
         result,
-        error,
+        error: cancelled ? (error ?? "cancelled") : error,
       }));
       await this.log({
-        level: error ? "error" : "info",
-        event: error ? "run.failed" : "run.succeeded",
-        message: error ?? "succeeded",
+        level,
+        event,
+        message,
         runId: run.id,
         definitionId: definition.id,
         data: { workspaceId: run.workspaceId, agentErrors },
       });
     } catch (error) {
+      const cancelled = this.cancelledRunIds.has(run.id);
       const message = error instanceof Error ? error.message : String(error);
       await this.log({
-        level: "error",
-        event: "run.crashed",
-        message,
+        level: cancelled ? "warn" : "error",
+        event: cancelled ? "run.cancelled" : "run.crashed",
+        message: cancelled ? "cancelled while running" : message,
         runId: run.id,
         definitionId: definition.id,
       });
       await this.store.updateRun(run.id, (current) => ({
         ...current,
-        status: "failed",
+        status: cancelled ? "cancelled" : "failed",
         endedAt: new Date().toISOString(),
-        error: message,
+        error: cancelled ? "cancelled while running" : message,
       }));
+    } finally {
+      this.cancelledRunIds.delete(run.id);
     }
   }
 
@@ -747,6 +903,19 @@ export class WorkflowService {
   ): PaseoAgentHost {
     return {
       runAgent: async (request) => {
+        if (this.cancelledRunIds.has(run.id)) {
+          // Cancel was requested while running — refuse any FURTHER agent()
+          // the script tries to start (the already in-flight one, if any, is
+          // interrupted separately via `cancelWorkflowAgents`).
+          await this.log({
+            level: "warn",
+            event: "agent.skipped",
+            message: "run cancelled — skipping agent() call",
+            runId: run.id,
+            definitionId,
+          });
+          return { error: "workflow run cancelled" };
+        }
         await this.log({
           event: "agent.start",
           message:
@@ -764,7 +933,7 @@ export class WorkflowService {
           ...request,
           labels: {
             ...request.labels,
-            "paseo.workflow-run-id": run.id,
+            [WORKFLOW_RUN_ID_LABEL]: run.id,
           },
         });
         await this.log({

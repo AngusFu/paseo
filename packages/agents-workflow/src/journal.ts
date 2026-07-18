@@ -25,6 +25,11 @@ export interface AgentKeyOpts {
   // label / phase must NOT share a cache slot.
   label?: string;
   phase?: string;
+  // review 2026-07-18 — isolation/labels were also missing. NOTE: the engine
+  // passes the RESOLVED phase (opts.phase ?? active phase()) so a global
+  // phase() change invalidates the slot too.
+  isolation?: string;
+  labels?: Record<string, string>;
 }
 
 export function agentKey(prompt: string, opts: AgentKeyOpts = {}): string {
@@ -44,6 +49,8 @@ export function agentKey(prompt: string, opts: AgentKeyOpts = {}): string {
       agentType: opts.agentType ?? null,
       label: opts.label ?? null,
       phase: opts.phase ?? null,
+      isolation: opts.isolation ?? null,
+      labels: opts.labels ?? null,
     }),
   );
   return "wf_" + h.digest("hex").slice(0, 16);
@@ -71,10 +78,16 @@ interface JournalRecord {
 export class Journal {
   readonly path: string | null;
   private readonly cache = new Map<string, unknown>();
+  // keys eligible for replay in the CURRENT run — snapshotted by beginRun().
+  // Claude's resume serves results from a PRIOR run only; entries recorded
+  // during the live run must NOT short-circuit later identical calls (judge
+  // panels / refuter votes rely on identical prompts running independently).
+  private replayable: Set<string>;
 
   constructor({ path = null }: JournalOptions = {}) {
     this.path = path;
     if (path && fs.existsSync(path)) this._load(path);
+    this.replayable = new Set(this.cache.keys());
   }
 
   private _load(path: string): void {
@@ -87,6 +100,16 @@ export class Journal {
         /* skip corrupt line */
       }
     }
+  }
+
+  /** Snapshot the current entries as the replayable set for a starting run. */
+  beginRun(): void {
+    this.replayable = new Set(this.cache.keys());
+  }
+
+  /** True when `key` was recorded BEFORE the current run started (resume hit). */
+  canReplay(key: string): boolean {
+    return this.replayable.has(key);
   }
 
   has(key: string): boolean {

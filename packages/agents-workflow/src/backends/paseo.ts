@@ -92,6 +92,11 @@ export class PaseoBackend extends AgentBackend {
   private readonly cwd?: string;
   private readonly workspaceId?: string;
   private readonly fetchUsage: boolean;
+  // review 2026-07-18 — the phase/label slug alone COLLIDES when parallel
+  // agents share a phase (same --worktree name = shared worktree = no
+  // isolation). A per-backend counter makes each name unique; the name is not
+  // part of the journal key, so resume is unaffected.
+  private worktreeSeq = 0;
 
   constructor(opts: PaseoBackendOptions = {}) {
     super();
@@ -135,7 +140,7 @@ export class PaseoBackend extends AgentBackend {
     }
     // --worktree and --workspace are mutually exclusive in the CLI.
     if (spec.isolation === "worktree") {
-      args.push("--worktree", worktreeName(spec));
+      args.push("--worktree", worktreeName(spec, ++this.worktreeSeq));
     } else if (this.workspaceId) {
       args.push("--workspace", this.workspaceId);
     }
@@ -177,8 +182,7 @@ export class PaseoBackend extends AgentBackend {
       // real live path: envelope has agentId+status but NO text — recover the
       // final assistant message from the daemon timeline.
       if (env.agentId) {
-        const transcript = await this.exec(["logs", "--filter", "text", env.agentId]);
-        const text = extractLogsText(transcript);
+        const text = await this.fetchFinalText(env.agentId);
         if (text == null) return { error: "paseo: no assistant text in agent timeline" };
         // Fix I — the run envelope carries no usage, so recover REAL token usage
         // from `paseo inspect` (LastUsage.OutputTokens). ?? only fires when the
@@ -205,6 +209,45 @@ export class PaseoBackend extends AgentBackend {
    * unparseable) returns undefined rather than throwing — a fictional budget is
    * better than a crashed run.
    */
+  /**
+   * Recover the final assistant text for a finished agent.
+   *
+   * Primary path: `paseo logs --json --filter text <id>` returns the raw
+   * timeline items; the LAST `assistant_message` item's `text` field is the
+   * final reply — exact, no transcript scraping, no prompt-echo contamination.
+   *
+   * COMPAT(logsJson): `--json` on `paseo logs` was added in v0.1.106
+   * (2026-07-18). An older `paseo` CLI on PATH rejects the flag (non-zero
+   * exit) or prints a plain transcript — fall back to the legacy transcript
+   * scrape (extractLogsText). Drop the fallback when floor >= v0.1.106.
+   */
+  private async fetchFinalText(agentId: string): Promise<string | null> {
+    try {
+      const out = await this.exec(["logs", "--json", "--filter", "text", agentId]);
+      const items = JSON.parse(out) as unknown;
+      if (Array.isArray(items)) {
+        for (let i = items.length - 1; i >= 0; i--) {
+          const item = items[i] as Record<string, unknown> | null;
+          if (
+            item &&
+            item.type === "assistant_message" &&
+            typeof item.text === "string" &&
+            item.text.length > 0
+          ) {
+            return item.text;
+          }
+        }
+        // parsed fine and there is GENUINELY no assistant text — do not fall
+        // back to scraping (it could resurrect prompt-echo noise as "text").
+        return null;
+      }
+    } catch {
+      /* old CLI: unknown option (non-zero exit) or non-JSON stdout */
+    }
+    const transcript = await this.exec(["logs", "--filter", "text", agentId]);
+    return extractLogsText(transcript);
+  }
+
   private async fetchUsageFor(agentId: string): Promise<AgentUsage | undefined> {
     if (!this.fetchUsage) return undefined;
     try {
@@ -219,17 +262,18 @@ export class PaseoBackend extends AgentBackend {
 // ---- helpers ----
 
 /**
- * worktree name from a spec — deterministic-ish + path/flag safe. paseo mints a
- * git worktree under this name, so keep it to [a-z0-9-] and cap the length.
+ * worktree name from a spec — path/flag safe. paseo mints a git worktree under
+ * this name, so keep it to [a-z0-9-] and cap the length. `seq` (per-backend
+ * counter) keeps concurrent same-phase agents in SEPARATE worktrees.
  */
-function worktreeName(spec: AgentSpec): string {
+function worktreeName(spec: AgentSpec, seq: number): string {
   const raw = spec.phase ?? spec.label ?? "agent";
   const slug = raw
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 30);
-  return `flow2-${slug || "agent"}`;
+  return `flow2-${slug || "agent"}-${seq}`;
 }
 
 /** parsed shape of a `paseo run --json` completion envelope (as we consume it). */

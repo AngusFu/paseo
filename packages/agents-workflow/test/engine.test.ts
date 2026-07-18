@@ -135,6 +135,42 @@ test("structured loop returns null after exhausting retries", async () => {
   expect(result).toBe(null);
 });
 
+// ── review 2026-07-18 #1 — an unbounded opts.maxRetries multiplied REAL
+// backend calls without touching the agent cap. Now clamped to a hard cap (10).
+test("review #1: a huge maxRetries is clamped — backend calls stay bounded", async () => {
+  const schema = { type: "object", required: ["n"], properties: { n: { type: "number" } } };
+  const b = new MockBackend({ respond: () => ({ text: "garbage" }) });
+  const e = createEngine({ backend: b });
+  const { result } = await e.run(
+    wrap(`return await agent("x", { schema: ${JSON.stringify(schema)}, maxRetries: 999999 });`),
+  );
+  expect(result).toBe(null);
+  expect(b.calls.length).toBeLessThanOrEqual(11); // MAX_RETRIES_CAP(10) + first attempt
+});
+
+test("review #1: a non-integer maxRetries falls back to the default (2)", async () => {
+  const schema = { type: "object", required: ["n"], properties: { n: { type: "number" } } };
+  const b = new MockBackend({ respond: () => ({ text: "garbage" }) });
+  const e = createEngine({ backend: b });
+  await e.run(
+    wrap(`return await agent("x", { schema: ${JSON.stringify(schema)}, maxRetries: 1.5 });`),
+  );
+  expect(b.calls.length).toBe(3); // default 2 retries + first attempt
+});
+
+// ── review 2026-07-18 #2 — success was detected via `value === null`, so a
+// schema whose VALID value is null misread success as failure.
+test("review #2: a { type: 'null' } schema success is a complete, not an error", async () => {
+  const events: string[] = [];
+  const b = new MockBackend({ respond: () => ({ text: "null" }) });
+  const e = createEngine({ backend: b, onAgentEvent: (ev) => events.push(ev.type) });
+  const { result } = await e.run(wrap(`return await agent("x", { schema: { type: "null" } });`));
+  expect(result).toBe(null);
+  expect(b.calls.length).toBe(1); // no retry loop — first reply validated
+  expect(events).toContain("complete");
+  expect(events).not.toContain("error");
+});
+
 test("agent cap (k0y) throws after limit", async () => {
   const b = new MockBackend({ respond: () => ({ text: "x" }) });
   const e = createEngine({ backend: b, agentCap: 2 });
@@ -297,6 +333,70 @@ test("journal: resume returns cached results without hitting backend", async () 
   expect(r2.result).toBe("FIRST");
   expect(b2.calls.length).toBe(0);
   expect(r2.stats.cacheHits).toBe(1);
+});
+
+// ── review 2026-07-18 #3 — failures were journaled, so a resume replayed a
+// permanent null instead of retrying the agent.
+test("review #3: a FAILED agent() is not journaled — resume retries it", async () => {
+  const journal = new Journal();
+  const bad = new MockBackend({ respond: () => ({ error: "boom" }) });
+  const e1 = createEngine({ backend: bad, journal });
+  const r1 = await e1.run(wrap(`return (await agent("flaky")) === null;`));
+  expect(r1.result).toBe(true);
+
+  const good = new MockBackend({ respond: () => ({ text: "recovered" }) });
+  const e2 = createEngine({ backend: good, journal });
+  const r2 = await e2.run(wrap(`return await agent("flaky");`));
+  expect(r2.result).toBe("recovered");
+  expect(good.calls.length).toBe(1); // backend WAS hit — no null replay
+});
+
+// ── review 2026-07-18 #3 — within one LIVE run, identical (prompt, opts) calls
+// must each hit the backend (judge panels / refuter votes), not collapse into
+// one cached answer. Replay serves PRIOR-run entries only.
+test("review #3: identical sequential calls in one run do NOT collapse", async () => {
+  const b = new MockBackend({ respond: () => ({ text: "x" }) });
+  const e = createEngine({ backend: b });
+  const { result, stats } = await e.run(
+    wrap(`const a = await agent("same"); const b = await agent("same"); return [a, b];`),
+  );
+  expect(result).toEqual(["x", "x"]);
+  expect(b.calls.length).toBe(2);
+  expect(stats.cacheHits).toBe(0);
+});
+
+// ── review 2026-07-18 #3 — the key folds in the RESOLVED phase: the same
+// prompt under a different active phase() is a different slot, so a resumed
+// script whose phases moved does not serve stale results across phases.
+test("review #3: same prompt under different active phase() = different journal slots", async () => {
+  const journal = new Journal();
+  const b1 = new MockBackend({ respond: () => ({ text: "one" }) });
+  await createEngine({ backend: b1, journal }).run(wrap(`phase("A"); return await agent("p");`));
+
+  const b2 = new MockBackend({ respond: () => ({ text: "two" }) });
+  const r = await createEngine({ backend: b2, journal }).run(
+    wrap(`phase("B"); return await agent("p");`),
+  );
+  expect(r.result).toBe("two"); // phase B is NOT phase A's cached "one"
+  expect(b2.calls.length).toBe(1);
+});
+
+// ── review 2026-07-18 #4 — engine state (budget/cap/phase) is closure-shared;
+// overlapping run()s on one engine would cross-contaminate. Rejected instead.
+test("review #4: overlapping run()s on one engine are rejected", async () => {
+  const b = new MockBackend({ latencyMs: 30, respond: () => ({ text: "x" }) });
+  const e = createEngine({ backend: b });
+  const wf = e.load(wrap(`return await agent("slow");`));
+  const first = wf.run(null);
+  await expect(wf.run(null)).rejects.toThrow(/not reentrant/);
+  await expect(first).resolves.toBe("x"); // the active run is unharmed
+});
+
+// ── review 2026-07-18 #5 — no default vm timeout let a pre-await while(true)
+// block the host event loop forever. Sync-HEAD wall only (see sandbox.ts).
+test("review #5: a pre-await infinite sync loop trips the sandbox timeout", async () => {
+  const e = createEngine({ backend: new MockBackend(), sandboxTimeoutMs: 200 });
+  await expect(e.run(wrap(`while (true) {}`))).rejects.toThrow(/timed out/i);
 });
 
 test("strict mode bans Date.now and Math.random (determinism)", async () => {

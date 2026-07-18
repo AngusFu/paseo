@@ -17,7 +17,8 @@ export function addLogsOptions(cmd: Command): Command {
     .option("-f, --follow", "Follow log output (streaming)")
     .option("--tail <n>", "Show last n entries")
     .option("--filter <type>", "Filter by event type (tools, text, errors, permissions)")
-    .option("--since <time>", "Show logs since timestamp");
+    .option("--since <time>", "Show logs since timestamp")
+    .option("--json", "Output raw timeline items as a JSON array (not with --follow)");
 }
 
 export interface AgentLogsOptions extends CommandOptions {
@@ -25,6 +26,7 @@ export interface AgentLogsOptions extends CommandOptions {
   tail?: string;
   filter?: string;
   since?: string;
+  json?: boolean;
 }
 
 // Logs command returns void - it outputs directly to console
@@ -90,9 +92,13 @@ function matchesFilter(item: AgentTimelineItem, filter?: string): boolean {
 export async function runLogsCommand(
   id: string,
   options: AgentLogsOptions,
-  _command: Command,
+  command: Command,
 ): Promise<AgentLogsResult> {
   const host = getDaemonHost({ host: options.host });
+  // The program-level global `--json` (alias for --format json) shadows the
+  // local option in commander — the flag lands in the PROGRAM's opts, not
+  // ours. optsWithGlobals() sees it either way.
+  const jsonOutput = options.json === true || command.optsWithGlobals()["json"] === true;
 
   if (!id) {
     console.error("Error: Agent ID required");
@@ -119,6 +125,12 @@ export async function runLogsCommand(
       process.exit(1);
     }
     const resolvedId = fetchResult.agent.id;
+
+    if (jsonOutput && options.follow) {
+      console.error("Error: --json cannot be combined with --follow");
+      await client.close().catch(() => {});
+      process.exit(1);
+    }
 
     // For follow mode, we stream events continuously
     if (options.follow) {
@@ -149,6 +161,19 @@ export async function runLogsCommand(
     }
 
     await client.close();
+
+    // Machine-readable path: raw (filtered/tailed) timeline items as JSON —
+    // consumers (e.g. the agents-workflow PaseoBackend) pick the fields they
+    // need (assistant_message.text) instead of scraping the transcript.
+    if (jsonOutput) {
+      // slice(-0) would return the FULL array — special-case tail 0 to empty.
+      let items = timelineItems;
+      if (tailCount !== undefined) {
+        items = tailCount === 0 ? [] : timelineItems.slice(-tailCount);
+      }
+      console.log(JSON.stringify(items));
+      return;
+    }
 
     // Use curateAgentActivity to format the transcript
     if (tailCount === 0) {

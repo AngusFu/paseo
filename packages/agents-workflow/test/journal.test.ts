@@ -85,3 +85,29 @@ test("Finding 6: key folds in label and phase", () => {
 test("agentKey is stable for identical calls", () => {
   expect(agentKey("p")).toBe(agentKey("p"));
 });
+
+// ── review 2026-07-18 #3 — isolation/labels were missing from the key.
+test("review #3: key folds in isolation and labels", () => {
+  expect(agentKey("p", { isolation: "worktree" })).not.toBe(agentKey("p"));
+  expect(agentKey("p", { labels: { a: "1" } })).not.toBe(agentKey("p", { labels: { a: "2" } }));
+});
+
+// ── review 2026-07-18 #3 — replay semantics: only entries recorded BEFORE the
+// current run (beginRun snapshot) are served; live-run records are not.
+test("review #3: canReplay serves pre-run entries only", () => {
+  const j = new Journal();
+  j.record("old", 1);
+  j.beginRun();
+  j.record("new", 2);
+  expect(j.canReplay("old")).toBe(true);
+  expect(j.canReplay("new")).toBe(false);
+  expect(j.has("new")).toBe(true); // still stored (persists for the NEXT run)
+  j.beginRun();
+  expect(j.canReplay("new")).toBe(true);
+});
+
+test("review #3: a file-reloaded journal is replayable immediately", () => {
+  const file = tmpFile();
+  new Journal({ path: file }).record("k", "v");
+  expect(new Journal({ path: file }).canReplay("k")).toBe(true);
+});

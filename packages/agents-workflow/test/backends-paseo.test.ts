@@ -115,22 +115,31 @@ describe("PaseoBackend.buildArgs", () => {
     expect(overridden[overridden.indexOf("--model") + 1]).toBe("claude-opus-4-8");
   });
 
-  it("adds --worktree with a deterministic slug ONLY for isolation=worktree", () => {
+  it("adds --worktree with a slugged, per-backend-unique name ONLY for isolation=worktree", () => {
     const wt = new PaseoBackend().buildArgs(spec({ isolation: "worktree", phase: "Deep RCA" }));
-    expect(wt[wt.indexOf("--worktree") + 1]).toBe("flow2-deep-rca");
+    expect(wt[wt.indexOf("--worktree") + 1]).toBe("flow2-deep-rca-1");
     expect(
       new PaseoBackend()
         .buildArgs(spec({ isolation: "worktree", label: "Fix It!" }))
-        .includes("flow2-fix-it"),
+        .includes("flow2-fix-it-1"),
     ).toBe(true);
     // no phase/label -> stable fallback name
     expect(
-      new PaseoBackend().buildArgs(spec({ isolation: "worktree" })).includes("flow2-agent"),
+      new PaseoBackend().buildArgs(spec({ isolation: "worktree" })).includes("flow2-agent-1"),
     ).toBe(true);
     // non-worktree isolation -> no flag
     expect(new PaseoBackend().buildArgs(spec({ isolation: "none" })).includes("--worktree")).toBe(
       false,
     );
+  });
+
+  it("same-phase worktree agents on one backend get DISTINCT worktree names", () => {
+    const b = new PaseoBackend();
+    const first = b.buildArgs(spec({ isolation: "worktree", phase: "Verify" }));
+    const second = b.buildArgs(spec({ isolation: "worktree", phase: "Verify" }));
+    const nameOf = (args: string[]): string => args[args.indexOf("--worktree") + 1];
+    expect(nameOf(first)).toBe("flow2-verify-1");
+    expect(nameOf(second)).toBe("flow2-verify-2");
   });
 
   it("passes --wait-timeout and --cwd through when configured", () => {
@@ -151,7 +160,7 @@ describe("PaseoBackend.buildArgs", () => {
     const b = new PaseoBackend({ workspaceId: "wks_abc123" });
     const args = b.buildArgs(spec({ isolation: "worktree", phase: "Plan" }));
     expect(args.includes("--workspace")).toBe(false);
-    expect(args[args.indexOf("--worktree") + 1]).toBe("flow2-plan");
+    expect(args[args.indexOf("--worktree") + 1]).toBe("flow2-plan-1");
   });
 
   it("flattens labels as repeated --label k=v", () => {
@@ -199,6 +208,60 @@ describe("PaseoBackend.run — happy paths", () => {
     const r = await new PaseoBackend({ exec }).run({ prompt: "p" });
     expect(r.text).toBe("hello");
     expect(r.usage?.outputTokens).toBe(7);
+  });
+});
+
+// ── review 2026-07-18 #6 — final text now comes from `paseo logs --json`
+// (raw timeline items; last assistant_message.text) with the transcript
+// scrape kept as a COMPAT fallback for an older CLI on PATH.
+describe("PaseoBackend.run — final text via `logs --json` timeline", () => {
+  const TIMELINE = JSON.stringify([
+    { type: "user_message", text: "say hi" },
+    { type: "assistant_message", text: "draft", messageId: "m1" },
+    { type: "assistant_message", text: "clean final reply", messageId: "m2" },
+  ]);
+
+  it("picks the LAST assistant_message.text and never falls back to scraping", async () => {
+    const seen: string[][] = [];
+    const exec = async (args: string[]): Promise<string> => {
+      seen.push(args);
+      if (args[0] === "run") return ENVELOPE();
+      if (args[0] === "logs" && args.includes("--json")) return TIMELINE;
+      if (args[0] === "logs") throw new Error("legacy scrape must not run");
+      return "";
+    };
+    const r = await new PaseoBackend({ exec, fetchUsage: false }).run({ prompt: "say hi" });
+    expect(r.text).toBe("clean final reply");
+    expect(seen.filter((a) => a[0] === "logs").length).toBe(1);
+  });
+
+  it("a parsed timeline with NO assistant text errors without resurrecting the scrape", async () => {
+    const legacyCalls: string[][] = [];
+    const exec = async (args: string[]): Promise<string> => {
+      if (args[0] === "run") return ENVELOPE();
+      if (args[0] === "logs" && args.includes("--json"))
+        return JSON.stringify([{ type: "user_message", text: "echo only" }]);
+      if (args[0] === "logs") {
+        legacyCalls.push(args);
+        return "[User] echo only";
+      }
+      return "";
+    };
+    const r = await new PaseoBackend({ exec }).run({ prompt: "p" });
+    expect(r.error).toMatch(/no assistant text/);
+    expect(legacyCalls.length).toBe(0);
+  });
+
+  it("COMPAT: an old CLI that rejects --json falls back to the transcript scrape", async () => {
+    const exec = async (args: string[]): Promise<string> => {
+      if (args[0] === "run") return ENVELOPE();
+      if (args[0] === "logs" && args.includes("--json"))
+        throw new Error("error: unknown option '--json'");
+      if (args[0] === "logs") return '[User] say hi\n{"greeting":"hello"}';
+      return "";
+    };
+    const r = await new PaseoBackend({ exec, fetchUsage: false }).run({ prompt: "say hi" });
+    expect(r.text).toBe('{"greeting":"hello"}');
   });
 });
 

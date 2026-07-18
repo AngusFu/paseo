@@ -48,6 +48,17 @@ If a run has no `events.jsonl` yet (older daemons / pre-event-log runs),
 `workflow.run.logs` reconstructs a timeline from the run record +
 `journal.jsonl` so finished/failed runs still show history.
 
+Journal semantics (2026-07-18 review): only **successful** `agent()` results
+are recorded — a failed call is retried on resume, never replayed as a
+permanent `null`. The cache key hashes the **resolved** opts (phase falls back
+to the active `phase()`, isolation/labels included). Replay serves entries
+recorded **before** the current run only — within one live run, repeated
+identical `agent()` calls (judge panels, refuter votes) each hit the backend
+instead of collapsing into one cached answer, matching Claude Code's
+resume-only cache. `maxRetries` is clamped to 10; the engine also applies a
+default 30s vm timeout to the script's _synchronous head_ only (a post-`await`
+busy loop still needs process isolation — see `sandbox.ts`).
+
 Builtin flows are read-only from the package
 (`packages/agents-workflow/workflows/builtin/`, ids `builtin:<name>`). They can be
 **dispatched directly** as templates, or forked into a user definition to edit.

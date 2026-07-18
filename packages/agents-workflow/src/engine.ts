@@ -39,6 +39,18 @@ import { WorkflowError } from "./errors.js";
 export const AGENT_CAP = 1000; // k0y
 export const BATCH_CAP = 4096; // single parallel()/pipeline() fan-out cap
 const DEFAULT_EST_TOKENS = 512; // rough per-agent estimate when usage absent
+const DEFAULT_MAX_RETRIES = 2;
+// opts.maxRetries comes from the (sandboxed) script. Each structured retry is a
+// REAL backend call that does NOT count toward the agent cap, so an unbounded
+// value multiplies backend load past the cap's effective capacity. Hard-cap it.
+const MAX_RETRIES_CAP = 10;
+// vm sync-head wall for the script body (see EngineConfig.sandboxTimeoutMs).
+const DEFAULT_SANDBOX_TIMEOUT_MS = 30_000;
+
+function clampMaxRetries(v: number | undefined): number {
+  if (v == null || !Number.isInteger(v) || v < 0) return DEFAULT_MAX_RETRIES;
+  return Math.min(v, MAX_RETRIES_CAP);
+}
 
 /** Options accepted by the `agent()` global. */
 export interface AgentCallOpts {
@@ -142,6 +154,14 @@ export interface EngineConfig {
   // §11 static validator gate. default true — engine.run/load rejects a script
   // that trips validateScript BEFORE loading it. built-ins all pass.
   validate?: boolean;
+  /**
+   * vm timeout (ms) for the script's SYNC head — code up to the first `await`.
+   * A pre-await `while(true){}` would otherwise block the host event loop
+   * forever. NOT a wall clock on the whole run: async waits and post-await sync
+   * loops are not covered (that needs process isolation — see sandbox.ts).
+   * Default 30_000; null disables.
+   */
+  sandboxTimeoutMs?: number | null;
 }
 
 export interface EngineStats {
@@ -191,6 +211,11 @@ export function createEngine(cfg: EngineConfig): Engine {
   let agentSeq = 0;
   // §11: static-validate gate flag.
   const doValidate = cfg.validate !== false;
+  // reentrancy guard — see load().run below.
+  let runActive = false;
+  // undefined = default; null = explicitly disabled.
+  const sandboxTimeoutMs =
+    cfg.sandboxTimeoutMs === undefined ? DEFAULT_SANDBOX_TIMEOUT_MS : cfg.sandboxTimeoutMs;
 
   const budget: Budget & { _spent: number } = {
     total: cfg.budgetTokens ?? null,
@@ -257,12 +282,12 @@ export function createEngine(cfg: EngineConfig): Engine {
     id: number,
     prompt: string,
     opts: AgentCallOpts & { schema: SchemaInput },
-  ): Promise<{ value: unknown; spent: number; error?: string }> {
+  ): Promise<{ ok: boolean; value: unknown; spent: number; error?: string }> {
     const norm = normalizeSchema(opts.schema);
     let suffix = "";
     let spent = 0;
     let lastFailure = "structured output failed after retries";
-    const maxRetries = opts.maxRetries ?? 2;
+    const maxRetries = clampMaxRetries(opts.maxRetries);
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const spec = toSpec(
         structuredPersona(norm.jsonSchema) + "\n\n---\n\n" + prompt + suffix,
@@ -282,7 +307,9 @@ export function createEngine(cfg: EngineConfig): Engine {
         const parsed = tryParseJson(text);
         if (parsed.ok) {
           const errs = norm.validate(parsed.value);
-          if (errs.length === 0) return { value: parsed.value, spent };
+          // ok-flag discriminant, NOT `value === null`: a schema whose valid
+          // value IS null (e.g. { type: "null" }) must count as success.
+          if (errs.length === 0) return { ok: true, value: parsed.value, spent };
           lastFailure = "schema validation failed: " + errs.join("; ");
           suffix = structuredRetrySuffix(lastFailure);
         } else {
@@ -303,7 +330,7 @@ export function createEngine(cfg: EngineConfig): Engine {
         });
       }
     }
-    return { value: null, spent, error: lastFailure };
+    return { ok: false, value: null, spent, error: lastFailure };
   }
 
   // ---- the agent() primitive ----
@@ -316,8 +343,14 @@ export function createEngine(cfg: EngineConfig): Engine {
     const ph = opts.phase ?? currentPhase ?? undefined;
     const mdl = opts.model;
 
-    const key = agentKey(prompt, opts);
-    if (journal.has(key)) {
+    // key off the RESOLVED opts: phase falls back to the active phase(), and
+    // isolation/labels participate — two calls differing only there must not
+    // share a slot. canReplay (not has): only entries that existed BEFORE this
+    // run started are served — Claude's resume replays a PRIOR run's results;
+    // within one live run, repeated identical calls (judge panels, refuter
+    // votes) must each hit the backend, not collapse into one cached answer.
+    const key = agentKey(prompt, { ...opts, phase: ph });
+    if (journal.canReplay(key)) {
       stats.cacheHits++;
       const cached = journal.get(key);
       // a resume cache hit never runs the backend — emit start+complete so the
@@ -361,7 +394,7 @@ export function createEngine(cfg: EngineConfig): Engine {
         });
         result = sc.value;
         charge = sc.spent;
-        if (sc.value === null) errorMsg = sc.error || "structured output failed after retries";
+        if (!sc.ok) errorMsg = sc.error || "structured output failed after retries";
         else usage = { outputTokens: sc.spent };
       } else {
         result = await limit(async (): Promise<unknown> => {
@@ -388,7 +421,10 @@ export function createEngine(cfg: EngineConfig): Engine {
         agentEvt({ id, type: "error", label: lbl, phase: ph, model: mdl, error: errorMsg });
       else agentEvt({ id, type: "complete", label: lbl, phase: ph, model: mdl, usage });
     }
-    journal.record(key, result);
+    // record SUCCESS only. Claude resume caches COMPLETED calls; a failure
+    // recorded here would replay as a permanent null on resume instead of
+    // retrying the agent.
+    if (errorMsg === undefined) journal.record(key, result);
     return result;
   };
 
@@ -427,9 +463,19 @@ export function createEngine(cfg: EngineConfig): Engine {
     return {
       meta,
       run: async (args: unknown): Promise<unknown> => {
+        // agentCalls/currentPhase/budget are engine-level closures — two
+        // overlapping run()s on one engine would cross-contaminate. Reject the
+        // overlap; sequential runs (Fix C) stay supported.
+        if (runActive)
+          throw new WorkflowError(
+            "engine.run() is not reentrant — a run is already active on this engine; create a separate engine for concurrent runs",
+          );
+        runActive = true;
         // Fix C — fresh per-run state (budget/cap) so no leak across
-        // sequential run()s on one engine. Journal stays (resume needs it).
+        // sequential run()s on one engine. Journal stays (resume needs it),
+        // but only entries recorded BEFORE this run may replay (beginRun).
         resetRunState();
+        journal.beginRun();
         try {
           return await runInSandbox({
             body,
@@ -447,12 +493,15 @@ export function createEngine(cfg: EngineConfig): Engine {
             strict,
             dateBanMsg: DATE_BAN_MESSAGE,
             randomBanMsg: RANDOM_BAN_MESSAGE,
+            ...(sandboxTimeoutMs != null ? { timeoutMs: sandboxTimeoutMs } : {}),
           });
         } catch (e) {
           // errors cross the sandbox boundary as REALM Errors (name+message
           // preserved). rehydrate the known workflow-error classes so a HOST
           // caller's `instanceof WorkflowBudgetExceededError` etc. still holds.
           throw rehydrateWorkflowError(e);
+        } finally {
+          runActive = false;
         }
       },
     };

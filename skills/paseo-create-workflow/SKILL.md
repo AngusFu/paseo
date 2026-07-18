@@ -285,6 +285,7 @@ The script runs in a `node:vm` realm and is static-checked by `aw validate`. FOR
 - `import` / `require` / `process` / `globalThis` / `Buffer` / `child_process` / `fs`/`net`/`http` / `fetch(` / `eval` / `new Function` / `.constructor` / `\u`-escaped identifiers.
 - `Date.now()` / `new Date()` / `Math.random()` (determinism ban — pass timestamps via `args`, vary by index for "randomness").
 - No Node API, no filesystem, no network. Only the 8 globals + standard JS built-ins (JSON/Math/Array/…).
+- `setTimeout`/`setInterval` are not defined in the sandbox realm (`ReferenceError: setTimeout is not defined`) — there is no delay/poll primitive; don't reach for one.
 
 ## Run · validate · test
 

@@ -34,6 +34,16 @@ via `workflow.run.logs` (forward pagination: `afterSeq` + `limit` → `entries`,
 `nextSeq`, `hasMore`). The run detail sheet drains pages on open, polls every
 1s while the run is live, and keeps “Load more” for very large finished logs.
 
+`WorkflowEventLog` keeps an in-memory per-run cache (parsed entries + byte
+offset + a trailing partial-line buffer) so a live run's 1s poll only reads and
+parses the bytes appended since the last call, not the whole file again — a
+file that shrinks (truncated/rebuilt) resets the cache and re-reads in full.
+The cache is bounded to `MAX_RUN_LOG_CACHES` (16) runs with LRU eviction so a
+long-lived daemon watching many runs over its lifetime doesn't leak memory.
+`.flow.js` definition source writes go through the same `writeFileAtomic`
+helper the `.json` metadata sidecar already used (temp file + rename), so a
+definition save can't leave a half-written script on disk.
+
 If a run has no `events.jsonl` yet (older daemons / pre-event-log runs),
 `workflow.run.logs` reconstructs a timeline from the run record +
 `journal.jsonl` so finished/failed runs still show history.
@@ -130,6 +140,30 @@ See `skills/paseo-create-workflow/SKILL.md` (“Discover what you can pass”) a
 2. **Engine `p-limit`**: limits concurrent `agent()` calls **inside** one run.
    Does not replace the product queue.
 
+## Cancel & daemon restart recovery
+
+`workflow.run.cancel` on a `queued` run is a same-as-ever store-only
+transition. Cancelling a `running` run is different: the engine
+(`@getpaseo/agents-workflow`) has no `AbortSignal`, so a running run can't be
+truly aborted mid-script. `WorkflowService.cancel` instead: (1) flags the run
+in-memory so the host wrapper refuses any **further** `agent()` call the
+script tries to make, (2) best-effort interrupts whichever host agent is
+currently in flight via `AgentManager.cancelAgentRun` (falling back to
+`archiveAgent` if that's refused), matched by the run's workspace + the
+`paseo.workflow-run-id` label every spawned agent carries. The run's status
+stays `running` until the (now agent()-starved) script actually finishes, at
+which point `execute()` forces the terminal status to `cancelled` regardless
+of what the script itself returned. The UI shows an optimistic "Cancelling…"
+state for this window rather than an immediate `cancelled`.
+
+The queue itself is pure in-memory, so a daemon restart loses it.
+`WorkflowService.recoverAfterRestart()` (called once at bootstrap, after
+`ensureAgentWorkspace`/`agentHost`/`cancelWorkflowAgents` are wired) re-enqueues
+every `queued` run found in the store, and marks every `running` run `failed`
+with `"Interrupted by daemon restart"` — the process that was executing it is
+gone, so there is nothing left to wait on. A `queued` run whose definition was
+since deleted fails out immediately instead of looping forever unenqueued.
+
 ## Protocol
 
 Dotted RPCs (`docs/rpc-namespacing.md`):
@@ -192,6 +226,11 @@ Use `skills/paseo-create-workflow` (or the Workflow page: Fork builtin / blank
 template / Start agent). The skill documents `agent()` opts including
 `effort` / `mode` / `fast`. Validate with `aw validate` from
 `packages/agents-workflow`. Types: `packages/agents-workflow/workflow.d.ts`.
+
+The sandbox realm bans `Date.now()` / `new Date()` / `Math.random()`
+(determinism) — it also simply has no `setTimeout`/`setInterval`
+(`ReferenceError`, not a ban): there is no delay/poll primitive in a flow
+script.
 
 ## Lint note
 

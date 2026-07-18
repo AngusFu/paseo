@@ -678,7 +678,7 @@ test("sends new-agent run options when creating schedules", async () => {
   const createPromise = client.scheduleCreate({
     requestId: "request-1",
     prompt: "Run the task",
-    cadence: { type: "every", everyMs: 60_000 },
+    cadence: { type: "cron", expression: "* * * * *" },
     target: {
       type: "new-agent",
       config: {
@@ -696,7 +696,7 @@ test("sends new-agent run options when creating schedules", async () => {
     type: "schedule/create",
     requestId: "request-1",
     prompt: "Run the task",
-    cadence: { type: "every", everyMs: 60_000 },
+    cadence: { type: "cron", expression: "* * * * *" },
     target: {
       type: "new-agent",
       config: {
@@ -1946,7 +1946,7 @@ test("normalizes workspace_setup_progress into a workspace-scoped daemon event",
   });
 });
 
-test("sends create_agent_request with string workspace ids", async () => {
+test("sends create_agent_request with workspace and caller identity", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();
 
@@ -1967,6 +1967,7 @@ test("sends create_agent_request with string workspace ids", async () => {
     provider: "codex",
     cwd: "/tmp/project/.paseo/worktrees/feature-a",
     workspaceId: "ws-feature-a",
+    callerAgentId: "parent-agent",
     title: "Compat agent",
     modeId: "default",
   });
@@ -1977,6 +1978,7 @@ test("sends create_agent_request with string workspace ids", async () => {
     expect.objectContaining({
       type: "create_agent_request",
       workspaceId: "ws-feature-a",
+      callerAgentId: "parent-agent",
     }),
   );
 

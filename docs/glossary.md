@@ -29,7 +29,7 @@ Authoritative terminology. UI label wins. Don't invent synonyms; use what's here
 - **Tab** — UI surface representing one session inside a workspace. Not a conceptual unit; use **Agent session** when talking about the model. Code: `WorkspaceTabDescriptor` (`packages/app/src/screens/workspace/workspace-tabs-types.ts`).
 - **Terminal** — Workspace-scoped PTY shell streamed over the binary mux channel. UI: "Terminal". Code: `TerminalStreamFrame` (`packages/protocol/src/terminal-stream-protocol.ts`).
 - **Schedule** — Cron-style trigger that creates new agents. UI: CLI/MCP (`paseo schedule`, `create_schedule`). Don't confuse with: Heartbeat (cron prompt back into the same agent) or Loop (iterative re-execution of one agent).
-- **Heartbeat** — Cron-style prompt sent back into the same agent/conversation. MCP: `create_heartbeat`. Use for reminders and babysitting where the status should return inline.
+- **Heartbeat** — Ephemeral cron prompt sent back into the same agent/conversation. Agent surfaces expose create, update cron, and delete only. Use for reminders and babysitting where status should return inline.
 - **Mode** — Provider-specific operational mode (plan, default, full-access, …). UI: icon-only. Code: `modeId` in `AgentSessionConfig` (`packages/protocol/src/messages.ts:257`).
 - **Attachment** — External or local context bound to an agent prompt: forge issue/change request, review context, uploaded file, text, or image. UI: "Attach issue or PR/MR". Code: `AgentAttachment` (`packages/protocol/src/messages.ts:782`).
 - **Composer** — The whole prompt surface for sending work to an agent. Code: `Composer` (`packages/app/src/composer/index.tsx`). Don't call this "message input" except for the text-entry subcomponent.

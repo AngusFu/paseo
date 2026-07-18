@@ -74,6 +74,32 @@ export interface ArchiveByScopeRequest {
   requestId: string;
 }
 
+export async function requireActiveWorkspaceForArchive(
+  dependencies: Pick<ArchiveDependencies, "listActiveWorkspaces">,
+  workspaceId: string,
+): Promise<ActiveWorkspaceRef> {
+  const workspace = (await dependencies.listActiveWorkspaces()).find(
+    (candidate) => candidate.workspaceId === workspaceId,
+  );
+  if (!workspace) {
+    throw new Error(`Workspace not found: ${workspaceId}`);
+  }
+  return workspace;
+}
+
+interface BackingDirectory {
+  path: string;
+  isPaseoOwnedWorktree: boolean;
+  mainRepoRoot: string | null;
+  paseoWorktreesRoot: string | null;
+}
+
+interface ArchiveTarget {
+  backing: BackingDirectory | null;
+  teardownTargets: Array<{ workspaceId: string | null; cwd: string }>;
+  workspaceIds: string[];
+}
+
 export async function resolveWorkspaceIdAtPath(
   dependencies: Pick<ArchiveDependencies, "findWorkspaceIdForCwd" | "listActiveWorkspaces">,
   targetPath: string,

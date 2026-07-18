@@ -32,6 +32,7 @@ import type { FirstAgentContext } from "@getpaseo/protocol/messages";
 
 export interface CreatePaseoWorktreeInput extends CreateWorktreeCoreInput {
   projectId?: string;
+  title?: string;
 }
 
 export interface CreatePaseoWorktreeResult {

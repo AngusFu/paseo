@@ -265,8 +265,8 @@ One file per schedule. ID is 8 hex characters.
 
 ### Nested: ScheduleCadence (discriminated union on `type`)
 
-- `{ type: "every", everyMs: number }` — interval in milliseconds
-- `{ type: "cron", expression: string, timezone?: string }` — cron expression; absent `timezone` means UTC, present `timezone` is an IANA time zone used for local wall-clock recurrence
+- `{ type: "cron", expression: string, timezone?: string }` — canonical cadence for new writes; absent `timezone` means UTC
+- `{ type: "every", everyMs: number }` — legacy rolling interval, still readable and executable during the compatibility window
 
 ### Nested: ScheduleTarget (discriminated union on `type`)
 

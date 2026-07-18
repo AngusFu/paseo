@@ -567,7 +567,7 @@ function QueuedMessageRow({
         </Pressable>
         <Pressable
           onPress={handleSendNow}
-          style={QUEUE_SEND_BUTTON_STYLE}
+          style={[styles.queueActionButton, styles.queueSendButton]}
           accessibilityLabel={sendNowLabel}
           accessibilityRole="button"
         >
@@ -2177,8 +2177,6 @@ const styles = StyleSheet.create((theme: Theme) => ({
     fontSize: theme.fontSize.sm,
   },
 })) as unknown as Record<string, object>;
-
-const QUEUE_SEND_BUTTON_STYLE = [styles.queueActionButton, styles.queueSendButton];
 
 const ThemedPencil = withUnistyles(Pencil);
 const ThemedArrowUp = withUnistyles(ArrowUp);

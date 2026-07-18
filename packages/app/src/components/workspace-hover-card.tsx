@@ -410,7 +410,8 @@ function CopyableInfoRow({
   if (copied || isHovered) {
     iconUniProps = foregroundColorMapping;
   }
-  const textStyle = copied || isHovered ? cardInfoTextHoveredCombined : styles.cardInfoText;
+  const textStyle =
+    copied || isHovered ? [styles.cardInfoText, styles.cardInfoTextHovered] : styles.cardInfoText;
 
   return (
     <Pressable
@@ -496,7 +497,9 @@ function ChecksSummaryContent({
   const { t } = useTranslation();
   const { passed, failed, pending } = getChecksSummaryCounts(checks);
 
-  const labelStyle = hovered ? checksSummaryLabelHoveredCombined : styles.checksSummaryLabel;
+  const labelStyle = hovered
+    ? [styles.checksSummaryLabel, styles.checksSummaryLabelHovered]
+    : styles.checksSummaryLabel;
   const iconUniProps = hovered ? foregroundColorMapping : foregroundMutedColorMapping;
 
   return (
@@ -657,10 +660,3 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.statusSuccess,
   },
 }));
-
-const checksSummaryLabelHoveredCombined = [
-  styles.checksSummaryLabel,
-  styles.checksSummaryLabelHovered,
-];
-
-const cardInfoTextHoveredCombined = [styles.cardInfoText, styles.cardInfoTextHovered];

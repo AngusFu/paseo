@@ -263,12 +263,12 @@ export function ProvidersSection({ serverId }: ProvidersSectionProps) {
         style={styles.sectionSpacing}
       >
         {!hasServer || !isConnected ? (
-          <View style={EMPTY_CARD_STYLE}>
+          <View style={[settingsStyles.card, styles.emptyCard]}>
             <Text style={styles.emptyText}>{t("settings.providers.unavailable")}</Text>
           </View>
         ) : null}
         {hasServer && isConnected && isLoading ? (
-          <View style={EMPTY_CARD_STYLE}>
+          <View style={[settingsStyles.card, styles.emptyCard]}>
             <Text style={styles.emptyText}>{t("settings.providers.loading")}</Text>
           </View>
         ) : null}
@@ -375,5 +375,3 @@ const styles = StyleSheet.create((theme) => ({
     marginTop: theme.spacing[1],
   },
 }));
-
-const EMPTY_CARD_STYLE = [settingsStyles.card, styles.emptyCard];

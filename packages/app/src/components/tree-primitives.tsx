@@ -77,7 +77,7 @@ export function TreeIndentGuides({ depth }: { depth: number }) {
 export function TreeChevron({ expanded }: { expanded: boolean }) {
   return (
     <View style={styles.disclosure}>
-      <View style={expanded ? CHEVRON_EXPANDED_STYLE : styles.chevron}>
+      <View style={expanded ? [styles.chevron, styles.chevronExpanded] : styles.chevron}>
         <ThemedChevronRight size={16} uniProps={foregroundMutedIconColorMapping} />
       </View>
       <FolderGlyph expanded={expanded} />
@@ -120,7 +120,3 @@ const styles = StyleSheet.create((theme: Theme) => ({
     transform: [{ rotate: "90deg" }],
   },
 }));
-
-// Stable module-level style ref so TreeChevron passes a constant array, not one created
-// per render — satisfies react-perf (no inline-array prop) without a per-render useMemo.
-const CHEVRON_EXPANDED_STYLE = [styles.chevron, styles.chevronExpanded];

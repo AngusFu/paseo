@@ -215,8 +215,6 @@ function selectedSidebarItemStyle({ hovered }: PressableStateCallbackType & { ho
   ];
 }
 
-const ROW_WITH_BORDER_STYLE = [settingsStyles.row, settingsStyles.rowBorder];
-
 function getSendBehaviorOptions(t: TFunction) {
   return [
     { value: "interrupt" as const, label: t("settings.general.defaultSend.options.interrupt") },
@@ -381,7 +379,7 @@ function GeneralSection({
             options={sendBehaviorOptions}
           />
         </View>
-        <View style={ROW_WITH_BORDER_STYLE}>
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
           <View style={settingsStyles.rowContent}>
             <Text style={settingsStyles.rowTitle}>{t("settings.general.language.label")}</Text>
             <Text style={settingsStyles.rowHint}>{t("settings.general.language.description")}</Text>
@@ -408,7 +406,7 @@ function GeneralSection({
           </DropdownMenu>
         </View>
         {isDesktopApp ? (
-          <View style={ROW_WITH_BORDER_STYLE}>
+          <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
             <View style={settingsStyles.rowContent}>
               <Text style={settingsStyles.rowTitle}>{t("settings.general.serviceUrls.label")}</Text>
               <Text style={settingsStyles.rowHint}>
@@ -435,7 +433,7 @@ function GeneralSection({
             </DropdownMenu>
           </View>
         ) : null}
-        <View style={ROW_WITH_BORDER_STYLE}>
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
           <View style={settingsStyles.rowContent}>
             <Text style={settingsStyles.rowTitle}>
               {t("settings.general.terminalScrollback.label")}
@@ -748,7 +746,7 @@ function DesktopAppUpdateRow() {
 
   return (
     <>
-      <View style={ROW_WITH_BORDER_STYLE}>
+      <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
         <View style={settingsStyles.rowContent}>
           <Text style={settingsStyles.rowTitle}>{t("settings.about.releaseChannel.label")}</Text>
           <Text style={settingsStyles.rowHint}>
@@ -762,7 +760,7 @@ function DesktopAppUpdateRow() {
           options={releaseChannelOptions}
         />
       </View>
-      <View style={ROW_WITH_BORDER_STYLE}>
+      <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
         <View style={settingsStyles.rowContent}>
           <Text style={settingsStyles.rowTitle}>{t("settings.about.updates.label")}</Text>
           <Text style={settingsStyles.rowHint}>{statusText}</Text>

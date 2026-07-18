@@ -192,7 +192,7 @@ function ShellDetailSection({ command, output, ds }: ShellDetailProps) {
               <Text selectable style={styles.scrollText}>
                 <Text style={styles.shellPrompt}>$ </Text>
                 {commandTokens.map(({ key, token }) => (
-                  <Text key={key} style={SHELL_TOKEN_STYLES[token.style]}>
+                  <Text key={key} style={getShellTokenStyle(token.style)}>
                     {token.text}
                   </Text>
                 ))}
@@ -772,7 +772,7 @@ function ErrorSection({ errorText }: { errorText: string }) {
       <Text style={styles.sectionTitleError}>{t("toolCallDetails.error")}</Text>
       <View style={styles.errorBox} dataSet={CODE_SURFACE_DATASET}>
         <View style={styles.errorContent}>
-          <Text selectable style={SCROLL_TEXT_ERROR_STYLE}>
+          <Text selectable style={styles.errorMessageText}>
             {errorText}
           </Text>
         </View>
@@ -1082,13 +1082,16 @@ const styles = StyleSheet.create((theme) => {
 });
 
 // Maps a shell token kind to its color style. `plain` tokens carry no override
-// so they inherit the surrounding scrollText foreground.
-const SHELL_TOKEN_STYLES: Record<ShellTokenStyle, StyleProp<TextStyle>> = {
-  command: styles.shellCmdCommand,
-  flag: styles.shellCmdFlag,
-  string: styles.shellCmdString,
-  operator: styles.shellCmdOperator,
-  path: styles.shellCmdPath,
-  plain: undefined,
-};
-const SCROLL_TEXT_ERROR_STYLE = styles.errorMessageText;
+// so they inherit the surrounding scrollText foreground. Resolved lazily —
+// module-scope `styles.*` reads materialize the pre-persistence theme.
+function getShellTokenStyle(token: ShellTokenStyle): StyleProp<TextStyle> {
+  const map: Record<ShellTokenStyle, StyleProp<TextStyle>> = {
+    command: styles.shellCmdCommand,
+    flag: styles.shellCmdFlag,
+    string: styles.shellCmdString,
+    operator: styles.shellCmdOperator,
+    path: styles.shellCmdPath,
+    plain: undefined,
+  };
+  return map[token];
+}

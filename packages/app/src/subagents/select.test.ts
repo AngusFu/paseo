@@ -1,6 +1,11 @@
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { WORKFLOW_RUN_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { afterEach, describe, expect, it } from "vitest";
-import { selectProviderSubagentsForParent, selectSubagentsForParent } from "./select";
+import {
+  selectAgentsForWorkflowRun,
+  selectProviderSubagentsForParent,
+  selectSubagentsForParent,
+} from "./select";
 import { useProviderSubagentStore } from "./provider-store";
 import { useSessionStore, type Agent } from "@/stores/session-store";
 
@@ -348,6 +353,40 @@ describe("selectSubagentsForParent", () => {
     );
 
     expect(rows.map((row) => row.id)).toEqual(["child-a"]);
+  });
+
+  it("selectAgentsForWorkflowRun returns only run-labeled agents, keeps archived ones, oldest first", () => {
+    setAgents([
+      makeAgent({ id: "unrelated" }),
+      makeAgent({
+        id: "other-run",
+        labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_other" },
+      }),
+      makeAgent({
+        id: "second",
+        createdAt: new Date("2026-03-08T10:02:00.000Z"),
+        labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_1" },
+      }),
+      makeAgent({
+        id: "first-archived",
+        createdAt: new Date("2026-03-08T10:01:00.000Z"),
+        archivedAt: new Date("2026-03-08T12:00:00.000Z"),
+        labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_1" },
+      }),
+    ]);
+
+    const rows = selectAgentsForWorkflowRun(useSessionStore.getState(), {
+      serverId: SERVER_ID,
+      runId: "wfr_1",
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["first-archived", "second"]);
+    expect(
+      selectAgentsForWorkflowRun(useSessionStore.getState(), {
+        serverId: SERVER_ID,
+        runId: "wfr_missing",
+      }),
+    ).toEqual([]);
   });
 
   it("returns the shared empty array when pending archive hides the last child", () => {

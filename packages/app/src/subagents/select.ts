@@ -5,6 +5,7 @@ import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useSessionStore, type Agent } from "@/stores/session-store";
 import { refreshProviderSubagents, useProviderSubagentStore } from "./provider-store";
 import type { ProviderSubagentDescriptorPayload } from "@getpaseo/protocol/messages";
+import { getWorkflowRunIdFromLabels } from "@getpaseo/protocol/agent-labels";
 
 export interface PaseoSubagentRow {
   kind: "paseo";
@@ -80,6 +81,49 @@ export function selectSubagentsForParent(
 
   rows.sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
   return rows;
+}
+
+// Agents spawned by a workflow run, matched via the daemon-stamped
+// paseo.workflow-run-id label. Archived agents stay included — a finished
+// run's detail view should still list what ran.
+export function selectAgentsForWorkflowRun(
+  state: SessionStoreSnapshot,
+  params: { serverId: string; runId: string },
+): SubagentRow[] {
+  const agents = state.sessions[params.serverId]?.agents;
+  if (!agents || agents.size === 0) {
+    return EMPTY_SUBAGENT_ROWS;
+  }
+
+  const rows: SubagentRow[] = [];
+  for (const agent of agents.values()) {
+    if (getWorkflowRunIdFromLabels(agent.labels) !== params.runId) {
+      continue;
+    }
+    rows.push(toSubagentRow(agent));
+  }
+
+  if (rows.length === 0) {
+    return EMPTY_SUBAGENT_ROWS;
+  }
+
+  rows.sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+  return rows;
+}
+
+export function useAgentsForWorkflowRun(params: {
+  serverId: string | null;
+  runId: string | null;
+}): SubagentRow[] {
+  const { serverId, runId } = params;
+  return useStoreWithEqualityFn(
+    useSessionStore,
+    (state) =>
+      serverId && runId
+        ? selectAgentsForWorkflowRun(state, { serverId, runId })
+        : EMPTY_SUBAGENT_ROWS,
+    equal,
+  );
 }
 
 export function selectProviderSubagentsForParent(

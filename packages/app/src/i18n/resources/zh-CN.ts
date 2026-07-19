@@ -2485,6 +2485,8 @@ export const zhCN: TranslationResources = {
     runStaleTaskContractHint:
       "任务已写入运行参数，但引擎拿到的不是字符串 args（Claude Code builtin 只认字符串）。请确认 daemon 已更新到会把 task 转成字符串再跑脚本的版本。",
     runAgentCalls: "{{count}} 次 Agent 调用",
+    runAgents: "Agents",
+    runAgentsEmpty: "本次运行还没有 agent",
     runQueuedAt: "排队于 {{time}}",
     runLogs: "事件日志",
     runLogsEmpty: "等待事件…",

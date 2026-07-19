@@ -23,6 +23,7 @@ import {
   type WorkflowDefinition,
   type WorkflowRun,
 } from "@getpaseo/protocol/workflow/types";
+import { WORKFLOW_RUN_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { formatWorkflowWorkspaceTitle } from "@getpaseo/protocol/workflow/workspace-title";
 import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 import type { Logger } from "pino";
@@ -41,7 +42,7 @@ import { WorkflowStore } from "./store.js";
 const CREATE_WORKFLOW_SKILL = "paseo-create-workflow";
 
 /** Label stamped on every host agent a workflow run spawns — used to find the run's in-flight agent(s) for cancellation. */
-export const WORKFLOW_RUN_ID_LABEL = "paseo.workflow-run-id";
+export { WORKFLOW_RUN_ID_LABEL };
 
 const AUTHORING_README = `# Paseo workflows
 

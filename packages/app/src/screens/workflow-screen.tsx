@@ -89,6 +89,10 @@ import {
 } from "@getpaseo/protocol/workflow/workspace-title";
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { normalizeWorkspaceDescriptor, useSessionStore } from "@/stores/session-store";
+import { useAgentsForWorkflowRun, type SubagentRow } from "@/subagents/select";
+import { buildSubagentRowPresentationData } from "@/subagents/track-presentation";
+import { WorkspaceTabIcon } from "@/screens/workspace/workspace-tab-presentation";
+import { getProviderIcon } from "@/components/provider-icons";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { toErrorMessage } from "@/utils/error-messages";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
@@ -1319,6 +1323,15 @@ function WorkflowRunDetailSheet({
   const [showDebug, setShowDebug] = useState(false);
   const header = useMemo<SheetHeader>(() => ({ title: t("workflows.runDetailTitle") }), [t]);
 
+  const openAgent = useCallback(
+    (agentId: string) => {
+      if (!serverId) return;
+      onClose();
+      navigateToAgent({ serverId, agentId });
+    },
+    [onClose, serverId],
+  );
+
   useEffect(() => {
     if (!initialRun) {
       setShowDebug(false);
@@ -1352,6 +1365,8 @@ function WorkflowRunDetailSheet({
           summary={summary}
           live={live}
           logs={logs}
+          serverId={serverId}
+          onOpenAgent={openAgent}
           showDebug={showDebug}
           onToggleDebug={() => setShowDebug((current) => !current)}
         />
@@ -1478,6 +1493,8 @@ function WorkflowRunDetailBody({
   summary,
   live,
   logs,
+  serverId,
+  onOpenAgent,
   showDebug,
   onToggleDebug,
 }: {
@@ -1485,6 +1502,8 @@ function WorkflowRunDetailBody({
   summary: ReturnType<typeof summarizeWorkflowRun>;
   live: boolean;
   logs: ReturnType<typeof useWorkflowRunLogs>;
+  serverId: string | null;
+  onOpenAgent: (agentId: string) => void;
   showDebug: boolean;
   onToggleDebug: () => void;
 }): ReactElement {
@@ -1530,6 +1549,13 @@ function WorkflowRunDetailBody({
           {t("workflows.runAgentCalls", { count: summary.agentCalls })}
         </Text>
       ) : null}
+
+      <WorkflowRunAgentList
+        serverId={serverId}
+        runId={run.id}
+        live={live}
+        onOpenAgent={onOpenAgent}
+      />
 
       <WorkflowRunEventLog
         entries={logs.entries}
@@ -1586,6 +1612,79 @@ function WorkflowRunDetailBody({
         </>
       ) : null}
     </View>
+  );
+}
+
+function WorkflowRunAgentList({
+  serverId,
+  runId,
+  live,
+  onOpenAgent,
+}: {
+  serverId: string | null;
+  runId: string;
+  live: boolean;
+  onOpenAgent: (agentId: string) => void;
+}): ReactElement | null {
+  const { t } = useTranslation();
+  const rows = useAgentsForWorkflowRun({ serverId, runId });
+
+  // A finished run whose agents were purged from the store has nothing to
+  // show — hide the section instead of rendering a stale "no agents" note.
+  if (rows.length === 0 && !live) {
+    return null;
+  }
+
+  return (
+    <View style={styles.detailSection} testID="workflow-run-agents">
+      <Text style={styles.detailSectionLabel}>{t("workflows.runAgents")}</Text>
+      {rows.length === 0 ? (
+        <Text style={styles.meta}>{t("workflows.runAgentsEmpty")}</Text>
+      ) : (
+        <View style={styles.runList}>
+          {rows.map((row) => (
+            <WorkflowRunAgentRow key={row.id} row={row} onOpenAgent={onOpenAgent} />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function WorkflowRunAgentRow({
+  row,
+  onOpenAgent,
+}: {
+  row: SubagentRow;
+  onOpenAgent: (agentId: string) => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const presentation = useMemo(
+    () => ({
+      ...buildSubagentRowPresentationData(row),
+      icon: getProviderIcon(row.provider),
+    }),
+    [row],
+  );
+  const label =
+    presentation.titleState === "loading" ? t("common.states.loading") : presentation.label;
+  const handlePress = useCallback(() => {
+    onOpenAgent(row.id);
+  }, [onOpenAgent, row.id]);
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={handlePress}
+      style={styles.runRow}
+      testID={`workflow-run-agent-${row.id}`}
+    >
+      <WorkspaceTabIcon presentation={presentation} />
+      <Text style={styles.runRowTitle} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 

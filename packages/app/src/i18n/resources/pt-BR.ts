@@ -2543,6 +2543,8 @@ export const ptBR: TranslationResources = {
     runStaleTaskContractHint:
       "A task was stored on the run, but the engine did not receive string args (Claude Code builtins expect a bare string). Update the daemon so dispatch converts task into the sandbox args string.",
     runAgentCalls: "{{count}} agent calls",
+    runAgents: "Agents",
+    runAgentsEmpty: "No agents for this run yet",
     runQueuedAt: "Queued {{time}}",
     runLogs: "Event log",
     runLogsEmpty: "waiting for events…",

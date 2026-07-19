@@ -274,7 +274,12 @@ per agent (`agent-visibility.ts`), rendered by
 detail body (`workflow-run-detail.tsx`, also used by the /workflows run
 sheet). Tapping an agent opens its full timeline as a pinned tab; closing
 such a tab is layout-only (never archives a run agent). The run tab prunes
-once every agent of the run is archived.
+once every agent of the run is archived, and a manually closed run tab is
+remembered per session (`hiddenWorkflowRunIdsByWorkspace`) so reconcile does
+not reopen it. Agents also carry `paseo.workflow-run-workspace` (the run's
+home workspace): folding only happens there, so a worktree-isolated agent
+surfaces as a normal tab (archive-on-close) in its own workspace while still
+listing under the home run panel.
 
 ## Authoring
 

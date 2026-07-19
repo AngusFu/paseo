@@ -23,7 +23,10 @@ import {
   type WorkflowDefinition,
   type WorkflowRun,
 } from "@getpaseo/protocol/workflow/types";
-import { WORKFLOW_RUN_ID_LABEL } from "@getpaseo/protocol/agent-labels";
+import {
+  WORKFLOW_RUN_ID_LABEL,
+  WORKFLOW_RUN_WORKSPACE_LABEL,
+} from "@getpaseo/protocol/agent-labels";
 import { formatWorkflowWorkspaceTitle } from "@getpaseo/protocol/workflow/workspace-title";
 import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 import type { Logger } from "pino";
@@ -891,7 +894,7 @@ export class WorkflowService {
             definitionId: definition.id,
             data: { ...agentEventData(event), attempt: event.attempt ?? null },
           });
-        } else if (event.type === "start" || event.type === "complete") {
+        } else if (event.type === "queued" || event.type === "start" || event.type === "complete") {
           // debug level keeps the raw log readable (the host wrapper already
           // logs agent.started/agent.done at info); the progress tree still
           // consumes these entries regardless of level.
@@ -982,24 +985,15 @@ export class WorkflowService {
           });
           return { error: "workflow run cancelled" };
         }
-        await this.log({
-          event: "agent.start",
-          message:
-            `${request.provider}${request.model ? `/${request.model}` : ""} ${request.title ?? ""}`.trim(),
-          runId: run.id,
-          definitionId,
-          data: {
-            provider: request.provider,
-            model: request.model ?? null,
-            workspaceId: request.workspaceId ?? null,
-            isolation: request.isolation ?? null,
-          },
-        });
+        // The engine's onAgentEvent already logs a callId-tagged agent.start
+        // for every call — the host layer only adds what the engine can't
+        // know: the spawned Paseo agentId and the final outcome.
         const result = await host.runAgent({
           ...request,
           labels: {
             ...request.labels,
             [WORKFLOW_RUN_ID_LABEL]: run.id,
+            ...(run.workspaceId ? { [WORKFLOW_RUN_WORKSPACE_LABEL]: run.workspaceId } : {}),
           },
         });
         await this.log({
@@ -1008,7 +1002,13 @@ export class WorkflowService {
           message: result.error ?? `ok ${result.text?.length ?? 0}c`,
           runId: run.id,
           definitionId,
-          data: { agentId: result.agentId ?? null },
+          data: {
+            agentId: result.agentId ?? null,
+            provider: request.provider,
+            model: request.model ?? null,
+            workspaceId: request.workspaceId ?? null,
+            isolation: request.isolation ?? null,
+          },
         });
         return result;
       },

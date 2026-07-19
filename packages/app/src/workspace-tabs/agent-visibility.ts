@@ -1,4 +1,7 @@
-import { getWorkflowRunIdFromLabels } from "@getpaseo/protocol/agent-labels";
+import {
+  getWorkflowRunIdFromLabels,
+  getWorkflowRunWorkspaceFromLabels,
+} from "@getpaseo/protocol/agent-labels";
 import type { Agent } from "@/stores/session-store";
 import type { WorkspaceTabSnapshot } from "@/stores/workspace-layout-actions";
 import { isWorkspaceRootAgent } from "@/subagents/policies";
@@ -16,6 +19,21 @@ export interface WorkspaceAgentVisibility {
 
 function agentBelongsToWorkspace(agent: Agent, workspaceId: string): boolean {
   return normalizeWorkspaceOpaqueId(agent.workspaceId) === workspaceId;
+}
+
+// Fold workflow-run agents into one synthetic run tab, but only inside the
+// run's home workspace (or when an older daemon didn't stamp one). A
+// worktree-isolated agent lives in its own workspace and surfaces as a
+// normal tab there.
+function foldedWorkflowRunId(agent: Agent, workspaceId: string): string | null {
+  const workflowRunId = getWorkflowRunIdFromLabels(agent.labels);
+  if (!workflowRunId) {
+    return null;
+  }
+  const runWorkspaceId = normalizeWorkspaceOpaqueId(
+    getWorkflowRunWorkspaceFromLabels(agent.labels),
+  );
+  return !runWorkspaceId || runWorkspaceId === workspaceId ? workflowRunId : null;
 }
 
 export function deriveWorkspaceAgentVisibility(input: {
@@ -49,11 +67,11 @@ export function deriveWorkspaceAgentVisibility(input: {
     knownAgentIds.add(agent.id);
     if (!agent.archivedAt) {
       activeAgentIds.add(agent.id);
-      const workflowRunId = getWorkflowRunIdFromLabels(agent.labels);
+      // Folded agents never auto-open their own tab; the user can still open
+      // one from the run panel, and it stays because the agent remains in
+      // activeAgentIds.
+      const workflowRunId = foldedWorkflowRunId(agent, workspaceId);
       if (workflowRunId) {
-        // Workflow-run agents fold into one synthetic run tab; they never
-        // auto-open their own tab (the user can still open one from the run
-        // panel, and it stays because the agent remains in activeAgentIds).
         activeWorkflowRunIds.add(workflowRunId);
         continue;
       }

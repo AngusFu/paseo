@@ -125,6 +125,7 @@ afterEach(() => {
     splitSizesByWorkspace: {},
     pinnedAgentIdsByWorkspace: {},
     hiddenAgentIdsByWorkspace: {},
+    hiddenWorkflowRunIdsByWorkspace: {},
   });
 });
 
@@ -161,6 +162,34 @@ describe("workspace subagents integration", () => {
     reconcileWorkspaceTabs(workspaceKey!, deriveVisibilityFromSession());
 
     expect(getWorkspaceTabIds(workspaceKey!)).toEqual([]);
+  });
+
+  it("does not reopen a workflow_run tab the user closed by hand", () => {
+    const workspaceKey = buildWorkspaceTabPersistenceKey({
+      serverId: SERVER_ID,
+      workspaceId: WORKSPACE_ID,
+    });
+    expect(workspaceKey).toBeTruthy();
+
+    const runAgent = makeAgent({
+      id: "run-agent",
+      labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_closed" },
+    });
+    initializeAgents([runAgent]);
+    reconcileWorkspaceTabs(workspaceKey!, deriveVisibilityFromSession());
+    expect(getWorkspaceTabIds(workspaceKey!)).toEqual(["workflow_run_wfr_closed"]);
+
+    useWorkspaceLayoutStore.getState().closeTab(workspaceKey!, "workflow_run_wfr_closed");
+    reconcileWorkspaceTabs(workspaceKey!, deriveVisibilityFromSession());
+    // Agents are still live, but the user's close sticks.
+    expect(getWorkspaceTabIds(workspaceKey!)).toEqual([]);
+
+    // Explicitly reopening clears the hidden flag and the tab persists again.
+    useWorkspaceLayoutStore
+      .getState()
+      .openTabFocused(workspaceKey!, { kind: "workflow_run", runId: "wfr_closed" });
+    reconcileWorkspaceTabs(workspaceKey!, deriveVisibilityFromSession());
+    expect(getWorkspaceTabIds(workspaceKey!)).toEqual(["workflow_run_wfr_closed"]);
   });
 
   it("keeps a child ingested before its parent out of auto-tabs, then exposes it in the parent section", () => {

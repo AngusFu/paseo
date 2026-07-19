@@ -74,6 +74,10 @@ interface WorkspaceLayoutStore {
   splitSizesByWorkspace: Record<string, Record<string, number[]>>;
   pinnedAgentIdsByWorkspace: Record<string, Set<string>>;
   hiddenAgentIdsByWorkspace: Record<string, Set<string>>;
+  // Workflow runs whose synthetic tab the user closed by hand — reconcile
+  // must not auto-reopen them while the run's agents are still live.
+  // Session-scoped like hiddenAgentIds (not persisted).
+  hiddenWorkflowRunIdsByWorkspace: Record<string, Set<string>>;
   focusRestorationByWorkspace: Record<string, WorkspaceFocusRestorationState>;
   openTabFocused: (workspaceKey: string, target: WorkspaceTabTarget) => string | null;
   openChildTabFocused: (
@@ -228,6 +232,7 @@ export function createWorkspaceLayoutStore(
         splitSizesByWorkspace: {},
         pinnedAgentIdsByWorkspace: {},
         hiddenAgentIdsByWorkspace: {},
+        hiddenWorkflowRunIdsByWorkspace: {},
         focusRestorationByWorkspace: {},
         openTabFocused: (workspaceKey, target) => {
           const normalizedWorkspaceKey = trimNonEmpty(workspaceKey);
@@ -251,6 +256,14 @@ export function createWorkspaceLayoutStore(
                     state.hiddenAgentIdsByWorkspace,
                     normalizedWorkspaceKey,
                     normalizedTarget.agentId,
+                  ),
+            hiddenWorkflowRunIdsByWorkspace:
+              normalizedTarget.kind !== "workflow_run"
+                ? state.hiddenWorkflowRunIdsByWorkspace
+                : removeAgentIdFromWorkspaceSet(
+                    state.hiddenWorkflowRunIdsByWorkspace,
+                    normalizedWorkspaceKey,
+                    normalizedTarget.runId,
                   ),
             layoutByWorkspace: {
               ...state.layoutByWorkspace,
@@ -290,6 +303,14 @@ export function createWorkspaceLayoutStore(
                       normalizedWorkspaceKey,
                       normalizedTarget.agentId,
                     ),
+              hiddenWorkflowRunIdsByWorkspace:
+                normalizedTarget.kind !== "workflow_run"
+                  ? state.hiddenWorkflowRunIdsByWorkspace
+                  : removeAgentIdFromWorkspaceSet(
+                      state.hiddenWorkflowRunIdsByWorkspace,
+                      normalizedWorkspaceKey,
+                      normalizedTarget.runId,
+                    ),
               layoutByWorkspace: {
                 ...state.layoutByWorkspace,
                 [normalizedWorkspaceKey]: layout,
@@ -321,6 +342,14 @@ export function createWorkspaceLayoutStore(
                     normalizedWorkspaceKey,
                     normalizedTarget.agentId,
                   ),
+            hiddenWorkflowRunIdsByWorkspace:
+              normalizedTarget.kind !== "workflow_run"
+                ? state.hiddenWorkflowRunIdsByWorkspace
+                : removeAgentIdFromWorkspaceSet(
+                    state.hiddenWorkflowRunIdsByWorkspace,
+                    normalizedWorkspaceKey,
+                    normalizedTarget.runId,
+                  ),
             layoutByWorkspace: {
               ...state.layoutByWorkspace,
               [normalizedWorkspaceKey]: result.layout,
@@ -337,8 +366,15 @@ export function createWorkspaceLayoutStore(
           }
 
           set((state) => {
+            const currentLayout = getWorkspaceLayout(
+              state.layoutByWorkspace,
+              normalizedWorkspaceKey,
+            );
+            const closingTab = collectAllTabs(currentLayout.root).find(
+              (tab) => tab.tabId === normalizedTabId,
+            );
             const nextLayout = closeTabInLayout({
-              layout: getWorkspaceLayout(state.layoutByWorkspace, normalizedWorkspaceKey),
+              layout: currentLayout,
               tabId: normalizedTabId,
             });
             if (!nextLayout) {
@@ -347,6 +383,14 @@ export function createWorkspaceLayoutStore(
 
             return {
               ...withoutFocusRestoration(state, normalizedWorkspaceKey),
+              hiddenWorkflowRunIdsByWorkspace:
+                closingTab?.target.kind === "workflow_run"
+                  ? addAgentIdToWorkspaceSet(
+                      state.hiddenWorkflowRunIdsByWorkspace,
+                      normalizedWorkspaceKey,
+                      closingTab.target.runId,
+                    )
+                  : state.hiddenWorkflowRunIdsByWorkspace,
               layoutByWorkspace: {
                 ...state.layoutByWorkspace,
                 [normalizedWorkspaceKey]: nextLayout,
@@ -408,6 +452,14 @@ export function createWorkspaceLayoutStore(
                     normalizedWorkspaceKey,
                     normalizedTarget.agentId,
                   ),
+            hiddenWorkflowRunIdsByWorkspace:
+              normalizedTarget.kind !== "workflow_run"
+                ? state.hiddenWorkflowRunIdsByWorkspace
+                : removeAgentIdFromWorkspaceSet(
+                    state.hiddenWorkflowRunIdsByWorkspace,
+                    normalizedWorkspaceKey,
+                    normalizedTarget.runId,
+                  ),
             layoutByWorkspace: {
               ...state.layoutByWorkspace,
               [normalizedWorkspaceKey]: result.layout,
@@ -466,6 +518,8 @@ export function createWorkspaceLayoutStore(
                 layout: currentLayout,
                 pinnedAgentIds: state.pinnedAgentIdsByWorkspace[normalizedWorkspaceKey] ?? null,
                 hiddenAgentIds: state.hiddenAgentIdsByWorkspace[normalizedWorkspaceKey] ?? null,
+                hiddenWorkflowRunIds:
+                  state.hiddenWorkflowRunIdsByWorkspace[normalizedWorkspaceKey] ?? null,
               },
               snapshot,
             );
@@ -871,6 +925,7 @@ export function createWorkspaceLayoutStore(
               normalizedWorkspaceKey in state.splitSizesByWorkspace ||
               normalizedWorkspaceKey in state.pinnedAgentIdsByWorkspace ||
               normalizedWorkspaceKey in state.hiddenAgentIdsByWorkspace ||
+              normalizedWorkspaceKey in state.hiddenWorkflowRunIdsByWorkspace ||
               normalizedWorkspaceKey in state.focusRestorationByWorkspace;
             if (!hasAny) {
               return state;
@@ -883,6 +938,8 @@ export function createWorkspaceLayoutStore(
               state.pinnedAgentIdsByWorkspace;
             const { [normalizedWorkspaceKey]: _hidden, ...hiddenAgentIdsByWorkspace } =
               state.hiddenAgentIdsByWorkspace;
+            const { [normalizedWorkspaceKey]: _hiddenRuns, ...hiddenWorkflowRunIdsByWorkspace } =
+              state.hiddenWorkflowRunIdsByWorkspace;
             const { [normalizedWorkspaceKey]: _restoration, ...focusRestorationByWorkspace } =
               state.focusRestorationByWorkspace;
             return {
@@ -890,6 +947,7 @@ export function createWorkspaceLayoutStore(
               splitSizesByWorkspace,
               pinnedAgentIdsByWorkspace,
               hiddenAgentIdsByWorkspace,
+              hiddenWorkflowRunIdsByWorkspace,
               focusRestorationByWorkspace,
             };
           });

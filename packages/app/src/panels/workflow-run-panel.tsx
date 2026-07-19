@@ -21,6 +21,8 @@ import { useAgentsForWorkflowRun } from "@/subagents/select";
 import { buildSubagentRowPresentationData } from "@/subagents/track-presentation";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
+import { stripWorkflowWorkspaceEmojiPrefix } from "@getpaseo/protocol/workflow/workspace-title";
+import { useSessionStore } from "@/stores/session-store";
 
 const BUCKET_PRIORITY: SidebarStateBucket[] = ["needs_input", "failed", "running", "attention"];
 
@@ -30,13 +32,20 @@ function useWorkflowRunPanelDescriptor(
 ): PanelDescriptor {
   const { t } = useTranslation();
   const rows = useAgentsForWorkflowRun({ serverId: context.serverId, runId: target.runId });
+  // The run mints its own workspace titled "⚙️ <workflow name>" — reuse that
+  // for the tab label so no extra RPC is needed.
+  const workspaceTitle = useSessionStore((state) => {
+    const workspace = state.sessions[context.serverId]?.workspaces.get(context.workspaceId);
+    return workspace?.title ?? workspace?.name ?? null;
+  });
   const buckets = new Set(
     rows.map((row) => buildSubagentRowPresentationData(row).statusBucket).filter(Boolean),
   );
   const statusBucket = BUCKET_PRIORITY.find((bucket) => buckets.has(bucket)) ?? null;
+  const strippedTitle = workspaceTitle ? stripWorkflowWorkspaceEmojiPrefix(workspaceTitle) : "";
 
   return {
-    label: t("workflows.runTabLabel"),
+    label: strippedTitle || t("workflows.runTabLabel"),
     subtitle: "",
     titleState: "ready",
     icon: Workflow,

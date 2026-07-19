@@ -43,6 +43,20 @@ describe("buildWorkflowPhaseTree", () => {
     ]);
   });
 
+  test("queued agents show up before their start event lands", () => {
+    const groups = buildWorkflowPhaseTree(
+      entries([
+        { event: "agent.queued", data: { callId: 1, label: "waiting", phase: "Sweep" } },
+        { event: "agent.queued", data: { callId: 2, label: "also-waiting", phase: "Sweep" } },
+        { event: "agent.start", data: { callId: 1, label: "waiting", phase: "Sweep" } },
+      ]),
+    );
+    expect(groups[0]?.agents.map((agent) => [agent.label, agent.status])).toEqual([
+      ["waiting", "running"],
+      ["also-waiting", "queued"],
+    ]);
+  });
+
   test("retry marks the agent retrying until a terminal event lands", () => {
     const groups = buildWorkflowPhaseTree(
       entries([

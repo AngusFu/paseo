@@ -8,7 +8,7 @@
  */
 import type { WorkflowLogEntry } from "@getpaseo/protocol/workflow/types";
 
-export type PhaseAgentStatus = "running" | "retrying" | "done" | "error";
+export type PhaseAgentStatus = "queued" | "running" | "retrying" | "done" | "error";
 
 export interface PhaseTreeAgent {
   callId: number;
@@ -61,11 +61,14 @@ export function buildWorkflowPhaseTree(entries: WorkflowLogEntry[]): PhaseTreeGr
   return groups;
 }
 
-function phaseAgentStatusForEvent(event: string, isNew: boolean): PhaseAgentStatus | null {
+// Engine events per callId are strictly ordered (queued → start → retry* →
+// complete | error), so each event maps directly to the current status.
+function phaseAgentStatusForEvent(event: string): PhaseAgentStatus | null {
+  if (event === "agent.queued") return "queued";
+  if (event === "agent.start") return "running";
+  if (event === "agent.retry") return "retrying";
   if (event === "agent.complete") return "done";
   if (event === "agent.error") return "error";
-  if (event === "agent.retry") return "retrying";
-  if (event === "agent.start" && isNew) return "running";
   return null;
 }
 
@@ -90,7 +93,7 @@ function applyAgentLogEntry(
     cached: false,
     status: "running" as PhaseAgentStatus,
   };
-  const status = phaseAgentStatusForEvent(entry.event, !existing);
+  const status = phaseAgentStatusForEvent(entry.event);
   if (status) {
     agent.status = status;
   }

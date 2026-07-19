@@ -240,6 +240,7 @@ function phaseDotStyle(status: PhaseAgentStatus) {
   if (status === "done") return styles.phaseDotDone;
   if (status === "error") return styles.phaseDotError;
   if (status === "retrying") return styles.phaseDotRetrying;
+  if (status === "queued") return styles.phaseDotQueued;
   return styles.phaseDotRunning;
 }
 
@@ -581,6 +582,12 @@ const styles = StyleSheet.create((theme) => ({
   phaseAgentMeta: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
+  },
+  phaseDotQueued: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.colors.foregroundMuted,
   },
   phaseDotRunning: {
     width: 8,

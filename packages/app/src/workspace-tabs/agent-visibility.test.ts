@@ -1,4 +1,7 @@
-import { WORKFLOW_RUN_ID_LABEL } from "@getpaseo/protocol/agent-labels";
+import {
+  WORKFLOW_RUN_ID_LABEL,
+  WORKFLOW_RUN_WORKSPACE_LABEL,
+} from "@getpaseo/protocol/agent-labels";
 import { describe, expect, it } from "vitest";
 import type { Agent } from "@/stores/session-store";
 import {
@@ -121,6 +124,28 @@ describe("workspace agent visibility", () => {
     expect(result.activeAgentIds).toEqual(new Set(["run-agent-a", "run-agent-b", "plain-agent"]));
     expect(result.autoOpenAgentIds).toEqual(new Set(["plain-agent"]));
     expect(result.activeWorkflowRunIds).toEqual(new Set(["wfr_1"]));
+  });
+
+  it("surfaces a worktree-isolated run agent as a normal tab in its own workspace", () => {
+    const isolatedAgent = makeAgent({
+      id: "isolated-agent",
+      cwd: "/repo/worktree-iso",
+      workspaceId: WORKSPACE_ID,
+      labels: {
+        [WORKFLOW_RUN_ID_LABEL]: "wfr_1",
+        [WORKFLOW_RUN_WORKSPACE_LABEL]: "ws-run-home",
+      },
+    });
+
+    const result = deriveWorkspaceAgentVisibility({
+      sessionAgents: new Map<string, Agent>([[isolatedAgent.id, isolatedAgent]]),
+      workspaceId: WORKSPACE_ID,
+    });
+
+    // The run's home workspace is elsewhere — no synthetic run tab here, and
+    // the agent auto-opens like any root agent.
+    expect(result.activeWorkflowRunIds).toEqual(new Set<string>());
+    expect(result.autoOpenAgentIds).toEqual(new Set(["isolated-agent"]));
   });
 
   it("drops a workflow run from activeWorkflowRunIds once every agent of the run is archived", () => {

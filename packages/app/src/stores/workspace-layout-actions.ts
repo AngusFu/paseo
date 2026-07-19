@@ -195,6 +195,7 @@ export interface WorkspaceTabReconcileState {
   layout: WorkspaceLayout;
   pinnedAgentIds?: ReadonlySet<string> | null;
   hiddenAgentIds?: ReadonlySet<string> | null;
+  hiddenWorkflowRunIds?: ReadonlySet<string> | null;
 }
 
 export interface WorkspaceTabSnapshot {
@@ -1767,6 +1768,16 @@ function addMissingEntityTabs(input: {
   return nextLayout;
 }
 
+function subtractHiddenWorkflowRuns(
+  active: Set<string>,
+  hidden: ReadonlySet<string> | null | undefined,
+): Set<string> {
+  for (const runId of hidden ?? []) {
+    active.delete(runId);
+  }
+  return active;
+}
+
 export function reconcileWorkspaceTabs(
   state: WorkspaceTabReconcileState,
   snapshot: WorkspaceTabSnapshot,
@@ -1781,7 +1792,10 @@ export function reconcileWorkspaceTabs(
   const autoOpenAgentIds = normalizeStringSet(snapshot.autoOpenAgentIds);
   const knownAgentIds = normalizeStringSet(snapshot.knownAgentIds);
   const standaloneTerminalIds = normalizeStringSet(snapshot.standaloneTerminalIds);
-  const activeWorkflowRunIds = normalizeStringSet(snapshot.activeWorkflowRunIds ?? []);
+  const activeWorkflowRunIds = subtractHiddenWorkflowRuns(
+    normalizeStringSet(snapshot.activeWorkflowRunIds ?? []),
+    state.hiddenWorkflowRunIds,
+  );
   const knownTerminalIds = snapshot.knownTerminalIds
     ? normalizeStringSet(snapshot.knownTerminalIds)
     : standaloneTerminalIds;

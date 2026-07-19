@@ -24,3 +24,17 @@ export function getWorkflowRunIdFromLabels(labels: Record<string, unknown> | nul
   const runId = labels?.[WORKFLOW_RUN_ID_LABEL];
   return typeof runId === "string" && runId.trim().length > 0 ? runId.trim() : null;
 }
+
+// The run's home workspace (run.workspaceId). Lets clients fold an agent
+// into the run's synthetic tab only inside that workspace — worktree-isolated
+// agents live in their own workspace and surface as normal tabs there.
+export const WORKFLOW_RUN_WORKSPACE_LABEL = "paseo.workflow-run-workspace";
+
+export function getWorkflowRunWorkspaceFromLabels(
+  labels: Record<string, unknown> | null | undefined,
+) {
+  const workspaceId = labels?.[WORKFLOW_RUN_WORKSPACE_LABEL];
+  return typeof workspaceId === "string" && workspaceId.trim().length > 0
+    ? workspaceId.trim()
+    : null;
+}

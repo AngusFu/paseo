@@ -129,12 +129,23 @@ const GITLAB_EXTERNAL_STATUSES: KanbanExternalStatus[] = [
 // GET /rest/api/3/status (flat array) and GET /rest/api/3/project/{key}/statuses
 // (array grouped by issue type, each with its own `statuses` array).
 interface JiraStatusEntry {
+  id?: string;
   name?: string;
   statusCategory?: { key?: string };
   statuses?: JiraStatusEntry[];
 }
 
-export function parseJiraStatusesResponse(body: unknown): KanbanExternalStatus[] {
+/**
+ * A parsed Jira status with its Jira-internal id kept alongside the wire
+ * fields. The id never leaves the daemon — source-statuses.ts uses it to
+ * match the agile board's columnConfig (which references statuses by id) and
+ * strips it before returning KanbanExternalStatus over the RPC.
+ */
+export interface ParsedJiraStatus extends KanbanExternalStatus {
+  id?: string;
+}
+
+export function parseJiraStatusesResponse(body: unknown): ParsedJiraStatus[] {
   if (!Array.isArray(body)) {
     return [];
   }
@@ -146,10 +157,14 @@ export function parseJiraStatusesResponse(body: unknown): KanbanExternalStatus[]
       flat.push(entry);
     }
   }
-  const byName = new Map<string, KanbanExternalStatus>();
+  const byName = new Map<string, ParsedJiraStatus>();
   for (const entry of flat) {
     if (typeof entry.name === "string" && !byName.has(entry.name)) {
-      byName.set(entry.name, { name: entry.name, category: entry.statusCategory?.key ?? null });
+      byName.set(entry.name, {
+        name: entry.name,
+        category: entry.statusCategory?.key ?? null,
+        ...(typeof entry.id === "string" ? { id: entry.id } : {}),
+      });
     }
   }
   return [...byName.values()];

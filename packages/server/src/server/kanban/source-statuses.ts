@@ -19,7 +19,7 @@ import type { KanbanSecretsStore } from "./secrets-store.js";
 import type { KanbanOauthService } from "./oauth.js";
 import { jiraAuthHeaders, resolveKanbanToken, trimTrailingSlash } from "./credentials.js";
 import { resolveSourceForCard } from "./card-context.js";
-import { parseJiraStatusesResponse } from "./sync.js";
+import { parseJiraStatusesResponse, type ParsedJiraStatus } from "./sync.js";
 
 export interface KanbanSourceStatusesResult {
   statuses: KanbanExternalStatus[] | null;
@@ -126,7 +126,7 @@ export class KanbanSourceStatusService {
     const apiVersion = connection?.email ? "3" : "2";
     const base = trimTrailingSlash(baseUrl);
 
-    const byName = new Map<string, KanbanExternalStatus>();
+    const byName = new Map<string, ParsedJiraStatus>();
     for (const projectKey of projectKeys) {
       const url = `${base}/rest/api/${apiVersion}/project/${encodeURIComponent(projectKey)}/statuses`;
       const response = await this.fetchImpl(url, { headers });
@@ -147,7 +147,91 @@ export class KanbanSourceStatusService {
         }
       }
     }
-    return [...byName.values()];
+    const ordered = await this.applyBoardOrder(base, headers, projectKeys, [...byName.values()]);
+    // Strip the internal Jira status id before the list goes over the RPC.
+    return ordered.map(({ name, category }) => ({ name, category }));
+  }
+
+  /**
+   * Reorder the merged status list to the JIRA BOARD's own column order.
+   *
+   * The /project/{key}/statuses union is in workflow-definition order, which
+   * is not what users see: their board's columnConfig (agile API) is ("Pending
+   * Code Review" before "In QA"). Best-effort — any failure (no Jira Software,
+   * no board, permission) keeps the workflow-definition order. Statuses the
+   * board doesn't map to a column keep their relative order after the mapped
+   * ones (Array.prototype.sort is stable).
+   */
+  private async applyBoardOrder(
+    base: string,
+    headers: Record<string, string>,
+    projectKeys: string[],
+    statuses: ParsedJiraStatus[],
+  ): Promise<ParsedJiraStatus[]> {
+    const rank = new Map<string, number>();
+    let next = 0;
+    for (const projectKey of projectKeys) {
+      const orderedIds = await this.fetchBoardStatusIds(base, headers, projectKey);
+      for (const id of orderedIds) {
+        if (!rank.has(id)) {
+          rank.set(id, next++);
+        }
+      }
+    }
+    if (rank.size === 0) {
+      return statuses;
+    }
+    const rankOf = (status: ParsedJiraStatus): number =>
+      status.id !== undefined && rank.has(status.id)
+        ? (rank.get(status.id) as number)
+        : Number.MAX_SAFE_INTEGER;
+    return [...statuses].sort((a, b) => rankOf(a) - rankOf(b));
+  }
+
+  /** Status ids in board column order for a project's first agile board, [] on any failure. */
+  private async fetchBoardStatusIds(
+    base: string,
+    headers: Record<string, string>,
+    projectKey: string,
+  ): Promise<string[]> {
+    try {
+      const boardsResponse = await this.fetchImpl(
+        `${base}/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}`,
+        { headers },
+      );
+      if (!boardsResponse.ok) {
+        return [];
+      }
+      const boards = (await boardsResponse.json()) as {
+        values?: Array<{ id?: number }>;
+      };
+      const boardId = boards.values?.[0]?.id;
+      if (typeof boardId !== "number") {
+        return [];
+      }
+      const configResponse = await this.fetchImpl(
+        `${base}/rest/agile/1.0/board/${boardId}/configuration`,
+        { headers },
+      );
+      if (!configResponse.ok) {
+        return [];
+      }
+      const config = (await configResponse.json()) as {
+        columnConfig?: { columns?: Array<{ statuses?: Array<{ id?: string }> }> };
+      };
+      const ids: string[] = [];
+      for (const column of config.columnConfig?.columns ?? []) {
+        for (const status of column.statuses ?? []) {
+          if (typeof status.id === "string") {
+            ids.push(status.id);
+          }
+        }
+      }
+      return ids;
+    } catch (error) {
+      this.logger?.warn({ err: error, projectKey }, "Kanban board order fetch failed");
+      return [];
+    }
   }
 
   // Every distinct Jira project key among this source's own cards — matched

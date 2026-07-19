@@ -29,6 +29,12 @@ import { useHostFeature } from "@/runtime/host-features";
 // status name, never collapsed into the three categories.
 const CATEGORY_ORDER: Record<string, number> = { new: 0, indeterminate: 1, done: 2 };
 const UNKNOWN_CATEGORY_ORDER = 3;
+// Within one category, lanes follow the sequence Jira's /project/{key}/statuses
+// API returned — that is the workflow's own definition order (the server
+// preserves it end-to-end). Alphabetical here was a real ordering bug: it put
+// "In QA" before "Pending Code Review". CATEGORY_SPAN just keeps the category
+// rank dominant over the in-category index.
+const CATEGORY_SPAN = 1000;
 // Cross-column swimlanes don't fire actual card presses (used for the detail
 // sheet) — width matches the real board column so the grid still reads as a
 // Jira-style swimlane matrix.
@@ -81,13 +87,14 @@ function buildJiraBuckets(
 ): KanbanStatusBucket[] {
   const byKey = new Map<string, { title: string; order: number; cards: StoredKanbanCard[] }>();
   if (fullStatuses) {
-    for (const status of fullStatuses) {
+    fullStatuses.forEach((status, index) => {
       byKey.set(status.name, {
         title: status.name,
-        order: categoryOrder(status.category),
+        // category first, then the workflow-definition sequence from the API.
+        order: categoryOrder(status.category) * CATEGORY_SPAN + index,
         cards: [],
       });
-    }
+    });
   }
   for (const card of cards) {
     const status = readJiraStatus(card.metadata);
@@ -96,7 +103,9 @@ function buildJiraBuckets(
     if (!bucket) {
       bucket = {
         title: status?.name ?? t(`kanban.columns.${card.status}`),
-        order: status?.order ?? UNKNOWN_CATEGORY_ORDER,
+        // A status missing from fullStatuses (workflow changed / no full
+        // fetch) lands at the END of its category, not alphabetically inside.
+        order: (status?.order ?? UNKNOWN_CATEGORY_ORDER) * CATEGORY_SPAN + CATEGORY_SPAN - 1,
         cards: [],
       };
       byKey.set(key, bucket);

@@ -77,6 +77,10 @@ describe("KanbanSourceStatusService", () => {
     const requestedUrls: string[] = [];
     const fetchImpl = vi.fn(async (url: string) => {
       requestedUrls.push(url);
+      if (url.includes("/rest/agile/")) {
+        // No Jira Software board — service must keep workflow-definition order.
+        return jsonResponse(404, { message: "no board" });
+      }
       if (url.includes("/project/SCIF/")) {
         return jsonResponse(200, [
           {
@@ -113,10 +117,87 @@ describe("KanbanSourceStatusService", () => {
       "In Progress",
       "To Do",
     ]);
-    // Fetched once per project — second call is served from cache.
+    // Fetched once per project (plus one board probe each) — the second
+    // listStatuses call is served entirely from cache.
+    const callsAfterFirst = requestedUrls.length;
     const secondResult = await service.listStatuses(source.id);
     expect(secondResult.statuses).toEqual(result.statuses);
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(requestedUrls.length).toBe(callsAfterFirst);
+  });
+
+  test("orders statuses by the agile board's column order when a board exists", async () => {
+    await store.createConnection({
+      kind: "jira",
+      name: "Jira Cloud",
+      baseUrl: "https://jira.example.com",
+      email: "dev@example.com",
+    });
+    const connection = (await store.listConnections())[0];
+    await secrets.set(credentialRefForConnection(connection.id), {
+      method: "token",
+      token: "secret-token",
+    });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira Cloud",
+      connectionId: connection.id,
+      query: "project = SCIF",
+    });
+    const columns = await store.listColumns();
+    const wipColumnId = columns.find((column) => column.legacyStatus === "wip")?.id;
+    await store.upsertCardBySource(
+      { kind: "jira", externalId: "jira:SCIF-9", project: "SCIF", issueKey: "SCIF-9" },
+      {
+        title: "Scif card",
+        url: "https://jira.example.com/browse/SCIF-9",
+        status: "wip",
+        columnId: wipColumnId,
+        theme: "jira",
+        sourceId: source.id,
+      },
+    );
+
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes("/rest/agile/1.0/board?")) {
+        return jsonResponse(200, { values: [{ id: 7 }] });
+      }
+      if (url.includes("/rest/agile/1.0/board/7/configuration")) {
+        return jsonResponse(200, {
+          columnConfig: {
+            columns: [
+              { name: "To Do", statuses: [{ id: "1" }] },
+              { name: "Review", statuses: [{ id: "3" }] },
+              { name: "QA", statuses: [{ id: "2" }] },
+            ],
+          },
+        });
+      }
+      // Workflow-definition order puts "In QA" BEFORE "Pending Code Review" —
+      // the board order above must win.
+      return jsonResponse(200, [
+        {
+          statuses: [
+            { id: "1", name: "To Do", statusCategory: { key: "new" } },
+            { id: "2", name: "In QA", statusCategory: { key: "indeterminate" } },
+            { id: "3", name: "Pending Code Review", statusCategory: { key: "indeterminate" } },
+            { id: "9", name: "Unmapped", statusCategory: { key: "indeterminate" } },
+          ],
+        },
+      ]);
+    }) as unknown as typeof fetch;
+
+    const service = new KanbanSourceStatusService({ store, secrets, fetchImpl });
+    const result = await service.listStatuses(source.id);
+
+    expect(result.error).toBeNull();
+    expect(result.statuses?.map((status) => status.name)).toEqual([
+      "To Do",
+      "Pending Code Review",
+      "In QA",
+      "Unmapped", // not on the board -> keeps its place after mapped statuses
+    ]);
+    // The internal Jira status id must not leak over the RPC shape.
+    expect(result.statuses?.every((status) => !("id" in status))).toBe(true);
   });
 
   test("rejects a non-jira source with an explicit error", async () => {

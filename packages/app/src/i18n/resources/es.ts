@@ -2560,6 +2560,7 @@ export const es: TranslationResources = {
     runAgentCalls: "{{count}} agent calls",
     runAgents: "Agents",
     runAgentsEmpty: "No agents for this run yet",
+    runTabLabel: "Workflow run",
     runQueuedAt: "Queued {{time}}",
     runLogs: "Event log",
     runLogsEmpty: "waiting for events…",

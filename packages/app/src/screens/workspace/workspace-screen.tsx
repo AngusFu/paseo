@@ -383,6 +383,9 @@ function getFallbackTabOptionDescription(
   if (tab.target.kind === "provider_subagent") {
     return labels.agent;
   }
+  if (tab.target.kind === "workflow_run") {
+    return labels.agent;
+  }
   return tab.target.path;
 }
 

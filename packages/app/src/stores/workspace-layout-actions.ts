@@ -203,6 +203,8 @@ export interface WorkspaceTabSnapshot {
   activeAgentIds: Iterable<string>;
   autoOpenAgentIds: Iterable<string>;
   knownAgentIds: Iterable<string>;
+  // Workflow runs that should surface as one synthetic workflow_run tab each.
+  activeWorkflowRunIds?: Iterable<string>;
   knownTerminalIds?: Iterable<string>;
   standaloneTerminalIds: Iterable<string>;
   hasActivePendingDraftCreate?: boolean;
@@ -1556,8 +1558,8 @@ function getFocusedPaneIdAfterTabClose(input: {
 
 function isEntityTarget(
   target: WorkspaceTabTarget,
-): target is Extract<WorkspaceTabTarget, { kind: "agent" | "terminal" }> {
-  return target.kind === "agent" || target.kind === "terminal";
+): target is Extract<WorkspaceTabTarget, { kind: "agent" | "terminal" | "workflow_run" }> {
+  return target.kind === "agent" || target.kind === "terminal" || target.kind === "workflow_run";
 }
 
 function isAgentTab(
@@ -1570,6 +1572,12 @@ function isTerminalTab(
   tab: WorkspaceTab,
 ): tab is WorkspaceTab & { target: { kind: "terminal"; terminalId: string } } {
   return tab.target.kind === "terminal";
+}
+
+function isWorkflowRunTab(
+  tab: WorkspaceTab,
+): tab is WorkspaceTab & { target: { kind: "workflow_run"; runId: string } } {
+  return tab.target.kind === "workflow_run";
 }
 
 function openEntityTabWithoutFocusing(
@@ -1652,11 +1660,25 @@ function collapseStaleEntityTabs(input: {
   snapshot: WorkspaceTabSnapshot;
   visibleAgentIds: Set<string>;
   knownTerminalIds: Set<string>;
+  activeWorkflowRunIds: Set<string>;
 }): WorkspaceLayout {
-  const { snapshot, visibleAgentIds, knownTerminalIds } = input;
+  const { snapshot, visibleAgentIds, knownTerminalIds, activeWorkflowRunIds } = input;
   let nextLayout = input.layout;
   for (const tab of collectAllTabs(nextLayout.root)) {
     if (isAgentTab(tab) && snapshot.agentsHydrated && !visibleAgentIds.has(tab.target.agentId)) {
+      nextLayout =
+        closeTabInLayout({
+          layout: nextLayout,
+          tabId: tab.tabId,
+        }) ?? nextLayout;
+    }
+    if (
+      isWorkflowRunTab(tab) &&
+      snapshot.agentsHydrated &&
+      !activeWorkflowRunIds.has(tab.target.runId)
+    ) {
+      // Mirrors agent tabs: once every agent of the run is archived, the
+      // synthetic run tab closes on all clients too.
       nextLayout =
         closeTabInLayout({
           layout: nextLayout,
@@ -1683,12 +1705,14 @@ function addMissingEntityTabs(input: {
   autoOpenAgentIds: Set<string>;
   representedAgentIds: Set<string>;
   standaloneTerminalIds: Set<string>;
+  activeWorkflowRunIds: Set<string>;
   hasActivePendingDraftCreate: boolean;
 }): WorkspaceLayout {
   const {
     autoOpenAgentIds,
     representedAgentIds,
     standaloneTerminalIds,
+    activeWorkflowRunIds,
     hasActivePendingDraftCreate,
   } = input;
   let nextLayout = input.layout;
@@ -1699,6 +1723,20 @@ function addMissingEntityTabs(input: {
   const currentTerminalIds = new Set(
     currentEntityTabs.filter(isTerminalTab).map((tab) => tab.target.terminalId),
   );
+  const currentWorkflowRunIds = new Set(
+    currentEntityTabs.filter(isWorkflowRunTab).map((tab) => tab.target.runId),
+  );
+
+  for (const runId of [...activeWorkflowRunIds].sort()) {
+    if (currentWorkflowRunIds.has(runId)) {
+      continue;
+    }
+    nextLayout = openEntityTabWithoutFocusing(nextLayout, {
+      kind: "workflow_run",
+      runId,
+    });
+    currentWorkflowRunIds.add(runId);
+  }
 
   const sortedAutoOpenAgentIds = [...autoOpenAgentIds].sort();
   for (const agentId of sortedAutoOpenAgentIds) {
@@ -1743,6 +1781,7 @@ export function reconcileWorkspaceTabs(
   const autoOpenAgentIds = normalizeStringSet(snapshot.autoOpenAgentIds);
   const knownAgentIds = normalizeStringSet(snapshot.knownAgentIds);
   const standaloneTerminalIds = normalizeStringSet(snapshot.standaloneTerminalIds);
+  const activeWorkflowRunIds = normalizeStringSet(snapshot.activeWorkflowRunIds ?? []);
   const knownTerminalIds = snapshot.knownTerminalIds
     ? normalizeStringSet(snapshot.knownTerminalIds)
     : standaloneTerminalIds;
@@ -1802,6 +1841,7 @@ export function reconcileWorkspaceTabs(
     snapshot,
     visibleAgentIds,
     knownTerminalIds,
+    activeWorkflowRunIds,
   });
 
   nextLayout = addMissingEntityTabs({
@@ -1809,6 +1849,7 @@ export function reconcileWorkspaceTabs(
     autoOpenAgentIds: autoOpenSet,
     representedAgentIds,
     standaloneTerminalIds,
+    activeWorkflowRunIds,
     hasActivePendingDraftCreate: snapshot.hasActivePendingDraftCreate ?? false,
   });
 

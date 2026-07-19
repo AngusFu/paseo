@@ -1,3 +1,4 @@
+import { getWorkflowRunIdFromLabels } from "@getpaseo/protocol/agent-labels";
 import type { Agent } from "@/stores/session-store";
 import type { WorkspaceTabSnapshot } from "@/stores/workspace-layout-actions";
 import { isWorkspaceRootAgent } from "@/subagents/policies";
@@ -7,6 +8,10 @@ export interface WorkspaceAgentVisibility {
   activeAgentIds: Set<string>;
   autoOpenAgentIds: Set<string>;
   knownAgentIds: Set<string>;
+  // Workflow runs with at least one live (non-archived) labeled agent in this
+  // workspace. Each gets one synthetic workflow_run tab instead of a tab per
+  // agent — the agents stay in activeAgentIds so user-opened tabs survive.
+  activeWorkflowRunIds: Set<string>;
 }
 
 function agentBelongsToWorkspace(agent: Agent, workspaceId: string): boolean {
@@ -25,12 +30,14 @@ export function deriveWorkspaceAgentVisibility(input: {
       activeAgentIds: new Set<string>(),
       autoOpenAgentIds: new Set<string>(),
       knownAgentIds: new Set<string>(),
+      activeWorkflowRunIds: new Set<string>(),
     };
   }
 
   const activeAgentIds = new Set<string>();
   const autoOpenAgentIds = new Set<string>();
   const knownAgentIds = new Set<string>();
+  const activeWorkflowRunIds = new Set<string>();
   const agentsById = new Map<string, Agent>([
     ...(agentDetails?.entries() ?? []),
     ...(sessionAgents?.entries() ?? []),
@@ -42,6 +49,14 @@ export function deriveWorkspaceAgentVisibility(input: {
     knownAgentIds.add(agent.id);
     if (!agent.archivedAt) {
       activeAgentIds.add(agent.id);
+      const workflowRunId = getWorkflowRunIdFromLabels(agent.labels);
+      if (workflowRunId) {
+        // Workflow-run agents fold into one synthetic run tab; they never
+        // auto-open their own tab (the user can still open one from the run
+        // panel, and it stays because the agent remains in activeAgentIds).
+        activeWorkflowRunIds.add(workflowRunId);
+        continue;
+      }
       const parentAgent = agent.parentAgentId ? agentsById.get(agent.parentAgentId) : undefined;
       if (isWorkspaceRootAgent(agent, parentAgent)) {
         autoOpenAgentIds.add(agent.id);
@@ -55,7 +70,7 @@ export function deriveWorkspaceAgentVisibility(input: {
     knownAgentIds.add(agent.id);
   }
 
-  return { activeAgentIds, autoOpenAgentIds, knownAgentIds };
+  return { activeAgentIds, autoOpenAgentIds, knownAgentIds, activeWorkflowRunIds };
 }
 
 export function buildWorkspaceTabSnapshot(input: {
@@ -72,6 +87,7 @@ export function buildWorkspaceTabSnapshot(input: {
     activeAgentIds: input.agentVisibility.activeAgentIds,
     autoOpenAgentIds: input.agentVisibility.autoOpenAgentIds,
     knownAgentIds: input.agentVisibility.knownAgentIds,
+    activeWorkflowRunIds: input.agentVisibility.activeWorkflowRunIds,
     knownTerminalIds: input.knownTerminalIds,
     standaloneTerminalIds: input.standaloneTerminalIds,
     hasActivePendingDraftCreate: input.hasActivePendingDraftCreate,
@@ -85,7 +101,8 @@ export function workspaceAgentVisibilityEqual(
   return (
     setsEqual(a.activeAgentIds, b.activeAgentIds) &&
     setsEqual(a.autoOpenAgentIds, b.autoOpenAgentIds) &&
-    setsEqual(a.knownAgentIds, b.knownAgentIds)
+    setsEqual(a.knownAgentIds, b.knownAgentIds) &&
+    setsEqual(a.activeWorkflowRunIds, b.activeWorkflowRunIds)
   );
 }
 

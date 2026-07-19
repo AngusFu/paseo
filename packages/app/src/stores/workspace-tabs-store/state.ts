@@ -20,6 +20,7 @@ export type WorkspaceTabTarget =
   | { kind: "draft"; draftId: string; setup?: WorkspaceDraftTabSetup }
   | { kind: "agent"; agentId: string }
   | { kind: "provider_subagent"; parentAgentId: string; subagentId: string }
+  | { kind: "workflow_run"; runId: string }
   | { kind: "terminal"; terminalId: string }
   | { kind: "browser"; browserId: string }
   | WorkspaceFileTabTarget
@@ -496,15 +497,22 @@ function extractMigrationRawSources(persistedState: unknown): MigrationRawSource
   };
 }
 
+function coerceDraftTabTarget(raw: Record<string, unknown>): WorkspaceTabTarget | null {
+  if (typeof raw.draftId !== "string") {
+    return null;
+  }
+  const setup = normalizeWorkspaceDraftTabSetup(raw.setup);
+  return normalizeWorkspaceTabTarget({
+    kind: "draft",
+    draftId: raw.draftId,
+    ...(setup ? { setup } : {}),
+  });
+}
+
 function coerceWorkspaceTabTarget(raw: Record<string, unknown>): WorkspaceTabTarget | null {
   const kind = typeof raw.kind === "string" ? raw.kind : null;
-  if (kind === "draft" && typeof raw.draftId === "string") {
-    const setup = normalizeWorkspaceDraftTabSetup(raw.setup);
-    return normalizeWorkspaceTabTarget({
-      kind: "draft",
-      draftId: raw.draftId,
-      ...(setup ? { setup } : {}),
-    });
+  if (kind === "draft") {
+    return coerceDraftTabTarget(raw);
   }
   if (kind === "agent" && typeof raw.agentId === "string") {
     return normalizeWorkspaceTabTarget({ kind: "agent", agentId: raw.agentId });
@@ -519,6 +527,9 @@ function coerceWorkspaceTabTarget(raw: Record<string, unknown>): WorkspaceTabTar
       parentAgentId: raw.parentAgentId,
       subagentId: raw.subagentId,
     });
+  }
+  if (kind === "workflow_run" && typeof raw.runId === "string") {
+    return normalizeWorkspaceTabTarget({ kind: "workflow_run", runId: raw.runId });
   }
   if (kind === "terminal" && typeof raw.terminalId === "string") {
     return normalizeWorkspaceTabTarget({ kind: "terminal", terminalId: raw.terminalId });

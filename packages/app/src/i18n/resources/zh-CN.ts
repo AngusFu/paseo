@@ -2487,6 +2487,7 @@ export const zhCN: TranslationResources = {
     runAgentCalls: "{{count}} 次 Agent 调用",
     runAgents: "Agents",
     runAgentsEmpty: "本次运行还没有 agent",
+    runTabLabel: "Workflow 运行",
     runQueuedAt: "排队于 {{time}}",
     runLogs: "事件日志",
     runLogsEmpty: "等待事件…",

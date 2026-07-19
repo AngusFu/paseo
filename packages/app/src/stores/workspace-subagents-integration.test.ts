@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -128,6 +129,40 @@ afterEach(() => {
 });
 
 describe("workspace subagents integration", () => {
+  it("collapses workflow-run agents into one workflow_run tab and prunes it after archive", () => {
+    const workspaceKey = buildWorkspaceTabPersistenceKey({
+      serverId: SERVER_ID,
+      workspaceId: WORKSPACE_ID,
+    });
+    expect(workspaceKey).toBeTruthy();
+
+    const runAgentA = makeAgent({
+      id: "run-agent-a",
+      title: "review:bugs",
+      labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_1" },
+    });
+    const runAgentB = makeAgent({
+      id: "run-agent-b",
+      title: "review:perf",
+      labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_1" },
+    });
+
+    initializeAgents([runAgentA, runAgentB]);
+    reconcileWorkspaceTabs(workspaceKey!, deriveVisibilityFromSession());
+
+    // One synthetic run tab, no per-agent tabs.
+    expect(getWorkspaceTabIds(workspaceKey!)).toEqual(["workflow_run_wfr_1"]);
+
+    const archivedAt = new Date("2026-04-21T12:00:00.000Z");
+    initializeAgents([
+      { ...runAgentA, archivedAt },
+      { ...runAgentB, archivedAt },
+    ]);
+    reconcileWorkspaceTabs(workspaceKey!, deriveVisibilityFromSession());
+
+    expect(getWorkspaceTabIds(workspaceKey!)).toEqual([]);
+  });
+
   it("keeps a child ingested before its parent out of auto-tabs, then exposes it in the parent section", () => {
     const workspaceKey = buildWorkspaceTabPersistenceKey({
       serverId: SERVER_ID,

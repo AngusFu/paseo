@@ -10,12 +10,7 @@ export function normalizeWorkspaceTabTarget(
     return null;
   }
   if (value.kind === "draft") {
-    const draftId = trimNonEmpty(value.draftId);
-    if (!draftId) {
-      return null;
-    }
-    const setup = normalizeWorkspaceDraftTabSetup(value.setup);
-    return setup ? { kind: "draft", draftId, setup } : { kind: "draft", draftId };
+    return normalizeDraftTarget(value);
   }
   if (value.kind === "agent") {
     const agentId = trimNonEmpty(value.agentId);
@@ -27,6 +22,10 @@ export function normalizeWorkspaceTabTarget(
     return parentAgentId && subagentId
       ? { kind: "provider_subagent", parentAgentId, subagentId }
       : null;
+  }
+  if (value.kind === "workflow_run") {
+    const runId = trimNonEmpty(value.runId);
+    return runId ? { kind: "workflow_run", runId } : null;
   }
   if (value.kind === "terminal") {
     const terminalId = trimNonEmpty(value.terminalId);
@@ -44,6 +43,17 @@ export function normalizeWorkspaceTabTarget(
     return workspaceId ? { kind: "setup", workspaceId } : null;
   }
   return null;
+}
+
+function normalizeDraftTarget(
+  value: Extract<WorkspaceTabTarget, { kind: "draft" }>,
+): WorkspaceTabTarget | null {
+  const draftId = trimNonEmpty(value.draftId);
+  if (!draftId) {
+    return null;
+  }
+  const setup = normalizeWorkspaceDraftTabSetup(value.setup);
+  return setup ? { kind: "draft", draftId, setup } : { kind: "draft", draftId };
 }
 
 export function normalizeWorkspaceDraftTabSetup(
@@ -85,6 +95,9 @@ export function workspaceTabTargetsEqual(
   }
   if (left.kind === "provider_subagent" && right.kind === "provider_subagent") {
     return left.parentAgentId === right.parentAgentId && left.subagentId === right.subagentId;
+  }
+  if (left.kind === "workflow_run" && right.kind === "workflow_run") {
+    return left.runId === right.runId;
   }
   if (left.kind === "terminal" && right.kind === "terminal") {
     return left.terminalId === right.terminalId;
@@ -143,6 +156,9 @@ export function buildDeterministicWorkspaceTabId(target: WorkspaceTabTarget): st
   }
   if (target.kind === "provider_subagent") {
     return `provider_subagent_${target.parentAgentId.length}_${target.parentAgentId}_${target.subagentId.length}_${target.subagentId}`;
+  }
+  if (target.kind === "workflow_run") {
+    return `workflow_run_${target.runId}`;
   }
   if (target.kind === "terminal") {
     return `terminal_${target.terminalId}`;

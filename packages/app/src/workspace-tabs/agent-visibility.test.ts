@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { describe, expect, it } from "vitest";
 import type { Agent } from "@/stores/session-store";
 import {
@@ -15,6 +16,7 @@ function makeAgent(input: {
   archivedAt?: Date | null;
   createdAt?: Date;
   lastActivityAt?: Date;
+  labels?: Record<string, string>;
 }): Agent {
   const createdAt = input.createdAt ?? new Date("2026-03-04T00:00:00.000Z");
   const lastActivityAt = input.lastActivityAt ?? createdAt;
@@ -49,7 +51,7 @@ function makeAgent(input: {
     model: null,
     thinkingOptionId: null,
     parentAgentId: input.parentAgentId ?? null,
-    labels: {},
+    labels: input.labels ?? {},
     requiresAttention: false,
     attentionReason: null,
     attentionTimestamp: null,
@@ -84,6 +86,59 @@ describe("workspace agent visibility", () => {
     expect(result.activeAgentIds).toEqual(new Set(["parent-agent", "child-agent"]));
     expect(result.autoOpenAgentIds).toEqual(new Set(["parent-agent"]));
     expect(result.knownAgentIds).toEqual(new Set(["parent-agent", "child-agent"]));
+  });
+
+  it("folds workflow-run agents into activeWorkflowRunIds instead of auto-opening them", () => {
+    const runAgentA = makeAgent({
+      id: "run-agent-a",
+      cwd: "/repo/worktree",
+      workspaceId: WORKSPACE_ID,
+      labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_1" },
+    });
+    const runAgentB = makeAgent({
+      id: "run-agent-b",
+      cwd: "/repo/worktree",
+      workspaceId: WORKSPACE_ID,
+      labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_1" },
+    });
+    const plainAgent = makeAgent({
+      id: "plain-agent",
+      cwd: "/repo/worktree",
+      workspaceId: WORKSPACE_ID,
+    });
+
+    const result = deriveWorkspaceAgentVisibility({
+      sessionAgents: new Map<string, Agent>([
+        [runAgentA.id, runAgentA],
+        [runAgentB.id, runAgentB],
+        [plainAgent.id, plainAgent],
+      ]),
+      workspaceId: WORKSPACE_ID,
+    });
+
+    // Both run agents stay active (user-opened tabs survive) but only the
+    // plain agent auto-opens; the run collapses to one synthetic tab id.
+    expect(result.activeAgentIds).toEqual(new Set(["run-agent-a", "run-agent-b", "plain-agent"]));
+    expect(result.autoOpenAgentIds).toEqual(new Set(["plain-agent"]));
+    expect(result.activeWorkflowRunIds).toEqual(new Set(["wfr_1"]));
+  });
+
+  it("drops a workflow run from activeWorkflowRunIds once every agent of the run is archived", () => {
+    const archivedRunAgent = makeAgent({
+      id: "run-agent",
+      cwd: "/repo/worktree",
+      workspaceId: WORKSPACE_ID,
+      archivedAt: new Date("2026-03-05T00:00:00.000Z"),
+      labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_1" },
+    });
+
+    const result = deriveWorkspaceAgentVisibility({
+      sessionAgents: new Map<string, Agent>([[archivedRunAgent.id, archivedRunAgent]]),
+      workspaceId: WORKSPACE_ID,
+    });
+
+    expect(result.activeWorkflowRunIds).toEqual(new Set<string>());
+    expect(result.knownAgentIds).toEqual(new Set(["run-agent"]));
   });
 
   it("keeps archived subagents known but excludes them from active and auto-open", () => {
@@ -323,6 +378,7 @@ describe("workspace agent visibility", () => {
       activeAgentIds: new Set(["active-agent"]),
       autoOpenAgentIds: new Set(["root-agent"]),
       knownAgentIds: new Set(["active-agent", "archived-agent"]),
+      activeWorkflowRunIds: new Set(["wfr_1"]),
     };
 
     expect(
@@ -340,6 +396,7 @@ describe("workspace agent visibility", () => {
       activeAgentIds: agentVisibility.activeAgentIds,
       autoOpenAgentIds: agentVisibility.autoOpenAgentIds,
       knownAgentIds: agentVisibility.knownAgentIds,
+      activeWorkflowRunIds: agentVisibility.activeWorkflowRunIds,
       knownTerminalIds: ["terminal-1", "script-terminal"],
       standaloneTerminalIds: ["terminal-1"],
       hasActivePendingDraftCreate: false,
@@ -352,11 +409,13 @@ describe("workspace agent visibility", () => {
         activeAgentIds: new Set(["a", "b"]),
         autoOpenAgentIds: new Set(["a"]),
         knownAgentIds: new Set(["a", "b", "c"]),
+        activeWorkflowRunIds: new Set<string>(),
       };
       const b = {
         activeAgentIds: new Set(["a", "b"]),
         autoOpenAgentIds: new Set(["a"]),
         knownAgentIds: new Set(["a", "b", "c"]),
+        activeWorkflowRunIds: new Set<string>(),
       };
       expect(workspaceAgentVisibilityEqual(a, b)).toBe(true);
     });
@@ -366,11 +425,13 @@ describe("workspace agent visibility", () => {
         activeAgentIds: new Set(["a"]),
         autoOpenAgentIds: new Set(["a"]),
         knownAgentIds: new Set(["a"]),
+        activeWorkflowRunIds: new Set<string>(),
       };
       const b = {
         activeAgentIds: new Set(["b"]),
         autoOpenAgentIds: new Set(["a"]),
         knownAgentIds: new Set(["a"]),
+        activeWorkflowRunIds: new Set<string>(),
       };
       expect(workspaceAgentVisibilityEqual(a, b)).toBe(false);
     });
@@ -380,11 +441,13 @@ describe("workspace agent visibility", () => {
         activeAgentIds: new Set(["a", "b"]),
         autoOpenAgentIds: new Set(["a"]),
         knownAgentIds: new Set(["a", "b"]),
+        activeWorkflowRunIds: new Set<string>(),
       };
       const b = {
         activeAgentIds: new Set(["a", "b"]),
         autoOpenAgentIds: new Set(["b"]),
         knownAgentIds: new Set(["a", "b"]),
+        activeWorkflowRunIds: new Set<string>(),
       };
       expect(workspaceAgentVisibilityEqual(a, b)).toBe(false);
     });
@@ -394,11 +457,13 @@ describe("workspace agent visibility", () => {
         activeAgentIds: new Set(["a"]),
         autoOpenAgentIds: new Set(["a"]),
         knownAgentIds: new Set(["a"]),
+        activeWorkflowRunIds: new Set<string>(),
       };
       const b = {
         activeAgentIds: new Set(["a"]),
         autoOpenAgentIds: new Set(["a"]),
         knownAgentIds: new Set(["a", "b"]),
+        activeWorkflowRunIds: new Set<string>(),
       };
       expect(workspaceAgentVisibilityEqual(a, b)).toBe(false);
     });
@@ -408,11 +473,13 @@ describe("workspace agent visibility", () => {
         activeAgentIds: new Set<string>(),
         autoOpenAgentIds: new Set<string>(),
         knownAgentIds: new Set<string>(),
+        activeWorkflowRunIds: new Set<string>(),
       };
       const b = {
         activeAgentIds: new Set<string>(),
         autoOpenAgentIds: new Set<string>(),
         knownAgentIds: new Set<string>(),
+        activeWorkflowRunIds: new Set<string>(),
       };
       expect(workspaceAgentVisibilityEqual(a, b)).toBe(true);
     });

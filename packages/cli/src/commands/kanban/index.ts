@@ -82,6 +82,15 @@ export function createKanbanCommand(): Command {
     withOutput(runSourceLsCommand),
   );
 
+  // Same action as top-level `kanban sync` — registered under `source` too
+  // because that's where users look for it (it operates on a source id).
+  addJsonAndDaemonHostOptions(
+    source
+      .command("sync")
+      .description("Sync cards from a source")
+      .argument("<sourceId>", "Source ID"),
+  ).action(withOutput(runSyncCommand));
+
   kanban.addCommand(source);
 
   addJsonAndDaemonHostOptions(

@@ -131,6 +131,10 @@ const CollapsedColumnStrip = memo(function CollapsedColumnStrip({
     () => [styles.collapsedChevron, !showCollapseToggle && styles.hiddenAffordance],
     [showCollapseToggle],
   );
+  const countStyle = useMemo(
+    () => [styles.collapsedCount, cardCount > 0 && styles.collapsedCountActive],
+    [cardCount],
+  );
 
   return (
     <View
@@ -159,9 +163,13 @@ const CollapsedColumnStrip = memo(function CollapsedColumnStrip({
               doesn't fit post-rotation. */}
           <Text style={styles.collapsedTitleInner}>{column.title}</Text>
         </View>
-        <Text style={styles.collapsedCount} testID={`kanban-column-count-${column.id}`}>
-          {cardCount}
-        </Text>
+        {/* Non-empty collapsed lanes get an accent badge so the number is
+            visible at a glance; empty ones stay a muted plain digit. */}
+        <View style={cardCount > 0 ? styles.collapsedCountBadge : null}>
+          <Text style={countStyle} testID={`kanban-column-count-${column.id}`}>
+            {cardCount}
+          </Text>
+        </View>
       </Pressable>
     </View>
   );
@@ -469,6 +477,19 @@ const styles = StyleSheet.create((theme) => ({
   collapsedCount: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
+  },
+  collapsedCountActive: {
+    color: theme.colors.primaryForeground,
+    fontWeight: theme.fontWeight.semibold,
+  },
+  collapsedCountBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    backgroundColor: theme.colors.primary,
   },
   // Bounded, scrollable region below the pinned header. minHeight:0 lets it
   // shrink inside the column's flex layout on web so it actually scrolls.

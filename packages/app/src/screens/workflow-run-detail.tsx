@@ -26,6 +26,7 @@ import { summarizeWorkflowRun } from "@/screens/workflow-run-summary";
 import { WorkspaceTabIcon } from "@/screens/workspace/workspace-tab-presentation";
 import { useAgentsForWorkflowRun, type SubagentRow } from "@/subagents/select";
 import { buildSubagentRowPresentationData } from "@/subagents/track-presentation";
+import { buildWorkflowPhaseTree, type PhaseAgentStatus } from "@/screens/workflow-run-phase-tree";
 import { formatTimeAgo } from "@/utils/time";
 
 /** How close to the bottom (px) counts as "at bottom" for log auto-scroll. */
@@ -92,6 +93,8 @@ export function WorkflowRunDetailBody({
           {t("workflows.runAgentCalls", { count: summary.agentCalls })}
         </Text>
       ) : null}
+
+      <WorkflowRunPhaseTree entries={logs.entries} />
 
       <WorkflowRunAgentList
         serverId={serverId}
@@ -228,6 +231,52 @@ function WorkflowRunAgentRow({
         {label}
       </Text>
     </Pressable>
+  );
+}
+
+type WorkflowLogEntryLike = ReturnType<typeof useWorkflowRunLogs>["entries"][number];
+
+function phaseDotStyle(status: PhaseAgentStatus) {
+  if (status === "done") return styles.phaseDotDone;
+  if (status === "error") return styles.phaseDotError;
+  if (status === "retrying") return styles.phaseDotRetrying;
+  return styles.phaseDotRunning;
+}
+
+function WorkflowRunPhaseTree({
+  entries,
+}: {
+  entries: WorkflowLogEntryLike[];
+}): ReactElement | null {
+  const { t } = useTranslation();
+  const groups = useMemo(() => buildWorkflowPhaseTree(entries), [entries]);
+  if (groups.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.detailSection} testID="workflow-run-phase-tree">
+      <Text style={styles.detailSectionLabel}>{t("workflows.runPhases")}</Text>
+      <View style={styles.phaseTree}>
+        {groups.map((group) => (
+          <View key={group.title ?? " no-phase"} style={styles.phaseGroup}>
+            <Text style={styles.phaseTitle}>{group.title ?? t("workflows.runPhaseUngrouped")}</Text>
+            {group.agents.map((agent) => (
+              <View key={agent.callId} style={styles.phaseAgentRow}>
+                <View style={phaseDotStyle(agent.status)} />
+                <Text style={styles.phaseAgentLabel} numberOfLines={1}>
+                  {agent.label ?? `agent #${agent.callId}`}
+                </Text>
+                {agent.model ? <Text style={styles.phaseAgentMeta}>{agent.model}</Text> : null}
+                {agent.cached ? (
+                  <Text style={styles.phaseAgentMeta}>{t("workflows.runPhaseCached")}</Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -500,6 +549,63 @@ const styles = StyleSheet.create((theme) => ({
     width: 72,
   },
   detailStack: { gap: theme.spacing[3] },
+  phaseTree: {
+    gap: theme.spacing[2],
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+    backgroundColor: theme.colors.surface0,
+  },
+  phaseGroup: { gap: theme.spacing[1] },
+  phaseTitle: {
+    color: theme.colors.foregroundMuted,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  phaseAgentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    paddingLeft: theme.spacing[2],
+  },
+  phaseAgentLabel: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    flexShrink: 1,
+  },
+  phaseAgentMeta: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
+  phaseDotRunning: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.colors.terminal.cyan,
+  },
+  phaseDotRetrying: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.colors.terminal.yellow,
+  },
+  phaseDotDone: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.colors.terminal.green,
+  },
+  phaseDotError: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.colors.terminal.red,
+  },
   detailSection: { gap: theme.spacing[2] },
   detailSectionLabel: {
     color: theme.colors.foregroundMuted,

@@ -611,6 +611,63 @@ describe("WorkflowEventLog via service", () => {
   });
 });
 
+describe("workflow engine progress events via service", () => {
+  it("records phase, log, and callId-tagged agent start/complete entries for the progress tree", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const prev = process.env.PASEO_WORKFLOW_BACKEND;
+    process.env.PASEO_WORKFLOW_BACKEND = "mock";
+    try {
+      const service = new WorkflowService({ paseoHome: dir });
+      const definition = await service.createDefinition({
+        name: "progress",
+        source: [
+          "export const meta = { name: 'progress' };",
+          "phase('Scan');",
+          "log('starting scan');",
+          "await agent('do the thing', { label: 'scan:main' });",
+          "return { ok: true };",
+        ].join("\n"),
+      });
+      const run = await service.dispatch({
+        definitionId: definition.id,
+        cwd: dir,
+        args: { task: "noop" },
+      });
+      for (let i = 0; i < 50; i++) {
+        const latest = await service.getRun(run.id);
+        if (latest && (latest.status === "succeeded" || latest.status === "failed")) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      const { entries } = await service.listRunLogs(run.id);
+
+      const phaseEntry = entries.find((entry) => entry.event === "phase");
+      expect(phaseEntry?.message).toBe("Scan");
+      const logEntry = entries.find((entry) => entry.event === "log");
+      expect(logEntry?.message).toBe("starting scan");
+      const startEntry = entries.find((entry) => entry.event === "agent.start");
+      expect(startEntry?.data).toMatchObject({
+        callId: expect.any(Number),
+        label: "scan:main",
+        phase: "Scan",
+      });
+      const completeEntry = entries.find((entry) => entry.event === "agent.complete");
+      expect(completeEntry?.data).toMatchObject({
+        callId: startEntry?.data?.callId,
+        phase: "Scan",
+      });
+    } finally {
+      if (prev === undefined) {
+        delete process.env.PASEO_WORKFLOW_BACKEND;
+      } else {
+        process.env.PASEO_WORKFLOW_BACKEND = prev;
+      }
+    }
+  });
+});
+
 describe("extractWorkflowResultError", () => {
   it("reads nested engine result errors", () => {
     expect(

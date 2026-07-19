@@ -253,6 +253,29 @@ Convenience flags on `workflow run` (`--provider` / `--model` / `--thinking` /
 For local script validation without the daemon, use `aw` from
 `@getpaseo/agents-workflow` (`aw list` / `aw validate` / `aw run`).
 
+## Run UI (progress tree, agents, run tab)
+
+The daemon writes every engine progress event into the run's event log
+(`onPhase` → `phase`, script `log()` → `log`, and `onAgentEvent` →
+`agent.start` / `agent.complete` at debug level plus `agent.error` /
+`agent.retry`). Each agent entry carries `data.callId` (the engine's
+monotonic per-`agent()` id), `label`, `phase`, `model`, `cached`. Clients
+rebuild the live progress tree purely from these entries
+(`packages/app/src/screens/workflow-run-phase-tree.ts`) — the logs hook
+polls 1s while the run is live, and the tree survives refresh because the
+log is persisted. Older daemons emit no `callId` entries, so the tree
+section hides itself (data-driven capability gate, no fallback path).
+
+Agents a run spawns carry `paseo.workflow-run-id` (accessor in
+`@getpaseo/protocol/agent-labels`). The app folds them into one synthetic
+`{ kind: "workflow_run", runId }` workspace tab per run instead of a tab
+per agent (`agent-visibility.ts`), rendered by
+`packages/app/src/panels/workflow-run-panel.tsx` reusing the shared run
+detail body (`workflow-run-detail.tsx`, also used by the /workflows run
+sheet). Tapping an agent opens its full timeline as a pinned tab; closing
+such a tab is layout-only (never archives a run agent). The run tab prunes
+once every agent of the run is archived.
+
 ## Authoring
 
 Use `skills/paseo-create-workflow` (or the Workflow page: Fork builtin / blank

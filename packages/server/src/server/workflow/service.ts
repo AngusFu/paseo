@@ -834,9 +834,43 @@ export class WorkflowService {
     }
 
     const journal = new Journal({ path: join(run.workspacePath, "journal.jsonl") });
+    // Every engine event lands in the run's event log so clients can rebuild
+    // the live progress tree (phases → agent calls) purely from log entries.
+    // callId is the engine's monotonic per-agent() id — the stable node key.
+    const agentEventData = (event: {
+      id: number;
+      label?: string;
+      phase?: string;
+      model?: string;
+      cached?: boolean;
+    }) => ({
+      callId: event.id,
+      label: event.label ?? null,
+      phase: event.phase ?? null,
+      model: event.model ?? null,
+      cached: event.cached ?? false,
+    });
     const engine = createEngine({
       backend,
       journal,
+      onPhase: (phase) => {
+        void this.log({
+          level: "info",
+          event: "phase",
+          message: phase,
+          runId: run.id,
+          definitionId: definition.id,
+        });
+      },
+      onLog: (message) => {
+        void this.log({
+          level: "info",
+          event: "log",
+          message,
+          runId: run.id,
+          definitionId: definition.id,
+        });
+      },
       onAgentEvent: (event) => {
         if (event.type === "error" && event.error) {
           agentErrors.push(event.error);
@@ -846,7 +880,7 @@ export class WorkflowService {
             message: event.error,
             runId: run.id,
             definitionId: definition.id,
-            data: { label: event.label ?? null, phase: event.phase ?? null },
+            data: agentEventData(event),
           });
         } else if (event.type === "retry" && event.error) {
           void this.log({
@@ -855,9 +889,23 @@ export class WorkflowService {
             message: event.error,
             runId: run.id,
             definitionId: definition.id,
+            data: { ...agentEventData(event), attempt: event.attempt ?? null },
+          });
+        } else if (event.type === "start" || event.type === "complete") {
+          // debug level keeps the raw log readable (the host wrapper already
+          // logs agent.started/agent.done at info); the progress tree still
+          // consumes these entries regardless of level.
+          void this.log({
+            level: "debug",
+            event: `agent.${event.type}`,
+            message: event.label ?? `agent #${event.id}`,
+            runId: run.id,
+            definitionId: definition.id,
             data: {
-              label: event.label ?? null,
-              attempt: event.attempt ?? null,
+              ...agentEventData(event),
+              ...(event.usage?.outputTokens != null
+                ? { outputTokens: event.usage.outputTokens }
+                : {}),
             },
           });
         }

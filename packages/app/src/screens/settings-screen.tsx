@@ -455,7 +455,7 @@ function GeneralSection({
           />
         </View>
         {isDesktopApp ? (
-          <View style={ROW_WITH_BORDER_STYLE}>
+          <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
             <View style={settingsStyles.rowContent}>
               <Text style={settingsStyles.rowTitle}>
                 {t("settings.general.browserDefaultUrl.label")}

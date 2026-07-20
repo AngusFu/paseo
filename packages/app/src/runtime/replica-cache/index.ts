@@ -209,7 +209,6 @@ function serializeWorkspace(workspace: WorkspaceDescriptor): WorkspaceDescriptor
     scripts: workspace.scripts,
     gitRuntime: workspace.gitRuntime,
     githubRuntime: workspace.githubRuntime,
-    forge: workspace.forge,
     project: workspace.project,
   };
 }

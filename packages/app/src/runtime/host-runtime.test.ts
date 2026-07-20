@@ -12,6 +12,7 @@ import type {
 import type { ConnectionOffer } from "@getpaseo/protocol/connection-offer";
 import type { HostConnection, HostProfile } from "@/types/host-connection";
 import { useSessionStore, type Agent } from "@/stores/session-store";
+import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
 import {
   HostRuntimeController,
   HostRuntimeStore,
@@ -159,6 +160,10 @@ function makeFetchAgentsPayload(input: {
     ...(input.subscriptionId ? { subscriptionId: input.subscriptionId } : {}),
     requestId: "req_test",
   };
+}
+
+function replicaAgent(snapshot: FetchAgentsEntry["agent"], serverId: string): Agent {
+  return { ...normalizeAgentSnapshot(snapshot, serverId), projectPlacement: null };
 }
 
 function makeFetchAgentsEntry(input: {

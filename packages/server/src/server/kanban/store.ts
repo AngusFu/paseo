@@ -89,6 +89,11 @@ export interface UpsertKanbanCardBySourcePayload {
   // Used for terminal transitions (MR merged/closed) that should win over a
   // manual drag — a merged MR belongs in done regardless.
   forceStatus?: boolean;
+  // Set by the reconcile pass for a card the source query no longer returns.
+  // Omitting it (the normal sync path, where the query DID return the card)
+  // clears any previous flag — a card that comes back into the query stops
+  // being detached without needing its own code path.
+  detachedFromSource?: boolean;
 }
 
 export interface UpsertKanbanCardBySourceResult extends StoredKanbanCard {
@@ -368,6 +373,27 @@ export class KanbanStore {
     });
   }
 
+  // Flags a card as no longer returned by its source query, without touching
+  // its status. Used by the reconcile pass when the card can't be re-fetched
+  // (the issue/MR was deleted, or the token lost access to it) — the last known
+  // status is all we have, so it stays, but the board still shows the card as
+  // detached rather than silently presenting a frozen status as current.
+  async setCardDetached(cardId: string, detached: boolean): Promise<StoredKanbanCard | null> {
+    return this.serializeCardMutation(cardId, async () => {
+      const current = await this.getCard(cardId);
+      if (!current || current.detachedFromSource === detached) {
+        return current;
+      }
+      const updated = StoredKanbanCardSchema.parse({
+        ...current,
+        detachedFromSource: detached ? true : undefined,
+        updatedAt: new Date().toISOString(),
+      });
+      await this.writeCard(updated);
+      return updated;
+    });
+  }
+
   private async resolveMoveTarget(
     input: MoveKanbanCardInput,
   ): Promise<{ status: KanbanStatus; columnId: string }> {
@@ -440,6 +466,7 @@ export class KanbanStore {
           sourceCreatedAt: payload.sourceCreatedAt ?? null,
           sourceUpdatedAt: payload.sourceUpdatedAt ?? null,
           hasUnresolvedThreads: payload.hasUnresolvedThreads,
+          detachedFromSource: payload.detachedFromSource,
           createdAt: now,
           updatedAt: now,
         });
@@ -474,6 +501,7 @@ export class KanbanStore {
         sourceCreatedAt: payload.sourceCreatedAt ?? existing.sourceCreatedAt ?? null,
         sourceUpdatedAt: payload.sourceUpdatedAt ?? existing.sourceUpdatedAt ?? null,
         hasUnresolvedThreads: payload.hasUnresolvedThreads,
+        detachedFromSource: payload.detachedFromSource,
         updatedAt: now,
       });
       await this.writeCard(updated);

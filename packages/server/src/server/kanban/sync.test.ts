@@ -293,6 +293,232 @@ describe("KanbanSyncService", () => {
     expect(singleFetchCount()).toBe(before);
   });
 
+  test("re-fetches and flags a Jira card whose issue no longer matches the query", async () => {
+    const backlogIssue = {
+      key: "PROJ-9",
+      fields: {
+        summary: "Migrated profile cannot be shown correctly",
+        status: { name: "Backlog", statusCategory: { key: "new" } },
+        assignee: { displayName: "Ada Lovelace" },
+      },
+    };
+    // Same issue after being closed AND reassigned away — it stops matching an
+    // `assignee = currentUser()` query, so the search endpoint drops it.
+    const closedIssue = {
+      key: "PROJ-9",
+      fields: {
+        summary: "Migrated profile cannot be shown correctly",
+        status: { name: "Closed", statusCategory: { key: "done" } },
+        assignee: { displayName: "Grace Hopper" },
+      },
+    };
+    let searchCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/rest/api/2/search")) {
+        searchCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ issues: searchCalls === 1 ? [backlogIssue] : [], total: 0 }),
+        };
+      }
+      if (url.includes("/rest/api/2/issue/PROJ-9")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => closedIssue };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "assignee = currentUser()",
+    });
+
+    const first = await syncService.sync(source);
+    expect(first.cards.find((card) => card.externalId === "jira:PROJ-9")).toMatchObject({
+      status: "pending",
+      detachedFromSource: undefined,
+    });
+
+    // Second sync: the issue is gone from the search results, so reconciliation
+    // re-fetches it by key, writes back the real (closed) status, and flags it.
+    await syncService.sync(source);
+    const stored = (await store.listCards()).find((card) => card.externalId === "jira:PROJ-9");
+    expect(stored).toMatchObject({
+      status: "done",
+      detachedFromSource: true,
+      assignee: "Grace Hopper",
+    });
+    // Never deleted — a detached card stays on the board.
+    expect(stored).toBeDefined();
+
+    // Third sync: already flagged and already terminal, so it costs no further
+    // requests.
+    const issueFetchCount = () =>
+      fetchImpl.mock.calls.filter((call: unknown[]) =>
+        String(call[0]).includes("/rest/api/2/issue/PROJ-9"),
+      ).length;
+    const before = issueFetchCount();
+    await syncService.sync(source);
+    expect(issueFetchCount()).toBe(before);
+  });
+
+  test("clears the detached flag once the query returns the card again", async () => {
+    const issue = {
+      key: "PROJ-4",
+      fields: {
+        summary: "Reassigned, then handed back",
+        status: { name: "Backlog", statusCategory: { key: "new" } },
+      },
+    };
+    let searchCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      // Present, gone (reassigned away), then present again (handed back).
+      if (url.includes("/rest/api/2/search")) {
+        searchCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ issues: searchCalls === 2 ? [] : [issue], total: 0 }),
+        };
+      }
+      if (url.includes("/rest/api/2/issue/PROJ-4")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => issue };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "assignee = currentUser()",
+    });
+
+    await syncService.sync(source);
+    await syncService.sync(source);
+    const detached = (await store.listCards()).find((card) => card.externalId === "jira:PROJ-4");
+    expect(detached?.detachedFromSource).toBe(true);
+
+    await syncService.sync(source);
+    const reattached = (await store.listCards()).find((card) => card.externalId === "jira:PROJ-4");
+    expect(reattached?.detachedFromSource).toBeUndefined();
+  });
+
+  test("does not flag cards as detached when the page walk hit the safety cap", async () => {
+    const issue = {
+      key: "PROJ-3",
+      fields: {
+        summary: "Still assigned to me",
+        status: { name: "Backlog", statusCategory: { key: "new" } },
+      },
+    };
+    let searchCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      // Cloud enhanced-JQL search (the connection carries an email). The first
+      // sync returns the issue and ends cleanly; every later sync hands back a
+      // nextPageToken forever, so the walk stops at MAX_SYNC_PAGES with the
+      // card never appearing — exactly the case that must NOT be read as
+      // "no longer matches the query".
+      if (url.includes("/rest/api/3/search/jql")) {
+        searchCalls += 1;
+        return searchCalls === 1
+          ? { ok: true, status: 200, statusText: "OK", json: async () => ({ issues: [issue] }) }
+          : {
+              ok: true,
+              status: 200,
+              statusText: "OK",
+              json: async () => ({ issues: [], nextPageToken: "more", isLast: false }),
+            };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const connection = await store.createConnection({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      email: "user@example.com",
+    });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      connectionId: connection.id,
+      query: "assignee = currentUser()",
+    });
+
+    await syncService.sync(source);
+    const truncatedSync = await syncService.sync(source);
+    // The truncation warning still lands on the source, but the card is left
+    // exactly as it was — no flag, and no single-issue re-fetch was attempted.
+    expect(truncatedSync.source?.lastSyncError).toContain("page cap");
+    const stored = (await store.listCards()).find((card) => card.externalId === "jira:PROJ-3");
+    expect(stored?.detachedFromSource).toBeUndefined();
+    expect(stored?.status).toBe("pending");
+    expect(
+      fetchImpl.mock.calls.filter((call: unknown[]) => String(call[0]).includes("/issue/PROJ-3")),
+    ).toHaveLength(0);
+  });
+
+  test("flags a deleted Jira issue as detached without failing the sync", async () => {
+    const issue = {
+      key: "PROJ-7",
+      fields: {
+        summary: "Since deleted",
+        status: { name: "In Progress", statusCategory: { key: "indeterminate" } },
+      },
+    };
+    let searchCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/rest/api/2/search")) {
+        searchCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ issues: searchCalls === 1 ? [issue] : [], total: 0 }),
+        };
+      }
+      // The issue is gone: Jira answers the single-issue lookup with 404.
+      if (url.includes("/rest/api/2/issue/PROJ-7")) {
+        return {
+          ok: false,
+          status: 404,
+          statusText: "Not Found",
+          json: async () => ({}),
+        };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "assignee = currentUser()",
+    });
+
+    await syncService.sync(source);
+    const second = await syncService.sync(source);
+    // A 404 on the re-fetch is an expected outcome, not a sync failure.
+    expect(second.error).toBeNull();
+    expect(second.source?.lastSyncError).toBeNull();
+    const stored = (await store.listCards()).find((card) => card.externalId === "jira:PROJ-7");
+    // Flagged, but the last known status is kept — there is nothing better to show.
+    expect(stored).toMatchObject({ detachedFromSource: true, status: "wip" });
+  });
+
   test("does not auto-create a column for an unmapped Jira status name — never more than the default 3 columns", async () => {
     const jiraResponse = {
       issues: Array.from({ length: 5 }, (_, i) => ({

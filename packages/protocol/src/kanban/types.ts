@@ -114,6 +114,14 @@ export const StoredKanbanCardSchema = z.object({
   // threads (from `blocking_discussions_resolved === false`). Drives the
   // card's attention red dot. Absent for jira/manual cards.
   hasUnresolvedThreads: z.boolean().optional(),
+  // True when the card's source query no longer returns it (a Jira issue
+  // reassigned away from `assignee = currentUser()`, an MR merged out of a
+  // `state=opened` filter). Such a card is never deleted — sync re-fetches it
+  // by key/id so its status stays true, and this flag lets the board show it
+  // as no longer matching the query. Cleared automatically the moment the
+  // query returns the card again. Absent for manual cards and for synced cards
+  // that still match.
+  detachedFromSource: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

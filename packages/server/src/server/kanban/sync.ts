@@ -112,6 +112,15 @@ export function jiraCategoryLegacyStatus(categoryKey: string | undefined): Kanba
   return "pending";
 }
 
+// The statusCategory key off a card's stored Jira metadata blob (sync writes
+// `issue.fields` there verbatim), used to skip re-fetching a card whose status
+// is already terminal. Undefined for a card synced before metadata existed.
+function jiraStoredCategoryKey(card: StoredKanbanCard): string | undefined {
+  const status = (card.metadata as { status?: { statusCategory?: { key?: string } } } | undefined)
+    ?.status;
+  return status?.statusCategory?.key;
+}
+
 // GitLab MRs only ever have two board-relevant buckets: still open (including
 // draft) is in progress, merged or closed is done.
 function gitlabCategoryLegacyStatus(mr: GitlabMergeRequest): KanbanStatus {
@@ -192,6 +201,11 @@ export interface KanbanSyncServiceOptions {
 const MAX_SYNC_PAGES = 20;
 const SYNC_PAGE_SIZE = 100;
 
+// Per-round cap on single-card re-fetches in the detached-card reconcile pass.
+// Steady state is 0-2 cards; the cap only bites when a query edit drops a large
+// batch out at once, and the remainder simply reconciles on later rounds.
+const MAX_RECONCILE_CARDS = 25;
+
 export class KanbanSyncService {
   private readonly store: KanbanStore;
   private readonly secrets: KanbanSecretsStore;
@@ -255,16 +269,28 @@ export class KanbanSyncService {
     token: string | null,
     email: string | null,
   ): Promise<{ cards: StoredKanbanCard[]; truncated: boolean }> {
+    const seenExternalIds = new Set<string>();
     const { issues, truncated } = await this.fetchJiraIssues(baseUrl, source.query, token, email);
     const cards: StoredKanbanCard[] = [];
     for (const issue of issues) {
       const { cardSource, payload } = await this.buildJiraUpsert(baseUrl, source, issue);
+      seenExternalIds.add(cardSource.externalId);
       const card = await this.store.upsertCardBySource(cardSource, payload);
       cards.push(card);
       if (card.created) {
         await this.onCardCreated?.(card, source);
       }
     }
+    cards.push(
+      ...(await this.reconcileDetachedJiraCards(
+        baseUrl,
+        source,
+        token,
+        email,
+        seenExternalIds,
+        truncated,
+      )),
+    );
     return { cards, truncated };
   }
 
@@ -297,7 +323,13 @@ export class KanbanSyncService {
       }
     }
     cards.push(
-      ...(await this.reconcileTerminalGitlabCards(baseUrl, source, token, seenExternalIds)),
+      ...(await this.reconcileDetachedGitlabCards(
+        baseUrl,
+        source,
+        token,
+        seenExternalIds,
+        truncated,
+      )),
     );
     return { cards, truncated };
   }
@@ -452,6 +484,33 @@ export class KanbanSyncService {
     return { issues, truncated };
   }
 
+  // Single-issue lookup for the reconcile pass. Same Cloud/Server split the
+  // search endpoints use (an email means Cloud). A 404/403 means deleted or
+  // no longer visible to this token — reported as null, not thrown, since the
+  // caller treats it as "detached", not as a sync failure.
+  private async fetchJiraIssueByKey(
+    baseUrl: string,
+    issueKey: string,
+    token: string | null,
+    email: string | null,
+  ): Promise<JiraIssue | null> {
+    const base = trimTrailingSlash(baseUrl);
+    const headers = jiraAuthHeaders(token, email);
+    const apiVersion = email ? "3" : "2";
+    const fields = encodeURIComponent(
+      "summary,status,assignee,labels,priority,created,updated,issuetype",
+    );
+    const url = `${base}/rest/api/${apiVersion}/issue/${encodeURIComponent(issueKey)}?fields=${fields}`;
+    const response = await this.fetchImpl(url, { headers });
+    if (response.status === 404 || response.status === 403) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(`Jira issue request failed: ${response.status} ${response.statusText}`);
+    }
+    return (await response.json()) as JiraIssue;
+  }
+
   private async fetchGitlabMergeRequests(
     baseUrl: string,
     query: string,
@@ -581,29 +640,147 @@ export class KanbanSyncService {
     };
   }
 
+  // Cards the primary query didn't return this round, and that this source is
+  // responsible for. Two very different reasons a card can be missing:
+  //
+  //   1. It genuinely no longer matches the query (issue reassigned, MR
+  //      merged out of a `state=opened` filter) — this pass's job.
+  //   2. The page walk stopped early at MAX_SYNC_PAGES, so the card may well
+  //      still match and simply wasn't fetched.
+  //
+  // Telling those apart is impossible from here, so a truncated walk skips
+  // reconciliation entirely rather than mass-flagging healthy cards as
+  // detached. Ownership is by sourceId: a card another source synced is never
+  // touched. Cards predating sourceId (undefined) are still re-fetched — that
+  // backfills the field — but are never flagged as detached on a failed
+  // lookup, since a 404 there is more likely "belongs to another instance"
+  // than "gone".
+  private async detachmentCandidates(
+    source: StoredKanbanSource,
+    seenExternalIds: Set<string>,
+    truncated: boolean,
+  ): Promise<StoredKanbanCard[]> {
+    if (truncated) {
+      this.logger?.warn(
+        { sourceId: source.id },
+        "Kanban sync hit the page cap — skipping detached-card reconciliation this round",
+      );
+      return [];
+    }
+    const candidates = (await this.store.listCards()).filter(
+      (card) =>
+        card.source.kind === source.kind &&
+        !seenExternalIds.has(card.externalId ?? "") &&
+        (card.sourceId === source.id || card.sourceId === undefined),
+    );
+    if (candidates.length <= MAX_RECONCILE_CARDS) {
+      return candidates;
+    }
+    // A query edit can drop hundreds of cards out at once. Re-fetching them all
+    // in one round would be a request storm against the tracker, so this round
+    // handles a slice and the rest follow on later rounds — logged, never
+    // silently dropped.
+    this.logger?.warn(
+      { sourceId: source.id, candidates: candidates.length, cap: MAX_RECONCILE_CARDS },
+      "Kanban detached-card reconciliation capped — remaining cards retry next sync",
+    );
+    return candidates.slice(0, MAX_RECONCILE_CARDS);
+  }
+
+  // The tracker no longer serves this card's issue/MR (404, or no longer
+  // visible to this token). It isn't coming back through the query either, so
+  // flag it and keep the last known status — there is nothing better to show.
+  // Cards with no sourceId are left alone: a failed lookup there more likely
+  // means the card belongs to a different instance than that it is gone.
+  private async flagUnreachableCard(
+    card: StoredKanbanCard,
+    source: StoredKanbanSource,
+  ): Promise<StoredKanbanCard | null> {
+    if (card.sourceId !== source.id) {
+      return null;
+    }
+    return this.store.setCardDetached(card.id, true);
+  }
+
+  // A Jira issue reassigned away from an `assignee = currentUser()` query stops
+  // matching it, so the sync loop never sees the issue again and the card is
+  // frozen at whatever status it last held — showing "Backlog" for an issue
+  // that has since been closed. This pass re-fetches each such card by issue
+  // key and writes the real current status back, flagging the card as detached
+  // so the board can show it no longer matches the query. Cards are never
+  // deleted: a detached card may still be worth watching.
+  private async reconcileDetachedJiraCards(
+    baseUrl: string,
+    source: StoredKanbanSource,
+    token: string | null,
+    email: string | null,
+    seenExternalIds: Set<string>,
+    truncated: boolean,
+  ): Promise<StoredKanbanCard[]> {
+    const reconciled: StoredKanbanCard[] = [];
+    for (const card of await this.detachmentCandidates(source, seenExternalIds, truncated)) {
+      if (card.source.kind !== "jira") {
+        continue;
+      }
+      // Already flagged and already terminal — its status can't drift further,
+      // so re-fetching it every 210s forever would be pure waste.
+      if (card.detachedFromSource && jiraStoredCategoryKey(card) === "done") {
+        continue;
+      }
+      // Best-effort per card: one card's network error must not fail a sync
+      // whose primary query already succeeded.
+      try {
+        const issue = await this.fetchJiraIssueByKey(baseUrl, card.source.issueKey, token, email);
+        if (!issue) {
+          // A 404 here is an expected outcome, not a sync error.
+          const flagged = await this.flagUnreachableCard(card, source);
+          if (flagged) {
+            reconciled.push(flagged);
+          }
+          continue;
+        }
+        const { cardSource, payload } = await this.buildJiraUpsert(baseUrl, source, issue);
+        reconciled.push(
+          await this.store.upsertCardBySource(cardSource, {
+            ...payload,
+            detachedFromSource: true,
+            // A closed issue is terminal — it belongs in done even if the user
+            // once dragged the card elsewhere, same rule a merged MR follows.
+            forceStatus:
+              jiraCategoryLegacyStatus(issue.fields?.status?.statusCategory?.key) === "done",
+          }),
+        );
+      } catch (error) {
+        this.logger?.warn(
+          { err: error, sourceId: source.id, externalId: card.externalId },
+          "Kanban detached-card reconciliation failed for card",
+        );
+      }
+    }
+    return reconciled;
+  }
+
   // A merged/closed MR drops out of a state-filtered sync query (the common
   // `state=opened` filter), so the sync loop above never sees it again and the
   // forceStatus→Done move never fires — the card is stuck in whatever column it
-  // held when it last matched the query. This pass re-checks each
-  // previously-synced GitLab card the query omitted: it hits the single-MR
-  // endpoint and, only when the MR is now terminal, runs it through the same
-  // upsert so the merged/closed → Done move finally happens. Cards whose stored
-  // metadata is already terminal are skipped, so each MR costs exactly one
-  // extra request — the sync that moves it. Cards belonging to a different
-  // GitLab source/instance return 404/401 under this token and are ignored.
-  private async reconcileTerminalGitlabCards(
+  // held when it last matched the query. This pass re-checks each such card
+  // against the single-MR endpoint, writes back the real state, and flags the
+  // card as detached. Cards already flagged AND already terminal are skipped,
+  // so a settled MR costs no repeat requests.
+  private async reconcileDetachedGitlabCards(
     baseUrl: string,
     source: StoredKanbanSource,
     token: string | null,
     seenExternalIds: Set<string>,
+    truncated: boolean,
   ): Promise<StoredKanbanCard[]> {
-    const moved: StoredKanbanCard[] = [];
-    for (const card of await this.store.listCards()) {
-      if (card.source.kind !== "gitlab" || seenExternalIds.has(card.externalId ?? "")) {
+    const reconciled: StoredKanbanCard[] = [];
+    for (const card of await this.detachmentCandidates(source, seenExternalIds, truncated)) {
+      if (card.source.kind !== "gitlab") {
         continue;
       }
       const storedState = (card.metadata as { state?: string } | undefined)?.state;
-      if (storedState === "merged" || storedState === "closed") {
+      if (card.detachedFromSource && (storedState === "merged" || storedState === "closed")) {
         continue;
       }
       // Best-effort per card: a network error re-fetching one card must not
@@ -615,21 +792,33 @@ export class KanbanSyncService {
           card.source.mrIid,
           token,
         );
-        if (!mr || (mr.state !== "merged" && mr.state !== "closed")) {
+        if (!mr) {
+          // A 404 here is an expected outcome, not a sync error.
+          const flagged = await this.flagUnreachableCard(card, source);
+          if (flagged) {
+            reconciled.push(flagged);
+          }
           continue;
         }
-        // This path only ever runs for now-terminal MRs (checked above) —
-        // approvals is a moot concept once merged/closed.
+        const isTerminal = mr.state === "merged" || mr.state === "closed";
+        // approvals is a moot concept once merged/closed, and for a still-open
+        // MR that fell out of the query it isn't worth a second request.
         const { cardSource, payload } = await this.buildGitlabUpsert(baseUrl, source, mr, null);
-        moved.push(await this.store.upsertCardBySource(cardSource, payload));
+        reconciled.push(
+          await this.store.upsertCardBySource(cardSource, {
+            ...payload,
+            detachedFromSource: true,
+            forceStatus: isTerminal,
+          }),
+        );
       } catch (error) {
         this.logger?.warn(
           { err: error, sourceId: source.id, externalId: card.externalId },
-          "Kanban terminal-state reconciliation failed for card",
+          "Kanban detached-card reconciliation failed for card",
         );
       }
     }
-    return moved;
+    return reconciled;
   }
 
   // Best-effort: an approvals-endpoint failure (network hiccup, an instance

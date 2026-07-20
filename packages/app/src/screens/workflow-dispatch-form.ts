@@ -18,12 +18,12 @@ import {
   resolvePreferredAgentModeId,
 } from "@/provider-selection/resolve-agent-form";
 import { buildScheduleProjectTargets } from "@/schedules/schedule-project-targets";
+import {
+  buildWorkflowDispatchArgs,
+  isPaseoInternalPath,
+  resolveInitialDispatchCwd,
+} from "@/screens/workflow-dispatch-args";
 import { buildProviderDefinitions } from "@/utils/provider-definitions";
-
-export function isPaseoInternalPath(path: string): boolean {
-  const normalized = path.replace(/\\/g, "/");
-  return normalized.includes("/.paseo/workflows") || normalized.includes("/.paseo/worktrees");
-}
 
 export function resolveAuthoringProviderDefault(
   preferences: FormPreferences,
@@ -216,23 +216,12 @@ export function useWorkflowDispatchForm(input: {
     if (cwd) {
       return;
     }
-    // A project definition preselects its own repo as the run cwd.
-    if (initialCwd) {
-      const match = projectTargets.find((target) => target.cwd === initialCwd);
-      setCwd(initialCwd);
-      setCwdLabel(match && !isPaseoInternalPath(initialCwd) ? match.projectName : null);
+    const selection = resolveInitialDispatchCwd({ initialCwd, projectTargets });
+    if (!selection) {
       return;
     }
-    if (projectTargets.length === 0) {
-      return;
-    }
-    const preferred =
-      projectTargets.find((target) => !isPaseoInternalPath(target.cwd)) ?? projectTargets[0];
-    if (!preferred) {
-      return;
-    }
-    setCwd(preferred.cwd);
-    setCwdLabel(isPaseoInternalPath(preferred.cwd) ? null : preferred.projectName);
+    setCwd(selection.cwd);
+    setCwdLabel(selection.label);
   }, [cwd, initialCwd, projectTargets]);
 
   const setProviderAndModel = useCallback((provider: AgentProvider, modelId: string) => {
@@ -250,30 +239,18 @@ export function useWorkflowDispatchForm(input: {
   );
 
   const featureList = features.features;
-  /** Packs task + agent selection into the run `args` the engine reads. */
-  const buildArgs = useCallback((): Record<string, unknown> => {
-    const args: Record<string, unknown> = {
-      task: task.trim(),
-      provider: selectedProvider,
-    };
-    if (selectedModel.trim()) {
-      args.model = selectedModel.trim();
-    }
-    if (selectedEffort.trim()) {
-      args.effort = selectedEffort.trim();
-    }
-    if (selectedMode.trim()) {
-      args.mode = selectedMode.trim();
-    }
-    const featureValues = collectAgentFeatureValues(featureList);
-    if (featureValues) {
-      args.featureValues = featureValues;
-      if (typeof featureValues.fast_mode === "boolean") {
-        args.fast = featureValues.fast_mode;
-      }
-    }
-    return args;
-  }, [featureList, selectedEffort, selectedMode, selectedModel, selectedProvider, task]);
+  const buildArgs = useCallback(
+    (): Record<string, unknown> =>
+      buildWorkflowDispatchArgs({
+        task,
+        provider: selectedProvider,
+        model: selectedModel,
+        effort: selectedEffort,
+        mode: selectedMode,
+        featureValues: collectAgentFeatureValues(featureList),
+      }),
+    [featureList, selectedEffort, selectedMode, selectedModel, selectedProvider, task],
+  );
 
   /**
    * Remember this selection — the form used to reopen on the first provider's

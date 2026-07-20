@@ -32,8 +32,15 @@ function useWorkflowRunPanelDescriptor(
 ): PanelDescriptor {
   const { t } = useTranslation();
   const rows = useAgentsForWorkflowRun({ serverId: context.serverId, runId: target.runId });
-  // The run mints its own workspace titled "⚙️ <workflow name>" — reuse that
-  // for the tab label so no extra RPC is needed.
+  // The run carries its own "⚙️ <workflow name>" title in args. Read that rather
+  // than the containing workspace's title: a run tab can live in a workspace it
+  // did not mint (dispatching from a workflow draft tab retargets in place), and
+  // there the workspace title is the user's, not the run's. Query-cached, so the
+  // run panel below shares this fetch.
+  const { run } = useWorkflowRun(context.serverId, target.runId);
+  const runTitle = typeof run?.args.workspaceTitle === "string" ? run.args.workspaceTitle : null;
+  // Old daemons never wrote workspaceTitle into args — fall back to the minted
+  // workspace's own title, which is correct whenever the tab lives there.
   const workspaceTitle = useSessionStore((state) => {
     const workspace = state.sessions[context.serverId]?.workspaces.get(context.workspaceId);
     return workspace?.title ?? workspace?.name ?? null;
@@ -42,7 +49,8 @@ function useWorkflowRunPanelDescriptor(
     rows.map((row) => buildSubagentRowPresentationData(row).statusBucket).filter(Boolean),
   );
   const statusBucket = BUCKET_PRIORITY.find((bucket) => buckets.has(bucket)) ?? null;
-  const strippedTitle = workspaceTitle ? stripWorkflowWorkspaceEmojiPrefix(workspaceTitle) : "";
+  const rawTitle = runTitle ?? workspaceTitle;
+  const strippedTitle = rawTitle ? stripWorkflowWorkspaceEmojiPrefix(rawTitle) : "";
 
   return {
     label: strippedTitle || t("workflows.runTabLabel"),

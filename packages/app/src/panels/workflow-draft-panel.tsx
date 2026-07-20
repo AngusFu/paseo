@@ -9,7 +9,14 @@
  * flows that want one manage it themselves.
  */
 import { useCallback, useMemo, useState, type ReactElement } from "react";
-import { ScrollView, Text, View, type PressableStateCallbackType } from "react-native";
+import {
+  ScrollView,
+  Text,
+  View,
+  type NativeSyntheticEvent,
+  type PressableStateCallbackType,
+  type TextInputKeyPressEventData,
+} from "react-native";
 import { Folder, Play, Workflow } from "lucide-react-native";
 import { Pressable } from "react-native";
 import { useTranslation } from "react-i18next";
@@ -38,6 +45,11 @@ import { useWorkflowDispatchForm } from "@/screens/workflow-dispatch-form";
 import { useWorkspaceFields } from "@/stores/session-store-hooks";
 import { toErrorMessage } from "@/utils/error-messages";
 import { shortenPath } from "@/utils/shorten-path";
+
+/** Modifier flags exist on web (react-native-web) only; native carries just `key`. */
+type WorkflowDraftKeyPressEvent = NativeSyntheticEvent<
+  TextInputKeyPressEventData & { metaKey?: boolean; ctrlKey?: boolean }
+>;
 
 interface WorkflowDraftTarget {
   kind: "workflow_draft";
@@ -118,6 +130,21 @@ function WorkflowDraftPanel(): ReactElement {
       toast.show(toErrorMessage(error), { variant: "error" });
     }
   }, [cwd, definition, form, mutations, retargetCurrentTab, toast]);
+
+  // Plain Enter stays a newline in the multiline task box; Cmd/Ctrl+Enter sends,
+  // matching the agent composer. The modifier flags are web-only — on native the
+  // key event carries no modifiers, so this simply never fires there.
+  const handleTaskKeyPress = useCallback(
+    (event: WorkflowDraftKeyPressEvent) => {
+      const { key, metaKey, ctrlKey } = event.nativeEvent;
+      if (key !== "Enter" || !(metaKey || ctrlKey) || !canSubmit) {
+        return;
+      }
+      event.preventDefault?.();
+      void handleDispatch();
+    },
+    [canSubmit, handleDispatch],
+  );
 
   const cwdLeading = useMemo(() => <Folder size={16} color={styles.cwdIcon.color} />, []);
   const renderCwdTrigger = useCallback(
@@ -216,6 +243,7 @@ function WorkflowDraftPanel(): ReactElement {
             value={form.task}
             initialValue={form.task}
             onChangeText={form.setTask}
+            onKeyPress={handleTaskKeyPress}
             placeholder={t("workflows.taskPlaceholder")}
             multiline
             numberOfLines={10}

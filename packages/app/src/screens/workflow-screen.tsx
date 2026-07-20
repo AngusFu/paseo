@@ -52,8 +52,8 @@ import {
   useHosts,
 } from "@/runtime/host-runtime";
 import { WorkflowDirectoryPickerSheet } from "@/screens/workflow-directory-picker-sheet";
+import { isPaseoInternalPath } from "@/screens/workflow-dispatch-args";
 import {
-  isPaseoInternalPath,
   resolveAuthoringProviderDefault,
   useWorkflowDispatchForm,
 } from "@/screens/workflow-dispatch-form";

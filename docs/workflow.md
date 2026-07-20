@@ -98,6 +98,18 @@ it on `run.workspaceId`, and runs every `agent()` through **`PaseoHostBackend`**
 Do **not** shell out to a PATH `paseo` CLI for daemon workflow runs; that ignored
 dispatch `provider`/`model` and minted a workspace per retry.
 
+**Token usage and `callId` are host-backend only.** `PaseoHostBackend` threads
+the engine's `callId` into each host request and returns the provider's whole
+`AgentUsage` record, so `agent.done` / `agent.failed` can be attached to the
+progress-tree node the engine's events created. The shell `PaseoBackend` (the
+`aw` CLI path) does neither: runs driven through it have no per-call token
+numbers and no `callId` on the host events. If you run a workflow from the CLI
+and wonder where the token data went, this is why.
+
+`AgentUsage` is the **completed turn's** record, not a running total. Workflow
+agents run a single turn so today the two coincide; the context-window fields
+are a point-in-time snapshot and must never be summed if that changes.
+
 `isolation: "worktree"` still asks the host to mint a worktree-backed agent.
 Creating a full Paseo worktree from a repo path at dispatch time remains a
 follow-up. The CLI `aw` tool may still use the shell `PaseoBackend` for local
@@ -277,7 +289,8 @@ The daemon writes every engine progress event into the run's event log
 (`onPhase` → `phase`, script `log()` → `log`, and `onAgentEvent` →
 `agent.start` / `agent.complete` at debug level plus `agent.error` /
 `agent.retry`). Each agent entry carries `data.callId` (the engine's
-monotonic per-`agent()` id), `label`, `phase`, `model`, `cached`. Clients
+monotonic per-`agent()` id), `label`, `phase`, `model`, `provider`, `effort`,
+`mode`, `cached`, and `usage` on the terminal event. Clients
 rebuild the live progress tree purely from these entries
 (`packages/app/src/screens/workflow-run-phase-tree.ts`) — the logs hook
 polls 1s while the run is live, and the tree survives refresh because the

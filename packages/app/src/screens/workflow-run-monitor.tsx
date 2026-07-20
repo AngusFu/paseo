@@ -8,9 +8,13 @@
  * body already polls once a second — no extra network. The elapsed timers are
  * computed client-side off a 1s tick that only runs while the run is live.
  *
+ * Tapping an agent row opens the agent that call spawned, switching workspaces
+ * when it ran in one of its own. A row is only pressable once it is paired with
+ * a real agent — see `AgentRow` for how that pairing is resolved.
+ *
  * Deliberately absent: token counts, provider, context window and idle time.
- * The engine's `agent.done` events carry no `callId`, so those numbers cannot
- * be attached to a tree node yet; rendering permanent placeholder dashes would
+ * Runs from a daemon that predates callId-tagged `agent.done` cannot attach
+ * those numbers to a tree node; rendering permanent placeholder dashes would
  * imply data we do not have.
  */
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
@@ -29,8 +33,10 @@ import {
   resolveRunElapsedMs,
   summarizeWorkflowPhases,
   type PhaseAgentStatus,
+  type PhaseTreeAgent,
   type PhaseTreeGroup,
 } from "@/screens/workflow-run-phase-tree";
+import { useWorkflowRunAgentIdsByCallId } from "@/subagents/select";
 
 const TICK_INTERVAL_MS = 1_000;
 
@@ -107,7 +113,9 @@ export function WorkflowRunMonitor({
   description,
   entries,
   live,
+  serverId = null,
   keyboardEnabled = false,
+  onOpenAgent,
   onStop,
 }: {
   run: WorkflowRun;
@@ -116,8 +124,12 @@ export function WorkflowRunMonitor({
   description: string | null;
   entries: WorkflowLogEntry[];
   live: boolean;
+  /** Needed to resolve a live row's agent from the run's agent labels. */
+  serverId?: string | null;
   /** Enable the web key handler — pass the pane's focus state. */
   keyboardEnabled?: boolean;
+  /** Opens an agent row's agent. Rows stay inert when this is omitted. */
+  onOpenAgent?: (agentId: string) => void;
   onStop?: () => void;
 }): ReactElement | null {
   const { t } = useTranslation();
@@ -128,6 +140,7 @@ export function WorkflowRunMonitor({
   const summaries = useMemo(() => summarizeWorkflowPhases(groups), [groups]);
   const currentPhaseIndex = useMemo(() => resolveCurrentPhaseIndex(groups), [groups]);
   const nowMs = useElapsedTick(live);
+  const agentIdsByCallId = useWorkflowRunAgentIdsByCallId({ serverId, runId: run.id });
 
   // Selection follows the engine until the user picks a phase themselves.
   const [pinnedIndex, setPinnedIndex] = useState<number | null>(null);
@@ -214,19 +227,13 @@ export function WorkflowRunMonitor({
           </Text>
           {selectedGroup && selectedGroup.agents.length > 0 ? (
             selectedGroup.agents.map((agent) => (
-              <View key={agent.callId} style={styles.agentRow}>
-                <View style={agentDotStyle(agent.status)} />
-                <Text style={styles.agentLabel} numberOfLines={1}>
-                  {agent.label ?? t("workflows.monitorAgentFallback", { callId: agent.callId })}
-                </Text>
-                {agent.model ? <Text style={styles.agentModel}>{agent.model}</Text> : null}
-                {agent.cached ? (
-                  <Text style={styles.agentModel}>{t("workflows.runPhaseCached")}</Text>
-                ) : null}
-                <Text style={styles.agentElapsed}>
-                  {formatWorkflowElapsed(resolveAgentElapsedMs(agent, nowMs))}
-                </Text>
-              </View>
+              <AgentRow
+                key={agent.callId}
+                agent={agent}
+                nowMs={nowMs}
+                agentId={agentIdsByCallId[agent.callId] ?? agent.agentId}
+                onOpenAgent={onOpenAgent}
+              />
             ))
           ) : (
             <Text style={styles.emptyPhase}>{t("workflows.monitorPhaseEmpty")}</Text>
@@ -236,6 +243,71 @@ export function WorkflowRunMonitor({
 
       <MonitorActionBar isCompact={isCompact} canStop={Boolean(onStop) && live} onStop={onStop} />
     </View>
+  );
+}
+
+/**
+ * One agent call. Tapping it opens the agent the call spawned — which usually
+ * lives in another workspace (worktree-isolated flows run their agents in a
+ * workspace of their own), so `navigateToAgent` upstream does the switch.
+ *
+ * The row is only pressable once the call is paired with a real agent: the
+ * live `paseo.workflow-call-id` label, or the `agent.done` pairing for runs
+ * that predate it. Unresolved rows stay inert on purpose — opening the wrong
+ * agent is far worse than a row that does nothing.
+ */
+function AgentRow({
+  agent,
+  nowMs,
+  agentId,
+  onOpenAgent,
+}: {
+  agent: PhaseTreeAgent;
+  nowMs: number;
+  agentId: string | null;
+  onOpenAgent: ((agentId: string) => void) | undefined;
+}): ReactElement {
+  const { t } = useTranslation();
+  const label = agent.label ?? t("workflows.monitorAgentFallback", { callId: agent.callId });
+  const canOpen = Boolean(agentId && onOpenAgent);
+  const handlePress = useCallback(() => {
+    if (agentId && onOpenAgent) {
+      onOpenAgent(agentId);
+    }
+  }, [agentId, onOpenAgent]);
+
+  const content = (
+    <>
+      <View style={agentDotStyle(agent.status)} />
+      <Text style={canOpen ? styles.agentLabelLink : styles.agentLabel} numberOfLines={1}>
+        {label}
+      </Text>
+      {agent.model ? <Text style={styles.agentModel}>{agent.model}</Text> : null}
+      {agent.cached ? <Text style={styles.agentModel}>{t("workflows.runPhaseCached")}</Text> : null}
+      <Text style={styles.agentElapsed}>
+        {formatWorkflowElapsed(resolveAgentElapsedMs(agent, nowMs))}
+      </Text>
+    </>
+  );
+
+  if (!canOpen) {
+    return (
+      <View style={styles.agentRow} testID={`workflow-run-monitor-agent-${agent.callId}`}>
+        {content}
+      </View>
+    );
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={handlePress}
+      style={styles.agentRowPressable}
+      testID={`workflow-run-monitor-agent-${agent.callId}`}
+    >
+      {content}
+    </Pressable>
   );
 }
 
@@ -422,7 +494,24 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
     paddingVertical: theme.spacing[1],
   },
+  agentRowPressable: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    paddingVertical: theme.spacing[1],
+    paddingHorizontal: theme.spacing[1],
+    marginHorizontal: -theme.spacing[1],
+    borderRadius: theme.borderRadius.sm,
+  },
   agentLabel: { color: theme.colors.foreground, fontSize: theme.fontSize.sm, flex: 1, minWidth: 0 },
+  agentLabelLink: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    flex: 1,
+    minWidth: 0,
+    textDecorationLine: "underline",
+    textDecorationStyle: "dotted",
+  },
   agentModel: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs },
   agentElapsed: {
     color: theme.colors.foregroundMuted,

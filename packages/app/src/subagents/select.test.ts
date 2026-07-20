@@ -1,10 +1,11 @@
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import { WORKFLOW_RUN_ID_LABEL } from "@getpaseo/protocol/agent-labels";
+import { WORKFLOW_CALL_ID_LABEL, WORKFLOW_RUN_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   selectAgentsForWorkflowRun,
   selectProviderSubagentsForParent,
   selectSubagentsForParent,
+  selectWorkflowRunAgentIdsByCallId,
 } from "./select";
 import { useProviderSubagentStore } from "./provider-store";
 import { useSessionStore, type Agent } from "@/stores/session-store";
@@ -387,6 +388,55 @@ describe("selectSubagentsForParent", () => {
         runId: "wfr_missing",
       }),
     ).toEqual([]);
+  });
+
+  it("selectWorkflowRunAgentIdsByCallId maps call ids to this run's agents only", () => {
+    setAgents([
+      makeAgent({ id: "unrelated", labels: { [WORKFLOW_CALL_ID_LABEL]: "1" } }),
+      makeAgent({
+        id: "other-run",
+        labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_other", [WORKFLOW_CALL_ID_LABEL]: "1" },
+      }),
+      makeAgent({
+        id: "call-1",
+        labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_1", [WORKFLOW_CALL_ID_LABEL]: "1" },
+      }),
+      makeAgent({
+        id: "call-2",
+        labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_1", [WORKFLOW_CALL_ID_LABEL]: "2" },
+      }),
+      // Predates the label — resolvable only via the run's agent.done event.
+      makeAgent({ id: "unlabelled", labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_1" } }),
+    ]);
+
+    expect(
+      selectWorkflowRunAgentIdsByCallId(useSessionStore.getState(), {
+        serverId: SERVER_ID,
+        runId: "wfr_1",
+      }),
+    ).toEqual({ 1: "call-1", 2: "call-2" });
+  });
+
+  it("selectWorkflowRunAgentIdsByCallId picks the newest agent when a call was retried", () => {
+    setAgents([
+      makeAgent({
+        id: "first-attempt",
+        createdAt: new Date("2026-03-08T10:01:00.000Z"),
+        labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_1", [WORKFLOW_CALL_ID_LABEL]: "7" },
+      }),
+      makeAgent({
+        id: "retry-attempt",
+        createdAt: new Date("2026-03-08T10:05:00.000Z"),
+        labels: { [WORKFLOW_RUN_ID_LABEL]: "wfr_1", [WORKFLOW_CALL_ID_LABEL]: "7" },
+      }),
+    ]);
+
+    expect(
+      selectWorkflowRunAgentIdsByCallId(useSessionStore.getState(), {
+        serverId: SERVER_ID,
+        runId: "wfr_1",
+      }),
+    ).toEqual({ 7: "retry-attempt" });
   });
 
   it("returns the shared empty array when pending archive hides the last child", () => {

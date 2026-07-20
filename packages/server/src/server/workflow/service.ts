@@ -25,6 +25,7 @@ import {
   type WorkflowRun,
 } from "@getpaseo/protocol/workflow/types";
 import {
+  WORKFLOW_CALL_ID_LABEL,
   WORKFLOW_RUN_ID_LABEL,
   WORKFLOW_RUN_WORKSPACE_LABEL,
 } from "@getpaseo/protocol/agent-labels";
@@ -1103,6 +1104,9 @@ export class WorkflowService {
             ...request.labels,
             [WORKFLOW_RUN_ID_LABEL]: run.id,
             ...(run.workspaceId ? { [WORKFLOW_RUN_WORKSPACE_LABEL]: run.workspaceId } : {}),
+            // Pairs the spawned agent with its progress-tree row while it is
+            // still running; agent.done only carries that pairing at the end.
+            ...(request.callId != null ? { [WORKFLOW_CALL_ID_LABEL]: String(request.callId) } : {}),
           },
         });
         await this.log({

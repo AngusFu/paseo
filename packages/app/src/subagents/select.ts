@@ -5,7 +5,10 @@ import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useSessionStore, type Agent } from "@/stores/session-store";
 import { refreshProviderSubagents, useProviderSubagentStore } from "./provider-store";
 import type { ProviderSubagentDescriptorPayload } from "@getpaseo/protocol/messages";
-import { getWorkflowRunIdFromLabels } from "@getpaseo/protocol/agent-labels";
+import {
+  getWorkflowCallIdFromLabels,
+  getWorkflowRunIdFromLabels,
+} from "@getpaseo/protocol/agent-labels";
 
 export interface PaseoSubagentRow {
   kind: "paseo";
@@ -109,6 +112,68 @@ export function selectAgentsForWorkflowRun(
 
   rows.sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
   return rows;
+}
+
+const EMPTY_CALL_ID_AGENTS: Readonly<Record<number, string>> = Object.freeze({});
+
+/**
+ * callId → agentId for a run's agents, read off the daemon-stamped
+ * `paseo.workflow-call-id` label. This is what makes a *running* progress-tree
+ * row clickable — the run's `agent.done` event carries the same pairing, but
+ * only after the call finished. Runs from a daemon that predates the label
+ * simply resolve nothing here and fall back to the event pairing.
+ *
+ * A retried call spawns a fresh agent under the same callId; the newest one is
+ * the live attempt, so it wins.
+ */
+export function selectWorkflowRunAgentIdsByCallId(
+  state: SessionStoreSnapshot,
+  params: { serverId: string; runId: string },
+): Readonly<Record<number, string>> {
+  const agents = state.sessions[params.serverId]?.agents;
+  if (!agents || agents.size === 0) {
+    return EMPTY_CALL_ID_AGENTS;
+  }
+
+  const byCallId = new Map<number, Agent>();
+  for (const agent of agents.values()) {
+    if (getWorkflowRunIdFromLabels(agent.labels) !== params.runId) {
+      continue;
+    }
+    const callId = getWorkflowCallIdFromLabels(agent.labels);
+    if (callId === null) {
+      continue;
+    }
+    const existing = byCallId.get(callId);
+    if (!existing || existing.createdAt.getTime() <= agent.createdAt.getTime()) {
+      byCallId.set(callId, agent);
+    }
+  }
+
+  if (byCallId.size === 0) {
+    return EMPTY_CALL_ID_AGENTS;
+  }
+  // A plain record keeps the equality check shallow-comparable across polls.
+  const result: Record<number, string> = {};
+  for (const [callId, agent] of byCallId) {
+    result[callId] = agent.id;
+  }
+  return result;
+}
+
+export function useWorkflowRunAgentIdsByCallId(params: {
+  serverId: string | null;
+  runId: string | null;
+}): Readonly<Record<number, string>> {
+  const { serverId, runId } = params;
+  return useStoreWithEqualityFn(
+    useSessionStore,
+    (state) =>
+      serverId && runId
+        ? selectWorkflowRunAgentIdsByCallId(state, { serverId, runId })
+        : EMPTY_CALL_ID_AGENTS,
+    equal,
+  );
 }
 
 export function useAgentsForWorkflowRun(params: {

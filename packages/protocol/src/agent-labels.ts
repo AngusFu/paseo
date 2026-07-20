@@ -38,3 +38,20 @@ export function getWorkflowRunWorkspaceFromLabels(
     ? workspaceId.trim()
     : null;
 }
+
+// The engine's per-`agent()` call id (run-scoped, monotonic). Stamped as a
+// string because labels are string-valued. Lets clients map a live progress
+// tree row back to the agent it spawned — the run's `agent.done` event carries
+// the same pairing, but only once the call has finished.
+export const WORKFLOW_CALL_ID_LABEL = "paseo.workflow-call-id";
+
+export function getWorkflowCallIdFromLabels(
+  labels: Record<string, unknown> | null | undefined,
+): number | null {
+  const callId = labels?.[WORKFLOW_CALL_ID_LABEL];
+  if (typeof callId !== "string" || callId.trim().length === 0) {
+    return null;
+  }
+  const parsed = Number(callId.trim());
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}

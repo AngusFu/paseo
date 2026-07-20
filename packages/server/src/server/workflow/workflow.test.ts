@@ -13,6 +13,11 @@ import {
   WorkflowService,
 } from "./service.js";
 import { KanbanStore } from "../kanban/store.js";
+import {
+  WORKFLOW_CALL_ID_LABEL,
+  WORKFLOW_RUN_ID_LABEL,
+  WORKFLOW_RUN_WORKSPACE_LABEL,
+} from "@getpaseo/protocol/agent-labels";
 
 const dirs: string[] = [];
 
@@ -831,6 +836,7 @@ describe("workflow engine progress events via service", () => {
       contextWindowUsedTokens: 4_096,
     };
     const seenCallIds: Array<number | undefined> = [];
+    const seenLabels: Array<Record<string, string> | undefined> = [];
     try {
       const service = new WorkflowService({
         paseoHome: dir,
@@ -838,6 +844,7 @@ describe("workflow engine progress events via service", () => {
         agentHost: {
           runAgent: async (request) => {
             seenCallIds.push(request.callId);
+            seenLabels.push(request.labels);
             return { text: "done", agentId: "agent_1", usage };
           },
         },
@@ -864,6 +871,13 @@ describe("workflow engine progress events via service", () => {
       // vacuously if callId never threaded through at all.
       expect(startEntry?.data?.callId).toEqual(expect.any(Number));
       expect(seenCallIds).toEqual([startEntry?.data?.callId]);
+      // The same pairing as a label, so clients can resolve a call to its
+      // agent while the call is still running (agent.done lands only at the end).
+      expect(seenLabels[0]).toMatchObject({
+        [WORKFLOW_CALL_ID_LABEL]: String(startEntry?.data?.callId),
+        [WORKFLOW_RUN_ID_LABEL]: run.id,
+        [WORKFLOW_RUN_WORKSPACE_LABEL]: "wks_test",
+      });
       expect(doneEntry?.data).toMatchObject({
         callId: startEntry?.data?.callId,
         agentId: "agent_1",

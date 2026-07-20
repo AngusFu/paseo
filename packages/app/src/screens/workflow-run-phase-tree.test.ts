@@ -99,6 +99,35 @@ describe("buildWorkflowPhaseTree", () => {
     );
     expect(groups).toEqual([]);
   });
+
+  test("pairs a call with the agent its agent.done named", () => {
+    const groups = buildWorkflowPhaseTree(
+      entries([
+        { event: "agent.start", data: { callId: 1, label: "implement", phase: "Build" } },
+        { event: "agent.start", data: { callId: 2, label: "review", phase: "Build" } },
+        { event: "agent.done", data: { callId: 1, agentId: "agent-a" } },
+        { event: "agent.complete", data: { callId: 1, label: "implement", phase: "Build" } },
+      ]),
+    );
+
+    expect(groups[0]?.agents.map((agent) => [agent.label, agent.agentId])).toEqual([
+      ["implement", "agent-a"],
+      ["review", null],
+    ]);
+  });
+
+  test("a retried call ends up pointing at the newest agent", () => {
+    const groups = buildWorkflowPhaseTree(
+      entries([
+        { event: "agent.start", data: { callId: 1, label: "flaky", phase: "Build" } },
+        { event: "agent.failed", data: { callId: 1, agentId: "agent-first" } },
+        { event: "agent.retry", data: { callId: 1, label: "flaky", phase: "Build", attempt: 1 } },
+        { event: "agent.done", data: { callId: 1, agentId: "agent-second" } },
+      ]),
+    );
+
+    expect(groups[0]?.agents[0]?.agentId).toBe("agent-second");
+  });
 });
 
 describe("phase tree timestamps", () => {

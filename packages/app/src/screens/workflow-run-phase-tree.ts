@@ -20,6 +20,12 @@ export interface PhaseTreeAgent {
   startedAt: string | null;
   /** ISO ts of `agent.complete` / `agent.error`; null while in flight. */
   endedAt: string | null;
+  /**
+   * The Paseo agent this call spawned, from the host's `agent.done` /
+   * `agent.failed` entry — so it only lands once the call finished. Live rows
+   * resolve their agent from the `paseo.workflow-call-id` agent label instead.
+   */
+  agentId: string | null;
 }
 
 export interface PhaseTreeGroup {
@@ -76,6 +82,11 @@ function phaseAgentStatusForEvent(event: string): PhaseAgentStatus | null {
   return null;
 }
 
+function readStringField(data: Record<string, unknown> | undefined, key: string): string | null {
+  const value = data?.[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
 function applyAgentLogEntry(
   agents: Map<number, PhaseTreeAgent & { phase: string | null }>,
   notePhase: (phase: string | null) => void,
@@ -86,18 +97,19 @@ function applyAgentLogEntry(
   if (callId === null) {
     return;
   }
-  const phase = typeof data?.phase === "string" ? data.phase : null;
+  const phase = readStringField(data, "phase");
   notePhase(phase);
   const existing = agents.get(callId);
   const agent = existing ?? {
     callId,
     phase,
-    label: typeof data?.label === "string" ? data.label : null,
-    model: typeof data?.model === "string" ? data.model : null,
+    label: readStringField(data, "label"),
+    model: readStringField(data, "model"),
     cached: false,
     status: "running" as PhaseAgentStatus,
     startedAt: null,
     endedAt: null,
+    agentId: null,
   };
   const status = phaseAgentStatusForEvent(entry.event);
   if (status) {
@@ -114,6 +126,13 @@ function applyAgentLogEntry(
   }
   if (data?.cached === true) {
     agent.cached = true;
+  }
+  // `agent.done` / `agent.failed` come from the host wrapper and are the only
+  // entries that name the spawned agent. A retry re-emits with the new agent,
+  // and entries arrive in seq order, so last write is the current attempt.
+  const agentId = readStringField(data, "agentId");
+  if (agentId) {
+    agent.agentId = agentId;
   }
   agents.set(callId, agent);
 }

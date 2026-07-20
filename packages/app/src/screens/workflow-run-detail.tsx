@@ -109,7 +109,9 @@ export function WorkflowRunDetailBody({
         description={description}
         entries={logs.entries}
         live={live}
+        serverId={serverId}
         keyboardEnabled={keyboardEnabled}
+        onOpenAgent={onOpenAgent}
         onStop={onStop}
       />
 

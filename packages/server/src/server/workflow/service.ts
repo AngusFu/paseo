@@ -288,6 +288,13 @@ export type EnsureWorkflowAgentWorkspace = (input: {
 }) => Promise<string>;
 
 /**
+ * Look up an existing workspace's directory. Wired by the daemon so a dispatch
+ * that targets an existing workspace can be rejected up front (unknown id) and
+ * can default its cwd to that workspace's checkout.
+ */
+export type ResolveWorkflowWorkspaceDirectory = (workspaceId: string) => Promise<string | null>;
+
+/**
  * Best-effort interrupt for whatever host agent(s) a running workflow is
  * currently waiting on. Wired by the daemon (AgentManager.cancelAgentRun /
  * archiveAgent over agents labeled with this run's id). The engine itself has
@@ -309,6 +316,8 @@ export interface WorkflowServiceOptions {
    * a twin per attempt.
    */
   ensureAgentWorkspace?: EnsureWorkflowAgentWorkspace;
+  /** See `ResolveWorkflowWorkspaceDirectory`. */
+  resolveWorkspaceDirectory?: ResolveWorkflowWorkspaceDirectory;
   /**
    * Protocol/host seam for running agents in-daemon (createAgent + AgentManager).
    * Preferred over shelling out to a PATH `paseo` CLI.
@@ -329,6 +338,7 @@ export class WorkflowService {
     | null;
   private readonly logger: Logger | null;
   private ensureAgentWorkspace: EnsureWorkflowAgentWorkspace | undefined;
+  private resolveWorkspaceDirectory: ResolveWorkflowWorkspaceDirectory | undefined;
   private agentHost: PaseoAgentHost | undefined;
   private cancelWorkflowAgents: CancelWorkflowRunAgents | undefined;
   /**
@@ -348,6 +358,7 @@ export class WorkflowService {
     this.queue = new WorkflowQueue({ maxConcurrency: options.maxConcurrency });
     this.customRunner = options.runner ?? null;
     this.ensureAgentWorkspace = options.ensureAgentWorkspace;
+    this.resolveWorkspaceDirectory = options.resolveWorkspaceDirectory;
     this.agentHost = options.agentHost;
     this.cancelWorkflowAgents = options.cancelWorkflowAgents;
     this.logger = options.logger?.child({ module: "workflow-service" }) ?? null;
@@ -367,6 +378,11 @@ export class WorkflowService {
    */
   setEnsureAgentWorkspace(ensure: EnsureWorkflowAgentWorkspace): void {
     this.ensureAgentWorkspace = ensure;
+  }
+
+  /** Late-bind the existing-workspace lookup (same reason as above). */
+  setResolveWorkspaceDirectory(resolve: ResolveWorkflowWorkspaceDirectory): void {
+    this.resolveWorkspaceDirectory = resolve;
   }
 
   /** Late-bind the in-daemon PaseoAgentHost after AgentManager is ready. */
@@ -560,6 +576,29 @@ export class WorkflowService {
     }
   }
 
+  /**
+   * Resolve an opt-in target workspace before the run record exists: an unknown
+   * or archived id must fail the dispatch outright rather than strand a queued
+   * run. Its directory becomes the run's default cwd — the caller asked to work
+   * *in* that workspace, so its checkout is where the agents belong.
+   */
+  private async resolveDispatchTargetWorkspace(
+    requestedWorkspaceId: string | undefined,
+  ): Promise<{ workspaceId: string | null; cwd: string | null }> {
+    const workspaceId = requestedWorkspaceId?.trim() || null;
+    if (!workspaceId) {
+      return { workspaceId: null, cwd: null };
+    }
+    if (!this.resolveWorkspaceDirectory) {
+      throw new Error("Cannot target a workspace: workspace lookup is not wired");
+    }
+    const cwd = await this.resolveWorkspaceDirectory(workspaceId);
+    if (!cwd) {
+      throw new Error(`Workflow target workspace not found: ${workspaceId}`);
+    }
+    return { workspaceId, cwd };
+  }
+
   async dispatch(input: DispatchWorkflowRunInput): Promise<WorkflowRun> {
     const definition = await this.getDefinition(input.definitionId);
     if (!definition) {
@@ -577,6 +616,9 @@ export class WorkflowService {
         );
       }
     }
+    const target = await this.resolveDispatchTargetWorkspace(input.workspaceId);
+    const targetWorkspaceId = target.workspaceId;
+    const targetWorkspaceCwd = target.cwd;
     const id = `wfr_${randomUUID()}`;
     const runDir = join(this.paseoHome, "workflows", "runs", id);
     await mkdir(runDir, { recursive: true });
@@ -608,8 +650,10 @@ export class WorkflowService {
       definitionId: definition.id,
       status: "queued",
       args,
-      cwd: resolveDispatchCwd(input.cwd, resumeFrom, runDir),
-      workspaceId: null,
+      cwd: resolveDispatchCwd(input.cwd ?? targetWorkspaceCwd ?? undefined, resumeFrom, runDir),
+      // Pre-seeding this is the whole mechanism: `resolveRunAgentWorkspace`
+      // returns an already-set workspaceId instead of minting a new one.
+      workspaceId: targetWorkspaceId,
       workspacePath: runDir,
       queuedAt: new Date().toISOString(),
       startedAt: null,
@@ -629,6 +673,15 @@ export class WorkflowService {
         model: readArgString(run.args, "model") ?? null,
       },
     });
+    if (targetWorkspaceId) {
+      await this.log({
+        event: "run.workspace",
+        message: `workspace ${targetWorkspaceId} (existing)`,
+        runId: run.id,
+        definitionId: definition.id,
+        data: { workspaceId: targetWorkspaceId, cwd: run.cwd, reused: true },
+      });
+    }
     if (resumeFrom) {
       await this.log({
         event: "run.resumed",

@@ -1351,6 +1351,8 @@ export class VoiceAssistantWebSocketServer {
         workflow: true,
         // COMPAT(projectWorkflows): added in v0.1.112, drop the gate when floor >= v0.1.112.
         projectWorkflows: true,
+        // COMPAT(workflowRunTargetWorkspace): added in v0.1.113, drop the gate when floor >= v0.1.113.
+        workflowRunTargetWorkspace: true,
         workflowRunResume: true,
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
         localLlm: true,

@@ -78,6 +78,9 @@ export const WorkflowRunDispatchRequestSchema = z.object({
   workspaceTitle: z.string().optional(),
   // COMPAT(workflowRunResume): added in v0.1.112 — optional, old daemons ignore it.
   resumeFromRunId: z.string().optional(),
+  // COMPAT(workflowRunTargetWorkspace): added in v0.1.113 — optional; an old
+  // daemon ignores it and mints a fresh workspace, which is the prior behavior.
+  workspaceId: z.string().optional(),
 });
 export const WorkflowRunCancelRequestSchema = z.object({
   type: z.literal("workflow.run.cancel.request"),

@@ -5769,6 +5769,7 @@ export class DaemonClient {
         ...(options.resumeFromRunId !== undefined
           ? { resumeFromRunId: options.resumeFromRunId }
           : {}),
+        ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
       },
     });
   }

@@ -2894,6 +2894,8 @@ export const ServerInfoStatusPayloadSchema = z
         workflow: z.boolean().optional(),
         // COMPAT(projectWorkflows): added in v0.1.112, drop the gate when floor >= v0.1.112.
         projectWorkflows: z.boolean().optional(),
+        // COMPAT(workflowRunTargetWorkspace): added in v0.1.113, drop the gate when floor >= v0.1.113.
+        workflowRunTargetWorkspace: z.boolean().optional(),
         // COMPAT(workflowRunResume): added in v0.1.112, drop the gate when floor >= v0.1.112.
         workflowRunResume: z.boolean().optional(),
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.

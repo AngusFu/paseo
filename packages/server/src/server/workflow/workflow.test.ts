@@ -240,6 +240,73 @@ describe("WorkflowService builtins and authoring", () => {
     }
   });
 
+  it("reuses a targeted workspace instead of minting one, and takes its cwd", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const ensureCalls: Array<{ cwd: string; runId: string; title?: string | null }> = [];
+    const prev = process.env.PASEO_WORKFLOW_BACKEND;
+    process.env.PASEO_WORKFLOW_BACKEND = "mock";
+    try {
+      const service = new WorkflowService({
+        paseoHome: dir,
+        ensureAgentWorkspace: async (input) => {
+          ensureCalls.push(input);
+          return "wks_freshly_minted";
+        },
+        resolveWorkspaceDirectory: async (workspaceId) =>
+          workspaceId === "wks_existing" ? dir : null,
+      });
+      const definition = await service.createDefinition({
+        name: "target-ws",
+        source: "export const meta = { name: 'target-ws' };\nreturn { ok: true };\n",
+      });
+      const run = await service.dispatch({
+        definitionId: definition.id,
+        workspaceId: "wks_existing",
+        args: { task: "noop" },
+      });
+      expect(run.workspaceId).toBe("wks_existing");
+      expect(run.cwd).toBe(dir);
+      for (let i = 0; i < 50; i++) {
+        const latest = await service.getRun(run.id);
+        if (latest && (latest.status === "succeeded" || latest.status === "failed")) {
+          expect(latest.workspaceId).toBe("wks_existing");
+          // The whole point: no new workspace was created for this run.
+          expect(ensureCalls).toHaveLength(0);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error("targeted workspace dispatch did not finish");
+    } finally {
+      if (prev === undefined) {
+        delete process.env.PASEO_WORKFLOW_BACKEND;
+      } else {
+        process.env.PASEO_WORKFLOW_BACKEND = prev;
+      }
+    }
+  });
+
+  it("rejects a dispatch that targets an unknown workspace", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const service = new WorkflowService({
+      paseoHome: dir,
+      resolveWorkspaceDirectory: async () => null,
+    });
+    const definition = await service.createDefinition({
+      name: "missing-ws",
+      source: "export const meta = { name: 'missing-ws' };\nreturn { ok: true };\n",
+    });
+    await expect(
+      service.dispatch({
+        definitionId: definition.id,
+        workspaceId: "wks_nope",
+        args: { task: "noop" },
+      }),
+    ).rejects.toThrow(/workspace not found/i);
+  });
+
   it("mints one agent workspace per run and persists run.workspaceId", async () => {
     const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
     dirs.push(dir);

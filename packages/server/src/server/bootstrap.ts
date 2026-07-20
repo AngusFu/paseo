@@ -1030,6 +1030,15 @@ export async function createPaseoDaemon(
     return workspaceId;
   };
   // One directory workspace per workflow run — shared by every host-backed agent.
+  // Dispatching into an existing workspace: resolve its checkout so the run's
+  // cwd follows it, and so an unknown/archived id fails the dispatch outright.
+  workflowService.setResolveWorkspaceDirectory(async (workspaceId) => {
+    const workspace = await workspaceRegistry.get(workspaceId);
+    if (!workspace || workspace.archivedAt) {
+      return null;
+    }
+    return workspace.cwd;
+  });
   workflowService.setEnsureAgentWorkspace(async ({ cwd, title }) => {
     const workspace = await workspaceProvisioning.createWorkspaceForDirectory(cwd, title ?? null);
     await emitWorkspaceUpdatesExternal([workspace.workspaceId]);

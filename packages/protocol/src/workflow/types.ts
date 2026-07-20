@@ -100,6 +100,11 @@ export interface DispatchWorkflowRunInput {
   /** Display title for the Paseo workspace minted for this run's agents. */
   workspaceTitle?: string;
   /**
+   * Run the agents inside an existing Paseo workspace instead of minting one.
+   * When set, `workspaceTitle` is ignored — the workspace already has a name.
+   */
+  workspaceId?: string;
+  /**
    * Resume from a prior run of the same definition: its journal is copied
    * into the new run so successful agent calls replay at zero cost and only
    * failed/unrun stages execute. cwd/args default to the prior run's.

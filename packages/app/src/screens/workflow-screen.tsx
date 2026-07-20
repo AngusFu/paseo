@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactElement,
   type ReactNode,
@@ -22,6 +23,7 @@ import { AgentModelField } from "@/components/agent-launch-fields";
 import { MenuHeader } from "@/components/headers/menu-header";
 import { Button } from "@/components/ui/button";
 import { resolveControlInteractionStyles } from "@/components/ui/control-geometry";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { SelectFieldTrigger } from "@/components/ui/select-field";
@@ -821,6 +823,20 @@ function WorkflowDispatchSheet({
   const isCompact = useIsCompactFormFactor();
   const [workspaceTitleBody, setWorkspaceTitleBody] = useState(definition.name);
   const [pickingDirectory, setPickingDirectory] = useState(false);
+  // Dispatching into an existing workspace needs a daemon that understands the
+  // workspaceId field; without it the picker would silently mint a new one.
+  const canTargetWorkspace = useHostFeature(serverId, "workflowRunTargetWorkspace");
+  const [workspaceTarget, setWorkspaceTarget] = useState<WorkflowWorkspaceTarget>("new");
+  const [existingWorkspaceId, setExistingWorkspaceId] = useState<string | null>(null);
+  const workspaceOptions = useDispatchWorkspaceOptions(serverId);
+  const workspaceTargetChoices = useMemo<SegmentedControlOption<WorkflowWorkspaceTarget>[]>(
+    () => [
+      { value: "new", label: t("workflows.workspaceTargetNew") },
+      { value: "existing", label: t("workflows.workspaceTargetExisting") },
+    ],
+    [t],
+  );
+  const isExistingTarget = canTargetWorkspace && workspaceTarget === "existing";
   const form = useWorkflowDispatchForm({ serverId, initialCwd });
   const {
     task,
@@ -848,7 +864,13 @@ function WorkflowDispatchSheet({
 
   const cwdTriggerLabel = cwdLabel ?? (cwd ? shortenPath(cwd) : t("workflows.projectPlaceholder"));
   const cwdHint = cwd && cwdLabel && shortenPath(cwd) !== cwdLabel ? shortenPath(cwd) : undefined;
-  const canSubmit = form.isReady && !isDispatching;
+  // An existing workspace supplies its own directory, so the cwd half of
+  // `form.isReady` does not apply — the workspace choice replaces it.
+  const canSubmit =
+    !isDispatching &&
+    (isExistingTarget
+      ? Boolean(existingWorkspaceId && form.task.trim() && form.selectedProvider)
+      : form.isReady);
 
   const header = useMemo(
     () => ({
@@ -887,10 +909,22 @@ function WorkflowDispatchSheet({
           loading={isDispatching}
           testID="workflow-dispatch-confirm"
           onPress={() => {
+            form.rememberSelection();
+            if (isExistingTarget) {
+              if (!existingWorkspaceId) {
+                return;
+              }
+              // No cwd and no title: the daemon takes both from the workspace.
+              void onDispatch({
+                definitionId: definition.id,
+                workspaceId: existingWorkspaceId,
+                args: form.buildArgs(),
+              });
+              return;
+            }
             if (!cwd?.trim()) {
               return;
             }
-            form.rememberSelection();
             void onDispatch({
               definitionId: definition.id,
               cwd: cwd.trim(),
@@ -908,8 +942,10 @@ function WorkflowDispatchSheet({
       cwd,
       definition.id,
       definition.name,
+      existingWorkspaceId,
       form,
       isDispatching,
+      isExistingTarget,
       onDispatch,
       t,
       workspaceTitleBody,
@@ -927,18 +963,44 @@ function WorkflowDispatchSheet({
         testID="workflow-dispatch-sheet"
       >
         <View style={styles.dispatchBody}>
-          <Field label={t("workflows.project")} hint={cwdHint} testID="workflow-dispatch-project">
-            <Pressable onPress={() => setPickingDirectory(true)} testID="workflow-dispatch-cwd">
-              {renderCwdTrigger}
-            </Pressable>
-          </Field>
-          <Field label={t("workflows.workspaceTitle")}>
-            <WorkflowWorkspaceTitleField
-              value={workspaceTitleBody}
-              definitionName={definition.name}
-              onChangeText={setWorkspaceTitleBody}
-            />
-          </Field>
+          {canTargetWorkspace ? (
+            <Field label={t("workflows.workspaceTarget")}>
+              <SegmentedControl
+                options={workspaceTargetChoices}
+                value={workspaceTarget}
+                onValueChange={setWorkspaceTarget}
+                testID="workflow-dispatch-workspace-target"
+              />
+            </Field>
+          ) : null}
+          {isExistingTarget ? (
+            <Field label={t("workflows.workspaceTarget")}>
+              <WorkflowExistingWorkspaceField
+                options={workspaceOptions}
+                value={existingWorkspaceId}
+                onChange={setExistingWorkspaceId}
+              />
+            </Field>
+          ) : (
+            <>
+              <Field
+                label={t("workflows.project")}
+                hint={cwdHint}
+                testID="workflow-dispatch-project"
+              >
+                <Pressable onPress={() => setPickingDirectory(true)} testID="workflow-dispatch-cwd">
+                  {renderCwdTrigger}
+                </Pressable>
+              </Field>
+              <Field label={t("workflows.workspaceTitle")}>
+                <WorkflowWorkspaceTitleField
+                  value={workspaceTitleBody}
+                  definitionName={definition.name}
+                  onChangeText={setWorkspaceTitleBody}
+                />
+              </Field>
+            </>
+          )}
           <View style={styles.dispatchAgentControls} testID="workflow-dispatch-agent-controls">
             <DraftAgentControls
               providerDefinitions={providerDefinitions}
@@ -1000,6 +1062,110 @@ function WorkflowDispatchSheet({
           selectCwd(path);
           setPickingDirectory(false);
         }}
+      />
+    </>
+  );
+}
+
+type WorkflowWorkspaceTarget = "new" | "existing";
+
+interface DispatchWorkspaceOption {
+  id: string;
+  label: string;
+  projectName: string;
+}
+
+/**
+ * Every live workspace this host can dispatch into, flattened out of the
+ * project tree so the picker can be one searchable list. Archived workspaces
+ * are already excluded upstream — the daemon refuses them anyway.
+ */
+function useDispatchWorkspaceOptions(serverId: string | null): DispatchWorkspaceOption[] {
+  const { projects } = useProjects();
+  return useMemo(() => {
+    const options: DispatchWorkspaceOption[] = [];
+    for (const project of projects) {
+      for (const host of project.hosts) {
+        if (serverId && host.serverId !== serverId) {
+          continue;
+        }
+        for (const workspace of host.workspaces) {
+          options.push({
+            id: workspace.id,
+            label: workspace.title?.trim() || workspace.name,
+            projectName: project.projectCustomName?.trim() || project.projectName,
+          });
+        }
+      }
+    }
+    return options;
+  }, [projects, serverId]);
+}
+
+function WorkflowExistingWorkspaceField({
+  options,
+  value,
+  onChange,
+}: {
+  options: DispatchWorkspaceOption[];
+  value: string | null;
+  onChange: (workspaceId: string) => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const anchorRef = useRef<View>(null);
+  const [open, setOpen] = useState(false);
+  const comboboxOptions = useMemo<ComboboxOption[]>(
+    () =>
+      options.map((option) => ({
+        id: option.id,
+        label: option.label,
+        description: option.projectName,
+      })),
+    [options],
+  );
+  const selected = options.find((option) => option.id === value) ?? null;
+  const handleSelect = useCallback(
+    (id: string) => {
+      onChange(id);
+      setOpen(false);
+    },
+    [onChange],
+  );
+  const renderTrigger = useCallback(
+    ({
+      hovered = false,
+      pressed = false,
+    }: PressableStateCallbackType & { hovered?: boolean }): ReactElement => (
+      <SelectFieldTrigger
+        label={selected?.label ?? t("workflows.workspacePickerPlaceholder")}
+        isPlaceholder={!selected}
+        placeholder={t("workflows.workspacePickerPlaceholder")}
+        active={hovered || pressed || open}
+        size="sm"
+        testID="workflow-dispatch-workspace-trigger"
+      />
+    ),
+    [open, selected, t],
+  );
+
+  if (options.length === 0) {
+    return <Text style={styles.emptyText}>{t("workflows.workspacePickerEmpty")}</Text>;
+  }
+
+  return (
+    <>
+      <Pressable ref={anchorRef} onPress={() => setOpen(true)} testID="workflow-dispatch-workspace">
+        {renderTrigger}
+      </Pressable>
+      <Combobox
+        options={comboboxOptions}
+        value={value ?? ""}
+        onSelect={handleSelect}
+        searchable
+        open={open}
+        onOpenChange={setOpen}
+        anchorRef={anchorRef}
+        desktopPlacement="bottom-start"
       />
     </>
   );
@@ -1559,6 +1725,10 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     flexDirection: "row",
     justifyContent: "flex-end",
+  },
+  emptyText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
   },
   cwdIcon: {
     color: theme.colors.foregroundMuted,

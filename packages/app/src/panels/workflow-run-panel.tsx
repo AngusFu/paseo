@@ -13,7 +13,12 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { Theme } from "@/styles/theme";
 import { useWorkflowRun } from "@/hooks/use-workflow-run";
 import { useWorkflowRunLogs } from "@/hooks/use-workflow-run-logs";
-import { usePaneContext } from "@/panels/pane-context";
+import { usePaneContext, usePaneFocus } from "@/panels/pane-context";
+import { useToast } from "@/contexts/toast-context";
+import { useWorkflowMutations } from "@/hooks/use-workflow-mutations";
+import { useWorkspaceWorkflowDefinitions } from "@/hooks/use-workspace-workflow-definitions";
+import { confirmDialog } from "@/utils/confirm-dialog";
+import { toErrorMessage } from "@/utils/error-messages";
 import type { PanelDescriptor, PanelRegistration } from "@/panels/panel-registry";
 import { WorkflowRunDetailBody } from "@/screens/workflow-run-detail";
 import { summarizeWorkflowRun } from "@/screens/workflow-run-summary";
@@ -62,19 +67,55 @@ function useWorkflowRunPanelDescriptor(
 }
 
 function WorkflowRunPanel() {
+  const { t } = useTranslation();
+  const toast = useToast();
   const { serverId, target } = usePaneContext();
+  const { isInteractive } = usePaneFocus();
   invariant(target.kind === "workflow_run", "WorkflowRunPanel requires workflow_run target");
 
   const { run, live } = useWorkflowRun(serverId, target.runId);
   const logs = useWorkflowRunLogs(run ? serverId : null, target.runId, { live });
   const [showDebug, setShowDebug] = useState(false);
   const toggleDebug = useCallback(() => setShowDebug((current) => !current), []);
+  const mutations = useWorkflowMutations({ serverId });
+  const { definitions } = useWorkspaceWorkflowDefinitions({
+    serverId,
+    cwd: run?.cwd ?? null,
+  });
+  const definition = definitions.find((entry) => entry.id === run?.definitionId) ?? null;
+  const runName =
+    typeof run?.args.workspaceTitle === "string"
+      ? stripWorkflowWorkspaceEmojiPrefix(run.args.workspaceTitle)
+      : (definition?.name ?? null);
   const openAgent = useCallback(
     (agentId: string) => {
       navigateToAgent({ serverId, agentId, pin: true });
     },
     [serverId],
   );
+
+  const runId = run?.id ?? null;
+  const stopRun = useCallback(() => {
+    if (!runId) {
+      return;
+    }
+    void confirmDialog({
+      title: t("workflows.runCancelTitle"),
+      message: t("workflows.runCancelMessage"),
+      confirmLabel: t("workflows.actions.cancelRun"),
+      cancelLabel: t("common.actions.cancel"),
+      destructive: true,
+    })
+      .then((confirmed) => {
+        if (!confirmed) return undefined;
+        return mutations.cancel(runId).catch((error: unknown) => {
+          toast.error(toErrorMessage(error) || t("workflows.runCancelFailed"));
+        });
+      })
+      .catch((error: unknown) => {
+        toast.error(toErrorMessage(error));
+      });
+  }, [mutations, runId, t, toast]);
 
   if (!run) {
     return (
@@ -99,6 +140,10 @@ function WorkflowRunPanel() {
         onOpenAgent={openAgent}
         showDebug={showDebug}
         onToggleDebug={toggleDebug}
+        runName={runName}
+        description={definition?.description ?? null}
+        keyboardEnabled={isInteractive}
+        onStop={stopRun}
       />
     </ScrollView>
   );

@@ -26,7 +26,7 @@ import { summarizeWorkflowRun } from "@/screens/workflow-run-summary";
 import { WorkspaceTabIcon } from "@/screens/workspace/workspace-tab-presentation";
 import { useAgentsForWorkflowRun, type SubagentRow } from "@/subagents/select";
 import { buildSubagentRowPresentationData } from "@/subagents/track-presentation";
-import { buildWorkflowPhaseTree, type PhaseAgentStatus } from "@/screens/workflow-run-phase-tree";
+import { WorkflowRunMonitor } from "@/screens/workflow-run-monitor";
 import { formatTimeAgo } from "@/utils/time";
 
 /** How close to the bottom (px) counts as "at bottom" for log auto-scroll. */
@@ -41,6 +41,11 @@ export function WorkflowRunDetailBody({
   onOpenAgent,
   showDebug,
   onToggleDebug,
+  runName = null,
+  description = null,
+  keyboardEnabled = false,
+  onStop,
+  onBack,
 }: {
   run: WorkflowRun;
   summary: ReturnType<typeof summarizeWorkflowRun>;
@@ -50,6 +55,12 @@ export function WorkflowRunDetailBody({
   onOpenAgent: (agentId: string) => void;
   showDebug: boolean;
   onToggleDebug: () => void;
+  /** Workflow name + description for the monitor header. */
+  runName?: string | null;
+  description?: string | null;
+  keyboardEnabled?: boolean;
+  onStop?: () => void;
+  onBack?: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   const argsText = JSON.stringify(run.args ?? {}, null, 2);
@@ -94,7 +105,16 @@ export function WorkflowRunDetailBody({
         </Text>
       ) : null}
 
-      <WorkflowRunPhaseTree entries={logs.entries} />
+      <WorkflowRunMonitor
+        run={run}
+        runName={runName}
+        description={description}
+        entries={logs.entries}
+        live={live}
+        keyboardEnabled={keyboardEnabled}
+        onStop={onStop}
+        onBack={onBack}
+      />
 
       <WorkflowRunAgentList
         serverId={serverId}
@@ -231,53 +251,6 @@ function WorkflowRunAgentRow({
         {label}
       </Text>
     </Pressable>
-  );
-}
-
-type WorkflowLogEntryLike = ReturnType<typeof useWorkflowRunLogs>["entries"][number];
-
-function phaseDotStyle(status: PhaseAgentStatus) {
-  if (status === "done") return styles.phaseDotDone;
-  if (status === "error") return styles.phaseDotError;
-  if (status === "retrying") return styles.phaseDotRetrying;
-  if (status === "queued") return styles.phaseDotQueued;
-  return styles.phaseDotRunning;
-}
-
-function WorkflowRunPhaseTree({
-  entries,
-}: {
-  entries: WorkflowLogEntryLike[];
-}): ReactElement | null {
-  const { t } = useTranslation();
-  const groups = useMemo(() => buildWorkflowPhaseTree(entries), [entries]);
-  if (groups.length === 0) {
-    return null;
-  }
-
-  return (
-    <View style={styles.detailSection} testID="workflow-run-phase-tree">
-      <Text style={styles.detailSectionLabel}>{t("workflows.runPhases")}</Text>
-      <View style={styles.phaseTree}>
-        {groups.map((group) => (
-          <View key={group.title ?? " no-phase"} style={styles.phaseGroup}>
-            <Text style={styles.phaseTitle}>{group.title ?? t("workflows.runPhaseUngrouped")}</Text>
-            {group.agents.map((agent) => (
-              <View key={agent.callId} style={styles.phaseAgentRow}>
-                <View style={phaseDotStyle(agent.status)} />
-                <Text style={styles.phaseAgentLabel} numberOfLines={1}>
-                  {agent.label ?? `agent #${agent.callId}`}
-                </Text>
-                {agent.model ? <Text style={styles.phaseAgentMeta}>{agent.model}</Text> : null}
-                {agent.cached ? (
-                  <Text style={styles.phaseAgentMeta}>{t("workflows.runPhaseCached")}</Text>
-                ) : null}
-              </View>
-            ))}
-          </View>
-        ))}
-      </View>
-    </View>
   );
 }
 

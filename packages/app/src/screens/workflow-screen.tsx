@@ -1123,6 +1123,11 @@ function WorkflowRunDetailSheet({
           onOpenAgent={openAgent}
           showDebug={showDebug}
           onToggleDebug={() => setShowDebug((current) => !current)}
+          runName={
+            typeof run.args.workspaceTitle === "string"
+              ? stripWorkflowWorkspaceEmojiPrefix(run.args.workspaceTitle)
+              : null
+          }
         />
       ) : null}
     </AdaptiveModalSheet>

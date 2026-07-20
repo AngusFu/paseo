@@ -1405,9 +1405,6 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         { listActiveWorkspaces: options.listActiveWorkspaces },
         workspaceId,
       );
-      const repoRoot = await options.workspaceGitService
-        ?.resolveRepoRoot(workspace.cwd)
-        .catch(() => null);
       const result = await archiveByScope(
         archiveWorktreeDependencies(options, {
           agentManager,
@@ -1418,8 +1415,6 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         {
           requestId: "mcp:archive_workspace",
           scope: { kind: "workspace", workspaceId: workspace.workspaceId },
-          repoRoot: repoRoot ?? null,
-          ...(options.worktreesRoot ? { paseoWorktreesBaseRoot: options.worktreesRoot } : {}),
         },
       );
       return {

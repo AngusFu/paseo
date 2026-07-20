@@ -156,7 +156,6 @@ import { DaemonConfigStore, type MutableDaemonConfig } from "./daemon-config-sto
 import { BrowserToolsBroker } from "./browser-tools/broker.js";
 import { DaemonConfigBrowserToolsPolicy } from "./browser-tools/policy.js";
 import { WorkspaceGitServiceImpl } from "./workspace-git-service.js";
-import { createWorkspaceProvisioningService } from "./session/workspace-provisioning/workspace-provisioning-service.js";
 import { resolveWorkspaceIdForPath } from "./resolve-workspace-id-for-path.js";
 import {
   archiveByScope,
@@ -1032,10 +1031,7 @@ export async function createPaseoDaemon(
   };
   // One directory workspace per workflow run — shared by every host-backed agent.
   workflowService.setEnsureAgentWorkspace(async ({ cwd, title }) => {
-    const workspace = await createLocalCheckoutWorkspace(
-      { cwd, title: title ?? null },
-      { projectRegistry, workspaceRegistry, workspaceGitService },
-    );
+    const workspace = await workspaceProvisioning.createWorkspaceForDirectory(cwd, title ?? null);
     await emitWorkspaceUpdatesExternal([workspace.workspaceId]);
     return workspace.workspaceId;
   });

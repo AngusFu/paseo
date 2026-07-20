@@ -116,8 +116,11 @@ function useWorkflowDraftPanelDescriptor(
   const { definitions } = useWorkspaceWorkflowDefinitions({ serverId: context.serverId, cwd });
   const definition = definitions.find((entry) => entry.id === target.definitionId) ?? null;
 
+  const label = definition?.name || t("workflows.draftTabLabel");
+
   return {
-    label: definition?.name || t("workflows.draftTabLabel"),
+    label,
+    tooltip: label,
     subtitle: "",
     titleState: "ready",
     icon: Workflow,

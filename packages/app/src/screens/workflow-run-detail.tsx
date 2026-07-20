@@ -230,13 +230,15 @@ function WorkflowRunAgentRow({
   onOpenAgent: (agentId: string) => void;
 }): ReactElement {
   const { t } = useTranslation();
-  const presentation = useMemo(
-    () => ({
-      ...buildSubagentRowPresentationData(row),
+  const presentation = useMemo(() => {
+    const data = buildSubagentRowPresentationData(row);
+    return {
+      ...data,
+      tooltip: data.label,
+      modified: false,
       icon: getProviderIcon(row.provider),
-    }),
-    [row],
-  );
+    };
+  }, [row]);
   const label =
     presentation.titleState === "loading" ? t("common.states.loading") : presentation.label;
   const handlePress = useCallback(() => {

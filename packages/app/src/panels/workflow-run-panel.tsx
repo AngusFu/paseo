@@ -57,8 +57,11 @@ function useWorkflowRunPanelDescriptor(
   const rawTitle = runTitle ?? workspaceTitle;
   const strippedTitle = rawTitle ? stripWorkflowWorkspaceEmojiPrefix(rawTitle) : "";
 
+  const label = strippedTitle || t("workflows.runTabLabel");
+
   return {
-    label: strippedTitle || t("workflows.runTabLabel"),
+    label,
+    tooltip: label,
     subtitle: "",
     titleState: "ready",
     icon: Workflow,

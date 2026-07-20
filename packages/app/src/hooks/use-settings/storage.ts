@@ -52,6 +52,7 @@ export interface AppSettings {
   browserDefaultUrl: string; // start URL for new in-app browsers; "" = example.com fallback
   transcriptZoom: number; // agent transcript CSS zoom (web-only), default 1
   toolCallDetailLevel: ToolCallDetailLevel;
+  vimKeybindings: boolean;
 }
 
 export interface Settings extends AppSettings {
@@ -77,6 +78,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   browserDefaultUrl: DEFAULT_BROWSER_START_URL,
   transcriptZoom: DEFAULT_TRANSCRIPT_ZOOM,
   toolCallDetailLevel: "detailed",
+  vimKeybindings: false,
 };
 
 export const DEFAULT_APP_SETTINGS: Settings = {
@@ -243,6 +245,9 @@ function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
   }
   if (typeof stored.syntaxTheme === "string" && isSyntaxThemeId(stored.syntaxTheme)) {
     result.syntaxTheme = stored.syntaxTheme;
+  }
+  if (typeof stored.vimKeybindings === "boolean") {
+    result.vimKeybindings = stored.vimKeybindings;
   }
   if (
     typeof stored.workspaceTitleSource === "string" &&

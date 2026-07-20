@@ -170,6 +170,9 @@ export function useSettings<TSelected>(
           Object.assign(appUpdates, { [key]: updates[key] });
         }
       }
+      if (updates.vimKeybindings !== undefined) {
+        appUpdates.vimKeybindings = updates.vimKeybindings;
+      }
       const promises: Promise<void>[] = [];
       if (Object.keys(appUpdates).length > 0) {
         promises.push(appSettings.updateSettings(appUpdates));

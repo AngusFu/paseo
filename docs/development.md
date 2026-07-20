@@ -338,7 +338,7 @@ Use the named root build targets instead of remembering workspace dependency cha
 
 ```bash
 npm run build:client       # protocol -> client
-npm run build:server-deps  # highlight -> relay -> protocol -> client
+npm run build:server-deps  # highlight -> relay -> protocol -> client -> agents-workflow
 npm run build:server       # server-deps -> server -> cli
 npm run build:app-deps     # highlight -> protocol -> client -> expo-two-way-audio
 ```
@@ -351,6 +351,7 @@ For tighter loops, you can rebuild a single workspace:
 
 - Changed `packages/protocol/src/*` or `packages/client/src/*`: `npm run build:client`.
 - Changed `packages/server/src/*`, `packages/cli/src/*`, `packages/relay/src/*`, or `packages/highlight/src/*`: `npm run build:server`.
+- Changed `packages/agents-workflow/src/*`: `npm run build --workspace=@getpaseo/agents-workflow` — the daemon imports the ENGINE's `dist/` (tsx only transpiles server source, not dependencies), so a stale engine dist silently runs old engine semantics (field lesson: journal recorded failures for days after the source fix).
 - Changed app build dependencies: `npm run build:app-deps`.
 
 ## ACP provider catalog versions

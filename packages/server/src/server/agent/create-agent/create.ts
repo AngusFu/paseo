@@ -340,8 +340,6 @@ async function resolveMcpCreateAgent(
     createOptions: {
       ...(Object.keys(intent.labels).length > 0 ? { labels: intent.labels } : {}),
       workspaceId: intent.workspaceId,
-      owner: input.owner,
-      env: input.env,
     },
     prompt: trimmedPrompt ? trimmedPrompt : undefined,
     setupContinuation,

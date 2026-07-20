@@ -1,7 +1,10 @@
 import type { z } from "zod";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 // COMPAT(commandSchedules): added in v0.1.106, drop the gate when floor >= v0.1.106.
-import type { UpdateScheduleCommandConfig } from "@getpaseo/protocol/schedule/types";
+import type {
+  ScheduleCadence,
+  UpdateScheduleCommandConfig,
+} from "@getpaseo/protocol/schedule/types";
 import type {
   CreateKanbanCardInput,
   CreateKanbanColumnInput,
@@ -947,11 +950,9 @@ export interface StopLoopOptions {
 export interface CreateScheduleOptions {
   prompt: string;
   name?: string | null;
-  cadence: {
-    type: "cron";
-    expression: string;
-    timezone?: string;
-  };
+  // The wire schema accepts both cron and interval cadences; the fork keeps
+  // interval schedules first-class instead of canonicalizing to cron presets.
+  cadence: ScheduleCadence;
   target:
     | {
         type: "self";
@@ -1011,11 +1012,7 @@ export interface UpdateScheduleOptions {
   id: string;
   name?: string | null;
   prompt?: string;
-  cadence?: {
-    type: "cron";
-    expression: string;
-    timezone?: string;
-  };
+  cadence?: ScheduleCadence;
   newAgentConfig?: UpdateScheduleNewAgentConfig;
   // COMPAT(commandSchedules): added in v0.1.106, drop the gate when floor >= v0.1.106.
   commandConfig?: UpdateScheduleCommandConfig;

@@ -66,11 +66,7 @@ export async function requireNewAgentSchedule(
   const payload = await client.scheduleInspect({ id });
   // Heartbeats (agent targets) are managed through the heartbeat commands; the
   // schedule commands operate on new-agent and command targets.
-  if (
-    payload.error ||
-    !payload.schedule ||
-    payload.schedule.target.type === "agent"
-  ) {
+  if (payload.error || !payload.schedule || payload.schedule.target.type === "agent") {
     throw new Error(payload.error ?? `Schedule not found: ${id}`);
   }
 }

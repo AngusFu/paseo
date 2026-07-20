@@ -87,19 +87,6 @@ export async function requireActiveWorkspaceForArchive(
   return workspace;
 }
 
-interface BackingDirectory {
-  path: string;
-  isPaseoOwnedWorktree: boolean;
-  mainRepoRoot: string | null;
-  paseoWorktreesRoot: string | null;
-}
-
-interface ArchiveTarget {
-  backing: BackingDirectory | null;
-  teardownTargets: Array<{ workspaceId: string | null; cwd: string }>;
-  workspaceIds: string[];
-}
-
 export async function resolveWorkspaceIdAtPath(
   dependencies: Pick<ArchiveDependencies, "findWorkspaceIdForCwd" | "listActiveWorkspaces">,
   targetPath: string,

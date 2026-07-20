@@ -83,10 +83,13 @@ import type {
   WorkspaceRegistry,
 } from "../../workspace-registry.js";
 import { resolveWorktreeSourceCwd } from "../../workspace-source.js";
+import { WorktreeRequestError } from "../../worktree-errors.js";
 import {
+  archiveCommand,
   type ArchiveCommandDependencies,
   type CreatePaseoWorktreeCommandInput,
   createPaseoWorktreeCommand,
+  listPaseoWorktreesCommand,
 } from "../../worktree/commands.js";
 import { registerBrowserTools } from "../../browser-tools/tools.js";
 import type { BrowserToolsBroker } from "../../browser-tools/broker.js";
@@ -525,6 +528,13 @@ const TerminalSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
   cwd: z.string(),
+});
+
+const WorktreeSummarySchema = z.object({
+  path: z.string(),
+  createdAt: z.string(),
+  branchName: z.string().optional(),
+  head: z.string().optional(),
 });
 
 function resolveTerminalKeyToken(key: string, literal: boolean): string {
@@ -1401,6 +1411,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         {
           requestId: "mcp:archive_workspace",
           scope: { kind: "workspace", workspaceId: workspace.workspaceId },
+          repoRoot: null,
         },
       );
       return {
@@ -3538,6 +3549,34 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
   );
 
   return toCatalog();
+}
+
+type McpCreateWorktreeTarget =
+  | { kind: "branch-off"; worktreeSlug?: string; branchName?: string; baseBranch?: string }
+  | { kind: "checkout-branch"; branch: string }
+  | { kind: "checkout-pr"; githubPrNumber: number };
+
+function createMcpWorktreeCommandInput(
+  repoRoot: string,
+  target: McpCreateWorktreeTarget,
+): CreatePaseoWorktreeCommandInput {
+  const base = { cwd: repoRoot } as const;
+  switch (target.kind) {
+    case "branch-off":
+      return {
+        ...base,
+        worktreeSlug: target.worktreeSlug,
+        branchName: target.branchName,
+        action: "branch-off",
+        ...(target.baseBranch ? { refName: target.baseBranch } : {}),
+      };
+    case "checkout-branch":
+      return { ...base, action: "checkout", refName: target.branch };
+    case "checkout-pr":
+      return { ...base, action: "checkout", githubPrNumber: target.githubPrNumber };
+    default:
+      throw new Error("unreachable");
+  }
 }
 
 interface ArchiveWorktreeCommandContext {

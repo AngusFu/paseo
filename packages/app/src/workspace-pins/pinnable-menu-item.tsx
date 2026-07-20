@@ -56,9 +56,28 @@ export function PinnableMenuItem({
     [showToggle],
   );
 
-  const trailing = useMemo(
-    () => (
-      <View style={slotStyle} pointerEvents={showToggle ? "auto" : "none"}>
+  // The menu item is itself pressable, and on web it renders a <button>. Nesting the pin control
+  // inside its `trailing` slot would put a button inside a button — invalid DOM that React warns
+  // about, and the inner press target is unreliable. The item only reserves the space; the pin
+  // control is a sibling laid over that gap.
+  const trailingSpacer = useMemo(() => <View style={styles.pinToggleSlot} />, []);
+
+  return (
+    <View
+      style={styles.container}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+    >
+      <DropdownMenuItem
+        testID={testID}
+        leading={leading}
+        trailing={trailingSpacer}
+        disabled={disabled}
+        onSelect={onSelect}
+      >
+        {label}
+      </DropdownMenuItem>
+      <View style={slotStyle} pointerEvents={showToggle ? "box-none" : "none"}>
         <Pressable
           onPress={handleTogglePin}
           hitSlop={8}
@@ -78,29 +97,22 @@ export function PinnableMenuItem({
           )}
         </Pressable>
       </View>
-    ),
-    [handleTogglePin, isPinned, showToggle, slotStyle, t, target],
-  );
-
-  return (
-    <View onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
-      <DropdownMenuItem
-        testID={testID}
-        leading={leading}
-        trailing={trailing}
-        disabled={disabled}
-        onSelect={onSelect}
-      >
-        {label}
-      </DropdownMenuItem>
     </View>
   );
 }
 
-const styles = StyleSheet.create(() => ({
+const styles = StyleSheet.create((theme) => ({
+  container: {
+    position: "relative",
+  },
+  // Sits over the spacer the menu item reserves in its trailing slot; the inset matches the
+  // item's own paddingHorizontal so the icon lands exactly where the slot is.
   pinToggleSlot: {
+    position: "absolute",
+    right: theme.spacing[3],
+    top: 0,
+    bottom: 0,
     width: 22,
-    height: 22,
     alignItems: "center",
     justifyContent: "center",
   },

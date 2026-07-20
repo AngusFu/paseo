@@ -22,6 +22,7 @@ import {
   AgentSnapshotPayloadSchema,
 } from "@getpaseo/protocol/messages";
 import {
+  createPersistedProjectRecord,
   createPersistedWorkspaceRecord,
   type PersistedProjectRecord,
   type PersistedWorkspaceRecord,
@@ -1504,10 +1505,11 @@ describe("create_agent MCP tool", () => {
     expect(lookupTool(server, "create_workspace")).toBeDefined();
     expect(lookupTool(server, "list_workspaces")).toBeDefined();
     expect(lookupTool(server, "archive_workspace")).toBeDefined();
-    expect(lookupTool(server, "create_worktree")).toBeUndefined();
-    expect(lookupTool(server, "list_worktrees")).toBeUndefined();
-    expect(lookupTool(server, "archive_worktree")).toBeUndefined();
-    expect(lookupTool(server, "detach_agent")).toBeUndefined();
+    // The fork keeps the worktree tools alongside the workspace tools — skills
+    // and existing agents still target them directly.
+    expect(lookupTool(server, "create_worktree")).toBeDefined();
+    expect(lookupTool(server, "list_worktrees")).toBeDefined();
+    expect(lookupTool(server, "archive_worktree")).toBeDefined();
     expect(lookupTool(server, "update_heartbeat")).toBeUndefined();
   });
 
@@ -2862,8 +2864,9 @@ describe("create_agent MCP tool", () => {
         github: createGitHubServiceStub(),
         logger,
       });
-      expect(lookupTool(server, "create_worktree")).toBeUndefined();
-      expect(lookupTool(server, "archive_worktree")).toBeUndefined();
+      // The fork keeps the worktree tools registered alongside the workspace tools.
+      expect(lookupTool(server, "create_worktree")).toBeDefined();
+      expect(lookupTool(server, "archive_worktree")).toBeDefined();
     } finally {
       await removeTempDir(tempDir);
     }
@@ -4833,11 +4836,12 @@ describe("update_schedule MCP tool", () => {
     const { agentManager, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
+    const inspect = vi.fn(async () => stored);
     const server = await createAgentMcpServer({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { update } as unknown as ScheduleService,
+      scheduleService: { update, inspect } as unknown as ScheduleService,
       logger,
     });
     const tool = registeredTool(server, "update_schedule");
@@ -4865,11 +4869,12 @@ describe("update_schedule MCP tool", () => {
     const { agentManager, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
+    const inspect = vi.fn(async () => stored);
     const server = await createAgentMcpServer({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { update } as unknown as ScheduleService,
+      scheduleService: { update, inspect } as unknown as ScheduleService,
       logger,
     });
     const tool = registeredTool(server, "update_schedule");
@@ -4930,11 +4935,15 @@ describe("schedule_logs MCP tool", () => {
     const { agentManager, agentStorage } = createTestDeps();
     const runs = [{ ...makeRun({ id: "run-1", status: "failed" }), exitCode: 2 }];
     const logs = vi.fn(async (_id: string) => runs);
+    const inspect = vi.fn(async () => ({
+      id: "schedule-1",
+      target: { type: "command", command: "echo hi", cwd: "/tmp" },
+    }));
     const server = await createAgentMcpServer({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { logs } as unknown as ScheduleService,
+      scheduleService: { logs, inspect } as unknown as ScheduleService,
       logger,
     });
     const tool = registeredTool(server, "schedule_logs");

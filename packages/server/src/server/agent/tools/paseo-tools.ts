@@ -820,7 +820,11 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       throw new Error("Schedule service is not configured");
     }
     const schedule = await scheduleService.inspect(id);
-    if (schedule.target.type !== type) {
+    // "new-agent" mode covers every non-heartbeat schedule; the fork also runs
+    // command-target schedules through the schedule tools.
+    const matches =
+      type === "agent" ? schedule.target.type === "agent" : schedule.target.type !== "agent";
+    if (!matches) {
       throw new Error(
         type === "agent" ? `Heartbeat not found: ${id}` : `Schedule not found: ${id}`,
       );
@@ -1401,6 +1405,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         { listActiveWorkspaces: options.listActiveWorkspaces },
         workspaceId,
       );
+      const repoRoot = await options.workspaceGitService
+        ?.resolveRepoRoot(workspace.cwd)
+        .catch(() => null);
       const result = await archiveByScope(
         archiveWorktreeDependencies(options, {
           agentManager,
@@ -1411,7 +1418,8 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         {
           requestId: "mcp:archive_workspace",
           scope: { kind: "workspace", workspaceId: workspace.workspaceId },
-          repoRoot: null,
+          repoRoot: repoRoot ?? null,
+          ...(options.worktreesRoot ? { paseoWorktreesBaseRoot: options.worktreesRoot } : {}),
         },
       );
       return {

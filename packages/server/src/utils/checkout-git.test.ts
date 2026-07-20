@@ -327,6 +327,30 @@ describe("checkout git utilities", () => {
     });
   });
 
+  it("reports a plain non-git directory without warning about it", async () => {
+    const nonGitDir = mkdtempSync(join(tmpdir(), "checkout-git-plain-test-"));
+    const records: unknown[] = [];
+    const logger = pino(
+      { level: "warn" },
+      {
+        write(line: string) {
+          records.push(JSON.parse(line));
+        },
+      },
+    );
+    try {
+      await expect(getCheckoutStatus(nonGitDir, { logger })).resolves.toEqual({
+        isGit: false,
+        directoryMissing: false,
+      });
+      // "not a git repository" is the expected answer for a plain directory, so nothing at warn
+      // or above should be logged — $PASEO_HOME/workflows is probed on a loop.
+      expect(records).toEqual([]);
+    } finally {
+      rmSync(nonGitDir, { recursive: true, force: true });
+    }
+  });
+
   it.runIf(
     process.platform !== "win32" &&
       existsSync("/dev/shm") &&

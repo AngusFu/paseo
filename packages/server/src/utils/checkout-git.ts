@@ -983,6 +983,14 @@ async function getRebaseHeadBranch(cwd: string): Promise<string | null> {
   return results.find((result): result is string => result !== null) ?? null;
 }
 
+// git says this on stderr for a directory outside any repository; the wrapper folds stderr into
+// the thrown message. Matched case-insensitively but not localized — READ_ONLY_GIT_ENV pins the
+// child to git's default (English) messages.
+function isNotAGitRepositoryError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toLowerCase().includes("not a git repository");
+}
+
 async function getWorktreeRoot(cwd: string, context?: CheckoutContext): Promise<string | null> {
   try {
     const { stdout } = await runGitCommand(["rev-parse", "--show-toplevel"], {
@@ -993,10 +1001,17 @@ async function getWorktreeRoot(cwd: string, context?: CheckoutContext): Promise<
     return parseGitRevParsePath(stdout);
   } catch (error) {
     // Git discovery is fail-open: keep the directory usable as non-Git and retain the diagnostic.
-    context?.logger?.warn(
-      { err: error, cwd },
-      "Git worktree discovery failed; treating directory as non-Git",
-    );
+    // A plain directory answering "not a git repository" is the expected answer, not a fault, and
+    // every probe of one would otherwise log a stack trace ($PASEO_HOME/workflows does this on a
+    // loop). Only an unexpected git failure — a broken binary, a permission error — warrants warn.
+    if (isNotAGitRepositoryError(error)) {
+      context?.logger?.trace({ cwd }, "Directory is not a Git repository");
+    } else {
+      context?.logger?.warn(
+        { err: error, cwd },
+        "Git worktree discovery failed; treating directory as non-Git",
+      );
+    }
     return null;
   }
 }

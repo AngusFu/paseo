@@ -560,6 +560,38 @@ describe("WorkflowEventLog incremental cache", () => {
     expect(after.entries.map((e) => e.event)).toEqual(["rebuilt"]);
   });
 
+  it("returns entries in seq order even when concurrent appends landed out of order in the file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const { WorkflowEventLog } = await import("./event-log.js");
+    const fsPromises = await import("node:fs/promises");
+    const root = join(dir, "workflows");
+    const runId = "wfr_out_of_order";
+    await fsPromises.mkdir(join(root, "runs", runId), { recursive: true });
+    const line = (seq: number, event: string) =>
+      JSON.stringify({
+        seq,
+        ts: "2026-07-19T00:00:00.000Z",
+        level: "debug",
+        event,
+        message: event,
+        runId,
+      });
+    // seq 2 (start) hit the file before seq 1 (queued) — the void-log race.
+    await fsPromises.writeFile(
+      join(root, "runs", runId, "events.jsonl"),
+      [line(2, "agent.start"), line(1, "agent.queued"), line(3, "agent.complete"), ""].join("\n"),
+    );
+
+    const log = new WorkflowEventLog(root);
+    const firstPage = await log.readRunLogs(runId, { limit: 2 });
+    expect(firstPage.entries.map((entry) => entry.seq)).toEqual([1, 2]);
+    expect(firstPage.hasMore).toBe(true);
+    // Without seq-sorting, seq 1 would fall behind the page cursor and vanish.
+    const secondPage = await log.readRunLogs(runId, { afterSeq: firstPage.nextSeq });
+    expect(secondPage.entries.map((entry) => entry.seq)).toEqual([3]);
+  });
+
   it("hasRunLogs is false for a missing or empty run log and true once a valid line lands", async () => {
     const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
     dirs.push(dir);

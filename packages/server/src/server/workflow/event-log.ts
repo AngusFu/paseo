@@ -18,6 +18,16 @@ import {
 export const WORKFLOW_LOG_PAGE_DEFAULT = 200;
 export const WORKFLOW_LOG_PAGE_MAX = 500;
 
+/** Sort in place by seq, but only when an out-of-order pair actually exists. */
+function ensureSortedBySeq(entries: WorkflowLogEntry[]): void {
+  for (let i = 1; i < entries.length; i++) {
+    if (entries[i]!.seq < entries[i - 1]!.seq) {
+      entries.sort((left, right) => left.seq - right.seq);
+      return;
+    }
+  }
+}
+
 export interface WorkflowEventLogWriteInput {
   level?: WorkflowLogLevel;
   event: string;
@@ -184,6 +194,11 @@ export class WorkflowEventLog {
           for (const line of consumedText.split("\n")) {
             WorkflowEventLog.appendParsedLine(cache.entries, line);
           }
+          // Concurrent `void log(...)` appends can land in the file out of
+          // seq order. Pagination is seq-based (`afterSeq` cursor), so an
+          // out-of-order line behind a higher-seq page boundary would be
+          // skipped forever — keep the cache seq-sorted.
+          ensureSortedBySeq(cache.entries);
         }
         // All bytes up to `stats.size` are now accounted for (either parsed
         // into `entries` or held as the new trailing partial line) — advance

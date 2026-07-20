@@ -2077,6 +2077,30 @@ interface DerivedStatusState {
   currentBranchName: string | null;
 }
 
+function computePaneLayoutCaps(
+  isMobile: boolean,
+  paneWidth: number,
+): { showDesktopWebScrollbar: boolean; canUseSplitLayout: boolean } {
+  const isDesktopWeb = isWeb && !isMobile;
+  return {
+    showDesktopWebScrollbar: isDesktopWeb,
+    canUseSplitLayout: isDesktopWeb && paneWidth >= SPLIT_MIN_PANE_WIDTH,
+  };
+}
+
+function buildDiffTextMetricsStyle(
+  monoFontFamilySetting: string,
+  fontSize: number,
+  lineHeight: number,
+): TextStyle {
+  const monoFontFamily = monoFontFamilySetting.trim();
+  return {
+    fontSize,
+    lineHeight,
+    ...(monoFontFamily ? { fontFamily: monoFontFamily } : null),
+  };
+}
+
 function deriveStatusState({
   status,
   isStatusLoading,
@@ -2542,7 +2566,6 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
   const { settings: appSettings } = useAppSettings();
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
-  const showDesktopWebScrollbar = isWeb && !isMobile;
   // Side-by-side split needs room for two gutter+code columns; below this the
   // columns squish to unreadable truncation. The Changes pane is a fixed ~400px
   // side panel by default, so split is only offered once it's dragged wide
@@ -2551,7 +2574,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
   const handlePaneLayout = useCallback((event: LayoutChangeEvent) => {
     setPaneWidth(event.nativeEvent.layout.width);
   }, []);
-  const canUseSplitLayout = isWeb && !isMobile && paneWidth >= SPLIT_MIN_PANE_WIDTH;
+  const { showDesktopWebScrollbar, canUseSplitLayout } = computePaneLayoutCaps(isMobile, paneWidth);
   const { preferences: changesPreferences, updatePreferences: updateChangesPreferences } =
     useChangesPreferences();
   const wrapLines = changesPreferences.wrapLines;
@@ -2581,14 +2604,10 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
   const diffBodyTypographyKey = [appSettings.monoFontFamily, codeFontSize, diffBodyLineHeight].join(
     ":",
   );
-  const diffTextMetricsStyle = useMemo<TextStyle>(() => {
-    const monoFontFamily = appSettings.monoFontFamily.trim();
-    return {
-      fontSize: codeFontSize,
-      lineHeight: diffBodyLineHeight,
-      ...(monoFontFamily ? { fontFamily: monoFontFamily } : null),
-    };
-  }, [appSettings.monoFontFamily, codeFontSize, diffBodyLineHeight]);
+  const diffTextMetricsStyle = useMemo<TextStyle>(
+    () => buildDiffTextMetricsStyle(appSettings.monoFontFamily, codeFontSize, diffBodyLineHeight),
+    [appSettings.monoFontFamily, codeFontSize, diffBodyLineHeight],
+  );
   // Diff-panel chrome text (empty state, loading/error messages) shares the same
   // status container as diff rows once they render, so it scales with the same
   // codeFontSize setting instead of the fixed UI font ramp. Ratios against the

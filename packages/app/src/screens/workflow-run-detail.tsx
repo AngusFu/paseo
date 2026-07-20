@@ -45,7 +45,6 @@ export function WorkflowRunDetailBody({
   description = null,
   keyboardEnabled = false,
   onStop,
-  onBack,
 }: {
   run: WorkflowRun;
   summary: ReturnType<typeof summarizeWorkflowRun>;
@@ -60,7 +59,6 @@ export function WorkflowRunDetailBody({
   description?: string | null;
   keyboardEnabled?: boolean;
   onStop?: () => void;
-  onBack?: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   const argsText = JSON.stringify(run.args ?? {}, null, 2);
@@ -113,7 +111,6 @@ export function WorkflowRunDetailBody({
         live={live}
         keyboardEnabled={keyboardEnabled}
         onStop={onStop}
-        onBack={onBack}
       />
 
       <WorkflowRunAgentList

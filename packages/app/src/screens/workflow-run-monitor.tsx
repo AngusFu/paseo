@@ -46,8 +46,8 @@ function useElapsedTick(enabled: boolean): number {
 }
 
 /**
- * Arrow-key phase selection and the stop/back shortcuts. Web only — native has
- * no hardware keyboard to rely on, so the compact layout gets buttons instead.
+ * Arrow-key phase selection and the stop shortcut. Web only — native has no
+ * hardware keyboard to rely on, so the compact layout gets buttons instead.
  * Ignores keys typed into a field so it never steals from an input.
  */
 function usePhaseShortcuts(input: {
@@ -55,9 +55,8 @@ function usePhaseShortcuts(input: {
   phaseCount: number;
   onMove: (delta: number) => void;
   onStop: (() => void) | undefined;
-  onBack: (() => void) | undefined;
 }): void {
-  const { enabled, phaseCount, onMove, onStop, onBack } = input;
+  const { enabled, phaseCount, onMove, onStop } = input;
   useEffect(() => {
     if (!isWeb || !enabled || phaseCount === 0) {
       return;
@@ -84,16 +83,11 @@ function usePhaseShortcuts(input: {
       if (event.key === "x" && onStop) {
         event.preventDefault();
         onStop();
-        return;
-      }
-      if (event.key === "Escape" && onBack) {
-        event.preventDefault();
-        onBack();
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [enabled, onBack, onMove, onStop, phaseCount]);
+  }, [enabled, onMove, onStop, phaseCount]);
 }
 
 export function WorkflowRunMonitor({
@@ -104,7 +98,6 @@ export function WorkflowRunMonitor({
   live,
   keyboardEnabled = false,
   onStop,
-  onBack,
 }: {
   run: WorkflowRun;
   /** Workflow name for the header; falls back to a generic label. */
@@ -115,7 +108,6 @@ export function WorkflowRunMonitor({
   /** Enable the web key handler — pass the pane's focus state. */
   keyboardEnabled?: boolean;
   onStop?: () => void;
-  onBack?: () => void;
 }): ReactElement | null {
   const { t } = useTranslation();
   const isCompact = useIsCompactFormFactor();
@@ -148,7 +140,6 @@ export function WorkflowRunMonitor({
     phaseCount: groups.length,
     onMove: handleMove,
     onStop,
-    onBack,
   });
 
   const totals = useMemo(
@@ -230,12 +221,7 @@ export function WorkflowRunMonitor({
         </View>
       </View>
 
-      <MonitorActionBar
-        isCompact={isCompact}
-        canStop={Boolean(onStop) && live}
-        onStop={onStop}
-        onBack={onBack}
-      />
+      <MonitorActionBar isCompact={isCompact} canStop={Boolean(onStop) && live} onStop={onStop} />
     </View>
   );
 }
@@ -282,50 +268,36 @@ function selectedState(selected: boolean) {
 }
 
 /**
- * Web shows the key hints; compact shows real buttons. Pause and save from the
- * wireframe are not rendered at all — neither action exists yet, and a hint for
- * a key that does nothing is worse than no hint.
+ * Web shows the key hints; compact shows a real button. Pause, save and back
+ * from the wireframe are not rendered — none of those actions exist here, and
+ * a hint for a key that does nothing is worse than no hint.
  */
 function MonitorActionBar({
   isCompact,
   canStop,
   onStop,
-  onBack,
 }: {
   isCompact: boolean;
   canStop: boolean;
   onStop: (() => void) | undefined;
-  onBack: (() => void) | undefined;
 }): ReactElement | null {
   const { t } = useTranslation();
-  if (!onStop && !onBack) {
+  if (!onStop) {
     return null;
   }
 
   if (isCompact) {
     return (
       <View style={styles.actionBar} testID="workflow-run-monitor-actions">
-        {onStop ? (
-          <Pressable
-            accessibilityRole="button"
-            disabled={!canStop}
-            onPress={onStop}
-            style={canStop ? styles.actionButton : styles.actionButtonDisabled}
-            testID="workflow-run-monitor-stop"
-          >
-            <Text style={styles.actionButtonText}>{t("workflows.monitorStop")}</Text>
-          </Pressable>
-        ) : null}
-        {onBack ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={onBack}
-            style={styles.actionButton}
-            testID="workflow-run-monitor-back"
-          >
-            <Text style={styles.actionButtonText}>{t("workflows.monitorBack")}</Text>
-          </Pressable>
-        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          disabled={!canStop}
+          onPress={onStop}
+          style={canStop ? styles.actionButton : styles.actionButtonDisabled}
+          testID="workflow-run-monitor-stop"
+        >
+          <Text style={styles.actionButtonText}>{t("workflows.monitorStop")}</Text>
+        </Pressable>
       </View>
     );
   }
@@ -334,7 +306,6 @@ function MonitorActionBar({
     <View style={styles.actionBar} testID="workflow-run-monitor-actions">
       <Text style={styles.actionHint}>{t("workflows.monitorHintSelect")}</Text>
       {canStop ? <Text style={styles.actionHint}>{t("workflows.monitorHintStop")}</Text> : null}
-      {onBack ? <Text style={styles.actionHint}>{t("workflows.monitorHintBack")}</Text> : null}
     </View>
   );
 }

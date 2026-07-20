@@ -48,7 +48,7 @@ export function ComposerHighlightOverlay({
     <View style={styles.overlay} pointerEvents="none" aria-hidden>
       <Text style={overlayTextStyle}>
         {segments.map(({ key, segment }) => (
-          <Text key={key} style={STYLE_BY_KIND[segment.kind]}>
+          <Text key={key} style={getStyleByKind(segment.kind)}>
             {segment.text}
           </Text>
         ))}
@@ -92,8 +92,12 @@ const styles = StyleSheet.create((theme) => ({
   },
 }));
 
-const STYLE_BY_KIND = {
-  plain: styles.plain,
-  command: styles.command,
-  url: styles.url,
-} as const;
+// Resolved lazily — module-scope `styles.*` reads materialize the pre-persistence theme.
+function getStyleByKind(kind: "plain" | "command" | "url") {
+  const map = {
+    plain: styles.plain,
+    command: styles.command,
+    url: styles.url,
+  } as const;
+  return map[kind];
+}

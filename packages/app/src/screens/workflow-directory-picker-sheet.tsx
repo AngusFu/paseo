@@ -514,7 +514,7 @@ export function WorkflowDirectoryPickerSheet({
             autoCapitalize="none"
             autoCorrect={false}
             // @ts-expect-error - outlineStyle is web-only
-            style={SEARCH_INPUT_STYLE}
+            style={getSearchInputStyle()}
             testID="workflow-directory-search"
           />
         </View>
@@ -662,4 +662,5 @@ const styles = StyleSheet.create((theme) => ({
   },
 }));
 
-const SEARCH_INPUT_STYLE = [styles.searchInput, isWeb && { outlineStyle: "none" }];
+// Resolved lazily — module-scope `styles.*` reads materialize the pre-persistence theme.
+const getSearchInputStyle = () => [styles.searchInput, isWeb && { outlineStyle: "none" }];

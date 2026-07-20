@@ -76,7 +76,7 @@ function SearchFilterField({
         accessibilityLabel={t("kanban.filters.searchLabel")}
         placeholder={t("kanban.filters.searchPlaceholder")}
         // @ts-expect-error - outlineStyle is web-only
-        style={SEARCH_INPUT_STYLE}
+        style={getSearchInputStyle()}
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -578,4 +578,5 @@ const styles = StyleSheet.create((theme) => ({
   },
 }));
 
-const SEARCH_INPUT_STYLE = [styles.searchInput, isWeb && { outlineStyle: "none" }];
+// Resolved lazily — module-scope `styles.*` reads materialize the pre-persistence theme.
+const getSearchInputStyle = () => [styles.searchInput, isWeb && { outlineStyle: "none" }];

@@ -61,7 +61,7 @@ function SessionsSearchField({
         accessibilityLabel={t("sessions.search.label")}
         placeholder={t("sessions.search.placeholder")}
         // @ts-expect-error - outlineStyle is web-only
-        style={SEARCH_INPUT_STYLE}
+        style={getSearchInputStyle()}
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -386,4 +386,5 @@ const styles = StyleSheet.create((theme) => ({
   },
 }));
 
-const SEARCH_INPUT_STYLE = [styles.searchInput, isWeb && { outlineStyle: "none" as const }];
+// Resolved lazily — module-scope `styles.*` reads materialize the pre-persistence theme.
+const getSearchInputStyle = () => [styles.searchInput, isWeb && { outlineStyle: "none" as const }];

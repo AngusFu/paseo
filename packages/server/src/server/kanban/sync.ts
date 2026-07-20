@@ -12,6 +12,13 @@ import type { KanbanSecretsStore } from "./secrets-store.js";
 import type { KanbanOauthService } from "./oauth.js";
 import { jiraAuthHeaders, resolveKanbanToken, trimTrailingSlash } from "./credentials.js";
 
+interface JiraAssignee {
+  displayName?: string;
+  accountId?: string;
+  name?: string;
+  key?: string;
+}
+
 interface JiraIssue {
   key: string;
   fields?: {
@@ -20,7 +27,11 @@ interface JiraIssue {
     // "indeterminate" | "done"), always nested in the status object Jira
     // returns — no extra `fields` param needed to fetch it.
     status?: { name?: string; statusCategory?: { key?: string } };
-    assignee?: { displayName?: string } | null;
+    // accountId (Cloud) / name / key (Server/DC) identify WHO the issue is
+    // assigned to, so the reconcile pass can tell "reassigned to someone else"
+    // (drop the card) apart from "still mine, just dropped out of the query"
+    // (keep it, flagged detached). displayName is the label the board shows.
+    assignee?: JiraAssignee | null;
     labels?: string[];
     priority?: { name?: string } | null;
     // Jira's own timestamps (ISO). Fetched explicitly on Cloud (see the fields
@@ -53,6 +64,40 @@ function mapJiraPriority(name: string | undefined): KanbanPriority | null {
     return null;
   }
   return JIRA_PRIORITY_MAP[name.toLowerCase()] ?? null;
+}
+
+// The authenticated user's own identity, from GET /myself. Cloud returns an
+// accountId; Server/DC return name/key. Used to decide whether a card that
+// dropped out of an `assignee = currentUser()` query was reassigned to someone
+// else (drop it) or just changed status while still assigned to the user.
+interface JiraSelf {
+  accountId?: string;
+  name?: string;
+  key?: string;
+}
+
+// True only when the issue is assigned to a DIFFERENT user than `me`. Compares
+// on whichever identity field both sides carry (accountId on Cloud, name/key on
+// Server/DC). Deliberately conservative: an unassigned issue, an unknown self
+// (the /myself lookup failed), or no comparable identity all return false, so a
+// card is only ever dropped on a positive "assigned to someone else" match.
+function jiraAssigneeIsSomeoneElse(
+  assignee: JiraAssignee | null | undefined,
+  me: JiraSelf | null,
+): boolean {
+  if (!assignee || !me) {
+    return false;
+  }
+  if (assignee.accountId && me.accountId) {
+    return assignee.accountId !== me.accountId;
+  }
+  if (assignee.name && me.name) {
+    return assignee.name !== me.name;
+  }
+  if (assignee.key && me.key) {
+    return assignee.key !== me.key;
+  }
+  return false;
 }
 
 interface JiraSearchResponse {
@@ -511,6 +556,37 @@ export class KanbanSyncService {
     return (await response.json()) as JiraIssue;
   }
 
+  // The authenticated user's identity, for the reconcile pass to tell a
+  // reassigned-away issue apart from one still assigned to the user. Same
+  // Cloud/Server split (an email means Cloud). Best-effort: any failure returns
+  // null, and the caller then keeps the card (flagged detached) rather than
+  // risk dropping a card it can't prove was reassigned.
+  private async fetchJiraMyself(
+    baseUrl: string,
+    token: string | null,
+    email: string | null,
+  ): Promise<JiraSelf | null> {
+    const base = trimTrailingSlash(baseUrl);
+    const headers = jiraAuthHeaders(token, email);
+    const apiVersion = email ? "3" : "2";
+    const url = `${base}/rest/api/${apiVersion}/myself`;
+    try {
+      const response = await this.fetchImpl(url, { headers });
+      if (!response.ok) {
+        return null;
+      }
+      const body = (await response.json()) as JiraSelf;
+      return {
+        accountId: body.accountId,
+        name: body.name,
+        key: body.key,
+      };
+    } catch (error) {
+      this.logger?.warn({ err: error }, "Kanban Jira /myself lookup failed");
+      return null;
+    }
+  }
+
   private async fetchGitlabMergeRequests(
     baseUrl: string,
     query: string,
@@ -702,13 +778,21 @@ export class KanbanSyncService {
     return this.store.setCardDetached(card.id, true);
   }
 
-  // A Jira issue reassigned away from an `assignee = currentUser()` query stops
-  // matching it, so the sync loop never sees the issue again and the card is
-  // frozen at whatever status it last held — showing "Backlog" for an issue
-  // that has since been closed. This pass re-fetches each such card by issue
-  // key and writes the real current status back, flagging the card as detached
-  // so the board can show it no longer matches the query. Cards are never
-  // deleted: a detached card may still be worth watching.
+  // A Jira issue that drops out of an `assignee = currentUser()` query is
+  // handled by outcome:
+  //
+  //   - Reassigned to someone else → the card is removed from the board. It is
+  //     no longer the user's work, so keeping a stale copy only clutters it.
+  //   - Still assigned to the user (or unassigned), just no longer matching the
+  //     query (e.g. its status changed) → the card is kept, its real current
+  //     status written back, and flagged detached so the board shows it no
+  //     longer matches. Without this the card freezes at whatever status it
+  //     last held — showing "Backlog" for an issue that has since been closed.
+  //
+  // "Unassigned" deliberately does NOT count as reassigned-away: an issue with
+  // no assignee is not someone else's work, so the card is kept (flagged), not
+  // dropped. Removal only fires on a positive "assigned to a different user"
+  // match, and never when the /myself lookup failed (self unknown).
   private async reconcileDetachedJiraCards(
     baseUrl: string,
     source: StoredKanbanSource,
@@ -717,8 +801,17 @@ export class KanbanSyncService {
     seenExternalIds: Set<string>,
     truncated: boolean,
   ): Promise<StoredKanbanCard[]> {
+    const candidates = (await this.detachmentCandidates(source, seenExternalIds, truncated)).filter(
+      (card) => card.source.kind === "jira",
+    );
+    if (candidates.length === 0) {
+      return [];
+    }
+    // One /myself lookup per round covers every candidate. Null on failure —
+    // the reassignment check then never fires, so a card is only ever kept.
+    const me = await this.fetchJiraMyself(baseUrl, token, email);
     const reconciled: StoredKanbanCard[] = [];
-    for (const card of await this.detachmentCandidates(source, seenExternalIds, truncated)) {
+    for (const card of candidates) {
       if (card.source.kind !== "jira") {
         continue;
       }
@@ -736,6 +829,14 @@ export class KanbanSyncService {
           const flagged = await this.flagUnreachableCard(card, source);
           if (flagged) {
             reconciled.push(flagged);
+          }
+          continue;
+        }
+        // Reassigned to another user — this card is no longer the user's work.
+        // Drop it (only for cards this source owns, mirroring flagUnreachableCard).
+        if (jiraAssigneeIsSomeoneElse(issue.fields?.assignee, me)) {
+          if (card.sourceId === source.id) {
+            await this.store.deleteCard(card.id);
           }
           continue;
         }

@@ -519,6 +519,288 @@ describe("KanbanSyncService", () => {
     expect(stored).toMatchObject({ detachedFromSource: true, status: "wip" });
   });
 
+  test("removes a Jira card once its issue is reassigned to another user (Cloud accountId)", async () => {
+    const mineIssue = {
+      key: "SCIF-5080",
+      fields: {
+        summary: "Investigate profile rendering",
+        status: { name: "In Progress", statusCategory: { key: "indeterminate" } },
+        assignee: { accountId: "me-123", displayName: "Jun Fu" },
+      },
+    };
+    // Same issue after being reassigned to Dusan — it drops out of the
+    // `assignee = currentUser()` query, and the re-fetch shows a different
+    // accountId, so the card is no longer the user's work and must disappear.
+    const reassignedIssue = {
+      key: "SCIF-5080",
+      fields: {
+        summary: "Investigate profile rendering",
+        status: { name: "In Progress", statusCategory: { key: "indeterminate" } },
+        assignee: { accountId: "dusan-456", displayName: "Dusan Stankovic" },
+      },
+    };
+    let searchCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/rest/api/3/search/jql")) {
+        searchCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ issues: searchCalls === 1 ? [mineIssue] : [] }),
+        };
+      }
+      if (url.includes("/rest/api/3/myself")) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ accountId: "me-123" }),
+        };
+      }
+      if (url.includes("/rest/api/3/issue/SCIF-5080")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => reassignedIssue };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const connection = await store.createConnection({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      email: "jun@example.com",
+    });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      connectionId: connection.id,
+      query: "assignee = currentUser()",
+    });
+
+    await syncService.sync(source);
+    expect(
+      (await store.listCards()).find((card) => card.externalId === "jira:SCIF-5080"),
+    ).toBeDefined();
+
+    // Second sync: reconcile re-fetches, sees a different accountId, and drops the card.
+    const second = await syncService.sync(source);
+    expect(second.error).toBeNull();
+    expect(
+      (await store.listCards()).find((card) => card.externalId === "jira:SCIF-5080"),
+    ).toBeUndefined();
+  });
+
+  test("removes a Jira card reassigned to another user (Server/DC name)", async () => {
+    const mineIssue = {
+      key: "PROJ-20",
+      fields: {
+        summary: "Server-side task",
+        status: { name: "In Progress", statusCategory: { key: "indeterminate" } },
+        assignee: { name: "junfu", displayName: "Jun Fu" },
+      },
+    };
+    const reassignedIssue = {
+      key: "PROJ-20",
+      fields: {
+        summary: "Server-side task",
+        status: { name: "In Progress", statusCategory: { key: "indeterminate" } },
+        assignee: { name: "dusan", displayName: "Dusan Stankovic" },
+      },
+    };
+    let searchCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/rest/api/2/search")) {
+        searchCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ issues: searchCalls === 1 ? [mineIssue] : [], total: 0 }),
+        };
+      }
+      if (url.includes("/rest/api/2/myself")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => ({ name: "junfu" }) };
+      }
+      if (url.includes("/rest/api/2/issue/PROJ-20")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => reassignedIssue };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "assignee = currentUser()",
+    });
+
+    await syncService.sync(source);
+    await syncService.sync(source);
+    expect(
+      (await store.listCards()).find((card) => card.externalId === "jira:PROJ-20"),
+    ).toBeUndefined();
+  });
+
+  test("keeps a Jira card still assigned to the user that only changed status", async () => {
+    const issue = {
+      key: "PROJ-21",
+      fields: {
+        summary: "Closed, still mine",
+        status: { name: "Closed", statusCategory: { key: "done" } },
+        assignee: { name: "junfu", displayName: "Jun Fu" },
+      },
+    };
+    let searchCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/rest/api/2/search")) {
+        searchCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          // Query is `assignee = currentUser() AND status != Done`, so a close
+          // drops it out even though it's still assigned to the user.
+          json: async () => ({ issues: searchCalls === 1 ? [issue] : [], total: 0 }),
+        };
+      }
+      if (url.includes("/rest/api/2/myself")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => ({ name: "junfu" }) };
+      }
+      if (url.includes("/rest/api/2/issue/PROJ-21")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => issue };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "assignee = currentUser() AND status != Done",
+    });
+
+    await syncService.sync(source);
+    await syncService.sync(source);
+    const stored = (await store.listCards()).find((card) => card.externalId === "jira:PROJ-21");
+    // Still the user's work — kept, flagged detached, real status written back.
+    expect(stored).toMatchObject({ detachedFromSource: true, status: "done" });
+  });
+
+  test("keeps a Jira card that became unassigned (no assignee is not reassigned-away)", async () => {
+    const assignedIssue = {
+      key: "PROJ-22",
+      fields: {
+        summary: "Handed back to the pool",
+        status: { name: "Backlog", statusCategory: { key: "new" } },
+        assignee: { name: "junfu", displayName: "Jun Fu" },
+      },
+    };
+    const unassignedIssue = {
+      key: "PROJ-22",
+      fields: {
+        summary: "Handed back to the pool",
+        status: { name: "Backlog", statusCategory: { key: "new" } },
+        assignee: null,
+      },
+    };
+    let searchCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/rest/api/2/search")) {
+        searchCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ issues: searchCalls === 1 ? [assignedIssue] : [], total: 0 }),
+        };
+      }
+      if (url.includes("/rest/api/2/myself")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => ({ name: "junfu" }) };
+      }
+      if (url.includes("/rest/api/2/issue/PROJ-22")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => unassignedIssue };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "assignee = currentUser()",
+    });
+
+    await syncService.sync(source);
+    await syncService.sync(source);
+    const stored = (await store.listCards()).find((card) => card.externalId === "jira:PROJ-22");
+    expect(stored).toMatchObject({ detachedFromSource: true });
+    expect(stored).toBeDefined();
+  });
+
+  test("does not remove a reassigned Jira card when the /myself lookup fails", async () => {
+    const mineIssue = {
+      key: "PROJ-23",
+      fields: {
+        summary: "Reassigned, but self unknown",
+        status: { name: "Backlog", statusCategory: { key: "new" } },
+        assignee: { name: "junfu", displayName: "Jun Fu" },
+      },
+    };
+    const reassignedIssue = {
+      key: "PROJ-23",
+      fields: {
+        summary: "Reassigned, but self unknown",
+        status: { name: "Backlog", statusCategory: { key: "new" } },
+        assignee: { name: "dusan", displayName: "Dusan Stankovic" },
+      },
+    };
+    let searchCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/rest/api/2/search")) {
+        searchCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ issues: searchCalls === 1 ? [mineIssue] : [], total: 0 }),
+        };
+      }
+      // /myself is down — the reconcile pass cannot prove reassignment, so it
+      // must keep the card rather than risk dropping the user's own work.
+      if (url.includes("/rest/api/2/myself")) {
+        return { ok: false, status: 500, statusText: "Server Error", json: async () => ({}) };
+      }
+      if (url.includes("/rest/api/2/issue/PROJ-23")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => reassignedIssue };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "jira",
+      name: "Jira",
+      baseUrl: "https://jira.example.com",
+      query: "assignee = currentUser()",
+    });
+
+    await syncService.sync(source);
+    await syncService.sync(source);
+    const stored = (await store.listCards()).find((card) => card.externalId === "jira:PROJ-23");
+    // Conservative fallback: kept and flagged, never dropped on an unproven guess.
+    expect(stored).toMatchObject({ detachedFromSource: true });
+    expect(stored).toBeDefined();
+  });
+
   test("does not auto-create a column for an unmapped Jira status name — never more than the default 3 columns", async () => {
     const jiraResponse = {
       issues: Array.from({ length: 5 }, (_, i) => ({

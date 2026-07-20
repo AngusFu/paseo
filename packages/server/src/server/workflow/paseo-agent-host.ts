@@ -29,7 +29,19 @@ function worktreeSlug(title: string | undefined): string {
 }
 
 function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  if (err instanceof Error) {
+    return err.message;
+  }
+  if (typeof err === "string") {
+    return err;
+  }
+  // Thrown non-Error payloads (e.g. ACP error objects) — String() would
+  // collapse them to "[object Object]" in run logs.
+  try {
+    return JSON.stringify(err) ?? String(err);
+  } catch {
+    return String(err);
+  }
 }
 
 async function createWorkflowAgent(

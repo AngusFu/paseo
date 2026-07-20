@@ -2750,6 +2750,148 @@ describe("create_agent MCP tool", () => {
     ]);
   });
 
+  it("routes workflow tools through WorkflowService", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const runFixture = {
+      id: "wfr_test",
+      definitionId: "wfd_test",
+      status: "queued" as const,
+      args: {},
+      cwd: REPO_CWD,
+      workspaceId: null,
+      workspacePath: "/tmp/paseo/workflows/runs/wfr_test",
+      queuedAt: "2026-07-20T00:00:00.000Z",
+      startedAt: null,
+      endedAt: null,
+      result: null,
+      error: null,
+    };
+    const workflowService = {
+      listDefinitions: vi.fn(async () => [
+        {
+          id: "project:/repo/.paseo/workflows/review.flow.js",
+          name: "review",
+          description: null,
+          source: "export const meta = { name: 'review' };",
+          builtin: false,
+          createdAt: "2026-07-20T00:00:00.000Z",
+          updatedAt: "2026-07-20T00:00:00.000Z",
+          origin: "project" as const,
+          sourcePath: "/repo/.paseo/workflows/review.flow.js",
+        },
+      ]),
+      dispatch: vi.fn(async () => runFixture),
+      getRun: vi.fn(async () => runFixture),
+      listRunLogs: vi.fn(async () => ({ entries: [], nextSeq: 0, hasMore: false })),
+    };
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      workflowService,
+      logger,
+    });
+
+    const list = await registeredTool(server, "list_workflows").handler({ cwd: REPO_CWD });
+    expect(workflowService.listDefinitions).toHaveBeenCalledWith(REPO_CWD);
+    const definitions = z
+      .array(z.record(z.string(), z.unknown()))
+      .parse(list.structuredContent.definitions);
+    expect(definitions[0]?.id).toBe("project:/repo/.paseo/workflows/review.flow.js");
+
+    const dispatched = await registeredTool(server, "dispatch_workflow").handler({
+      definition: "wfd_test",
+      cwd: REPO_CWD,
+      task: "fix the bug",
+      args: { extra: 1 },
+    });
+    expect(workflowService.dispatch).toHaveBeenCalledWith({
+      definitionId: "wfd_test",
+      cwd: REPO_CWD,
+      args: { extra: 1, task: "fix the bug" },
+    });
+    expect(z.record(z.string(), z.unknown()).parse(dispatched.structuredContent.run).id).toBe(
+      "wfr_test",
+    );
+
+    const fetched = await registeredTool(server, "get_workflow_run").handler({
+      runId: "wfr_test",
+      afterSeq: 5,
+    });
+    expect(workflowService.getRun).toHaveBeenCalledWith("wfr_test");
+    expect(workflowService.listRunLogs).toHaveBeenCalledWith("wfr_test", { afterSeq: 5 });
+    expect(fetched.structuredContent.logs).toEqual({ entries: [], nextSeq: 0, hasMore: false });
+  });
+
+  it("dispatch_workflow rewrites an existing .flow.js path to a project: id and forwards resumeFromRunId", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const tempDir = await mkdtemp(join(tmpdir(), "paseo-mcp-workflow-"));
+    try {
+      const flowDir = join(tempDir, ".paseo", "workflows");
+      await mkdir(flowDir, { recursive: true });
+      const flowPath = join(flowDir, "smoke.flow.js");
+      await writeFile(flowPath, "export const meta = { name: 'smoke' };\nreturn { ok: true };\n");
+      const workflowService = {
+        listDefinitions: vi.fn(async () => []),
+        dispatch: vi.fn(async (input: { definitionId: string }) => ({
+          id: "wfr_path",
+          definitionId: input.definitionId,
+          status: "queued" as const,
+          args: {},
+          cwd: tempDir,
+          workspaceId: null,
+          workspacePath: tempDir,
+          queuedAt: "2026-07-20T00:00:00.000Z",
+          startedAt: null,
+          endedAt: null,
+          result: null,
+          error: null,
+        })),
+        getRun: vi.fn(async () => null),
+        listRunLogs: vi.fn(async () => ({ entries: [], nextSeq: 0, hasMore: false })),
+      };
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        workflowService,
+        logger,
+      });
+      const tool = registeredTool(server, "dispatch_workflow");
+
+      await tool.handler({
+        definition: ".paseo/workflows/smoke.flow.js",
+        cwd: tempDir,
+        resumeFromRunId: "wfr_prior",
+      });
+      expect(workflowService.dispatch).toHaveBeenCalledWith({
+        definitionId: `project:${flowPath}`,
+        cwd: tempDir,
+        resumeFromRunId: "wfr_prior",
+      });
+
+      // Unknown run id surfaces as an error instead of a null payload.
+      await expect(
+        registeredTool(server, "get_workflow_run").handler({ runId: "wfr_missing" }),
+      ).rejects.toThrow("Workflow run not found: wfr_missing");
+    } finally {
+      await removeTempDir(tempDir);
+    }
+  });
+
+  it("workflow tools fail clearly when the host has no workflow service", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      logger,
+    });
+    await expect(
+      registeredTool(server, "list_workflows").handler({ cwd: REPO_CWD }),
+    ).rejects.toThrow("Workflow service is not available on this host");
+  });
+
   it("accepts custom provider IDs in create_agent input validation", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({

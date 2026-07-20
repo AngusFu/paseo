@@ -1366,6 +1366,9 @@ function WorkflowRunDetailFooter({
   const toast = useToast();
   const [cancelRequested, setCancelRequested] = useState(false);
   const [isRunningAgain, setIsRunningAgain] = useState(false);
+  const [isResuming, setIsResuming] = useState(false);
+  // COMPAT(workflowRunResume): added in v0.1.112, drop the gate when floor >= v0.1.112.
+  const resumeSupported = useHostFeature(serverId, "workflowRunResume");
 
   useEffect(() => {
     setCancelRequested(false);
@@ -1410,6 +1413,20 @@ function WorkflowRunDetailFooter({
       .finally(() => setIsRunningAgain(false));
   }, [mutations, onRunAgain, run, t, toast]);
 
+  const resumeRun = useCallback(() => {
+    setIsResuming(true);
+    mutations
+      .dispatch({
+        definitionId: run.definitionId,
+        resumeFromRunId: run.id,
+      })
+      .then((created) => onRunAgain(created))
+      .catch((error: unknown) => {
+        toast.error(toErrorMessage(error) || t("workflows.runResumeFailed"));
+      })
+      .finally(() => setIsResuming(false));
+  }, [mutations, onRunAgain, run.definitionId, run.id, t, toast]);
+
   const openWorkspace = useCallback(() => {
     if (!serverId || !run.workspaceId) return;
     onClose();
@@ -1419,6 +1436,9 @@ function WorkflowRunDetailFooter({
   const canCancel = run.status === "queued" || run.status === "running";
   const canRunAgain =
     run.status === "succeeded" || run.status === "failed" || run.status === "cancelled";
+  // Resume only makes sense when something remains to redo — a failed or
+  // cancelled run whose successful stages can replay from its journal.
+  const canResume = resumeSupported && (run.status === "failed" || run.status === "cancelled");
   const showCancelling = cancelRequested && canCancel;
 
   return (
@@ -1448,7 +1468,7 @@ function WorkflowRunDetailFooter({
       ) : null}
       {canRunAgain ? (
         <Button
-          variant="default"
+          variant={canResume ? "outline" : "default"}
           size="sm"
           leftIcon={Play}
           loading={isRunningAgain}
@@ -1456,6 +1476,18 @@ function WorkflowRunDetailFooter({
           testID="workflow-run-again"
         >
           {t("workflows.actions.runAgain")}
+        </Button>
+      ) : null}
+      {canResume ? (
+        <Button
+          variant="default"
+          size="sm"
+          leftIcon={Play}
+          loading={isResuming}
+          onPress={resumeRun}
+          testID="workflow-run-resume"
+        >
+          {t("workflows.actions.resume")}
         </Button>
       ) : null}
     </View>

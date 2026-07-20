@@ -2539,6 +2539,7 @@ export const en = {
     runCancelFailed: "Couldn't cancel the run",
     runCancelling: "Cancelling…",
     runAgainFailed: "Couldn't start a new run",
+    runResumeFailed: "Couldn't resume the run",
     createFromBuiltin: "Create from built-in",
     forkedToast: 'Forked "{{name}}"',
     name: "Name",
@@ -2573,6 +2574,7 @@ export const en = {
       confirmDispatch: "Run",
       cancelRun: "Cancel run",
       runAgain: "Run again",
+      resume: "Resume",
     },
     status: {
       queued: "Queued",

@@ -8,6 +8,7 @@ import { runLsCommand } from "./ls.js";
 import { runRmCommand } from "./rm.js";
 import { runRunCommand } from "./run.js";
 import { runRunsCancelCommand } from "./runs-cancel.js";
+import { runRunsResumeCommand } from "./runs-resume.js";
 import { runRunsInspectCommand } from "./runs-inspect.js";
 import { runRunsLsCommand } from "./runs-ls.js";
 import { runUpdateCommand } from "./update.js";
@@ -89,7 +90,11 @@ export function createWorkflowCommand(): Command {
       .option("--mode <mode>", "Default provider mode for agent() calls")
       .option("--fast", "Enable Claude-style fast_mode for agent() calls")
       .option("--cwd <path>", "Working directory override")
-      .option("--repo-path <path>", "Repo path hint for the run"),
+      .option("--repo-path <path>", "Repo path hint for the run")
+      .option(
+        "--resume-from <runId>",
+        "Resume from a prior run: successful agent calls replay from its journal",
+      ),
   ).action(withOutput(runRunCommand));
 
   const runs = new Command("runs").description("Inspect and cancel workflow runs");
@@ -105,6 +110,13 @@ export function createWorkflowCommand(): Command {
   addJsonAndDaemonHostOptions(
     runs.command("cancel").description("Cancel a workflow run").argument("<runId>", "Run ID"),
   ).action(withOutput(runRunsCancelCommand));
+
+  addJsonAndDaemonHostOptions(
+    runs
+      .command("resume")
+      .description("Resume a failed/cancelled run (successful stages replay from its journal)")
+      .argument("<runId>", "Run ID"),
+  ).action(withOutput(runRunsResumeCommand));
 
   workflow.addCommand(runs);
 

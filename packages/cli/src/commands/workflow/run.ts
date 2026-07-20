@@ -23,6 +23,7 @@ export interface WorkflowRunOptions extends WorkflowCommandOptions {
   fast?: boolean;
   cwd?: string;
   repoPath?: string;
+  resumeFrom?: string;
 }
 
 // COMPAT(projectWorkflows): added in v0.1.112. A path-like argument that
@@ -43,7 +44,10 @@ export async function runRunCommand(
   options: WorkflowRunOptions,
   _command: Command,
 ): Promise<SingleResult<WorkflowRunRow>> {
-  const input = parseWorkflowDispatchInput(resolveDefinitionArgument(definitionId), options);
+  const input = {
+    ...parseWorkflowDispatchInput(resolveDefinitionArgument(definitionId), options),
+    ...(options.resumeFrom ? { resumeFromRunId: options.resumeFrom } : {}),
+  };
   const { client } = await connectWorkflowClient(options.host);
   try {
     assertWorkflowSupported(client);

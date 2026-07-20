@@ -76,6 +76,8 @@ export const WorkflowRunDispatchRequestSchema = z.object({
   cwd: z.string().optional(),
   repoPath: z.string().optional(),
   workspaceTitle: z.string().optional(),
+  // COMPAT(workflowRunResume): added in v0.1.112 — optional, old daemons ignore it.
+  resumeFromRunId: z.string().optional(),
 });
 export const WorkflowRunCancelRequestSchema = z.object({
   type: z.literal("workflow.run.cancel.request"),

@@ -41,6 +41,14 @@ import {
   type UpdateScheduleInput,
 } from "@getpaseo/protocol/schedule/types";
 import type { ProviderSnapshotManager } from "../provider-snapshot-manager.js";
+import { existsSync } from "node:fs";
+import { isAbsolute, resolve as resolvePath } from "node:path";
+import {
+  WorkflowDefinitionSchema,
+  WorkflowLogEntrySchema,
+  WorkflowRunSchema,
+} from "@getpaseo/protocol/workflow/types";
+import type { WorkflowService } from "../../workflow/service.js";
 import {
   AgentModelSchema,
   AgentProviderEnum,
@@ -112,6 +120,10 @@ export interface PaseoToolHostDependencies {
   ) => Promise<string>;
   browserToolsEnabled?: boolean;
   browserToolsBroker?: BrowserToolsBroker | null;
+  workflowService?: Pick<
+    WorkflowService,
+    "listDefinitions" | "dispatch" | "getRun" | "listRunLogs"
+  > | null;
   paseoHome?: string;
   worktreesRoot?: string;
   /**
@@ -2883,6 +2895,144 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       return {
         content: [],
         structuredContent: ensureValidJson({ success: true }),
+      };
+    },
+  );
+
+  const requireWorkflowService = () => {
+    if (!options.workflowService) {
+      throw new Error("Workflow service is not available on this host");
+    }
+    return options.workflowService;
+  };
+
+  // Mirror of the CLI's resolveDefinitionArgument (packages/cli/src/commands/
+  // workflow/run.ts): a path-like argument that exists on disk dispatches
+  // read-through as `project:<abs path>` — no registration step.
+  const resolveWorkflowDefinitionArgument = (definition: string, cwd: string): string => {
+    const trimmed = definition.trim();
+    const pathLike =
+      trimmed.includes("/") || trimmed.endsWith(".flow.js") || trimmed.endsWith(".js");
+    if (pathLike && !trimmed.startsWith("project:")) {
+      const absolute = isAbsolute(trimmed) ? trimmed : resolvePath(cwd, trimmed);
+      if (existsSync(absolute)) {
+        return `project:${resolvePath(absolute)}`;
+      }
+    }
+    return trimmed;
+  };
+
+  registerTool(
+    "list_workflows",
+    {
+      title: "List workflows",
+      description:
+        "List dispatchable workflow definitions: user-level, builtin, and this project's *.flow.js scripts (.paseo/workflows/ and .claude/workflows/, read fresh — id `project:<abs path>`). Project scripts are dispatched directly by id or path; NEVER copy/register a project script as a new definition.",
+      inputSchema: {
+        cwd: z
+          .string()
+          .optional()
+          .describe("Project directory to scan for project workflows. Defaults to your cwd."),
+      },
+      outputSchema: {
+        definitions: z.array(WorkflowDefinitionSchema),
+      },
+    },
+    async ({ cwd }) => {
+      const workflowService = requireWorkflowService();
+      const resolvedCwd = resolveScopedCwd(cwd, { required: true });
+      const definitions = await workflowService.listDefinitions(resolvedCwd);
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ definitions }),
+      };
+    },
+  );
+
+  registerTool(
+    "dispatch_workflow",
+    {
+      title: "Dispatch workflow",
+      description:
+        "Dispatch a workflow run. `definition` accepts a definition id (wfd_… / builtin:… / project:<abs path>) or a *.flow.js path (absolute or relative to cwd) — paths dispatch read-through, no registration. Flows that manage their own worktrees (e.g. ticket pipelines) expect `cwd` to be the MAIN repo root. After a failed run, prefer resumeFromRunId over re-dispatching: successful agent calls replay from its journal at zero cost.",
+      inputSchema: {
+        definition: z
+          .string()
+          .describe("Definition id or *.flow.js path (absolute or relative to cwd)."),
+        cwd: z.string().optional().describe("Working directory for the run. Defaults to your cwd."),
+        task: z
+          .string()
+          .optional()
+          .describe("Convenience for args.task — the task string most flows read."),
+        args: z.record(z.string(), z.unknown()).optional().describe("Run arguments."),
+        workspaceTitle: z.string().optional(),
+        resumeFromRunId: z
+          .string()
+          .optional()
+          .describe("Resume from this failed/cancelled run of the same definition."),
+      },
+      outputSchema: {
+        run: WorkflowRunSchema,
+      },
+    },
+    async ({ definition, cwd, task, args, workspaceTitle, resumeFromRunId }) => {
+      const workflowService = requireWorkflowService();
+      const resolvedCwd = resolveScopedCwd(cwd, { required: true });
+      const definitionId = resolveWorkflowDefinitionArgument(definition, resolvedCwd);
+      const mergedArgs: Record<string, unknown> | undefined =
+        args !== undefined || task !== undefined
+          ? { ...args, ...(task !== undefined ? { task } : {}) }
+          : undefined;
+      const run = await workflowService.dispatch({
+        definitionId,
+        cwd: resolvedCwd,
+        ...(mergedArgs !== undefined ? { args: mergedArgs } : {}),
+        ...(workspaceTitle !== undefined ? { workspaceTitle } : {}),
+        ...(resumeFromRunId !== undefined ? { resumeFromRunId } : {}),
+      });
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ run }),
+      };
+    },
+  );
+
+  registerTool(
+    "get_workflow_run",
+    {
+      title: "Get workflow run",
+      description:
+        "Fetch a workflow run's status plus its event log (phases, agent starts/completions, errors). Terminal statuses: succeeded, failed, cancelled. To follow a live run, poll with the returned nextSeq as afterSeq to read only new entries.",
+      inputSchema: {
+        runId: z.string(),
+        afterSeq: z
+          .number()
+          .optional()
+          .describe("Exclusive lower bound — return log entries with seq > afterSeq."),
+        limit: z.number().int().positive().optional().describe("Max log entries to return."),
+      },
+      outputSchema: {
+        run: WorkflowRunSchema,
+        logs: z.object({
+          entries: z.array(WorkflowLogEntrySchema),
+          nextSeq: z.number(),
+          hasMore: z.boolean(),
+        }),
+      },
+    },
+    async ({ runId, afterSeq, limit }) => {
+      const workflowService = requireWorkflowService();
+      const run = await workflowService.getRun(runId);
+      if (!run) {
+        throw new Error(`Workflow run not found: ${runId}`);
+      }
+      const logs = await workflowService.listRunLogs(runId, {
+        afterSeq: afterSeq ?? 0,
+        ...(limit !== undefined ? { limit } : {}),
+      });
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ run, logs }),
       };
     },
   );

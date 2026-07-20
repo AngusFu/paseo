@@ -5497,6 +5497,9 @@ export class DaemonClient {
         ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
         ...(options.repoPath !== undefined ? { repoPath: options.repoPath } : {}),
         ...(options.workspaceTitle !== undefined ? { workspaceTitle: options.workspaceTitle } : {}),
+        ...(options.resumeFromRunId !== undefined
+          ? { resumeFromRunId: options.resumeFromRunId }
+          : {}),
       },
     });
   }

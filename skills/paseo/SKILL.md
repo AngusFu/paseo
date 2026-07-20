@@ -54,6 +54,18 @@ Agent-scoped `create_agent` defaults `notifyOnFinish` to true. Set it to `false`
 
 **`archive_agent`** — `{ agentId }`. Interrupts if running, removes from active list.
 
+## Workflows
+
+Deterministic multi-agent pipelines (`*.flow.js` on the agents-workflow engine). Prompt-driven dispatch is first-class — use the MCP tools, or the CLI when you only have a shell.
+
+**`list_workflows`** — `{ cwd? }`. Lists user-level, builtin, AND the project's own scripts (`.paseo/workflows/` + `.claude/workflows/`, read fresh; id `project:<abs path>`). If a script exists in the repo it is already dispatchable — **never copy/register a project script as a new definition** (that creates a drifting frozen copy).
+
+**`dispatch_workflow`** — `{ definition, cwd?, task?, args?, resumeFromRunId? }`. `definition` takes a definition id or a `*.flow.js` path (absolute or relative to cwd) — paths dispatch read-through. Flows that manage their own worktrees (ticket pipelines) want `cwd` = the MAIN repo root; don't pre-create a worktree for them. After a failed run, prefer `resumeFromRunId` over re-dispatching: successful stages replay from the prior run's journal at zero cost.
+
+**`get_workflow_run`** — `{ runId, afterSeq?, limit? }`. Status + event log (phases, agent starts/completions). Terminal statuses: `succeeded` / `failed` / `cancelled`. To follow a live run, poll and pass the returned `nextSeq` back as `afterSeq`. Dispatching agents should watch the run and report the outcome instead of going idle.
+
+CLI equivalents: `paseo workflow ls` / `paseo workflow run <id|path/to/x.flow.js> --arg task="..."` / `paseo workflow runs inspect <runId>` / `paseo workflow runs resume <runId>`.
+
 ## Provider discovery
 
 **`inspect_providers`** — preferred snapshot dump of enabled providers with modes, models, and thinking/effort ids. Pass `cwd`; set `all: true` to include disabled providers. Optional `provider` filter. Does not return draft features.

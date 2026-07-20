@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, cp, mkdir, writeFile } from "node:fs/promises";
+import { access, copyFile, cp, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
@@ -243,6 +243,17 @@ export function buildWorkflowEngineArgs(input: {
     return task;
   }
   return merged;
+}
+
+function resolveDispatchCwd(
+  inputCwd: string | undefined,
+  resumeFrom: WorkflowRun | null,
+  runDir: string,
+): string {
+  if (inputCwd) {
+    return expandUserPath(inputCwd);
+  }
+  return resumeFrom ? resumeFrom.cwd : runDir;
 }
 
 export function matchesKanbanWorkflowRule(
@@ -553,15 +564,42 @@ export class WorkflowService {
     if (!definition) {
       throw new Error(`Workflow definition not found: ${input.definitionId}`);
     }
+    let resumeFrom: WorkflowRun | null = null;
+    if (input.resumeFromRunId) {
+      resumeFrom = await this.getRun(input.resumeFromRunId);
+      if (!resumeFrom) {
+        throw new Error(`Cannot resume: workflow run not found: ${input.resumeFromRunId}`);
+      }
+      if (resumeFrom.definitionId !== definition.id) {
+        throw new Error(
+          `Cannot resume: run ${resumeFrom.id} belongs to definition ${resumeFrom.definitionId}, not ${definition.id}`,
+        );
+      }
+    }
     const id = `wfr_${randomUUID()}`;
     const runDir = join(this.paseoHome, "workflows", "runs", id);
     await mkdir(runDir, { recursive: true });
+    if (resumeFrom) {
+      // The engine's Journal loads this file on construction and beginRun()
+      // marks prior entries replayable — identical (prompt, opts) agent calls
+      // return cached results at zero cost; failed/unrun stages execute live.
+      try {
+        await copyFile(
+          join(resumeFrom.workspacePath, "journal.jsonl"),
+          join(runDir, "journal.jsonl"),
+        );
+      } catch {
+        // Prior run never reached an agent call — nothing to replay.
+      }
+    }
     const workspaceTitle = formatWorkflowWorkspaceTitle(
-      input.workspaceTitle?.trim() || definition.name,
+      input.workspaceTitle?.trim() ||
+        (resumeFrom ? (readArgString(resumeFrom.args, "workspaceTitle") ?? "") : "") ||
+        definition.name,
       definition.name,
     );
     const args: Record<string, unknown> = {
-      ...input.args,
+      ...(input.args === undefined && resumeFrom ? resumeFrom.args : input.args),
       workspaceTitle,
     };
     const run: WorkflowRun = {
@@ -569,7 +607,7 @@ export class WorkflowService {
       definitionId: definition.id,
       status: "queued",
       args,
-      cwd: input.cwd ? expandUserPath(input.cwd) : runDir,
+      cwd: resolveDispatchCwd(input.cwd, resumeFrom, runDir),
       workspaceId: null,
       workspacePath: runDir,
       queuedAt: new Date().toISOString(),
@@ -590,6 +628,15 @@ export class WorkflowService {
         model: readArgString(run.args, "model") ?? null,
       },
     });
+    if (resumeFrom) {
+      await this.log({
+        event: "run.resumed",
+        message: `resumed from ${resumeFrom.id}`,
+        runId: run.id,
+        definitionId: definition.id,
+        data: { resumeFromRunId: resumeFrom.id },
+      });
+    }
     void this.queue.enqueue(() => this.execute(definition, run));
     return run;
   }

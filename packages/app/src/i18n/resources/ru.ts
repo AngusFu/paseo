@@ -2572,6 +2572,7 @@ export const ru: TranslationResources = {
     runCancelFailed: "Couldn't cancel the run",
     runCancelling: "Cancelling…",
     runAgainFailed: "Couldn't start a new run",
+    runResumeFailed: "Couldn't resume the run",
     description: "Description",
     descriptionPlaceholder: "Optional description",
     source: "Source (.flow.js)",
@@ -2606,6 +2607,7 @@ export const ru: TranslationResources = {
       confirmDispatch: "Run",
       cancelRun: "Cancel run",
       runAgain: "Run again",
+      resume: "Resume",
     },
     status: {
       queued: "Queued",

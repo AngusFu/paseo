@@ -700,6 +700,114 @@ describe("workflow engine progress events via service", () => {
   });
 });
 
+describe("workflow run resume", () => {
+  it("replays successful agent calls from the prior run's journal and re-runs the rest", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const prev = process.env.PASEO_WORKFLOW_BACKEND;
+    process.env.PASEO_WORKFLOW_BACKEND = "mock";
+    try {
+      const service = new WorkflowService({ paseoHome: dir });
+      const definition = await service.createDefinition({
+        name: "resumable",
+        source: [
+          "export const meta = { name: 'resumable' };",
+          "await agent('step one', { label: 'one' });",
+          "if (args && typeof args === 'object' && args.fail) {",
+          "  throw new Error('boom after step one');",
+          "}",
+          "await agent('step two', { label: 'two' });",
+          "return { ok: true };",
+        ].join("\n"),
+      });
+      const waitForTerminal = async (runId: string) => {
+        for (let i = 0; i < 50; i++) {
+          const latest = await service.getRun(runId);
+          if (latest && (latest.status === "succeeded" || latest.status === "failed")) {
+            return latest;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        throw new Error("run did not finish");
+      };
+
+      const first = await service.dispatch({
+        definitionId: definition.id,
+        cwd: dir,
+        args: { task: "noop", fail: true },
+      });
+      const firstFinal = await waitForTerminal(first.id);
+      expect(firstFinal.status).toBe("failed");
+
+      // Resume with args that no longer trip the failure branch.
+      const resumed = await service.dispatch({
+        definitionId: definition.id,
+        resumeFromRunId: first.id,
+        args: { task: "noop" },
+      });
+      const resumedFinal = await waitForTerminal(resumed.id);
+      expect(resumedFinal.status).toBe("succeeded");
+      // cwd inherited from the prior run.
+      expect(resumedFinal.cwd).toBe(firstFinal.cwd);
+
+      const { entries } = await service.listRunLogs(resumed.id);
+      const resumedEvent = entries.find((entry) => entry.event === "run.resumed");
+      expect(resumedEvent?.data).toMatchObject({ resumeFromRunId: first.id });
+      // "step one" replays from the journal (cached), "step two" runs live.
+      const starts = entries.filter((entry) => entry.event === "agent.start");
+      expect(starts.map((entry) => [entry.data?.label, entry.data?.cached])).toEqual([
+        ["one", true],
+        ["two", false],
+      ]);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.PASEO_WORKFLOW_BACKEND;
+      } else {
+        process.env.PASEO_WORKFLOW_BACKEND = prev;
+      }
+    }
+  });
+
+  it("rejects resuming across definitions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const prev = process.env.PASEO_WORKFLOW_BACKEND;
+    process.env.PASEO_WORKFLOW_BACKEND = "mock";
+    try {
+      const service = new WorkflowService({ paseoHome: dir });
+      const a = await service.createDefinition({
+        name: "def-a",
+        source: "export const meta = { name: 'def-a' };\nreturn { ok: true };\n",
+      });
+      const b = await service.createDefinition({
+        name: "def-b",
+        source: "export const meta = { name: 'def-b' };\nreturn { ok: true };\n",
+      });
+      const run = await service.dispatch({ definitionId: a.id, cwd: dir, args: { task: "x" } });
+      await expect(
+        service.dispatch({ definitionId: b.id, resumeFromRunId: run.id }),
+      ).rejects.toThrow("Cannot resume");
+      await expect(
+        service.dispatch({ definitionId: a.id, resumeFromRunId: "wfr_missing" }),
+      ).rejects.toThrow("Cannot resume: workflow run not found");
+      // Let the dispatched run settle before the temp dir is removed.
+      for (let i = 0; i < 50; i++) {
+        const latest = await service.getRun(run.id);
+        if (latest && latest.status !== "queued" && latest.status !== "running") {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    } finally {
+      if (prev === undefined) {
+        delete process.env.PASEO_WORKFLOW_BACKEND;
+      } else {
+        process.env.PASEO_WORKFLOW_BACKEND = prev;
+      }
+    }
+  });
+});
+
 describe("extractWorkflowResultError", () => {
   it("reads nested engine result errors", () => {
     expect(

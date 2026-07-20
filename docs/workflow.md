@@ -253,6 +253,24 @@ Convenience flags on `workflow run` (`--provider` / `--model` / `--thinking` /
 For local script validation without the daemon, use `aw` from
 `@getpaseo/agents-workflow` (`aw list` / `aw validate` / `aw run`).
 
+## Agent-facing MCP tools + resume
+
+Agents dispatch workflows first-class via three MCP tools: `list_workflows`
+(includes project read-through definitions for the cwd), `dispatch_workflow`
+(accepts a definition id or a `*.flow.js` path; `task` merges into
+`args.task`; `resumeFromRunId` resumes a failed run), and `get_workflow_run`
+(status + event log, poll with `nextSeq`→`afterSeq`). Usage rules live in
+`skills/paseo/SKILL.md`.
+
+Resume (`resumeFromRunId` on dispatch, feature flag
+`server_info.features.workflowRunResume`): the daemon copies the prior run's
+`journal.jsonl` into the new run before the engine starts, so successful
+agent calls replay cached (event log shows `agent.start` with
+`data.cached: true`) and only failed/unrun stages execute. cwd/args default
+to the prior run's; the event log records `run.resumed`. Surfaces: the run
+detail sheet's Resume button, `paseo workflow runs resume <runId>`,
+`paseo workflow run <id> --resume-from <runId>`, and the MCP tool.
+
 ## Run UI (progress tree, agents, run tab)
 
 The daemon writes every engine progress event into the run's event log

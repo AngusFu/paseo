@@ -99,6 +99,12 @@ export interface DispatchWorkflowRunInput {
   repoPath?: string;
   /** Display title for the Paseo workspace minted for this run's agents. */
   workspaceTitle?: string;
+  /**
+   * Resume from a prior run of the same definition: its journal is copied
+   * into the new run so successful agent calls replay at zero cost and only
+   * failed/unrun stages execute. cwd/args default to the prior run's.
+   */
+  resumeFromRunId?: string;
 }
 
 export interface CreateKanbanWorkflowRuleInput {

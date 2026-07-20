@@ -1940,6 +1940,7 @@ export class Session {
             cwd: msg.cwd,
             repoPath: msg.repoPath,
             workspaceTitle: msg.workspaceTitle,
+            resumeFromRunId: msg.resumeFromRunId,
           }),
         );
       case "workflow.run.cancel.request":

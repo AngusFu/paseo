@@ -2506,6 +2506,7 @@ export const zhCN: TranslationResources = {
     runCancelFailed: "取消失败",
     runCancelling: "取消中…",
     runAgainFailed: "重新运行失败",
+    runResumeFailed: "续跑失败",
     createFromBuiltin: "从内置模板创建",
     forkedToast: "已 Fork「{{name}}」",
     name: "名称",
@@ -2540,6 +2541,7 @@ export const zhCN: TranslationResources = {
       confirmDispatch: "开始执行",
       cancelRun: "取消运行",
       runAgain: "重新运行",
+      resume: "续跑",
     },
     status: {
       queued: "排队中",

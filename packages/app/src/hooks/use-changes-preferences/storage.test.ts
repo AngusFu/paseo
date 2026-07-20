@@ -89,6 +89,7 @@ describe("loadChangesPreferencesFromStorage", () => {
       diffTool: "difftastic",
       gitAlgorithm: "histogram",
       diffFontSize: "md",
+      commitsCollapsed: true,
     });
   });
 

@@ -2964,6 +2964,16 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           .string()
           .optional()
           .describe("Convenience for args.task — the task string most flows read."),
+        provider: z
+          .string()
+          .optional()
+          .describe(
+            "Default provider for the run's agent() calls (folds into args.provider, like the CLI's --provider). Set it when the daemon's default provider may be disabled.",
+          ),
+        model: z
+          .string()
+          .optional()
+          .describe("Default model for the run's agent() calls (folds into args.model)."),
         args: z.record(z.string(), z.unknown()).optional().describe("Run arguments."),
         workspaceTitle: z.string().optional(),
         resumeFromRunId: z
@@ -2975,14 +2985,17 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         run: WorkflowRunSchema,
       },
     },
-    async ({ definition, cwd, task, args, workspaceTitle, resumeFromRunId }) => {
+    async ({ definition, cwd, task, provider, model, args, workspaceTitle, resumeFromRunId }) => {
       const workflowService = requireWorkflowService();
       const resolvedCwd = resolveScopedCwd(cwd, { required: true });
       const definitionId = resolveWorkflowDefinitionArgument(definition, resolvedCwd);
+      const extras: Record<string, unknown> = {
+        ...(task !== undefined ? { task } : {}),
+        ...(provider !== undefined ? { provider } : {}),
+        ...(model !== undefined ? { model } : {}),
+      };
       const mergedArgs: Record<string, unknown> | undefined =
-        args !== undefined || task !== undefined
-          ? { ...args, ...(task !== undefined ? { task } : {}) }
-          : undefined;
+        args !== undefined || Object.keys(extras).length > 0 ? { ...args, ...extras } : undefined;
       const run = await workflowService.dispatch({
         definitionId,
         cwd: resolvedCwd,

@@ -40,7 +40,12 @@ import {
   useFormPreferences,
 } from "@/hooks/use-form-preferences";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/combobox";
+import {
+  Combobox,
+  ComboboxItem,
+  type ComboboxDesktopPlacement,
+  type ComboboxOption,
+} from "@/components/ui/combobox";
 import { DraftAgentModeControl, AgentModeControl } from "@/composer/agent-controls/mode-control";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -100,6 +105,13 @@ interface ControlledAgentControlsProps {
   desktopExtras?: ReactNode;
   modelSelectorServerId?: string | null;
   isCompactLayout?: boolean;
+  /**
+   * Where the desktop popovers open relative to their chip. The composer sits
+   * at the bottom of the screen, so `top-start` is the default; toolbars near
+   * the top of a panel must pass `bottom-start` or the popover overshoots the
+   * viewport top.
+   */
+  desktopPlacement?: ComboboxDesktopPlacement;
 }
 
 export interface DraftAgentControlsProps {
@@ -128,6 +140,8 @@ export interface DraftAgentControlsProps {
   disabled?: boolean;
   modelSelectorServerId?: string | null;
   isCompactLayout?: boolean;
+  /** See `ControlledAgentControlsProps.desktopPlacement`. */
+  desktopPlacement?: ComboboxDesktopPlacement;
 }
 
 interface AgentControlsProps {
@@ -416,6 +430,7 @@ function ControlledAgentControls({
   desktopExtras,
   modelSelectorServerId = null,
   isCompactLayout,
+  desktopPlacement = "top-start",
 }: ControlledAgentControlsProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
@@ -626,6 +641,7 @@ function ControlledAgentControls({
           renderThinkingOption={renderThinkingOption}
           extras={desktopExtras}
           modelSelectorServerId={modelSelectorServerId}
+          desktopPlacement={desktopPlacement}
         />
       ) : (
         <SheetAgentControlsContent
@@ -711,6 +727,7 @@ interface DesktopAgentControlsContentProps {
   }) => ReactElement;
   extras?: ReactNode;
   modelSelectorServerId: string | null;
+  desktopPlacement: ComboboxDesktopPlacement;
 }
 
 const DESKTOP_SEARCH_THRESHOLD = 6;
@@ -760,7 +777,11 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     renderThinkingOption,
     extras,
     modelSelectorServerId,
+    desktopPlacement,
   } = props;
+  // Feature selects use the Modal-based dropdown, which takes a side, not a
+  // combobox placement.
+  const featureSide = desktopPlacement === "top-start" ? "top" : "bottom";
 
   return (
     <>
@@ -786,7 +807,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
             open={openSelector === "provider"}
             onOpenChange={handleProviderOpenChange}
             anchorRef={providerAnchorRef}
-            desktopPlacement="top-start"
+            desktopPlacement={desktopPlacement}
           />
         </>
       ) : null}
@@ -809,7 +830,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
                 onRetryProvider={onRetryModelProvider}
                 isRetryingProvider={isRetryingModelProvider}
                 serverId={modelSelectorServerId}
-                desktopPlacement="top-start"
+                desktopPlacement={desktopPlacement}
                 desktopMinWidth={360}
               />
             </View>
@@ -852,7 +873,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
             open={openSelector === "thinking"}
             onOpenChange={handleThinkingOpenChange}
             anchorRef={thinkingAnchorRef}
-            desktopPlacement="top-start"
+            desktopPlacement={desktopPlacement}
             renderOption={renderThinkingOption}
           />
         </>
@@ -868,6 +889,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
           openSelector={openSelector}
           handleOpenChange={handleOpenChange}
           onSetFeature={onSetFeature}
+          side={featureSide}
         />
       ))}
     </>
@@ -1091,12 +1113,14 @@ function DesktopFeatureItem({
   openSelector,
   handleOpenChange,
   onSetFeature,
+  side,
 }: {
   feature: AgentFeature;
   disabled: boolean;
   openSelector: AgentControlSelector | null;
   handleOpenChange: (selector: AgentControlSelector) => (nextOpen: boolean) => void;
   onSetFeature?: (featureId: string, value: unknown) => void;
+  side: "top" | "bottom";
 }) {
   const { theme } = useUnistyles();
   const featureSelector: AgentControlSelector = `feature-${feature.id}`;
@@ -1192,7 +1216,7 @@ function DesktopFeatureItem({
             <Text style={styles.tooltipText}>{getFeatureTooltip(feature)}</Text>
           </TooltipContent>
         </Tooltip>
-        <DropdownMenuContent side="top" align="start">
+        <DropdownMenuContent side={side} align="start">
           {feature.options.map((option) => (
             <FeatureOptionMenuItem
               key={option.id}
@@ -1634,6 +1658,7 @@ export function DraftAgentControls({
   disabled = false,
   modelSelectorServerId = null,
   isCompactLayout,
+  desktopPlacement = "top-start",
 }: DraftAgentControlsProps) {
   const { preferences, updatePreferences } = useFormPreferences();
   const isCompactFormFactor = useIsCompactFormFactor();
@@ -1684,6 +1709,7 @@ export function DraftAgentControls({
         onSelectMode={onSelectMode}
         disabled={disabled}
         isCompactLayout={isCompactLayout}
+        desktopPlacement={desktopPlacement}
       />
     ),
     [
@@ -1694,6 +1720,7 @@ export function DraftAgentControls({
       onSelectMode,
       disabled,
       isCompactLayout,
+      desktopPlacement,
     ],
   );
 
@@ -1714,7 +1741,7 @@ export function DraftAgentControls({
           onRetryProvider={onRetryModelProvider}
           isRetryingProvider={isRetryingModelProvider}
           serverId={modelSelectorServerId}
-          desktopPlacement="top-start"
+          desktopPlacement={desktopPlacement}
           desktopMinWidth={360}
         />
         {selectedProvider ? (
@@ -1731,6 +1758,7 @@ export function DraftAgentControls({
             disabled={disabled}
             desktopExtras={draftModeChip}
             isCompactLayout={isCompactLayout}
+            desktopPlacement={desktopPlacement}
           />
         ) : null}
       </View>

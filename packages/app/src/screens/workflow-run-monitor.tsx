@@ -1,6 +1,8 @@
 /**
  * Live monitor for a workflow run: header counters, a phase list on the left
- * and the selected phase's agent calls on the right, plus an action bar.
+ * and the selected phase's agent calls on the right, plus an action bar. The
+ * two columns stack once the container itself gets narrow — the monitor also
+ * renders inside the run-detail sheet, which is narrow on a desktop.
  *
  * Everything here is derived from the run record and the event log the detail
  * body already polls once a second — no extra network. The elapsed timers are
@@ -18,6 +20,7 @@ import { StyleSheet } from "react-native-unistyles";
 import type { WorkflowLogEntry, WorkflowRun } from "@getpaseo/protocol/workflow/types";
 import { isWeb } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
+import { useContainerWidthBelow } from "@/hooks/use-container-width";
 import {
   buildWorkflowPhaseTree,
   formatWorkflowElapsed,
@@ -30,6 +33,14 @@ import {
 } from "@/screens/workflow-run-phase-tree";
 
 const TICK_INTERVAL_MS = 1_000;
+
+/**
+ * Below this the two columns no longer fit: the 220px phase column plus a
+ * readable agent row. Measured on the columns container, not the device — the
+ * monitor also renders inside the narrow run-detail sheet and in split panes,
+ * both of which stay non-compact form factors.
+ */
+const TWO_COLUMN_MIN_WIDTH = 480;
 
 /** Re-renders once a second while `enabled`, so elapsed timers advance. */
 function useElapsedTick(enabled: boolean): number {
@@ -111,6 +122,8 @@ export function WorkflowRunMonitor({
 }): ReactElement | null {
   const { t } = useTranslation();
   const isCompact = useIsCompactFormFactor();
+  const { onLayout: onColumnsLayout, isBelow: isNarrow } =
+    useContainerWidthBelow(TWO_COLUMN_MIN_WIDTH);
   const groups = useMemo(() => buildWorkflowPhaseTree(entries), [entries]);
   const summaries = useMemo(() => summarizeWorkflowPhases(groups), [groups]);
   const currentPhaseIndex = useMemo(() => resolveCurrentPhaseIndex(groups), [groups]);
@@ -179,8 +192,8 @@ export function WorkflowRunMonitor({
         </Text>
       </View>
 
-      <View style={isCompact ? styles.columnsCompact : styles.columns}>
-        <View style={isCompact ? styles.phaseColumnCompact : styles.phaseColumn}>
+      <View style={isNarrow ? styles.columnsStacked : styles.columns} onLayout={onColumnsLayout}>
+        <View style={isNarrow ? styles.phaseColumnStacked : styles.phaseColumn}>
           <Text style={styles.columnLabel}>{t("workflows.runPhases")}</Text>
           {groups.map((group, index) => (
             <PhaseRow
@@ -348,7 +361,7 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.xs,
   },
   columns: { flexDirection: "row", gap: theme.spacing[4] },
-  columnsCompact: { flexDirection: "column", gap: theme.spacing[3] },
+  columnsStacked: { flexDirection: "column", gap: theme.spacing[3] },
   phaseColumn: {
     width: 220,
     gap: theme.spacing[1],
@@ -356,7 +369,7 @@ const styles = StyleSheet.create((theme) => ({
     borderRightColor: theme.colors.border,
     paddingRight: theme.spacing[3],
   },
-  phaseColumnCompact: { gap: theme.spacing[1] },
+  phaseColumnStacked: { gap: theme.spacing[1] },
   agentColumn: { flex: 1, minWidth: 0, gap: theme.spacing[1] },
   columnLabel: {
     color: theme.colors.foregroundMuted,

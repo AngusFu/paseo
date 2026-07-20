@@ -24,7 +24,12 @@ import {
 } from "lucide-react-native";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
 import { type SheetHeader } from "@/components/adaptive-modal-sheet";
-import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/combobox";
+import {
+  Combobox,
+  ComboboxItem,
+  type ComboboxDesktopPlacement,
+  type ComboboxOption,
+} from "@/components/ui/combobox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Shortcut } from "@/components/ui/shortcut";
 import { useSessionStore } from "@/stores/session-store";
@@ -109,6 +114,7 @@ interface AgentModeControlViewProps {
   selectedModeId: string | null | undefined;
   onSelectMode: (modeId: string) => void;
   disabled?: boolean;
+  desktopPlacement?: ComboboxDesktopPlacement;
 }
 
 function normalizeSearchQuery(value: string): string {
@@ -122,6 +128,7 @@ function AgentModeControlView({
   selectedModeId,
   onSelectMode,
   disabled = false,
+  desktopPlacement = "top-start",
 }: AgentModeControlViewProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
@@ -268,7 +275,7 @@ function AgentModeControlView({
         open={open}
         onOpenChange={handleOpenChange}
         anchorRef={anchorRef}
-        desktopPlacement="top-start"
+        desktopPlacement={desktopPlacement}
         header={sheetHeader}
         renderOption={renderOption}
       />
@@ -373,6 +380,7 @@ export interface DraftAgentModeControlProps {
   disabled?: boolean;
   placement: AgentModeControlPlacement;
   isCompactLayout?: boolean;
+  desktopPlacement?: ComboboxDesktopPlacement;
 }
 
 export function DraftAgentModeControl({
@@ -384,6 +392,7 @@ export function DraftAgentModeControl({
   disabled,
   placement,
   isCompactLayout,
+  desktopPlacement,
 }: DraftAgentModeControlProps) {
   const isCompactFormFactor = useIsCompactFormFactor();
   const isCompact = isCompactLayout ?? isCompactFormFactor;
@@ -397,6 +406,7 @@ export function DraftAgentModeControl({
       selectedModeId={selectedMode}
       onSelectMode={onSelectMode}
       disabled={disabled}
+      desktopPlacement={desktopPlacement}
     />
   );
 }

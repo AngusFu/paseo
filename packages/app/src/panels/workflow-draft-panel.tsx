@@ -236,6 +236,9 @@ function WorkflowDraftPanel(): ReactElement {
             onSetFeature={form.features.setFeatureValue}
             modelSelectorServerId={serverId}
             isCompactLayout={isCompact}
+            // This toolbar sits at the top of the panel, not above a composer —
+            // popovers must drop down or they overshoot the viewport top.
+            desktopPlacement="bottom-start"
           />
         </View>
         <Field label={t("workflows.task")}>

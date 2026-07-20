@@ -6,6 +6,7 @@ export interface WorkflowRunSummary {
   outcome: string | null;
   /** Status to show in UI — remaps stored `succeeded` when the result carries an error. */
   displayStatus: WorkflowRunStatus;
+  /** Agents the run went through — launched plus replayed-from-cache. */
   agentCalls: number | null;
   argsPreview: string | null;
   /** Engine payload without the enclosing meta/stats envelope. */
@@ -27,6 +28,16 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readCount(value: unknown): number | null {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "string" && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+  return null;
 }
 
 function extractNestedError(run: WorkflowRun): string | null {
@@ -69,12 +80,13 @@ export function summarizeWorkflowRun(run: WorkflowRun): WorkflowRunSummary {
 
   const result = asRecord(run.result);
   const stats = asRecord(result?.stats);
-  let agentCalls: number | null = null;
-  if (typeof stats?.agentCalls === "number") {
-    agentCalls = stats.agentCalls;
-  } else if (typeof stats?.agentCalls === "string" && Number.isFinite(Number(stats.agentCalls))) {
-    agentCalls = Number(stats.agentCalls);
-  }
+  // The engine counts `agentCalls` only for agents it actually launched — a
+  // resumed run replays cached agents and bumps `cacheHits` instead. Summing
+  // both is what the user sees as "agents" in the run monitor's phase tree; a
+  // bare `agentCalls` reads as "0 agent calls" next to a "4/4 agents" tree.
+  const executedCalls = readCount(stats?.agentCalls);
+  const cacheHits = readCount(stats?.cacheHits);
+  const agentCalls = executedCalls === null ? null : executedCalls + (cacheHits ?? 0);
 
   const meaningfulArgs = Object.fromEntries(
     Object.entries(args).filter(([key]) => key !== "runtimeDir" && key !== "key"),

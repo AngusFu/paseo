@@ -60,4 +60,15 @@ describe("summarizeWorkflowRun", () => {
       staleTaskContract: false,
     });
   });
+
+  test("counts cache-replayed agents alongside launched ones", () => {
+    expect(
+      summarizeWorkflowRun(
+        run({
+          args: { task: "resume it" },
+          result: { result: { ok: true }, stats: { agentCalls: 0, cacheHits: 4 } },
+        }),
+      ),
+    ).toMatchObject({ agentCalls: 4 });
+  });
 });

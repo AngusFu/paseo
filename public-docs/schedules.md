@@ -16,7 +16,7 @@ Paseo also has **heartbeats**. A heartbeat sends a recurring prompt back into on
 - An existing agent — when you want continuity.
 - The agent that created the schedule — heartbeats from inside an agent.
 - A shell command — run a build, test, or script directly, with no agent involved.
-Both concepts use the same cron engine, but their product surfaces stay separate:
+  Both concepts use the same cron engine, but their product surfaces stay separate:
 
 - **Schedules** create a new agent each run. You can inspect, pause, resume, run once, update, or delete them.
 - **Heartbeats** target one existing agent. They are intentionally lightweight: create or delete them over MCP; from the CLI you can also update only their cron period.

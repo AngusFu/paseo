@@ -165,6 +165,7 @@ paseo agent detach <id>        # Make a subagent top-level
 ```
 
 Detaching is an explicit lifecycle action, not a creation flag. The agent keeps running; only its relationship to its parent changes.
+
 ## Providers, models, and features
 
 Query the live daemon before hard-coding `--provider`, `--model`, `--thinking`, `--mode`, or `--feature`. Do not invent ids from memory — they depend on what is installed and which model is selected.

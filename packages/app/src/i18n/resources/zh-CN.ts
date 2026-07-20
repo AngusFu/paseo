@@ -2521,7 +2521,7 @@ export const zhCN: TranslationResources = {
       prompt: "初始提示词",
       promptHint: "启动时发给 Agent，之后仍可继续对话。",
       defaultPrompt:
-        "请先阅读 .claude/skills/paseo-create-workflow/SKILL.md（或 .agents/skills/paseo-create-workflow/SKILL.md），再帮我在 definitions/ 下创建新的 *.flow.js。先问清楚用途，再写出完整脚本。",
+        "请先阅读 .claude/skills/paseo-create-workflow/SKILL.md（或 .agents/skills/paseo-create-workflow/SKILL.md），再帮我创建新的 *.flow.js。先问清楚用途，以及要存成用户级（这里的 definitions/）还是项目级（<repo>/.paseo/workflows/），再写出完整脚本。",
       provider: "Provider",
       selectProvider: "请选择 provider",
       prepareFailed: "无法准备 workflows 目录",

@@ -7,7 +7,12 @@ description: Author a Paseo agents-workflow script — a Claude-Code-Workflow-co
 
 `@getpaseo/agents-workflow` (`packages/agents-workflow`) runs **Claude-Code-Workflow scripts**: `export const meta = {...}` literal + a body using 8 globals. It is a faithful SUPERSET — a vanilla Claude Workflow script runs unchanged, and agents-workflow adds NO engine belts: no artifact gate, no role-ordering policy (both retired). Schema is authored the vanilla way (inline JSON Schema). The only extras are authoring conventions + an à-la-carte output-verifier pattern (see below).
 
-User-authored definitions live under `$PASEO_HOME/workflows/definitions/` (daemon-managed). Builtin examples ship with the package at `packages/agents-workflow/workflows/builtin/*.flow.js`.
+Where a definition lives decides its scope — ask the user which they want before writing:
+
+- **User-level** (available in every project): `$PASEO_HOME/workflows/definitions/` (daemon-managed; the folder this authoring workspace opens in).
+- **Project-level** (checked into a repo, zero import step): `<repo>/.paseo/workflows/*.flow.js` or `<repo>/.claude/workflows/*.flow.js`. The daemon reads these fresh on every list/dispatch (read-through virtual definitions, id `project:<abs path>`); `.paseo/workflows` wins on a name collision. Claude Code workflow scripts drop in unchanged.
+
+Builtin examples ship with the package at `packages/agents-workflow/workflows/builtin/*.flow.js`.
 
 ## STEP 0 — reuse the authoritative Workflow prompt
 

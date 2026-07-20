@@ -2544,7 +2544,7 @@ export const ar: TranslationResources = {
       prompt: "Initial prompt",
       promptHint: "Sent to the agent when it starts. You can keep chatting afterward.",
       defaultPrompt:
-        "Read .claude/skills/paseo-create-workflow/SKILL.md (or .agents/skills/paseo-create-workflow/SKILL.md), then help me create a new *.flow.js under definitions/. Ask what it should do first, then write the full script.",
+        "Read .claude/skills/paseo-create-workflow/SKILL.md (or .agents/skills/paseo-create-workflow/SKILL.md), then help me create a new *.flow.js. Ask what it should do first and whether it is user-level (definitions/ here) or project-level (<repo>/.paseo/workflows/), then write the full script.",
       provider: "Provider",
       selectProvider: "Select a provider",
       prepareFailed: "Couldn't prepare the workflows folder",

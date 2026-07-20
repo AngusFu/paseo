@@ -142,3 +142,90 @@ test("event ordering per id: queued strictly before start before terminal", asyn
     expect(at("start")).toBeLessThan(at("complete"));
   }
 });
+
+test("provider/effort/mode overrides ride along on every event", async () => {
+  const { evs, onAgentEvent } = recorder();
+  const b = new MockBackend({ respond: () => ({ text: "ok" }) });
+  const src =
+    "export const meta = { name: 't' }\n" +
+    "const r = await agent('x', { provider: 'codex', effort: 'high', mode: 'plan' })\nreturn r";
+  await createEngine({ backend: b, onAgentEvent }).run(src, { args: {} });
+  expect(types(evs)).toEqual(["queued", "start", "complete"]);
+  for (const ev of evs) {
+    expect(ev.provider).toBe("codex");
+    expect(ev.effort).toBe("high");
+    expect(ev.mode).toBe("plan");
+  }
+});
+
+test("selection fields stay undefined when the call inherits run defaults", async () => {
+  const { evs, onAgentEvent } = recorder();
+  const b = new MockBackend({ respond: () => ({ text: "ok" }) });
+  const src = "export const meta = { name: 't' }\nreturn await agent('x')";
+  await createEngine({ backend: b, onAgentEvent }).run(src, { args: {} });
+  for (const ev of evs) {
+    expect(ev.provider).toBeUndefined();
+    expect(ev.effort).toBeUndefined();
+    expect(ev.mode).toBeUndefined();
+  }
+});
+
+test("a cache hit still carries the selection fields", async () => {
+  const journal = new Journal();
+  const src =
+    "export const meta = { name: 't' }\n" +
+    "return await agent('x', { provider: 'codex', effort: 'low', mode: 'ask' })";
+  const b = new MockBackend({ respond: () => ({ text: "ok" }) });
+  await createEngine({ backend: b, journal }).run(src, { args: {} });
+
+  const { evs, onAgentEvent } = recorder();
+  await createEngine({ backend: b, journal, onAgentEvent }).run(src, { args: {} });
+  expect(types(evs)).toEqual(["start", "complete"]);
+  expect(evs.every((e) => e.cached === true)).toBe(true);
+  expect(evs.every((e) => e.provider === "codex" && e.effort === "low" && e.mode === "ask")).toBe(
+    true,
+  );
+});
+
+test("the complete event forwards the backend's whole usage record", async () => {
+  const { evs, onAgentEvent } = recorder();
+  const b = new MockBackend({
+    respond: () => ({
+      text: "ok",
+      usage: {
+        inputTokens: 100,
+        cachedInputTokens: 20,
+        outputTokens: 7,
+        totalCostUsd: 0.5,
+        contextWindowMaxTokens: 200_000,
+        contextWindowUsedTokens: 1_234,
+      },
+    }),
+  });
+  const src = "export const meta = { name: 't' }\nreturn await agent('x')";
+  await createEngine({ backend: b, onAgentEvent }).run(src, { args: {} });
+  expect(evs[2].usage).toEqual({
+    inputTokens: 100,
+    cachedInputTokens: 20,
+    outputTokens: 7,
+    totalCostUsd: 0.5,
+    contextWindowMaxTokens: 200_000,
+    contextWindowUsedTokens: 1_234,
+  });
+});
+
+test("the engine hands the backend a callId matching the event id", async () => {
+  const seen: Array<number | undefined> = [];
+  const b = new MockBackend({
+    respond: (spec) => {
+      seen.push(spec.callId);
+      return { text: "ok" };
+    },
+  });
+  const { evs, onAgentEvent } = recorder();
+  const src =
+    "export const meta = { name: 't' }\nawait parallel([() => agent('a'), () => agent('b')])\nreturn 1";
+  await createEngine({ backend: b, onAgentEvent }).run(src, { args: {} });
+  const eventIds = [...new Set(evs.map((e) => e.id))].sort();
+  expect(seen.filter((id) => id != null).sort()).toEqual(eventIds);
+});

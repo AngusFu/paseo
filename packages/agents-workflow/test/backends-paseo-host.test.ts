@@ -92,4 +92,43 @@ describe("PaseoHostBackend", () => {
       error: "Provider 'claude' is disabled",
     });
   });
+
+  it("forwards the engine callId to the host", async () => {
+    const runAgent = vi.fn(async () => ({ text: "ok" }));
+    const backend = new PaseoHostBackend({
+      host: { runAgent },
+      defaultProvider: "claude",
+      workspaceId: "wks_1",
+    });
+    await backend.run(spec({ callId: 42 }));
+    expect(runAgent.mock.calls[0]?.[0]).toMatchObject({ callId: 42 });
+  });
+
+  it("omits callId entirely when the engine did not supply one", async () => {
+    const runAgent = vi.fn(async () => ({ text: "ok" }));
+    const backend = new PaseoHostBackend({
+      host: { runAgent },
+      defaultProvider: "claude",
+      workspaceId: "wks_1",
+    });
+    await backend.run(spec());
+    expect(Object.hasOwn(runAgent.mock.calls[0]?.[0] ?? {}, "callId")).toBe(false);
+  });
+
+  it("passes the host's full usage record back to the engine", async () => {
+    const usage = {
+      inputTokens: 10,
+      cachedInputTokens: 2,
+      outputTokens: 3,
+      totalCostUsd: 0.01,
+      contextWindowMaxTokens: 200_000,
+      contextWindowUsedTokens: 999,
+    };
+    const backend = new PaseoHostBackend({
+      host: { runAgent: async () => ({ text: "ok", usage }) },
+      defaultProvider: "claude",
+      workspaceId: "wks_1",
+    });
+    await expect(backend.run(spec())).resolves.toEqual({ text: "ok", usage });
+  });
 });

@@ -128,6 +128,12 @@ export interface AgentEvent {
   phase?: string;
   /** Model OVERRIDE (opts.model); undefined = inherits the session/backend default. */
   model?: string;
+  /** Provider OVERRIDE (opts.provider); undefined = inherits the run default. */
+  provider?: string;
+  /** Reasoning effort OVERRIDE (opts.effort); undefined = inherits the run default. */
+  effort?: Effort | string;
+  /** Provider mode OVERRIDE (opts.mode); undefined = inherits the run default. */
+  mode?: string;
   /** true when served from the resume journal WITHOUT running the backend. */
   cached?: boolean;
   /** Structured-output retry attempt number (1-based), on type "retry". */
@@ -257,8 +263,9 @@ export function createEngine(cfg: EngineConfig): Engine {
     if (opts.agentType) return SUBAGENT_TEXT + AGENTTYPE_NOTE;
     return SUBAGENT_TEXT;
   }
-  function toSpec(fullPrompt: string, opts: AgentCallOpts): AgentSpec {
+  function toSpec(fullPrompt: string, opts: AgentCallOpts, callId?: number): AgentSpec {
     return {
+      ...(callId != null ? { callId } : {}),
       prompt: fullPrompt,
       label: opts.label,
       phase: opts.phase ?? currentPhase ?? undefined,
@@ -292,6 +299,7 @@ export function createEngine(cfg: EngineConfig): Engine {
       const spec = toSpec(
         structuredPersona(norm.jsonSchema) + "\n\n---\n\n" + prompt + suffix,
         opts,
+        id,
       );
       const r = await backend.run(spec);
       // Finding 4 — charge each attempt its REAL usage; only fall back to the
@@ -325,6 +333,9 @@ export function createEngine(cfg: EngineConfig): Engine {
           label: opts.label,
           phase: opts.phase ?? currentPhase ?? undefined,
           model: opts.model,
+          provider: opts.provider,
+          effort: opts.effort,
+          mode: opts.mode,
           attempt: attempt + 1,
           error: lastFailure,
         });
@@ -342,6 +353,9 @@ export function createEngine(cfg: EngineConfig): Engine {
     const lbl = opts.label;
     const ph = opts.phase ?? currentPhase ?? undefined;
     const mdl = opts.model;
+    // Carried on every event so a consumer can show what the call actually
+    // asked for; undefined means "inherits the run default", not "unknown".
+    const sel = { provider: opts.provider, effort: opts.effort, mode: opts.mode };
 
     // key off the RESOLVED opts: phase falls back to the active phase(), and
     // isolation/labels participate — two calls differing only there must not
@@ -355,8 +369,8 @@ export function createEngine(cfg: EngineConfig): Engine {
       const cached = journal.get(key);
       // a resume cache hit never runs the backend — emit start+complete so the
       // UI still renders the (instantly done) node; cached:true distinguishes it.
-      agentEvt({ id, type: "start", label: lbl, phase: ph, model: mdl, cached: true });
-      agentEvt({ id, type: "complete", label: lbl, phase: ph, model: mdl, cached: true });
+      agentEvt({ id, type: "start", label: lbl, phase: ph, model: mdl, ...sel, cached: true });
+      agentEvt({ id, type: "complete", label: lbl, phase: ph, model: mdl, ...sel, cached: true });
       return cached;
     }
 
@@ -380,7 +394,7 @@ export function createEngine(cfg: EngineConfig): Engine {
     // estimate ONLY for a call with no usage (no more usage + 512 double-count).
     // queued = created + waiting for a concurrency slot (the limit() boundary);
     // start fires INSIDE the limiter callback once the slot is actually acquired.
-    agentEvt({ id, type: "queued", label: lbl, phase: ph, model: mdl });
+    agentEvt({ id, type: "queued", label: lbl, phase: ph, model: mdl, ...sel });
 
     let result: unknown;
     let charge = DEFAULT_EST_TOKENS;
@@ -389,7 +403,7 @@ export function createEngine(cfg: EngineConfig): Engine {
     try {
       if (opts.schema) {
         const sc = await limit(() => {
-          agentEvt({ id, type: "start", label: lbl, phase: ph, model: mdl });
+          agentEvt({ id, type: "start", label: lbl, phase: ph, model: mdl, ...sel });
           return structuredCall(id, prompt, opts as AgentCallOpts & { schema: SchemaInput });
         });
         result = sc.value;
@@ -398,8 +412,8 @@ export function createEngine(cfg: EngineConfig): Engine {
         else usage = { outputTokens: sc.spent };
       } else {
         result = await limit(async (): Promise<unknown> => {
-          agentEvt({ id, type: "start", label: lbl, phase: ph, model: mdl });
-          const spec = toSpec(personaFor(opts) + "\n\n---\n\n" + prompt, opts);
+          agentEvt({ id, type: "start", label: lbl, phase: ph, model: mdl, ...sel });
+          const spec = toSpec(personaFor(opts) + "\n\n---\n\n" + prompt, opts, id);
           const r = await backend.run(spec);
           charge = r?.usage?.outputTokens || DEFAULT_EST_TOKENS;
           usage = r?.usage;
@@ -418,8 +432,8 @@ export function createEngine(cfg: EngineConfig): Engine {
       // terminal event: error when the backend errored / threw / retries died,
       // else complete. Fired in `finally` so a thrown backend is covered too.
       if (errorMsg !== undefined)
-        agentEvt({ id, type: "error", label: lbl, phase: ph, model: mdl, error: errorMsg });
-      else agentEvt({ id, type: "complete", label: lbl, phase: ph, model: mdl, usage });
+        agentEvt({ id, type: "error", label: lbl, phase: ph, model: mdl, ...sel, error: errorMsg });
+      else agentEvt({ id, type: "complete", label: lbl, phase: ph, model: mdl, ...sel, usage });
     }
     // record SUCCESS only. Claude resume caches COMPLETED calls; a failure
     // recorded here would replay as a permanent null on resume instead of

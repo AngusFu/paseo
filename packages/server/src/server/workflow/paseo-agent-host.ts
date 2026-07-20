@@ -101,12 +101,14 @@ async function finishWorkflowAgent(
   }
 
   const text = result.finalText || waitResult.lastMessage || "";
-  const outputTokens =
-    typeof result.usage?.outputTokens === "number" ? result.usage.outputTokens : undefined;
+  // Forward the provider's whole usage record. This is the completed turn's
+  // usage (from `turn_completed`), not a running total — workflow agents run
+  // exactly one turn, so for them the two coincide. Do not sum these across
+  // turns if that ever changes: the context-window fields are a snapshot.
   return {
     text,
     agentId,
-    ...(outputTokens != null ? { usage: { outputTokens } } : {}),
+    ...(result.usage ? { usage: result.usage } : {}),
   };
 }
 

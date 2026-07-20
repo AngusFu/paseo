@@ -13,6 +13,12 @@ import { AgentBackend, type AgentSpec, type AgentResult, type AgentUsage } from 
 
 /** One agent invocation request, protocol-shaped. */
 export interface PaseoAgentHostRequest {
+  /**
+   * The engine's per-`agent()` id (`AgentSpec.callId`). Lets the host tag what
+   * it learns — spawned agentId, usage — onto the same progress-tree node the
+   * engine's events created. Optional: older engines do not send it.
+   */
+  callId?: number;
   prompt: string;
   provider: string;
   model?: string;
@@ -115,6 +121,7 @@ export class PaseoHostBackend extends AgentBackend {
 
     try {
       const result = await this.host.runAgent({
+        ...(spec.callId != null ? { callId: spec.callId } : {}),
         prompt: spec.prompt,
         provider,
         model,

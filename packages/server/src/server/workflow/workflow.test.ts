@@ -16,6 +16,17 @@ import { KanbanStore } from "../kanban/store.js";
 
 const dirs: string[] = [];
 
+/** Poll until the run reaches a terminal status (same cadence as the inline loops). */
+async function waitForRunToSettle(service: WorkflowService, runId: string): Promise<void> {
+  for (let i = 0; i < 50; i++) {
+    const latest = await service.getRun(runId);
+    if (latest && (latest.status === "succeeded" || latest.status === "failed")) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 afterEach(async () => {
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
@@ -690,6 +701,110 @@ describe("workflow engine progress events via service", () => {
         callId: startEntry?.data?.callId,
         phase: "Scan",
       });
+    } finally {
+      if (prev === undefined) {
+        delete process.env.PASEO_WORKFLOW_BACKEND;
+      } else {
+        process.env.PASEO_WORKFLOW_BACKEND = prev;
+      }
+    }
+  });
+
+  it("carries provider/effort/mode selection onto every engine agent entry", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const prev = process.env.PASEO_WORKFLOW_BACKEND;
+    process.env.PASEO_WORKFLOW_BACKEND = "mock";
+    try {
+      const service = new WorkflowService({ paseoHome: dir });
+      const definition = await service.createDefinition({
+        name: "selection",
+        source: [
+          "export const meta = { name: 'selection' };",
+          "await agent('x', { label: 'sel', provider: 'codex', effort: 'high', mode: 'plan' });",
+          "return { ok: true };",
+        ].join("\n"),
+      });
+      const run = await service.dispatch({
+        definitionId: definition.id,
+        cwd: dir,
+        args: { task: "noop" },
+      });
+      await waitForRunToSettle(service, run.id);
+      const { entries } = await service.listRunLogs(run.id);
+
+      for (const event of ["agent.queued", "agent.start", "agent.complete"]) {
+        const entry = entries.find((candidate) => candidate.event === event);
+        expect(entry?.data, `${event} entry`).toMatchObject({
+          provider: "codex",
+          effort: "high",
+          mode: "plan",
+        });
+      }
+    } finally {
+      if (prev === undefined) {
+        delete process.env.PASEO_WORKFLOW_BACKEND;
+      } else {
+        process.env.PASEO_WORKFLOW_BACKEND = prev;
+      }
+    }
+  });
+
+  it("tags host agent.done with the engine callId and the provider's whole usage record", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const prev = process.env.PASEO_WORKFLOW_BACKEND;
+    delete process.env.PASEO_WORKFLOW_BACKEND;
+    const usage = {
+      inputTokens: 120,
+      cachedInputTokens: 30,
+      outputTokens: 9,
+      totalCostUsd: 0.02,
+      contextWindowMaxTokens: 200_000,
+      contextWindowUsedTokens: 4_096,
+    };
+    const seenCallIds: Array<number | undefined> = [];
+    try {
+      const service = new WorkflowService({
+        paseoHome: dir,
+        ensureAgentWorkspace: async () => "wks_test",
+        agentHost: {
+          runAgent: async (request) => {
+            seenCallIds.push(request.callId);
+            return { text: "done", agentId: "agent_1", usage };
+          },
+        },
+      });
+      const definition = await service.createDefinition({
+        name: "host-usage",
+        source: [
+          "export const meta = { name: 'host-usage' };",
+          "await agent('x', { label: 'host:main' });",
+          "return { ok: true };",
+        ].join("\n"),
+      });
+      const run = await service.dispatch({
+        definitionId: definition.id,
+        cwd: dir,
+        args: { task: "noop", provider: "claude" },
+      });
+      await waitForRunToSettle(service, run.id);
+      const { entries } = await service.listRunLogs(run.id);
+
+      const startEntry = entries.find((entry) => entry.event === "agent.start");
+      const doneEntry = entries.find((entry) => entry.event === "agent.done");
+      // Pin the id to a real number first: comparing two undefineds would pass
+      // vacuously if callId never threaded through at all.
+      expect(startEntry?.data?.callId).toEqual(expect.any(Number));
+      expect(seenCallIds).toEqual([startEntry?.data?.callId]);
+      expect(doneEntry?.data).toMatchObject({
+        callId: startEntry?.data?.callId,
+        agentId: "agent_1",
+        usage,
+      });
+      // The engine's own complete event carries the same usage independently.
+      const completeEntry = entries.find((entry) => entry.event === "agent.complete");
+      expect(completeEntry?.data?.usage).toEqual(usage);
     } finally {
       if (prev === undefined) {
         delete process.env.PASEO_WORKFLOW_BACKEND;

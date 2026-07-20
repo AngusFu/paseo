@@ -20,6 +20,13 @@ export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
 /** Normalized, backend-agnostic description of one agent run. */
 export interface AgentSpec {
+  /**
+   * The engine's monotonic per-`agent()` id, identical to `AgentEvent.id`.
+   * Lets a backend (and anything downstream of it) attach what it learns —
+   * spawned agent id, token usage — back to the progress-tree node the events
+   * created. Optional: backends must not require it.
+   */
+  callId?: number;
   /** Fully-assembled prompt (persona + task) to run. */
   prompt: string;
   /** Human/UI label for the agent. */
@@ -52,9 +59,23 @@ export interface AgentSpec {
   labels?: Record<string, string>;
 }
 
-/** Optional usage accounting for budgets. */
+/**
+ * Optional usage accounting for budgets and UI. Mirrors the protocol's
+ * `AgentUsage` so a host can forward what a provider reported without
+ * reshaping it. Every field is optional — backends report what they know.
+ *
+ * These are the values for ONE reported turn, not a running total. The context
+ * window fields are inherently a point-in-time snapshot and must never be
+ * summed; the token counts are only a whole-run total when the agent ran a
+ * single turn, which is the case for workflow agents today.
+ */
 export interface AgentUsage {
+  inputTokens?: number;
+  cachedInputTokens?: number;
   outputTokens?: number;
+  totalCostUsd?: number;
+  contextWindowMaxTokens?: number;
+  contextWindowUsedTokens?: number;
 }
 
 /** Result of one agent run. Resolve with { error } on ordinary failure. */

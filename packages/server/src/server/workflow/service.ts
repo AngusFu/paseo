@@ -10,6 +10,7 @@ import {
   MockBackend,
   PaseoBackend,
   PaseoHostBackend,
+  type AgentUsage,
   type PaseoAgentHost,
 } from "@getpaseo/agents-workflow";
 import {
@@ -892,13 +893,21 @@ export class WorkflowService {
       label?: string;
       phase?: string;
       model?: string;
+      provider?: string;
+      effort?: string;
+      mode?: string;
       cached?: boolean;
+      usage?: AgentUsage;
     }) => ({
       callId: event.id,
       label: event.label ?? null,
       phase: event.phase ?? null,
       model: event.model ?? null,
+      provider: event.provider ?? null,
+      effort: event.effort ?? null,
+      mode: event.mode ?? null,
       cached: event.cached ?? false,
+      usage: event.usage ? { ...event.usage } : null,
     });
     const engine = createEngine({
       backend,
@@ -1050,11 +1059,17 @@ export class WorkflowService {
           runId: run.id,
           definitionId,
           data: {
+            // The engine's node key. Without it these two events carry an
+            // agentId and usage that nothing can attach to the progress tree.
+            callId: request.callId ?? null,
             agentId: result.agentId ?? null,
             provider: request.provider,
             model: request.model ?? null,
+            thinkingOptionId: request.thinkingOptionId ?? null,
+            modeId: request.modeId ?? null,
             workspaceId: request.workspaceId ?? null,
             isolation: request.isolation ?? null,
+            usage: result.usage ? { ...result.usage } : null,
           },
         });
         return result;

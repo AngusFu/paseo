@@ -74,6 +74,8 @@ import {
   type WorkspaceScriptsService,
 } from "./session/workspace-scripts/workspace-scripts-service.js";
 import type { DaemonConfigStore } from "./daemon-config-store.js";
+import { loadPersistedConfig } from "./persisted-config.js";
+import { releaseWorkspaceServicePortPlan } from "./workspace-service-port-registry.js";
 import { getErrorMessage, getErrorMessageOr } from "@getpaseo/protocol/error-utils";
 import { getAgentStatusPriority } from "@getpaseo/protocol/agent-state-bucket";
 import { getParentAgentIdFromLabels } from "@getpaseo/protocol/agent-labels";
@@ -929,6 +931,7 @@ export class Session {
       logger: this.sessionLogger,
       emit: (message) => this.emit(message),
       spawnWorkspaceScript,
+      globalServicePorts: loadPersistedConfig(this.paseoHome).worktrees?.servicePorts,
     });
     this.subscribeToOptionalManagers();
     this.workspaceDirectory = new WorkspaceDirectory({
@@ -5115,6 +5118,7 @@ export class Session {
   private async teardownArchivedWorkspace(workspaceId: string): Promise<void> {
     this.workspaceGitObserver.removeForWorkspaceId(workspaceId);
     this.scriptRuntimeStore?.removeForWorkspace(workspaceId);
+    releaseWorkspaceServicePortPlan(workspaceId);
   }
 
   private async reconcileAndEmitWorkspaceUpdates(): Promise<void> {

@@ -35,6 +35,11 @@ function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): Workspace
       const agentId = trimNonEmpty(value.agentId);
       return agentId ? { kind: "agent", agentId } : null;
     }
+    case "workflow_draft": {
+      const draftId = trimNonEmpty(value.draftId);
+      const definitionId = trimNonEmpty(value.definitionId);
+      return draftId && definitionId ? { kind: "workflow_draft", draftId, definitionId } : null;
+    }
     case "workflow_run": {
       const runId = trimNonEmpty(value.runId);
       return runId ? { kind: "workflow_run", runId } : null;
@@ -117,6 +122,10 @@ export function workspaceTabTargetsEqual(
       const other = right as Same<"provider_subagent">;
       return left.parentAgentId === other.parentAgentId && left.subagentId === other.subagentId;
     }
+    case "workflow_draft": {
+      const other = right as Same<"workflow_draft">;
+      return left.draftId === other.draftId && left.definitionId === other.definitionId;
+    }
     case "workflow_run":
       return left.runId === (right as Same<"workflow_run">).runId;
     case "terminal":
@@ -176,6 +185,9 @@ export function buildDeterministicWorkspaceTabId(target: WorkspaceTabTarget): st
   }
   if (target.kind === "provider_subagent") {
     return `provider_subagent_${target.parentAgentId.length}_${target.parentAgentId}_${target.subagentId.length}_${target.subagentId}`;
+  }
+  if (target.kind === "workflow_draft") {
+    return `workflow_draft_${target.draftId}`;
   }
   if (target.kind === "workflow_run") {
     return `workflow_run_${target.runId}`;

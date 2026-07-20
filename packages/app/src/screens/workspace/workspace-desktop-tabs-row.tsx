@@ -30,6 +30,7 @@ import {
   Plus,
   SquarePen,
   SquareTerminal,
+  Workflow,
   X,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -78,6 +79,15 @@ import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-
 import type { Theme } from "@/styles/theme";
 import { RenderProfile } from "@/utils/render-profiler";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
+import { useWorkspaceWorkflowDefinitions } from "@/hooks/use-workspace-workflow-definitions";
+import {
+  buildWorkflowMenuEntries,
+  type WorkflowMenuDefinition as WorkflowMenuDefinitionEntry,
+} from "@/screens/workspace/workflow-menu-entries";
+import { useWorkspaceFields } from "@/stores/session-store-hooks";
+import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
+import { buildWorkspaceTabPersistenceKey } from "@/stores/workspace-tabs-store";
+import { generateDraftId } from "@/stores/draft-keys";
 import {
   getTerminalProfileIcon,
   resolveTerminalProfiles,
@@ -109,10 +119,12 @@ const ThemedGlobe = withUnistyles(Globe);
 const ThemedColumns2 = withUnistyles(Columns2);
 const ThemedRows2 = withUnistyles(Rows2);
 const ThemedPlus = withUnistyles(Plus);
+const ThemedWorkflow = withUnistyles(Workflow);
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 const AGENT_ICON = <ThemedSquarePen size={14} uniProps={mutedColorMapping} />;
+const WORKFLOW_ICON = <ThemedWorkflow size={14} uniProps={mutedColorMapping} />;
 const TERMINAL_ICON = <ThemedSquareTerminal size={14} uniProps={mutedColorMapping} />;
 const BROWSER_ICON = <ThemedGlobe size={14} uniProps={mutedColorMapping} />;
 
@@ -208,13 +220,38 @@ function WorkspaceInlineAddTabButton({
   );
 }
 
+interface PinnableWorkflowMenuItemProps {
+  definition: WorkflowMenuDefinitionEntry;
+  onLaunch: (target: PinnedTabTarget) => void;
+}
+
+function PinnableWorkflowMenuItem({ definition, onLaunch }: PinnableWorkflowMenuItemProps) {
+  const target = useMemo<PinnedTabTarget>(
+    () => ({ kind: "workflow", definitionId: definition.id }),
+    [definition.id],
+  );
+  const handleSelect = useCallback(() => onLaunch(target), [onLaunch, target]);
+
+  return (
+    <PinnableMenuItem
+      target={target}
+      label={definition.name}
+      leading={WORKFLOW_ICON}
+      onSelect={handleSelect}
+    />
+  );
+}
+
 interface WorkspaceTabRowExtrasProps {
   onCreateAgentTab: () => void;
   onCreateTerminal: () => void;
   onCreateBrowser: () => void;
   onCreateTerminalWithProfile: (profile: TerminalProfileInput) => void;
+  onCreateWorkflowDraft: (definitionId: string) => void;
+  onOpenAllWorkflows: () => void;
   onEditProfiles: () => void;
   normalizedServerId: string;
+  workspaceRepoRoot: string | null;
   showCreateBrowserTab: boolean;
   terminalDisabled: boolean;
 }
@@ -224,8 +261,11 @@ function WorkspaceTabRowExtras({
   onCreateTerminal,
   onCreateBrowser,
   onCreateTerminalWithProfile,
+  onCreateWorkflowDraft,
+  onOpenAllWorkflows,
   onEditProfiles,
   normalizedServerId,
+  workspaceRepoRoot,
   showCreateBrowserTab,
   terminalDisabled,
 }: WorkspaceTabRowExtrasProps) {
@@ -235,6 +275,14 @@ function WorkspaceTabRowExtras({
     () => resolveTerminalProfiles(config?.terminalProfiles),
     [config?.terminalProfiles],
   );
+  const { definitions: workflowDefinitions } = useWorkspaceWorkflowDefinitions({
+    serverId: normalizedServerId,
+    cwd: workspaceRepoRoot,
+  });
+  const workflowMenu = useMemo(
+    () => buildWorkflowMenuEntries(workflowDefinitions),
+    [workflowDefinitions],
+  );
 
   const handlers = useMemo<TabTargetHandlers>(
     () => ({
@@ -242,8 +290,15 @@ function WorkspaceTabRowExtras({
       createTerminal: onCreateTerminal,
       createBrowser: onCreateBrowser,
       createTerminalWithProfile: onCreateTerminalWithProfile,
+      createWorkflowDraft: onCreateWorkflowDraft,
     }),
-    [onCreateAgentTab, onCreateBrowser, onCreateTerminal, onCreateTerminalWithProfile],
+    [
+      onCreateAgentTab,
+      onCreateBrowser,
+      onCreateTerminal,
+      onCreateTerminalWithProfile,
+      onCreateWorkflowDraft,
+    ],
   );
 
   const onLaunch = useCallback(
@@ -312,6 +367,27 @@ function WorkspaceTabRowExtras({
           <DropdownMenuItem testID="workspace-new-tab-menu-edit-profiles" onSelect={onEditProfiles}>
             {t("workspace.tabs.actions.editTerminalProfiles")}
           </DropdownMenuItem>
+          {workflowMenu.entries.length > 0 ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{t("workflows.title")}</DropdownMenuLabel>
+              {workflowMenu.entries.map((definition) => (
+                <PinnableWorkflowMenuItem
+                  key={definition.id}
+                  definition={definition}
+                  onLaunch={onLaunch}
+                />
+              ))}
+              {workflowMenu.hasMore ? (
+                <DropdownMenuItem
+                  testID="workspace-new-tab-menu-all-workflows"
+                  onSelect={onOpenAllWorkflows}
+                >
+                  {t("workflows.allWorkflows")}
+                </DropdownMenuItem>
+              ) : null}
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
       <PinnedTargetsRow launchers={launchers} testIdPrefix="workspace-pinned-target" />
@@ -886,6 +962,38 @@ export function WorkspaceDesktopTabsRow({
     router.push(buildSettingsHostSectionRoute(normalizedServerId, "terminals") as Href);
   }, [normalizedServerId, router]);
 
+  const workspaceRepoRoot =
+    useWorkspaceFields(normalizedServerId, normalizedWorkspaceId, (workspace) => ({
+      workspaceDirectory: workspace.workspaceDirectory,
+    }))?.workspaceDirectory || null;
+  const openTabFocused = useWorkspaceLayoutStore((state) => state.openTabFocused);
+  const workspacePersistenceKey = useMemo(
+    () =>
+      buildWorkspaceTabPersistenceKey({
+        serverId: normalizedServerId,
+        workspaceId: normalizedWorkspaceId,
+      }),
+    [normalizedServerId, normalizedWorkspaceId],
+  );
+
+  const handleCreateWorkflowDraft = useCallback(
+    (definitionId: string) => {
+      if (!workspacePersistenceKey) {
+        return;
+      }
+      openTabFocused(workspacePersistenceKey, {
+        kind: "workflow_draft",
+        draftId: generateDraftId(),
+        definitionId,
+      });
+    },
+    [openTabFocused, workspacePersistenceKey],
+  );
+
+  const handleOpenAllWorkflows = useCallback(() => {
+    router.push("/workflows" as Href);
+  }, [router]);
+
   const handleCreateBrowser = useCallback(() => {
     onCreateBrowserTab({ paneId });
   }, [onCreateBrowserTab, paneId]);
@@ -1036,8 +1144,11 @@ export function WorkspaceDesktopTabsRow({
           onCreateTerminal={handleCreateTerminal}
           onCreateBrowser={handleCreateBrowser}
           onCreateTerminalWithProfile={handleCreateTerminalWithProfile}
+          onCreateWorkflowDraft={handleCreateWorkflowDraft}
+          onOpenAllWorkflows={handleOpenAllWorkflows}
           onEditProfiles={handleEditProfiles}
           normalizedServerId={normalizedServerId}
+          workspaceRepoRoot={workspaceRepoRoot}
           showCreateBrowserTab={showCreateBrowserTab}
           terminalDisabled={terminalDisabled}
         />

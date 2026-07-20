@@ -8,8 +8,9 @@ const PROFILES: readonly TerminalProfile[] = [
 ];
 
 interface RecordedLaunch {
-  action: "draft" | "terminal" | "browser" | "profile";
+  action: "draft" | "terminal" | "browser" | "profile" | "workflow";
   profile?: TerminalProfileInput;
+  definitionId?: string;
 }
 
 function recordingHandlers() {
@@ -19,6 +20,7 @@ function recordingHandlers() {
     createTerminal: () => launches.push({ action: "terminal" }),
     createBrowser: () => launches.push({ action: "browser" }),
     createTerminalWithProfile: (profile) => launches.push({ action: "profile", profile }),
+    createWorkflowDraft: (definitionId) => launches.push({ action: "workflow", definitionId }),
   };
   return { launches, handlers };
 }
@@ -48,6 +50,12 @@ describe("runPinnedTabTarget", () => {
     expect(launches).toEqual([
       { action: "profile", profile: { name: "Claude Code", command: "claude" } },
     ]);
+  });
+
+  it("opens a workflow draft for the workflow target", () => {
+    const { launches, handlers } = recordingHandlers();
+    runPinnedTabTarget({ kind: "workflow", definitionId: "wf-1" }, PROFILES, handlers);
+    expect(launches).toEqual([{ action: "workflow", definitionId: "wf-1" }]);
   });
 
   it("does nothing when the profile id is absent from the host", () => {

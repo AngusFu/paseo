@@ -2,7 +2,8 @@ export type PinnedTabTarget =
   | { kind: "draft" }
   | { kind: "terminal" }
   | { kind: "browser" }
-  | { kind: "profile"; profileId: string };
+  | { kind: "profile"; profileId: string }
+  | { kind: "workflow"; definitionId: string };
 
 export function isPinnedTargetAvailable(
   target: PinnedTabTarget,
@@ -14,6 +15,9 @@ export function isPinnedTargetAvailable(
 export function pinnedTargetKey(target: PinnedTabTarget): string {
   if (target.kind === "profile") {
     return `profile:${target.profileId}`;
+  }
+  if (target.kind === "workflow") {
+    return `workflow:${target.definitionId}`;
   }
   return target.kind;
 }

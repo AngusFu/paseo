@@ -2568,6 +2568,8 @@ export const zhCN: TranslationResources = {
     runAgents: "Agents",
     runAgentsEmpty: "本次运行还没有 agent",
     runTabLabel: "Workflow 运行",
+    draftTabLabel: "新建 Workflow 运行",
+    allWorkflows: "全部 workflows…",
     runPhases: "阶段进度",
     runPhaseUngrouped: "(无阶段)",
     runPhaseCached: "缓存命中",

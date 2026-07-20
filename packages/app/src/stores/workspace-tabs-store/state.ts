@@ -20,6 +20,7 @@ export type WorkspaceTabTarget =
   | { kind: "draft"; draftId: string; setup?: WorkspaceDraftTabSetup }
   | { kind: "agent"; agentId: string }
   | { kind: "provider_subagent"; parentAgentId: string; subagentId: string }
+  | { kind: "workflow_draft"; draftId: string; definitionId: string }
   | { kind: "workflow_run"; runId: string }
   | { kind: "terminal"; terminalId: string }
   | { kind: "browser"; browserId: string }

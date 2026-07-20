@@ -1,6 +1,6 @@
 import { useMemo, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
-import { Globe, SquarePen, SquareTerminal } from "lucide-react-native";
+import { Globe, SquarePen, SquareTerminal, Workflow } from "lucide-react-native";
 import { withUnistyles } from "react-native-unistyles";
 import {
   getTerminalProfileIcon,
@@ -9,6 +9,7 @@ import {
 import { getProviderIcon } from "@/components/provider-icons";
 import { getIsElectron } from "@/constants/platform";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
+import { useWorkflowDefinitions } from "@/hooks/use-workflow-definitions";
 import type { Theme } from "@/styles/theme";
 import {
   isPinnedTargetAvailable,
@@ -34,6 +35,7 @@ const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMut
 const ThemedSquarePen = withUnistyles(SquarePen);
 const ThemedSquareTerminal = withUnistyles(SquareTerminal);
 const ThemedGlobe = withUnistyles(Globe);
+const ThemedWorkflow = withUnistyles(Workflow);
 
 function ProviderPinIcon({
   iconKey,
@@ -61,6 +63,11 @@ export function usePinnedLaunchers({ serverId, onLaunch }: UsePinnedLaunchersInp
   const { t } = useTranslation();
   const pinned = usePinnedTargetsStore((state) => state.pinned);
   const { config } = useDaemonConfig(serverId);
+  // Only pay for the definition list when a workflow pin actually needs a name.
+  const hasWorkflowPin = pinned.some((target) => target.kind === "workflow");
+  const { definitions: workflowDefinitions } = useWorkflowDefinitions(
+    hasWorkflowPin ? serverId : null,
+  );
   const profiles = useMemo(
     () => resolveTerminalProfiles(config?.terminalProfiles),
     [config?.terminalProfiles],
@@ -103,6 +110,16 @@ export function usePinnedLaunchers({ serverId, onLaunch }: UsePinnedLaunchersInp
         }
         continue;
       }
+      if (target.kind === "workflow") {
+        const definition = workflowDefinitions.find((entry) => entry.id === target.definitionId);
+        resolved.push({
+          key: pinnedTargetKey(target),
+          label: definition?.name ?? t("workflows.draftTabLabel"),
+          icon: <ThemedWorkflow size={14} uniProps={mutedColorMapping} />,
+          onPress: () => onLaunch(target),
+        });
+        continue;
+      }
       const profile = profiles.find((entry) => entry.id === target.profileId);
       if (!profile) {
         continue;
@@ -115,5 +132,5 @@ export function usePinnedLaunchers({ serverId, onLaunch }: UsePinnedLaunchersInp
       });
     }
     return resolved;
-  }, [onLaunch, pinned, profiles, t]);
+  }, [onLaunch, pinned, profiles, t, workflowDefinitions]);
 }

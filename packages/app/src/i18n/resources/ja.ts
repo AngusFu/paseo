@@ -2621,6 +2621,8 @@ export const ja: TranslationResources = {
     runAgents: "Agents",
     runAgentsEmpty: "No agents for this run yet",
     runTabLabel: "Workflow run",
+    draftTabLabel: "New workflow run",
+    allWorkflows: "All workflows…",
     runPhases: "Progress",
     runPhaseUngrouped: "(no phase)",
     runPhaseCached: "cached",

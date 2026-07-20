@@ -96,3 +96,53 @@ describe("commit diff tab identity", () => {
     ).toBeNull();
   });
 });
+
+describe("workflow draft tab identity", () => {
+  it("normalizes a workflow draft target and trims both ids", () => {
+    expect(
+      normalizeWorkspaceTabTarget({
+        kind: "workflow_draft",
+        draftId: " draft-1 ",
+        definitionId: " wf-1 ",
+      }),
+    ).toEqual({ kind: "workflow_draft", draftId: "draft-1", definitionId: "wf-1" });
+  });
+
+  it("rejects a workflow draft target missing either id", () => {
+    expect(
+      normalizeWorkspaceTabTarget({
+        kind: "workflow_draft",
+        draftId: "draft-1",
+        definitionId: "  ",
+      }),
+    ).toBeNull();
+    expect(
+      normalizeWorkspaceTabTarget({
+        kind: "workflow_draft",
+        draftId: "",
+        definitionId: "wf-1",
+      }),
+    ).toBeNull();
+  });
+
+  it("compares both the draft id and the definition id", () => {
+    const target = { kind: "workflow_draft", draftId: "draft-1", definitionId: "wf-1" } as const;
+
+    expect(workspaceTabTargetsEqual(target, { ...target })).toBe(true);
+    expect(workspaceTabTargetsEqual(target, { ...target, definitionId: "wf-2" })).toBe(false);
+    expect(workspaceTabTargetsEqual(target, { ...target, draftId: "draft-2" })).toBe(false);
+    expect(workspaceTabTargetsEqual(target, { kind: "workflow_run", runId: "draft-1" })).toBe(
+      false,
+    );
+  });
+
+  it("keys a workflow draft tab by its draft id", () => {
+    expect(
+      buildDeterministicWorkspaceTabId({
+        kind: "workflow_draft",
+        draftId: "draft-1",
+        definitionId: "wf-1",
+      }),
+    ).toBe("workflow_draft_draft-1");
+  });
+});

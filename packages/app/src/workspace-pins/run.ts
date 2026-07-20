@@ -7,6 +7,7 @@ export interface TabTargetHandlers {
   createTerminal: () => void;
   createBrowser: () => void;
   createTerminalWithProfile: (profile: TerminalProfileInput) => void;
+  createWorkflowDraft: (definitionId: string) => void;
 }
 
 export function runPinnedTabTarget(
@@ -24,6 +25,10 @@ export function runPinnedTabTarget(
   }
   if (target.kind === "browser") {
     handlers.createBrowser();
+    return;
+  }
+  if (target.kind === "workflow") {
+    handlers.createWorkflowDraft(target.definitionId);
     return;
   }
   const profile = profiles.find((entry) => entry.id === target.profileId);

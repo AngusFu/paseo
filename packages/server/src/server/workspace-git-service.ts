@@ -72,6 +72,8 @@ export interface WorkspaceGitRuntimeSnapshot {
   cwd: string;
   git: {
     isGit: boolean;
+    // Only meaningful when isGit is false: cwd itself is gone, not merely un-versioned.
+    directoryMissing?: boolean;
     repoRoot: string | null;
     mainRepoRoot: string | null;
     currentBranch: string | null;
@@ -1770,7 +1772,10 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     const context: CheckoutContext = { ...baseContext, facts };
     const checkoutStatus = await this.deps.getCheckoutStatus(cwd, context);
     if (!checkoutStatus.isGit) {
-      target.latestGit = buildNotGitSnapshot(cwd).git;
+      target.latestGit = {
+        ...buildNotGitSnapshot(cwd).git,
+        directoryMissing: checkoutStatus.directoryMissing === true,
+      };
       target.latestGitLoadedAtMs = this.deps.now().getTime();
       target.latestForge = buildForgeUnavailableSnapshot();
       target.latestForgeLoadedAtMs = target.latestGitLoadedAtMs;

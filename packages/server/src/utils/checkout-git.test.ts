@@ -320,7 +320,11 @@ describe("checkout git utilities", () => {
     const nonGitDir = join(tempDir, "not-git-status");
     mkdirSync(nonGitDir, { recursive: true });
 
-    await expect(getCheckoutStatus(nonGitDir)).resolves.toEqual({ isGit: false });
+    // The directory exists, it is just not versioned — distinct from a removed worktree.
+    await expect(getCheckoutStatus(nonGitDir)).resolves.toEqual({
+      isGit: false,
+      directoryMissing: false,
+    });
   });
 
   it.runIf(
@@ -2921,6 +2925,65 @@ const x = 1;
     const baseDiff = await getCheckoutDiff(worktree.worktreePath, { mode: "base" }, { paseoHome });
     expect(baseDiff.diff).toContain("feature.txt");
     expect(baseDiff.diff).not.toContain("file.txt");
+  });
+
+  it("names both sides when the requested base ref differs from the stored one", async () => {
+    const worktree = await createLegacyWorktreeForTest({
+      branchName: "feature",
+      cwd: repoDir,
+      baseBranch: "main",
+      worktreeSlug: "mismatch-feature",
+      paseoHome,
+    });
+
+    // "origin/main" normalizes to "main" on write, so the stored ref is the bare name and a
+    // caller echoing the remote-qualified form is a genuine mismatch. The message has to name
+    // the stored ref on the "expected" side — it previously printed the requested ref twice,
+    // rendering as "expected origin/main, got origin/main".
+    await expect(
+      getCheckoutDiff(
+        worktree.worktreePath,
+        { mode: "base", baseRef: "origin/main" },
+        { paseoHome },
+      ),
+    ).rejects.toThrow('Base ref mismatch: expected "main", got "origin/main"');
+
+    await expect(
+      mergeToBase(worktree.worktreePath, { baseRef: "develop" }, { paseoHome }),
+    ).rejects.toThrow('Base ref mismatch: expected "main", got "develop"');
+
+    await expect(
+      mergeFromBase(worktree.worktreePath, { baseRef: "develop" }, { paseoHome }),
+    ).rejects.toThrow('Base ref mismatch: expected "main", got "develop"');
+  });
+
+  it("reports a removed worktree directory as missing rather than merely non-git", async () => {
+    const worktree = await createLegacyWorktreeForTest({
+      branchName: "feature",
+      cwd: repoDir,
+      baseBranch: "main",
+      worktreeSlug: "removed-feature",
+      paseoHome,
+    });
+
+    const present = await getCheckoutStatus(worktree.worktreePath, { paseoHome });
+    expect(present.isGit).toBe(true);
+
+    rmSync(worktree.worktreePath, { recursive: true, force: true });
+
+    const removed = await getCheckoutStatus(worktree.worktreePath, { paseoHome });
+    expect(removed.isGit).toBe(false);
+    expect(removed.directoryMissing).toBe(true);
+
+    // A directory that exists but simply is not versioned stays a plain non-git result.
+    const plain = mkdtempSync(join(tmpdir(), "paseo-non-git-"));
+    try {
+      const nonGit = await getCheckoutStatus(plain, { paseoHome });
+      expect(nonGit.isGit).toBe(false);
+      expect(nonGit.directoryMissing).toBe(false);
+    } finally {
+      rmSync(plain, { recursive: true, force: true });
+    }
   });
 
   it("excludes dirty working tree changes from Paseo worktree base diffs", async () => {

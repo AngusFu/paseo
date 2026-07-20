@@ -28,6 +28,7 @@ export function buildCheckoutStatusPayloadFromSnapshot({
     return {
       cwd,
       isGit: false,
+      directoryMissing: snapshot.git.directoryMissing === true,
       repoRoot: null,
       currentBranch: null,
       isDirty: null,

@@ -4,6 +4,7 @@ import { CheckoutPrStatusSchema } from "@getpaseo/protocol/messages";
 import type { WorkspaceGitRuntimeSnapshot } from "../workspace-git-service.js";
 import {
   buildCheckoutPrStatusPayloadFromSnapshot,
+  buildCheckoutStatusPayloadFromSnapshot,
   normalizeCheckoutPrStatusPayload,
 } from "./status-projection.js";
 
@@ -366,5 +367,22 @@ describe("checkout status projection", () => {
       hasMerged: false,
       ciStatus: "success",
     });
+  });
+
+  test("carries the missing-directory flag onto the non-git status payload", () => {
+    function buildNonGitPayload(directoryMissing: boolean) {
+      return buildCheckoutStatusPayloadFromSnapshot({
+        cwd: "/gone",
+        requestId: "req-missing",
+        snapshot: {
+          cwd: "/gone",
+          git: { isGit: false, directoryMissing },
+        } as unknown as WorkspaceGitRuntimeSnapshot,
+      });
+    }
+
+    // The client uses this to tell "worktree was removed" apart from "just not a repo".
+    expect(buildNonGitPayload(true)).toMatchObject({ isGit: false, directoryMissing: true });
+    expect(buildNonGitPayload(false)).toMatchObject({ isGit: false, directoryMissing: false });
   });
 });

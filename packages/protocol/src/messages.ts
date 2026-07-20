@@ -3975,6 +3975,10 @@ const CheckoutStatusCommonSchema = z.object({
 
 const CheckoutStatusNotGitSchema = CheckoutStatusCommonSchema.extend({
   isGit: z.literal(false),
+  // COMPAT(checkoutDirectoryMissing): added in v0.1.106. Daemons before this never send it, so
+  // an absent flag means "unknown", not "directory present" — the client falls back to the
+  // generic non-git empty state. Drop the optionality when the floor is >= v0.1.106.
+  directoryMissing: z.boolean().optional().default(false),
   isPaseoOwnedWorktree: z.literal(false),
   repoRoot: z.null(),
   currentBranch: z.null(),

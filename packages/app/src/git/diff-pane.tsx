@@ -113,6 +113,7 @@ import { buildForgeSignInCommand, getForgePresentation, type Forge } from "@/git
 import { parseGitRemoteLocation } from "@getpaseo/protocol/git-remote";
 import type { ForgeAuthState } from "@getpaseo/protocol/messages";
 import { useCheckoutGitActionsStore } from "@/git/actions-store";
+import { archiveWorkspaceOptimistically } from "@/workspace/workspace-archive";
 import { useToast } from "@/contexts/toast-context";
 import { useSessionStore } from "@/stores/session-store";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
@@ -1949,6 +1950,7 @@ interface DiffBodyContentProps {
   isStatusLoading: boolean;
   statusErrorMessage: string | null;
   notGit: boolean;
+  worktreeMissingSlot: ReactElement | null;
   isDiffLoading: boolean;
   diffErrorMessage: string | null;
   diffErrorCode: string | null;
@@ -1976,6 +1978,7 @@ function DiffBodyContent({
   isStatusLoading,
   statusErrorMessage,
   notGit,
+  worktreeMissingSlot,
   isDiffLoading,
   diffErrorMessage,
   diffErrorCode,
@@ -2024,6 +2027,10 @@ function DiffBodyContent({
         <Text style={errorTextStyle}>{statusErrorMessage}</Text>
       </View>
     );
+  }
+  // Precedes the generic non-git state: a missing directory is a more specific diagnosis.
+  if (worktreeMissingSlot) {
+    return worktreeMissingSlot;
   }
   if (notGit) {
     return (
@@ -2487,6 +2494,7 @@ interface DerivedStatusState {
   gitStatus: NonNullable<ReturnType<typeof useCheckoutStatusQuery>["status"]> | null;
   isGit: boolean;
   notGit: boolean;
+  worktreeMissing: boolean;
   statusErrorMessage: string | null;
   baseRef: string | undefined;
   hasUncommittedChanges: boolean;
@@ -2518,6 +2526,20 @@ function buildDiffTextMetricsStyle(
   };
 }
 
+// A removed worktree is reported as non-git too, but it needs its own state: the generic
+// "not a git repository" copy is misleading when the directory is simply gone. Daemons that
+// predate the flag leave it undefined, which keeps the old generic state.
+function deriveNonGitState(status: DeriveStatusStateInputs["status"]): {
+  notGit: boolean;
+  worktreeMissing: boolean;
+} {
+  if (status === null || status.isGit || status.error) {
+    return { notGit: false, worktreeMissing: false };
+  }
+  const worktreeMissing = status.directoryMissing === true;
+  return { notGit: !worktreeMissing, worktreeMissing };
+}
+
 function deriveStatusState({
   status,
   isStatusLoading,
@@ -2526,7 +2548,7 @@ function deriveStatusState({
 }: DeriveStatusStateInputs): DerivedStatusState {
   const gitStatus = status && status.isGit ? status : null;
   const isGit = Boolean(gitStatus);
-  const notGit = status !== null && !status.isGit && !status.error;
+  const { notGit, worktreeMissing } = deriveNonGitState(status);
   const statusErrorMessage =
     status?.error?.message ??
     (isStatusError && statusError instanceof Error ? statusError.message : null);
@@ -2539,6 +2561,7 @@ function deriveStatusState({
     gitStatus,
     isGit,
     notGit,
+    worktreeMissing,
     statusErrorMessage,
     baseRef,
     hasUncommittedChanges,
@@ -2841,6 +2864,66 @@ function useDiffPaneBranchCompare({
   };
 }
 
+// Shown when the workspace still points at a worktree directory that no longer exists — most
+// often because the worktree was cleaned up (e.g. auto-archived after its PR merged) while the
+// session stayed open. Archiving is offered but never performed automatically: the record still
+// carries branch and title the user may want, and removing it is not reversible from here. The
+// worktree is deliberately not recreated — that would be re-deciding something the cleanup
+// already decided.
+function WorktreeMissingNotice({
+  serverId,
+  workspaceId,
+  client,
+}: {
+  serverId: string;
+  workspaceId: string | null | undefined;
+  client: DaemonClient | null;
+}): ReactElement {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [archiving, setArchiving] = useState(false);
+
+  const handleArchive = useCallback(() => {
+    if (!client || !workspaceId) {
+      return;
+    }
+    setArchiving(true);
+    void (async () => {
+      try {
+        await archiveWorkspaceOptimistically({ client, workspace: { serverId, workspaceId } });
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : t("workspace.git.diff.worktreeMissingArchiveFailed"),
+        );
+      } finally {
+        setArchiving(false);
+      }
+    })();
+  }, [client, serverId, t, toast, workspaceId]);
+
+  return (
+    <View style={styles.emptyContainer} testID="changes-worktree-missing">
+      <Text style={styles.emptyText}>{t("workspace.git.diff.worktreeMissing")}</Text>
+      {workspaceId ? (
+        <View style={styles.baseReselectContainer}>
+          <Pressable
+            onPress={handleArchive}
+            disabled={archiving || !client}
+            accessibilityRole="button"
+            style={styles.baseReselectButton}
+          >
+            <Text style={styles.baseReselectButtonText}>
+              {t("workspace.git.diff.worktreeMissingArchiveAction")}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 // Shown inside the diff error card when the stored base ref no longer resolves
 // (BASE_REF_NOT_FOUND). Lets the user pick a new base branch, persists it via
 // checkout.baseRef.set, and forces a refresh so the diff recomputes.
@@ -3098,8 +3181,15 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
     error: statusError,
   } = useCheckoutStatusQuery({ serverId, cwd });
   const statusState = deriveStatusState({ status, isStatusLoading, isStatusError, statusError });
-  const { isGit, notGit, statusErrorMessage, baseRef, hasUncommittedChanges, currentBranchName } =
-    statusState;
+  const {
+    isGit,
+    notGit,
+    worktreeMissing,
+    statusErrorMessage,
+    baseRef,
+    hasUncommittedChanges,
+    currentBranchName,
+  } = statusState;
 
   // Engine selection (see DiffEngineMenu) — capability is null on servers that predate the
   // diffTools broadcast (COMPAT), in which case non-git engines are hidden entirely.
@@ -3704,6 +3794,13 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
     () => (client ? <BaseRefReselect serverId={serverId} cwd={cwd} client={client} /> : null),
     [client, cwd, serverId],
   );
+  const worktreeMissingSlot = useMemo(
+    () =>
+      worktreeMissing ? (
+        <WorktreeMissingNotice serverId={serverId} workspaceId={workspaceId} client={client} />
+      ) : null,
+    [client, serverId, workspaceId, worktreeMissing],
+  );
   const prErrorMessage = computePrErrorMessage(githubFeaturesEnabled, prPayloadError);
   const baseRefLabel = useMemo(
     () => computeBaseRefLabel(baseRef, t("workspace.git.diff.base")),
@@ -3756,6 +3853,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
       isStatusLoading={isStatusLoading}
       statusErrorMessage={statusErrorMessage}
       notGit={notGit}
+      worktreeMissingSlot={worktreeMissingSlot}
       isDiffLoading={isDiffLoading}
       diffErrorMessage={diffErrorMessage}
       diffErrorCode={diffPayloadError?.code ?? null}

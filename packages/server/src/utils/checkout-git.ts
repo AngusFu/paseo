@@ -800,6 +800,8 @@ export interface AheadBehind {
 
 export interface CheckoutStatus {
   isGit: false;
+  // True when cwd itself is gone, not merely un-versioned. See getCheckoutSnapshotFacts.
+  directoryMissing?: boolean;
 }
 
 export interface CheckoutStatusGitNonPaseo {
@@ -883,6 +885,8 @@ export interface CheckoutContext {
 export type CheckoutSnapshotFacts =
   | {
       isGit: false;
+      // True when cwd itself is gone, not merely un-versioned. See getCheckoutSnapshotFacts.
+      directoryMissing?: boolean;
     }
   | {
       isGit: true;
@@ -1212,6 +1216,30 @@ async function resolveBaseRefForCwd(
     storedBaseRef,
     resolvedBaseRef: storedBaseRef ?? (await resolveBaseRef(cwd)),
   };
+}
+
+// The stored base ref is the source of truth; a caller-supplied base ref is only an echo of a
+// previously reported status, so a divergence means the caller is working from a stale view.
+// Both sides are quoted because the values can differ only by surrounding whitespace, and the
+// mismatch is logged because callers swallow this error into a payload (see
+// CheckoutDiffManager.computeCheckoutDiffSnapshot) where it never reaches the daemon log.
+function assertRequestedBaseRefMatchesStored(input: {
+  cwd: string;
+  storedBaseRef: string | null;
+  requestedBaseRef: string | undefined;
+  context?: CheckoutContext;
+}): void {
+  const { cwd, storedBaseRef, requestedBaseRef, context } = input;
+  if (!storedBaseRef || !requestedBaseRef || requestedBaseRef === storedBaseRef) {
+    return;
+  }
+  context?.logger?.warn(
+    { cwd, storedBaseRef, requestedBaseRef },
+    "Requested base ref does not match the base ref stored for this worktree",
+  );
+  throw new Error(
+    `Base ref mismatch: expected ${JSON.stringify(storedBaseRef)}, got ${JSON.stringify(requestedBaseRef)}`,
+  );
 }
 
 async function isWorkingTreeDirty(cwd: string, context?: CheckoutContext): Promise<boolean> {
@@ -1826,7 +1854,12 @@ export async function getCheckoutSnapshotFacts(
 
   const inspected = await inspectCheckoutContext(cwd, context);
   if (!inspected) {
-    return { isGit: false };
+    // A paseo-owned worktree can be removed out from under a live session (e.g. auto-archive
+    // after the PR merges) while the workspace record still points at it. Every git-backed
+    // panel funnels through these facts, so the missing directory is detected once here rather
+    // than at each consumer, and the whole checkout surface can report it instead of degrading
+    // into a generic "not a git repository" failure.
+    return { isGit: false, directoryMissing: !existsSync(cwd) };
   }
 
   const paseoWorktreeMetadata = inspected.paseoWorktree.isPaseoOwnedWorktree
@@ -2029,7 +2062,7 @@ export async function getCheckoutStatus(
 ): Promise<CheckoutStatusResult> {
   const facts = await getCheckoutSnapshotFacts(cwd, context);
   if (!facts.isGit) {
-    return { isGit: false };
+    return { isGit: false, directoryMissing: facts.directoryMissing === true };
   }
 
   const worktreeRoot = facts.worktreeRoot;
@@ -2896,9 +2929,12 @@ async function resolveCheckoutDiffRefs(
   if (!baseRef) {
     return null;
   }
-  if (storedBaseRef && compare.baseRef && compare.baseRef !== storedBaseRef) {
-    throw new Error(`Base ref mismatch: expected ${baseRef}, got ${compare.baseRef}`);
-  }
+  assertRequestedBaseRefMatchesStored({
+    cwd,
+    storedBaseRef,
+    requestedBaseRef: compare.baseRef,
+    context,
+  });
   // A stored base ref can go stale — e.g. a worktree's placeholder branch is
   // renamed after its base was recorded, leaving baseRefName pointing at a
   // branch that no longer exists. resolveBestComparisonBaseRef throws
@@ -3433,9 +3469,12 @@ export async function mergeToBase(
   if (!baseRef) {
     throw new Error("Unable to determine base branch for merge");
   }
-  if (storedBaseRef && options.baseRef && options.baseRef !== storedBaseRef) {
-    throw new Error(`Base ref mismatch: expected ${baseRef}, got ${options.baseRef}`);
-  }
+  assertRequestedBaseRefMatchesStored({
+    cwd,
+    storedBaseRef,
+    requestedBaseRef: options.baseRef,
+    context,
+  });
   if (!currentBranch) {
     throw new Error("Unable to determine current branch for merge");
   }
@@ -3509,9 +3548,12 @@ export async function mergeFromBase(
   if (!baseRef) {
     throw new Error("Unable to determine base branch for merge");
   }
-  if (storedBaseRef && options.baseRef && options.baseRef !== storedBaseRef) {
-    throw new Error(`Base ref mismatch: expected ${baseRef}, got ${options.baseRef}`);
-  }
+  assertRequestedBaseRefMatchesStored({
+    cwd,
+    storedBaseRef,
+    requestedBaseRef: options.baseRef,
+    context,
+  });
 
   const requireCleanTarget = options.requireCleanTarget ?? true;
   if (requireCleanTarget) {
@@ -3847,9 +3889,12 @@ export async function createPullRequest(
     throw new Error("Unable to determine base branch for PR");
   }
   const normalizedBase = normalizeLocalBranchRefName(base);
-  if (storedBaseRef && options.base && options.base !== storedBaseRef) {
-    throw new Error(`Base ref mismatch: expected ${base}, got ${options.base}`);
-  }
+  assertRequestedBaseRefMatchesStored({
+    cwd,
+    storedBaseRef,
+    requestedBaseRef: options.base,
+    context,
+  });
 
   // The push deliberately happens before the adapter resolves the target
   // repository: slug resolution is adapter-internal (e.g. `gh repo view`, which

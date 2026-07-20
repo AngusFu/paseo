@@ -249,6 +249,8 @@ export class CheckoutSession {
         payload: {
           cwd,
           isGit: false,
+          // The status lookup itself failed, so the directory's existence is unknown.
+          directoryMissing: false,
           repoRoot: null,
           currentBranch: null,
           isDirty: null,

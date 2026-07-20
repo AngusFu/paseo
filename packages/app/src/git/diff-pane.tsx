@@ -7,6 +7,7 @@ import {
   memo,
   type ReactElement,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -2053,7 +2054,31 @@ function DiffBodyContent({
       </View>
     );
   }
-  return children;
+  return (
+    <FlatList
+      ref={diffListRef}
+      data={flatItems}
+      renderItem={renderFlatItem}
+      keyExtractor={flatKeyExtractor}
+      getItemLayout={getFlatItemLayout}
+      stickyHeaderIndices={stickyHeaderIndices}
+      extraData={flatExtraData}
+      style={styles.scrollView}
+      contentContainerStyle={styles.contentContainer}
+      testID="git-diff-scroll"
+      onLayout={handleDiffListLayout}
+      onScroll={handleDiffListScroll}
+      onContentSizeChange={onContentSizeChange}
+      scrollEventThrottle={16}
+      showsVerticalScrollIndicator={!showDesktopWebScrollbar}
+      // Mixed-height rows (header + potentially very large body) are prone to clipping artifacts.
+      // Keep a larger render window and disable clipping to avoid bodies disappearing mid-scroll.
+      removeClippedSubviews={false}
+      initialNumToRender={12}
+      maxToRenderPerBatch={12}
+      windowSize={10}
+    />
+  );
 }
 
 interface SharedDiffViewProps {
@@ -2441,11 +2466,8 @@ export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffVi
       testID="git-diff-scroll"
       onLayout={handleDiffListLayout}
       onScroll={handleDiffListScroll}
-      onContentSizeChange={onContentSizeChange}
       scrollEventThrottle={16}
-      showsVerticalScrollIndicator={!showDesktopWebScrollbar}
-      // Mixed-height rows (header + potentially very large body) are prone to clipping artifacts.
-      // Keep a larger render window and disable clipping to avoid bodies disappearing mid-scroll.
+      showsVerticalScrollIndicator
       removeClippedSubviews={false}
       initialNumToRender={12}
       maxToRenderPerBatch={12}
@@ -3298,17 +3320,22 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
   const setDiffCollapsedFoldersForWorkspace = usePanelStore(
     (state) => state.setDiffCollapsedFoldersForWorkspace,
   );
-  const stableExpandedPathsArray = expandedPathsArray ?? EMPTY_PATH_LIST;
-  const stableCollapsedFoldersArray = collapsedFoldersArray ?? EMPTY_PATH_LIST;
-  const sharedDisplayPreferences = useMemo(
-    () => ({
-      layout: effectiveLayout,
-      wrapLines,
-      codeFontSize,
-      monoFontFamily: appSettings.monoFontFamily,
-    }),
-    [appSettings.monoFontFamily, codeFontSize, effectiveLayout, wrapLines],
+  // Build the directory tree once per files-change; collapse/expand toggles only
+  // re-flatten it (they don't change tree shape).
+  const compressedTree = useMemo(() => compressSingleChildChains(buildDiffTree(files)), [files]);
+  // Every directory path currently in the tree — used by "collapse all folders" and to
+  // filter stale collapse state.
+  const allFolderPaths = useMemo(() => collectDirPaths(compressedTree), [compressedTree]);
+  const allFolderPathSet = useMemo(() => new Set(allFolderPaths), [allFolderPaths]);
+  // Effective collapsed set: intersect the persisted paths with the folders actually
+  // present, purely at render (no store-syncing effect). A folder that left the diff and
+  // reappears defaults to expanded; toggles write back this pruned set, so the stored
+  // array stays bounded. (empty = all folders expanded, the default)
+  const collapsedFolders = useMemo(
+    () => new Set((collapsedFoldersArray ?? []).filter((path) => allFolderPathSet.has(path))),
+    [collapsedFoldersArray, allFolderPathSet],
   );
+  const diffListRef = useRef<FlatList<DiffFlatItem>>(null);
   const handleToggleViewMode = useCallback(() => {
     const nextViewMode = viewMode === "flat" ? "tree" : "flat";
     if (nextViewMode === "tree" && workspaceStateKey) {

@@ -102,34 +102,36 @@ export function workspaceTabTargetsEqual(
   if (left.kind !== right.kind) {
     return false;
   }
-  if (left.kind === "draft" && right.kind === "draft") {
-    return left.draftId === right.draftId && workspaceDraftTabSetupsEqual(left.setup, right.setup);
+  // The kinds are equal above, so `right` can be narrowed to `left`'s branch.
+  type Same<K extends WorkspaceTabTarget["kind"]> = Extract<WorkspaceTabTarget, { kind: K }>;
+  switch (left.kind) {
+    case "draft": {
+      const other = right as Same<"draft">;
+      return (
+        left.draftId === other.draftId && workspaceDraftTabSetupsEqual(left.setup, other.setup)
+      );
+    }
+    case "agent":
+      return left.agentId === (right as Same<"agent">).agentId;
+    case "provider_subagent": {
+      const other = right as Same<"provider_subagent">;
+      return left.parentAgentId === other.parentAgentId && left.subagentId === other.subagentId;
+    }
+    case "workflow_run":
+      return left.runId === (right as Same<"workflow_run">).runId;
+    case "terminal":
+      return left.terminalId === (right as Same<"terminal">).terminalId;
+    case "browser":
+      return left.browserId === (right as Same<"browser">).browserId;
+    case "file":
+      return workspaceFileLocationsEqual(left, right as Same<"file">);
+    case "setup":
+      return left.workspaceId === (right as Same<"setup">).workspaceId;
+    case "commit_diff":
+      return left.sha === (right as Same<"commit_diff">).sha;
+    default:
+      return false;
   }
-  if (left.kind === "agent" && right.kind === "agent") {
-    return left.agentId === right.agentId;
-  }
-  if (left.kind === "provider_subagent" && right.kind === "provider_subagent") {
-    return left.parentAgentId === right.parentAgentId && left.subagentId === right.subagentId;
-  }
-  if (left.kind === "workflow_run" && right.kind === "workflow_run") {
-    return left.runId === right.runId;
-  }
-  if (left.kind === "terminal" && right.kind === "terminal") {
-    return left.terminalId === right.terminalId;
-  }
-  if (left.kind === "browser" && right.kind === "browser") {
-    return left.browserId === right.browserId;
-  }
-  if (left.kind === "file" && right.kind === "file") {
-    return workspaceFileLocationsEqual(left, right);
-  }
-  if (left.kind === "setup" && right.kind === "setup") {
-    return left.workspaceId === right.workspaceId;
-  }
-  if (left.kind === "commit_diff" && right.kind === "commit_diff") {
-    return left.sha === right.sha;
-  }
-  return false;
 }
 
 function workspaceDraftTabSetupsEqual(

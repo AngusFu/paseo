@@ -257,7 +257,7 @@ async function resolveSessionCreateAgent(
     input.outputSchema || clientMessageId
       ? {
           ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}),
-          ...(clientMessageId ? { messageId: clientMessageId } : {}),
+          ...(clientMessageId ? { clientMessageId } : {}),
         }
       : undefined;
   const workspaceId = setupContinuation ? createdWorkspaceId : input.workspaceId;

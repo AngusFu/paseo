@@ -33,6 +33,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { SelectFieldTrigger } from "@/components/ui/select-field";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
+import { useAppSettings } from "@/hooks/use-settings";
+import { normalizeWorkspacePath } from "@/utils/workspace-identity";
 import { DraftAgentControls } from "@/composer/agent-controls";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
@@ -62,6 +66,45 @@ function useWorkspaceRepoRoot(serverId: string, workspaceId: string): string | n
     workspaceDirectory: workspace.workspaceDirectory,
   }));
   return fields?.workspaceDirectory || null;
+}
+
+/**
+ * How the cwd chip names the workspace's own directory. A bare worktree path is
+ * long enough to stretch the picker row past the model selector, and it does not
+ * read as "the workspace I am standing in" — so show the same identity the
+ * sidebar shows and keep the path as the chip's tooltip. Any other directory the
+ * user picks stays a (shortened) path, because there is no workspace to name.
+ */
+function useCwdTriggerIdentity(input: {
+  serverId: string;
+  workspaceId: string;
+  cwd: string | null;
+}): { label: string | null; isWorkspaceItself: boolean } {
+  const {
+    settings: { workspaceTitleSource },
+  } = useAppSettings();
+  const fields = useWorkspaceFields(input.serverId, input.workspaceId, (workspace) => ({
+    workspaceDirectory: workspace.workspaceDirectory,
+    name: workspace.name,
+    currentBranch: workspace.gitRuntime?.currentBranch ?? null,
+  }));
+  if (!fields || !input.cwd) {
+    return { label: null, isWorkspaceItself: false };
+  }
+  if (normalizeWorkspacePath(input.cwd) !== normalizeWorkspacePath(fields.workspaceDirectory)) {
+    return { label: null, isWorkspaceItself: false };
+  }
+  const currentBranch = fields.currentBranch?.trim();
+  return {
+    label: resolveSidebarWorkspacePrimaryLabel({
+      workspace: {
+        name: fields.name,
+        currentBranch: currentBranch && currentBranch !== "HEAD" ? currentBranch : null,
+      },
+      workspaceTitleSource,
+    }),
+    isWorkspaceItself: true,
+  };
 }
 
 function useWorkflowDraftPanelDescriptor(
@@ -97,7 +140,9 @@ function WorkflowDraftPanel(): ReactElement {
   const form = useWorkflowDispatchForm({ serverId, initialCwd: repoRoot });
   const { cwd, cwdLabel, selectCwd } = form;
 
-  const cwdTriggerLabel = cwdLabel ?? (cwd ? shortenPath(cwd) : t("workflows.projectPlaceholder"));
+  const cwdIdentity = useCwdTriggerIdentity({ serverId, workspaceId, cwd });
+  const cwdTriggerLabel =
+    cwdIdentity.label ?? cwdLabel ?? (cwd ? shortenPath(cwd) : t("workflows.projectPlaceholder"));
   const canSubmit = form.isReady && Boolean(definition) && !mutations.isDispatching;
 
   const handleSelectDefinition = useCallback(
@@ -212,9 +257,20 @@ function WorkflowDraftPanel(): ReactElement {
               {definitionItems}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Pressable onPress={openDirectoryPicker} testID="workflow-draft-cwd">
-            {renderCwdTrigger}
-          </Pressable>
+          <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+            <TooltipTrigger asChild triggerRefProp="ref">
+              <Pressable
+                onPress={openDirectoryPicker}
+                style={styles.cwdTrigger}
+                testID="workflow-draft-cwd"
+              >
+                {renderCwdTrigger}
+              </Pressable>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="start" offset={8}>
+              <Text style={styles.cwdTooltipText}>{cwd ?? t("workflows.projectPlaceholder")}</Text>
+            </TooltipContent>
+          </Tooltip>
           <DraftAgentControls
             providerDefinitions={form.providerDefinitions}
             selectedProvider={form.selectedProvider}
@@ -327,5 +383,15 @@ const styles = StyleSheet.create((theme) => ({
   },
   cwdIcon: {
     color: theme.colors.foregroundMuted,
+  },
+  // A directory the user picked by hand is still shown as a path, so the chip
+  // needs a ceiling of its own — the label truncates instead of pushing the
+  // model selector off the row.
+  cwdTrigger: {
+    maxWidth: 260,
+  },
+  cwdTooltipText: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.xs,
   },
 }));

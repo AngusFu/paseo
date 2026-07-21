@@ -17,6 +17,7 @@ const RN_WEB_MODAL_Z_INDEX = 9999;
  * - Modal backdrop/content: 10
  * - Floating (tooltips): 15
  * - Toast: 20
+ * - Tooltip: 30
  */
 export function getOverlayRoot(): HTMLElement {
   let el = document.getElementById("overlay-root");
@@ -58,4 +59,5 @@ export const OVERLAY_Z = {
   modal: 10,
   floating: 15,
   toast: 20,
+  tooltip: 30,
 } as const;

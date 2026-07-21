@@ -587,7 +587,7 @@ const styles = StyleSheet.create((theme) => ({
     right: 0,
     bottom: 0,
     left: 0,
-    zIndex: OVERLAY_Z.floating,
+    zIndex: OVERLAY_Z.tooltip,
   },
   content: {
     paddingVertical: theme.spacing[1],

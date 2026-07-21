@@ -74,16 +74,42 @@ export function useWorkflowMutations({ serverId }: { serverId: string }) {
       invalidateRunDetail();
     },
   });
+  const pause = useMutation({
+    mutationFn: async (runId: string): Promise<WorkflowRun | null> => {
+      const payload = await client().workflowRunPause(runId);
+      if (payload.error) throw new Error(payload.error);
+      return payload.value as WorkflowRun | null;
+    },
+    onSettled: () => {
+      invalidateRuns();
+      invalidateRunDetail();
+    },
+  });
+  const resume = useMutation({
+    mutationFn: async (runId: string): Promise<WorkflowRun | null> => {
+      const payload = await client().workflowRunResumeFromPause(runId);
+      if (payload.error) throw new Error(payload.error);
+      return payload.value as WorkflowRun | null;
+    },
+    onSettled: () => {
+      invalidateRuns();
+      invalidateRunDetail();
+    },
+  });
   return {
     create: (input: CreateWorkflowDefinitionInput) => create.mutateAsync(input),
     update: (input: UpdateWorkflowDefinitionInput) => update.mutateAsync(input),
     remove: (definitionId: string) => remove.mutateAsync(definitionId),
     dispatch: (input: DispatchWorkflowRunInput) => dispatch.mutateAsync(input),
     cancel: (runId: string) => cancel.mutateAsync(runId),
+    pause: (runId: string) => pause.mutateAsync(runId),
+    resume: (runId: string) => resume.mutateAsync(runId),
     isCreating: create.isPending,
     isUpdating: update.isPending,
     isRemoving: remove.isPending,
     isDispatching: dispatch.isPending,
     isCancelling: cancel.isPending,
+    isPausing: pause.isPending,
+    isResuming: resume.isPending,
   };
 }

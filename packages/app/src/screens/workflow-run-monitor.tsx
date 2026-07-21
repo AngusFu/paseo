@@ -72,8 +72,9 @@ function usePhaseShortcuts(input: {
   phaseCount: number;
   onMove: (delta: number) => void;
   onStop: (() => void) | undefined;
+  onTogglePause: (() => void) | undefined;
 }): void {
-  const { enabled, phaseCount, onMove, onStop } = input;
+  const { enabled, phaseCount, onMove, onStop, onTogglePause } = input;
   useEffect(() => {
     if (!isWeb || !enabled || phaseCount === 0) {
       return;
@@ -100,11 +101,16 @@ function usePhaseShortcuts(input: {
       if (event.key === "x" && onStop) {
         event.preventDefault();
         onStop();
+        return;
+      }
+      if (event.key === "p" && onTogglePause) {
+        event.preventDefault();
+        onTogglePause();
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [enabled, onMove, onStop, phaseCount]);
+  }, [enabled, onMove, onStop, onTogglePause, phaseCount]);
 }
 
 export function WorkflowRunMonitor({
@@ -117,6 +123,8 @@ export function WorkflowRunMonitor({
   keyboardEnabled = false,
   onOpenAgent,
   onStop,
+  onPause,
+  onResume,
 }: {
   run: WorkflowRun;
   /** Workflow name for the header; falls back to a generic label. */
@@ -131,6 +139,8 @@ export function WorkflowRunMonitor({
   /** Opens an agent row's agent. Rows stay inert when this is omitted. */
   onOpenAgent?: (agentId: string) => void;
   onStop?: () => void;
+  onPause?: () => void;
+  onResume?: () => void;
 }): ReactElement | null {
   const { t } = useTranslation();
   const isCompact = useIsCompactFormFactor();
@@ -161,11 +171,22 @@ export function WorkflowRunMonitor({
     [currentPhaseIndex, groups.length],
   );
 
+  // Pause and resume are the same shortcut/button; which one fires depends on
+  // the run's current status. Only a live (running/paused) run can toggle.
+  const isPaused = run.status === "paused";
+  const togglePause = useMemo(() => {
+    if (!live || (!onPause && !onResume)) {
+      return undefined;
+    }
+    return isPaused ? onResume : onPause;
+  }, [isPaused, live, onPause, onResume]);
+
   usePhaseShortcuts({
     enabled: keyboardEnabled && !isCompact,
     phaseCount: groups.length,
     onMove: handleMove,
     onStop,
+    onTogglePause: togglePause,
   });
 
   const totals = useMemo(
@@ -198,11 +219,18 @@ export function WorkflowRunMonitor({
             </Text>
           ) : null}
         </View>
-        <Text style={styles.headerMeta} testID="workflow-run-monitor-counters">
-          {t("workflows.monitorAgentCount", { done: totals.done, total: totals.total })}
-          {" · "}
-          {runElapsed}
-        </Text>
+        <View style={styles.headerRight}>
+          {isPaused ? (
+            <Text style={styles.pausedPill} testID="workflow-run-monitor-paused">
+              {t("workflows.monitorPaused")}
+            </Text>
+          ) : null}
+          <Text style={styles.headerMeta} testID="workflow-run-monitor-counters">
+            {t("workflows.monitorAgentCount", { done: totals.done, total: totals.total })}
+            {" · "}
+            {runElapsed}
+          </Text>
+        </View>
       </View>
 
       <View style={isNarrow ? styles.columnsStacked : styles.columns} onLayout={onColumnsLayout}>
@@ -241,7 +269,13 @@ export function WorkflowRunMonitor({
         </View>
       </View>
 
-      <MonitorActionBar isCompact={isCompact} canStop={Boolean(onStop) && live} onStop={onStop} />
+      <MonitorActionBar
+        isCompact={isCompact}
+        canStop={Boolean(onStop) && live}
+        onStop={onStop}
+        onTogglePause={togglePause}
+        isPaused={isPaused}
+      />
     </View>
   );
 }
@@ -353,36 +387,55 @@ function selectedState(selected: boolean) {
 }
 
 /**
- * Web shows the key hints; compact shows a real button. Pause, save and back
- * from the wireframe are not rendered — none of those actions exist here, and
- * a hint for a key that does nothing is worse than no hint.
+ * Web shows the key hints; compact shows real buttons. Pause/resume renders
+ * only when the run can toggle (live and wired); `save` and `back` from the
+ * wireframe stay unrendered — a hint for a key that does nothing is worse than
+ * no hint.
  */
 function MonitorActionBar({
   isCompact,
   canStop,
   onStop,
+  onTogglePause,
+  isPaused,
 }: {
   isCompact: boolean;
   canStop: boolean;
   onStop: (() => void) | undefined;
+  onTogglePause: (() => void) | undefined;
+  isPaused: boolean;
 }): ReactElement | null {
   const { t } = useTranslation();
-  if (!onStop) {
+  if (!onStop && !onTogglePause) {
     return null;
   }
 
   if (isCompact) {
     return (
       <View style={styles.actionBar} testID="workflow-run-monitor-actions">
-        <Pressable
-          accessibilityRole="button"
-          disabled={!canStop}
-          onPress={onStop}
-          style={canStop ? styles.actionButton : styles.actionButtonDisabled}
-          testID="workflow-run-monitor-stop"
-        >
-          <Text style={styles.actionButtonText}>{t("workflows.monitorStop")}</Text>
-        </Pressable>
+        {onStop ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={!canStop}
+            onPress={onStop}
+            style={canStop ? styles.actionButton : styles.actionButtonDisabled}
+            testID="workflow-run-monitor-stop"
+          >
+            <Text style={styles.actionButtonText}>{t("workflows.monitorStop")}</Text>
+          </Pressable>
+        ) : null}
+        {onTogglePause ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={onTogglePause}
+            style={styles.actionButton}
+            testID="workflow-run-monitor-pause"
+          >
+            <Text style={styles.actionButtonText}>
+              {isPaused ? t("workflows.monitorResume") : t("workflows.monitorPause")}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
     );
   }
@@ -391,6 +444,11 @@ function MonitorActionBar({
     <View style={styles.actionBar} testID="workflow-run-monitor-actions">
       <Text style={styles.actionHint}>{t("workflows.monitorHintSelect")}</Text>
       {canStop ? <Text style={styles.actionHint}>{t("workflows.monitorHintStop")}</Text> : null}
+      {onTogglePause ? (
+        <Text style={styles.actionHint}>
+          {isPaused ? t("workflows.monitorHintResume") : t("workflows.monitorHintPause")}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -427,6 +485,13 @@ const styles = StyleSheet.create((theme) => ({
     fontWeight: theme.fontWeight.semibold,
   },
   runDescription: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs },
+  headerRight: { flexShrink: 0, alignItems: "flex-end", gap: theme.spacing[1] },
+  pausedPill: {
+    color: theme.colors.terminal.yellow,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.semibold,
+  },
   headerMeta: {
     color: theme.colors.foregroundMuted,
     fontFamily: theme.fontFamily.mono,

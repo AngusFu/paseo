@@ -350,6 +350,19 @@ export class WorkflowService {
    * Per-daemon-lifetime only — a restart mid-run already orphans the run.
    */
   private readonly cancelledRunIds = new Set<string>();
+  /**
+   * Runs paused while `running`. Like cancel, this is a soft gate: the engine
+   * can't suspend (no abort/suspend signal), so the script keeps running but
+   * the host wrapper parks at the next agent() boundary on `gate` until resume
+   * resolves it. The already in-flight agent, if any, finishes normally — pause
+   * takes hold at the next call, not mid-agent. Per-daemon-lifetime only: a
+   * restart can't re-suspend a script mid-flight, so recoverAfterRestart treats
+   * a paused run exactly like a running one (fails it), never a resumable state.
+   */
+  private readonly pausedRunGates = new Map<
+    string,
+    { promise: Promise<void>; resume: () => void }
+  >();
 
   constructor(options: WorkflowServiceOptions) {
     this.paseoHome = options.paseoHome;
@@ -530,9 +543,12 @@ export class WorkflowService {
       .slice()
       .sort((left, right) => left.queuedAt.localeCompare(right.queuedAt));
     for (const run of runs) {
-      if (run.status === "running") {
+      // A paused run is a running script parked on an in-memory gate; a restart
+      // loses the gate and the script alike, so it can't resume — fail it just
+      // like a running run rather than leave a paused run no one can revive.
+      if (run.status === "running" || run.status === "paused") {
         await this.store.updateRun(run.id, (current) =>
-          current.status === "running"
+          current.status === "running" || current.status === "paused"
             ? {
                 ...current,
                 status: "failed",
@@ -725,8 +741,15 @@ export class WorkflowService {
       });
       return afterQueuedAttempt;
     }
-    if (afterQueuedAttempt.status === "running") {
+    if (afterQueuedAttempt.status === "running" || afterQueuedAttempt.status === "paused") {
       this.cancelledRunIds.add(id);
+      // A paused run is parked on its gate; releasing it lets the script proceed
+      // into the cancel short-circuit and settle, instead of hanging forever.
+      const gate = this.pausedRunGates.get(id);
+      if (gate) {
+        this.pausedRunGates.delete(id);
+        gate.resume();
+      }
       await this.log({
         event: "run.cancel_requested",
         message: "cancellation requested while running",
@@ -749,6 +772,64 @@ export class WorkflowService {
       return (await this.store.getRun(id)) ?? afterQueuedAttempt;
     }
     return afterQueuedAttempt;
+  }
+
+  /**
+   * Pause a `running` run at its next agent() boundary. Only `running` runs can
+   * pause; queued/terminal runs are returned unchanged. The status write is
+   * best-effort persisted so the UI can reflect it, but the gate is what
+   * actually stops progress — see `pausedRunGates`. Idempotent: pausing an
+   * already-paused run keeps the existing gate.
+   */
+  async pause(id: string): Promise<WorkflowRun | null> {
+    const run = await this.store.getRun(id);
+    if (!run) {
+      return null;
+    }
+    if (run.status !== "running" || this.cancelledRunIds.has(id)) {
+      return run;
+    }
+    if (!this.pausedRunGates.has(id)) {
+      let resume!: () => void;
+      const promise = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      this.pausedRunGates.set(id, { promise, resume });
+    }
+    const updated = await this.store.updateRun(id, (current) =>
+      current.status === "running" ? { ...current, status: "paused" } : current,
+    );
+    await this.log({
+      level: "warn",
+      event: "run.paused",
+      message: "pause requested while running",
+      runId: id,
+      definitionId: run.definitionId,
+    });
+    return updated ?? run;
+  }
+
+  /**
+   * Resume a paused run: release the gate so the parked agent() call proceeds,
+   * and flip the status back to `running`. No-op for a run that isn't paused.
+   */
+  async resume(id: string): Promise<WorkflowRun | null> {
+    const gate = this.pausedRunGates.get(id);
+    if (!gate) {
+      return (await this.store.getRun(id)) ?? null;
+    }
+    this.pausedRunGates.delete(id);
+    gate.resume();
+    const updated = await this.store.updateRun(id, (current) =>
+      current.status === "paused" ? { ...current, status: "running" } : current,
+    );
+    await this.log({
+      event: "run.resumed_from_pause",
+      message: "resumed from pause",
+      runId: id,
+      definitionId: updated?.definitionId ?? id,
+    });
+    return updated ?? (await this.store.getRun(id));
   }
 
   async listRules(): Promise<KanbanWorkflowRule[]> {
@@ -872,6 +953,10 @@ export class WorkflowService {
       }));
     } finally {
       this.cancelledRunIds.delete(run.id);
+      // A run can only settle once its script is off the gate, but drop any
+      // lingering entry so a resolved gate can't leak past the run's lifetime.
+      this.pausedRunGates.get(run.id)?.resume();
+      this.pausedRunGates.delete(run.id);
     }
   }
 
@@ -1082,6 +1167,13 @@ export class WorkflowService {
   ): PaseoAgentHost {
     return {
       runAgent: async (request) => {
+        // Park here while paused. Resume resolves the gate; cancel also resolves
+        // it (see cancel()) so a paused run can still be torn down. Re-check the
+        // gate in a loop in case a resume is immediately followed by another
+        // pause before this call proceeds.
+        while (this.pausedRunGates.has(run.id) && !this.cancelledRunIds.has(run.id)) {
+          await this.pausedRunGates.get(run.id)?.promise;
+        }
         if (this.cancelledRunIds.has(run.id)) {
           // Cancel was requested while running — refuse any FURTHER agent()
           // the script tries to start (the already in-flight one, if any, is

@@ -124,6 +124,10 @@ import {
   WorkflowDefinitionUpdateResponseSchema,
   WorkflowRunCancelRequestSchema,
   WorkflowRunCancelResponseSchema,
+  WorkflowRunPauseRequestSchema,
+  WorkflowRunPauseResponseSchema,
+  WorkflowRunResumeFromPauseRequestSchema,
+  WorkflowRunResumeFromPauseResponseSchema,
   WorkflowRunDispatchRequestSchema,
   WorkflowRunDispatchResponseSchema,
   WorkflowRunGetRequestSchema,
@@ -2647,6 +2651,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   WorkflowRunGetRequestSchema,
   WorkflowRunDispatchRequestSchema,
   WorkflowRunCancelRequestSchema,
+  WorkflowRunPauseRequestSchema,
+  WorkflowRunResumeFromPauseRequestSchema,
   WorkflowRunLogsRequestSchema,
   KanbanRuleListRequestSchema,
   KanbanRuleCreateRequestSchema,
@@ -2898,6 +2904,8 @@ export const ServerInfoStatusPayloadSchema = z
         workflowRunTargetWorkspace: z.boolean().optional(),
         // COMPAT(workflowRunResume): added in v0.1.112, drop the gate when floor >= v0.1.112.
         workflowRunResume: z.boolean().optional(),
+        // COMPAT(workflowRunPause): added in v0.1.113, drop the gate when floor >= v0.1.113.
+        workflowRunPause: z.boolean().optional(),
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
         localLlm: z.boolean().optional(),
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
@@ -5301,6 +5309,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkflowAuthoringPrepareResponseSchema,
   WorkflowRunListResponseSchema,
   WorkflowRunGetResponseSchema,
+  WorkflowRunPauseResponseSchema,
+  WorkflowRunResumeFromPauseResponseSchema,
   WorkflowRunDispatchResponseSchema,
   WorkflowRunCancelResponseSchema,
   WorkflowRunLogsResponseSchema,

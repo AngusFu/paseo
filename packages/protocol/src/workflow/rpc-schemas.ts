@@ -87,6 +87,17 @@ export const WorkflowRunCancelRequestSchema = z.object({
   requestId: z.string(),
   runId: z.string(),
 });
+// COMPAT(workflowRunPause): added in v0.1.113 — gated by server_info.features.workflowRunPause.
+export const WorkflowRunPauseRequestSchema = z.object({
+  type: z.literal("workflow.run.pause.request"),
+  requestId: z.string(),
+  runId: z.string(),
+});
+export const WorkflowRunResumeFromPauseRequestSchema = z.object({
+  type: z.literal("workflow.run.resume.request"),
+  requestId: z.string(),
+  runId: z.string(),
+});
 export const WorkflowRunLogsRequestSchema = z.object({
   type: z.literal("workflow.run.logs.request"),
   requestId: z.string(),
@@ -170,6 +181,14 @@ export const WorkflowRunDispatchResponseSchema = response(
 );
 export const WorkflowRunCancelResponseSchema = response(
   "workflow.run.cancel.response",
+  WorkflowRunSchema.nullable(),
+);
+export const WorkflowRunPauseResponseSchema = response(
+  "workflow.run.pause.response",
+  WorkflowRunSchema.nullable(),
+);
+export const WorkflowRunResumeFromPauseResponseSchema = response(
+  "workflow.run.resume.response",
   WorkflowRunSchema.nullable(),
 );
 export const WorkflowRunLogsResponseSchema = response(

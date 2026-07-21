@@ -22,6 +22,9 @@ export type WorkflowDefinition = z.infer<typeof WorkflowDefinitionSchema>;
 export const WorkflowRunStatusSchema = z.enum([
   "queued",
   "running",
+  // A running run soft-parked at its next agent() boundary; resume returns it to
+  // "running". Never persisted across a daemon restart — recovery fails it.
+  "paused",
   "succeeded",
   "failed",
   "cancelled",

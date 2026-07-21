@@ -117,6 +117,20 @@ function WorkflowRunPanel() {
       });
   }, [mutations, runId, t, toast]);
 
+  // Pause/resume are reversible, so no confirm dialog — unlike stop.
+  const pauseRun = useCallback(() => {
+    if (!runId) return;
+    mutations.pause(runId).catch((error: unknown) => {
+      toast.error(toErrorMessage(error) || t("workflows.runPauseFailed"));
+    });
+  }, [mutations, runId, t, toast]);
+  const resumeRun = useCallback(() => {
+    if (!runId) return;
+    mutations.resume(runId).catch((error: unknown) => {
+      toast.error(toErrorMessage(error) || t("workflows.runResumeFromPauseFailed"));
+    });
+  }, [mutations, runId, t, toast]);
+
   if (!run) {
     return (
       <View style={styles.loadingContainer} testID="workflow-run-panel-loading">
@@ -144,6 +158,8 @@ function WorkflowRunPanel() {
         description={definition?.description ?? null}
         keyboardEnabled={isInteractive}
         onStop={stopRun}
+        onPause={pauseRun}
+        onResume={resumeRun}
       />
     </ScrollView>
   );

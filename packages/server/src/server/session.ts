@@ -2168,6 +2168,10 @@ export class Session {
         );
       case "workflow.run.cancel.request":
         return this.handleWorkflowRequest(msg, () => this.workflowService.cancel(msg.runId));
+      case "workflow.run.pause.request":
+        return this.handleWorkflowRequest(msg, () => this.workflowService.pause(msg.runId));
+      case "workflow.run.resume.request":
+        return this.handleWorkflowRequest(msg, () => this.workflowService.resume(msg.runId));
       case "workflow.run.logs.request":
         return this.handleWorkflowRequest(msg, () =>
           this.workflowService.listRunLogs(msg.runId, {

@@ -506,6 +506,135 @@ describe("WorkflowService.cancel", () => {
   });
 });
 
+describe("WorkflowService.pause / resume", () => {
+  async function pollUntil(check: () => boolean | Promise<boolean>): Promise<void> {
+    for (let i = 0; i < 100; i++) {
+      if (await check()) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("condition not met in time");
+  }
+
+  it("parks the next agent() at the pause gate and releases it on resume", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const prev = process.env.PASEO_WORKFLOW_BACKEND;
+    delete process.env.PASEO_WORKFLOW_BACKEND;
+    // First agent parks on call1Gate so the run is provably still on call 1 when
+    // we pause — then the second call must block on the pause gate, not run.
+    let releaseCall1: () => void = () => {};
+    const call1Gate = new Promise<void>((resolve) => {
+      releaseCall1 = resolve;
+    });
+    const calls: string[] = [];
+    try {
+      const service = new WorkflowService({
+        paseoHome: dir,
+        ensureAgentWorkspace: async () => "wks_test",
+        agentHost: {
+          runAgent: async (request) => {
+            calls.push(request.prompt);
+            if (calls.length === 1) {
+              await call1Gate;
+            }
+            return { text: "ok", agentId: `agent_${calls.length}` };
+          },
+        },
+      });
+      const definition = await service.createDefinition({
+        name: "pause-me",
+        source: [
+          "export const meta = { name: 'pause-me' };",
+          "await agent('a', { label: 'first' });",
+          "await agent('b', { label: 'second' });",
+          "return { ok: true };",
+        ].join("\n"),
+      });
+      const run = await service.dispatch({
+        definitionId: definition.id,
+        cwd: dir,
+        args: { task: "noop", provider: "claude" },
+      });
+
+      // Wait until the first agent is in flight, then pause while it runs so the
+      // pause is set before the second call can reach the gate.
+      await pollUntil(() => calls.length === 1);
+      const paused = await service.pause(run.id);
+      expect(paused?.status).toBe("paused");
+      releaseCall1();
+
+      // The second call must stay parked: give it room to (wrongly) run.
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(calls.length).toBe(1);
+      expect((await service.getRun(run.id))?.status).toBe("paused");
+
+      const resumed = await service.resume(run.id);
+      expect(resumed?.status).toBe("running");
+      await waitForRunToSettle(service, run.id);
+      expect(calls.length).toBe(2);
+      expect((await service.getRun(run.id))?.status).toBe("succeeded");
+    } finally {
+      releaseCall1();
+      if (prev === undefined) delete process.env.PASEO_WORKFLOW_BACKEND;
+      else process.env.PASEO_WORKFLOW_BACKEND = prev;
+    }
+  });
+
+  it("lets a cancel tear down a paused run by releasing its gate", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const prev = process.env.PASEO_WORKFLOW_BACKEND;
+    delete process.env.PASEO_WORKFLOW_BACKEND;
+    let releaseCall1: () => void = () => {};
+    const call1Gate = new Promise<void>((resolve) => {
+      releaseCall1 = resolve;
+    });
+    const calls: string[] = [];
+    try {
+      const service = new WorkflowService({
+        paseoHome: dir,
+        ensureAgentWorkspace: async () => "wks_test",
+        agentHost: {
+          runAgent: async (request) => {
+            calls.push(request.prompt);
+            if (calls.length === 1) await call1Gate;
+            return { text: "ok", agentId: `agent_${calls.length}` };
+          },
+        },
+      });
+      const definition = await service.createDefinition({
+        name: "pause-cancel",
+        source: [
+          "export const meta = { name: 'pause-cancel' };",
+          "await agent('a', { label: 'first' });",
+          "await agent('b', { label: 'second' });",
+          "return { ok: true };",
+        ].join("\n"),
+      });
+      const run = await service.dispatch({
+        definitionId: definition.id,
+        cwd: dir,
+        args: { task: "noop", provider: "claude" },
+      });
+
+      await pollUntil(() => calls.length === 1);
+      await service.pause(run.id);
+      releaseCall1();
+      await pollUntil(async () => (await service.getRun(run.id))?.status === "paused");
+
+      // Cancel must release the gate so the parked script can settle, not hang.
+      await service.cancel(run.id);
+      await waitForRunToSettle(service, run.id);
+      expect(calls.length).toBe(1);
+      expect((await service.getRun(run.id))?.status).toBe("cancelled");
+    } finally {
+      releaseCall1();
+      if (prev === undefined) delete process.env.PASEO_WORKFLOW_BACKEND;
+      else process.env.PASEO_WORKFLOW_BACKEND = prev;
+    }
+  });
+});
+
 describe("WorkflowService.recoverAfterRestart", () => {
   it("re-enqueues a queued run left over from a prior daemon process", async () => {
     const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
@@ -562,6 +691,38 @@ describe("WorkflowService.recoverAfterRestart", () => {
 
     await service.recoverAfterRestart();
     const recovered = await service.getRun("wfr_stale");
+    expect(recovered?.status).toBe("failed");
+    expect(recovered?.error).toBe("Interrupted by daemon restart");
+  });
+
+  it("fails a paused run left over from a prior process — the gate is gone", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
+    dirs.push(dir);
+    const service = new WorkflowService({ paseoHome: dir });
+    const definition = await service.createDefinition({
+      name: "stale-paused",
+      source: "export const meta = {};",
+    });
+    const store = new WorkflowStore(join(dir, "workflows"));
+    await store.createRun({
+      id: "wfr_paused",
+      definitionId: definition.id,
+      status: "paused",
+      args: {},
+      cwd: dir,
+      workspaceId: null,
+      workspacePath: dir,
+      queuedAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      endedAt: null,
+      result: null,
+      error: null,
+    });
+
+    await service.recoverAfterRestart();
+    const recovered = await service.getRun("wfr_paused");
+    // A paused run's gate is an in-memory promise the restart destroyed, so the
+    // script can never be un-parked — fail it rather than strand it "paused".
     expect(recovered?.status).toBe("failed");
     expect(recovered?.error).toBe("Interrupted by daemon restart");
   });

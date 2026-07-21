@@ -5784,6 +5784,26 @@ export class DaemonClient {
     });
   }
 
+  async workflowRunPause(
+    runId: string,
+    requestId?: string,
+  ): Promise<Extract<SessionOutboundMessage, { type: "workflow.run.pause.response" }>["payload"]> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workflow.run.pause.request", runId },
+    });
+  }
+
+  async workflowRunResumeFromPause(
+    runId: string,
+    requestId?: string,
+  ): Promise<Extract<SessionOutboundMessage, { type: "workflow.run.resume.response" }>["payload"]> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workflow.run.resume.request", runId },
+    });
+  }
+
   async workflowRunLogs(
     runId: string,
     options?: { afterSeq?: number; limit?: number; requestId?: string },

@@ -355,7 +355,7 @@ describe("checkout git utilities", () => {
     process.platform !== "win32" &&
       existsSync("/dev/shm") &&
       statSync("/dev").dev !== statSync("/dev/shm").dev,
-  )("warns and reports a non-git directory at a filesystem boundary as non-git", async () => {
+  )("does not warn for a non-git directory at a filesystem boundary", async () => {
     const nonGitDir = realpathSync.native(mkdtempSync("/dev/shm/checkout-git-boundary-test-"));
     const records: unknown[] = [];
     const logger = pino(
@@ -368,19 +368,32 @@ describe("checkout git utilities", () => {
     );
     try {
       await expect(getCheckoutStatus(nonGitDir, { logger })).resolves.toEqual({ isGit: false });
-      expect(records).toEqual([
-        expect.objectContaining({
-          level: 40,
-          cwd: nonGitDir,
-          msg: "Git worktree discovery failed; treating directory as non-Git",
-          err: expect.objectContaining({
-            message: expect.stringContaining("Stopping at filesystem boundary"),
-          }),
-        }),
-      ]);
+      expect(records).toEqual([]);
     } finally {
       rmSync(nonGitDir, { recursive: true, force: true });
     }
+  });
+
+  it("warns when git discovery fails unexpectedly", async () => {
+    const missingDir = join(tempDir, "missing-git-cwd");
+    const records: unknown[] = [];
+    const logger = pino(
+      { level: "warn" },
+      {
+        write(line: string) {
+          records.push(JSON.parse(line));
+        },
+      },
+    );
+
+    await expect(getCheckoutStatus(missingDir, { logger })).resolves.toEqual({ isGit: false });
+    expect(records).toEqual([
+      expect.objectContaining({
+        level: 40,
+        cwd: missingDir,
+        msg: "Git worktree discovery failed; treating directory as non-Git",
+      }),
+    ]);
   });
 
   it("returns null for getCurrentBranch in a repo with no commits", async () => {

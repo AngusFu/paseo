@@ -885,12 +885,12 @@ export const ru: TranslationResources = {
         textSizeXxxl: "Гигантский",
         commits: {
           title: "Коммиты",
-          countLabel: "{{count}} коммитов впереди базы",
+          countLabel: "{{count}} последних коммитов",
           fileDiffEmpty: "Нет изменений для отображения",
           fileDiffError: "Не удалось загрузить различия файла",
           loading: "Загрузка коммитов…",
           loadError: "Не удалось загрузить коммиты",
-          empty: "Нет коммитов впереди базы",
+          empty: "Коммитов пока нет",
         },
       },
       openInEditor: {

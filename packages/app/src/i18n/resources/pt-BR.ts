@@ -886,12 +886,12 @@ export const ptBR: TranslationResources = {
         textSizeXxxl: "Gigante",
         commits: {
           title: "Commits",
-          countLabel: "{{count}} commits à frente da base",
+          countLabel: "{{count}} commits recentes",
           fileDiffEmpty: "Nenhuma alteração para exibir",
           fileDiffError: "Falha ao carregar diff do arquivo",
           loading: "Carregando commits…",
           loadError: "Falha ao carregar commits",
-          empty: "Nenhum commit à frente da base",
+          empty: "Ainda não há commits",
         },
       },
       openInEditor: {

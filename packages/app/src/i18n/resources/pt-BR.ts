@@ -1088,9 +1088,6 @@ export const ptBR: TranslationResources = {
     refPicker: {
       startingRef: "Ref inicial",
       chooseStart: "Escolha de onde começar",
-      checkoutHint: "Fazer checkout da {{noun}} {{numberPrefix}}{{number}}?",
-      checkoutPr: "Fazer checkout da {{noun}} {{numberPrefix}}{{number}}",
-      dismissCheckoutHint: "Dispensar dica de checkout da {{noun}} {{numberPrefix}}{{number}}",
       intoBase: "em {{baseRef}}",
       searching: "Buscando...",
       noMatchingRefs: "Nenhuma ref correspondente.",

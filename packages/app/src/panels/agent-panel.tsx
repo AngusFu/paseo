@@ -11,7 +11,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet as RNStyleSheet, Text, View } from "react-native";
 import ReanimatedAnimated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -1023,7 +1023,7 @@ function ChatAgentContent({
   ]);
 
   const animatedContentStyle = useMemo(
-    () => [styles.content, animatedKeyboardStyle],
+    () => [animatedStaticStyles.content, animatedKeyboardStyle],
     [animatedKeyboardStyle],
   );
 
@@ -1467,7 +1467,11 @@ function ActiveAgentComposer({
   });
 
   const inputAreaStyle = useMemo(
-    () => [styles.inputAreaWrapper, { paddingBottom: insets.bottom }, composerKeyboardStyle],
+    () => [
+      animatedStaticStyles.inputAreaWrapper,
+      { paddingBottom: insets.bottom },
+      composerKeyboardStyle,
+    ],
     [insets.bottom, composerKeyboardStyle],
   );
 
@@ -1592,6 +1596,15 @@ const foregroundColorMapping = (theme: Theme) => ({
   color: theme.colors.foreground,
 });
 
+const animatedStaticStyles = RNStyleSheet.create({
+  content: {
+    flex: 1,
+  },
+  inputAreaWrapper: {
+    width: "100%",
+  },
+});
+
 const styles = StyleSheet.create((theme) => ({
   root: {
     flex: 1,
@@ -1605,13 +1618,6 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     overflow: "hidden",
     ...(isWeb ? { userSelect: "none" as const } : {}),
-  },
-  content: {
-    flex: 1,
-  },
-  inputAreaWrapper: {
-    width: "100%",
-    backgroundColor: theme.colors.surface0,
   },
   historySyncOverlay: {
     position: "absolute",

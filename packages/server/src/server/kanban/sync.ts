@@ -120,6 +120,11 @@ interface GitlabMergeRequest {
   work_in_progress?: boolean;
   labels?: string[];
   assignee?: { name?: string } | null;
+  // The MR's current reviewers. Returned by the single-MR endpoint (not the
+  // list endpoint), so the reconcile pass uses it to tell "still awaiting my
+  // review" from "I was removed as reviewer". Absent → identity unknown, treat
+  // as still-a-reviewer (conservative, never drops on missing data).
+  reviewers?: { username?: string; id?: number }[];
   head_pipeline?: { status?: string } | null;
   // ISO timestamps GitLab returns on the MR list endpoint.
   created_at?: string;
@@ -127,6 +132,31 @@ interface GitlabMergeRequest {
   // False when the MR has open blocking discussion threads. Present on the MR
   // list endpoint, so detecting unresolved threads costs no extra request.
   blocking_discussions_resolved?: boolean;
+}
+
+// The reviewer this GitLab board tracks, read straight from the source query
+// (`...&reviewer_username=alice`). The board is a filtered review queue, so the
+// query itself names whose queue it is — more accurate than GET /user, which
+// would report the token's own account (not necessarily the tracked reviewer).
+// Null when the query has no reviewer_username filter (e.g. a plain state query
+// or an assignee/reviewer_id filter), in which case reviewer-removal can't be
+// judged and such cards are kept rather than dropped.
+function parseGitlabReviewerUsername(query: string): string | null {
+  const username = new URLSearchParams(query).get("reviewer_username");
+  return username && username.length > 0 ? username : null;
+}
+
+// True only when the MR is open AND we can prove the tracked reviewer is no
+// longer on it. Conservative: unknown reviewer, a non-open MR, or a missing
+// reviewers array all return false, so a card is only ever dropped on a proven
+// "removed as reviewer". Usernames compare case-insensitively (GitLab usernames
+// are case-insensitive).
+function gitlabReviewerRemoved(mr: GitlabMergeRequest, reviewerUsername: string | null): boolean {
+  if (!reviewerUsername || mr.state !== "opened" || !Array.isArray(mr.reviewers)) {
+    return false;
+  }
+  const wanted = reviewerUsername.toLowerCase();
+  return !mr.reviewers.some((reviewer) => reviewer.username?.toLowerCase() === wanted);
 }
 
 // GitLab's approvals endpoint — the list endpoint never returns approval
@@ -862,12 +892,24 @@ export class KanbanSyncService {
   }
 
   // A merged/closed MR drops out of a state-filtered sync query (the common
-  // `state=opened` filter), so the sync loop above never sees it again and the
-  // forceStatus→Done move never fires — the card is stuck in whatever column it
-  // held when it last matched the query. This pass re-checks each such card
-  // against the single-MR endpoint, writes back the real state, and flags the
-  // card as detached. Cards already flagged AND already terminal are skipped,
-  // so a settled MR costs no repeat requests.
+  // `state=opened&reviewer_username=...` filter). Handled by outcome:
+  //
+  //   - Closed (not merged) → removed. A closed MR is abandoned work, not the
+  //     user's review anymore, so keeping a stale card only clutters the queue.
+  //   - Still open but the tracked reviewer was removed → removed. No longer the
+  //     user's review either (the GitLab analogue of a reassigned Jira issue).
+  //   - Merged → kept, moved to Done, flagged detached. A merged MR IS terminal
+  //     and the GitLab board hides merged cards from its lanes (see
+  //     kanban-gitlab-board), but the card stays in the store so the stats strip
+  //     (merged-in-7d/30d, avg time-to-merge) can still count it.
+  //   - Still open and still the user's to review (or the reviewer can't be
+  //     determined) — dropped out for some other reason → kept, real state
+  //     written back, flagged detached.
+  //
+  // Conservative by construction: removal only fires on a proven closed state or
+  // a proven reviewer removal (see gitlabReviewerRemoved), never on missing
+  // data, never during a truncated page walk (candidates are empty then), and
+  // only for cards this source owns.
   private async reconcileDetachedGitlabCards(
     baseUrl: string,
     source: StoredKanbanSource,
@@ -875,13 +917,16 @@ export class KanbanSyncService {
     seenExternalIds: Set<string>,
     truncated: boolean,
   ): Promise<StoredKanbanCard[]> {
+    const reviewerUsername = parseGitlabReviewerUsername(source.query);
     const reconciled: StoredKanbanCard[] = [];
     for (const card of await this.detachmentCandidates(source, seenExternalIds, truncated)) {
       if (card.source.kind !== "gitlab") {
         continue;
       }
+      // Already flagged and already merged — its state can't drift further, and
+      // it is only kept for the stats strip, so re-fetching it forever is waste.
       const storedState = (card.metadata as { state?: string } | undefined)?.state;
-      if (card.detachedFromSource && (storedState === "merged" || storedState === "closed")) {
+      if (card.detachedFromSource && storedState === "merged") {
         continue;
       }
       // Best-effort per card: a network error re-fetching one card must not
@@ -901,15 +946,23 @@ export class KanbanSyncService {
           }
           continue;
         }
-        const isTerminal = mr.state === "merged" || mr.state === "closed";
-        // approvals is a moot concept once merged/closed, and for a still-open
-        // MR that fell out of the query it isn't worth a second request.
+        // Closed, or no longer the user's to review — drop it (only for cards
+        // this source owns, mirroring flagUnreachableCard). Merged is NOT dropped
+        // here: it is kept for the stats strip and hidden at the render layer.
+        if (mr.state === "closed" || gitlabReviewerRemoved(mr, reviewerUsername)) {
+          if (card.sourceId === source.id) {
+            await this.store.deleteCard(card.id);
+          }
+          continue;
+        }
+        // Merged → Done + detached; still-open-still-mine → detached in place.
+        // approvals isn't worth a second request for a card in this state.
         const { cardSource, payload } = await this.buildGitlabUpsert(baseUrl, source, mr, null);
         reconciled.push(
           await this.store.upsertCardBySource(cardSource, {
             ...payload,
             detachedFromSource: true,
-            forceStatus: isTerminal,
+            forceStatus: mr.state === "merged",
           }),
         );
       } catch (error) {

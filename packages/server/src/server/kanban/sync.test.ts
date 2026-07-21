@@ -232,7 +232,7 @@ describe("KanbanSyncService", () => {
     expect(byExternalId.get("gitlab:42!7")?.status).toBe("done");
   });
 
-  test("moves a card to Done once its MR merges and drops out of the state=opened query", async () => {
+  test("keeps a merged MR as a detached Done card (for the stats strip) once it drops out", async () => {
     const openMr = {
       iid: 5,
       project_id: 42,
@@ -257,7 +257,7 @@ describe("KanbanSyncService", () => {
           json: async () => (listCalls === 1 ? [openMr] : []),
         };
       }
-      // Single-MR endpoint used by terminal-state reconciliation: now merged.
+      // Single-MR endpoint used by the reconcile pass: now merged.
       if (url.includes("/api/v4/projects/42/merge_requests/5")) {
         return { ok: true, status: 200, statusText: "OK", json: async () => mergedMr };
       }
@@ -275,14 +275,16 @@ describe("KanbanSyncService", () => {
     const first = await syncService.sync(source);
     expect(first.cards.find((card) => card.externalId === "gitlab:42!5")?.status).toBe("wip");
 
-    // Second sync: the MR is gone from the list query, but reconciliation
-    // re-fetches it, sees it merged, and moves the card to Done.
+    // Second sync: the MR is gone from the list query; reconciliation re-fetches
+    // it, sees it merged, moves it to Done and flags it detached. It is NOT
+    // deleted — the stats strip counts merged cards; the board hides them at the
+    // render layer instead.
     const second = await syncService.sync(source);
-    expect(second.cards.find((card) => card.externalId === "gitlab:42!5")?.status).toBe("done");
+    expect(second.error).toBeNull();
     const storedAfter = (await store.listCards()).find((card) => card.externalId === "gitlab:42!5");
-    expect(storedAfter?.status).toBe("done");
+    expect(storedAfter).toMatchObject({ status: "done", detachedFromSource: true });
 
-    // Third sync: the card's stored metadata is already terminal, so it is not
+    // Third sync: the card's stored metadata is already merged, so it is not
     // re-fetched again — each merged MR costs exactly one reconciliation request.
     const singleFetchCount = () =>
       fetchImpl.mock.calls.filter((call: unknown[]) =>
@@ -291,6 +293,195 @@ describe("KanbanSyncService", () => {
     const before = singleFetchCount();
     await syncService.sync(source);
     expect(singleFetchCount()).toBe(before);
+  });
+
+  test("removes a GitLab card once its MR is closed (not merged)", async () => {
+    const openMr = {
+      iid: 11,
+      project_id: 42,
+      title: "Abandoned work",
+      web_url: "https://gitlab.example.com/group/project/-/merge_requests/11",
+      state: "opened",
+    };
+    const closedMr = { ...openMr, state: "closed" };
+    let listCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/api/v4/merge_requests")) {
+        listCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => (listCalls === 1 ? [openMr] : []),
+        };
+      }
+      if (url.includes("/api/v4/projects/42/merge_requests/11")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => closedMr };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+      query: "state=opened",
+    });
+
+    await syncService.sync(source);
+    await syncService.sync(source);
+    expect(
+      (await store.listCards()).find((card) => card.externalId === "gitlab:42!11"),
+    ).toBeUndefined();
+  });
+
+  test("removes a GitLab card once the user is removed as its reviewer", async () => {
+    const openMr = {
+      iid: 8,
+      project_id: 42,
+      title: "Awaiting my review",
+      web_url: "https://gitlab.example.com/group/project/-/merge_requests/8",
+      state: "opened",
+      reviewers: [{ username: "junfu", id: 1 }],
+    };
+    // Still open, but junfu was dropped as a reviewer — it leaves the
+    // `reviewer_username=junfu` query and is no longer the user's review.
+    const noLongerReviewerMr = { ...openMr, reviewers: [{ username: "someoneelse", id: 2 }] };
+    let listCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/api/v4/merge_requests")) {
+        listCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => (listCalls === 1 ? [openMr] : []),
+        };
+      }
+      if (url.includes("/api/v4/projects/42/merge_requests/8/approvals")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => ({ approved: false }) };
+      }
+      if (url.includes("/api/v4/projects/42/merge_requests/8")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => noLongerReviewerMr };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+      query: "scope=all&state=opened&reviewer_username=junfu",
+    });
+
+    await syncService.sync(source);
+    expect(
+      (await store.listCards()).find((card) => card.externalId === "gitlab:42!8"),
+    ).toBeDefined();
+
+    await syncService.sync(source);
+    expect(
+      (await store.listCards()).find((card) => card.externalId === "gitlab:42!8"),
+    ).toBeUndefined();
+  });
+
+  test("keeps a still-open GitLab card the user still reviews that fell out of the query", async () => {
+    const openMr = {
+      iid: 9,
+      project_id: 42,
+      title: "Still awaiting my review",
+      web_url: "https://gitlab.example.com/group/project/-/merge_requests/9",
+      state: "opened",
+      reviewers: [{ username: "junfu", id: 1 }],
+    };
+    let listCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/api/v4/merge_requests")) {
+        listCalls += 1;
+        // Dropped from the list on the 2nd sync (e.g. a transient filter miss),
+        // but the MR is still open and junfu is still a reviewer.
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => (listCalls === 1 ? [openMr] : []),
+        };
+      }
+      if (url.includes("/api/v4/projects/42/merge_requests/9/approvals")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => ({ approved: false }) };
+      }
+      if (url.includes("/api/v4/projects/42/merge_requests/9")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => openMr };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+      query: "scope=all&state=opened&reviewer_username=junfu",
+    });
+
+    await syncService.sync(source);
+    await syncService.sync(source);
+    const stored = (await store.listCards()).find((card) => card.externalId === "gitlab:42!9");
+    // Still the user's review — kept, flagged detached, not dropped.
+    expect(stored).toMatchObject({ detachedFromSource: true });
+    expect(stored).toBeDefined();
+  });
+
+  test("keeps a dropped-out open GitLab MR when the query has no reviewer_username to judge by", async () => {
+    const openMr = {
+      iid: 10,
+      project_id: 42,
+      title: "Open, no reviewer filter",
+      web_url: "https://gitlab.example.com/group/project/-/merge_requests/10",
+      state: "opened",
+      reviewers: [{ username: "someoneelse", id: 2 }],
+    };
+    let listCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/api/v4/merge_requests")) {
+        listCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => (listCalls === 1 ? [openMr] : []),
+        };
+      }
+      if (url.includes("/api/v4/projects/42/merge_requests/10/approvals")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => ({ approved: false }) };
+      }
+      if (url.includes("/api/v4/projects/42/merge_requests/10")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => openMr };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+      // No reviewer_username: reviewer removal can't be judged, so an open MR
+      // that dropped out is kept rather than dropped on a guess.
+      query: "scope=all&state=opened",
+    });
+
+    await syncService.sync(source);
+    await syncService.sync(source);
+    const stored = (await store.listCards()).find((card) => card.externalId === "gitlab:42!10");
+    expect(stored).toMatchObject({ detachedFromSource: true });
+    expect(stored).toBeDefined();
   });
 
   test("re-fetches and flags a Jira card whose issue no longer matches the query", async () => {

@@ -73,6 +73,14 @@ export function KanbanGitlabBoard({
     );
     const legacy = new Map<string, KanbanStatusBucket>();
     for (const card of cards) {
+      // A merged MR that dropped out of the source query is kept in the store
+      // (flagged detached) only so the stats strip below can still count it —
+      // the board itself is a live review queue, so hide it from the lanes. Note
+      // this filters lane rendering ONLY; KanbanGitlabStats still receives the
+      // full `cards` set, so merged-in-7d/30d and avg-time-to-merge stay intact.
+      if (card.detachedFromSource === true && card.metadata?.state === "merged") {
+        continue;
+      }
       const bucket = readGitlabBucket(card.metadata);
       if (bucket) {
         fixed.get(bucket)?.cards.push(card);

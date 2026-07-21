@@ -894,8 +894,6 @@ export const fr: TranslationResources = {
         textSizeXxxl: "Géant",
         commits: {
           title: "Commits",
-          legendLocal: "local",
-          legendRemote: "sur le distant",
           countLabel: "{{count}} commits en avance sur la base",
           fileDiffEmpty: "Aucune modification à afficher",
           fileDiffError: "Échec du chargement du diff du fichier",

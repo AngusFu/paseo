@@ -856,8 +856,6 @@ export const zhCN: TranslationResources = {
         textSizeXxxl: "巨大",
         commits: {
           title: "提交",
-          legendLocal: "本地",
-          legendRemote: "已推送",
           countLabel: "领先基线 {{count}} 个提交",
           fileDiffEmpty: "没有可显示的更改",
           fileDiffError: "加载文件差异失败",

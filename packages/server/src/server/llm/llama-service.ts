@@ -13,15 +13,39 @@ import type {
   LlmWorkerToParentMessage,
 } from "./worker-protocol.js";
 
-// The daemon's built-in local model. Single fixed model for now; a picker can
-// come later. Sources are tried in order — huggingface.co first, hf-mirror for
-// networks where the former is unreachable.
-const MODEL_FILENAME = "gemma-4-E4B_q4_0-it.gguf";
-const MODEL_URLS = [
-  `https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/main/${MODEL_FILENAME}`,
-  `https://hf-mirror.com/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/main/${MODEL_FILENAME}`,
-  `https://modelscope.cn/models/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/master/${MODEL_FILENAME}`,
+// The daemon's built-in local model: a 12B agentic Gemma fine-tune (Q4_K_M,
+// ~6.9GB) — noticeably better tool routing than the earlier 4B E4B build.
+// Sources are tried in order; the sufy CDN mirror first since it is fast from
+// networks where huggingface.co crawls. Overridable via the daemon config's
+// localLlm block (modelFilename + modelUrls, set together).
+const DEFAULT_MODEL_FILENAME = "gemma4-v2-Q4_K_M.gguf";
+const DEFAULT_MODEL_REPO_PATH = "yuxinlu1/gemma-4-12B-agentic-fable5-composer2.5-v2-3.5x-tau2-GGUF";
+const DEFAULT_MODEL_URLS = [
+  `https://hf-cdn.sufy.com/${DEFAULT_MODEL_REPO_PATH}/resolve/main/${DEFAULT_MODEL_FILENAME}`,
+  `https://huggingface.co/${DEFAULT_MODEL_REPO_PATH}/resolve/main/${DEFAULT_MODEL_FILENAME}`,
+  `https://hf-mirror.com/${DEFAULT_MODEL_REPO_PATH}/resolve/main/${DEFAULT_MODEL_FILENAME}`,
 ];
+
+export interface LlmModelConfig {
+  modelFilename?: string;
+  modelUrls?: string[];
+}
+
+interface ResolvedModelConfig {
+  filename: string;
+  urls: string[];
+}
+
+// A custom filename without matching URLs cannot be downloaded (we cannot
+// guess where it lives), but a file already on disk still loads fine.
+export function resolveModelConfig(config: LlmModelConfig | null | undefined): ResolvedModelConfig {
+  const filename = config?.modelFilename?.trim();
+  if (!filename) {
+    return { filename: DEFAULT_MODEL_FILENAME, urls: DEFAULT_MODEL_URLS };
+  }
+  const urls = (config?.modelUrls ?? []).map((url) => url.trim()).filter((url) => url.length > 0);
+  return { filename, urls };
+}
 const CONTEXT_SIZE = 4096;
 // Unload the worker (freeing ~4.5GB) after this long without a request.
 const IDLE_UNLOAD_MS = 5 * 60 * 1000;
@@ -40,6 +64,9 @@ interface LlamaServiceOptions {
   // Invoked on download progress and load/unload so the daemon can broadcast
   // llm.local.status.update to connected clients.
   onStatusUpdate?: (state: LlmLocalModelState) => void;
+  // Read per access so daemon-config edits apply without a restart (an
+  // already-loaded worker keeps its model until the next idle unload).
+  getModelConfig?: () => LlmModelConfig | null | undefined;
 }
 
 export interface GenerateParams {
@@ -91,6 +118,7 @@ export class LlamaService {
   private readonly paseoHome: string;
   private readonly logger: pino.Logger;
   private readonly onStatusUpdate?: (state: LlmLocalModelState) => void;
+  private readonly getModelConfig?: () => LlmModelConfig | null | undefined;
 
   private worker: ChildProcess | null = null;
   private workerLoaded = false;
@@ -106,10 +134,15 @@ export class LlamaService {
     this.paseoHome = options.paseoHome;
     this.logger = options.logger.child({ module: "llama-service" });
     this.onStatusUpdate = options.onStatusUpdate;
+    this.getModelConfig = options.getModelConfig;
+  }
+
+  private get resolvedModel(): ResolvedModelConfig {
+    return resolveModelConfig(this.getModelConfig?.());
   }
 
   private get modelPath(): string {
-    return path.join(this.paseoHome, "models", MODEL_FILENAME);
+    return path.join(this.paseoHome, "models", this.resolvedModel.filename);
   }
 
   async getStatus(): Promise<LlmLocalModelState> {
@@ -164,8 +197,14 @@ export class LlamaService {
     await fs.mkdir(dir, { recursive: true });
     const partPath = `${this.modelPath}.part`;
 
+    const { urls } = this.resolvedModel;
+    if (urls.length === 0) {
+      throw new Error(
+        "no download sources for the configured model — set localLlm.modelUrls alongside localLlm.modelFilename",
+      );
+    }
     let lastError: Error | null = null;
-    for (const url of MODEL_URLS) {
+    for (const url of urls) {
       try {
         await this.downloadFrom(url, partPath);
         await fs.rename(partPath, this.modelPath);

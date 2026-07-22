@@ -2015,7 +2015,7 @@ export const ja: TranslationResources = {
       },
       localLlm: {
         title: "ローカル AI モデル",
-        hint: "このホスト上で動作し（ダウンロード約 4.9 GB）、自然言語からの cron 生成などのローカル AI 機能を支えます。",
+        hint: "このホスト上で動作し（ダウンロード約 7 GB）、自然言語からの cron 生成などのローカル AI 機能を支えます。",
         download: "ダウンロード",
         downloading: "ダウンロード中… {{received}} / {{total}} GB（{{percent}}%）",
         ready: "準備完了",
@@ -2324,7 +2324,7 @@ export const ja: TranslationResources = {
     send: "送信",
     newChat: "新しいチャット",
     model: {
-      required: "チャットを始めるにはローカル AI モデル（約 4.9 GB）をダウンロードしてください。",
+      required: "チャットを始めるにはローカル AI モデル（約 7 GB）をダウンロードしてください。",
       download: "モデルをダウンロード",
       downloading: "モデルをダウンロード中… {{percent}}%",
       error: "モデルエラー：{{message}}",
@@ -2891,7 +2891,7 @@ export const ja: TranslationResources = {
         placeholder: "スケジュールを説明してください（例：平日の朝 9:30）",
         generate: "生成",
         generating: "生成中…",
-        download: "ローカルモデルをダウンロード（約 4.9 GB）",
+        download: "ローカルモデルをダウンロード（約 7 GB）",
         downloading: "モデルをダウンロード中… {{percent}}%",
         failed: "cron 式を生成できませんでした。言い換えてみてください。",
       },

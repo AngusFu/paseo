@@ -2047,7 +2047,7 @@ export const fr: TranslationResources = {
       },
       localLlm: {
         title: "Modèle d'IA local",
-        hint: "S'exécute sur cet hôte (téléchargement d'environ 4,9 Go) et alimente les fonctions d'IA locales comme la génération de cron en langage naturel.",
+        hint: "S'exécute sur cet hôte (téléchargement d'environ 7 Go) et alimente les fonctions d'IA locales comme la génération de cron en langage naturel.",
         download: "Télécharger",
         downloading: "Téléchargement… {{received}} / {{total}} Go ({{percent}} %)",
         ready: "Prêt",
@@ -2358,7 +2358,7 @@ export const fr: TranslationResources = {
     send: "Envoyer",
     newChat: "Nouvelle discussion",
     model: {
-      required: "Téléchargez le modèle d’IA local (~4,9 Go) pour commencer à discuter.",
+      required: "Téléchargez le modèle d’IA local (~7 Go) pour commencer à discuter.",
       download: "Télécharger le modèle",
       downloading: "Téléchargement du modèle… {{percent}}%",
       error: "Erreur du modèle : {{message}}",
@@ -2927,7 +2927,7 @@ export const fr: TranslationResources = {
         placeholder: "Décrivez la planification, p. ex. chaque jour ouvré à 9 h 30",
         generate: "Générer",
         generating: "Génération…",
-        download: "Télécharger le modèle local (~4,9 Go)",
+        download: "Télécharger le modèle local (~7 Go)",
         downloading: "Téléchargement du modèle… {{percent}} %",
         failed: "Impossible de générer une expression cron. Essayez de reformuler.",
       },

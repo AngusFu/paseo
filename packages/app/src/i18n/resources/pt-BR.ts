@@ -2027,7 +2027,7 @@ export const ptBR: TranslationResources = {
       },
       localLlm: {
         title: "Modelo de IA local",
-        hint: "Roda neste host (download de ~4,9 GB) e alimenta recursos de IA locais como a geração de cron em linguagem natural.",
+        hint: "Roda neste host (download de ~7 GB) e alimenta recursos de IA locais como a geração de cron em linguagem natural.",
         download: "Baixar",
         downloading: "Baixando… {{received}} / {{total}} GB ({{percent}}%)",
         ready: "Pronto",
@@ -2337,7 +2337,7 @@ export const ptBR: TranslationResources = {
     send: "Enviar",
     newChat: "Novo chat",
     model: {
-      required: "Baixe o modelo de IA local (~4,9 GB) para começar a conversar.",
+      required: "Baixe o modelo de IA local (~7 GB) para começar a conversar.",
       download: "Baixar modelo",
       downloading: "Baixando modelo… {{percent}}%",
       error: "Erro do modelo: {{message}}",
@@ -2905,7 +2905,7 @@ export const ptBR: TranslationResources = {
         placeholder: "Descreva o agendamento, p. ex. todo dia útil às 9:30",
         generate: "Gerar",
         generating: "Gerando…",
-        download: "Baixar modelo local (~4,9 GB)",
+        download: "Baixar modelo local (~7 GB)",
         downloading: "Baixando modelo… {{percent}}%",
         failed: "Não foi possível gerar uma expressão cron. Tente reformular.",
       },

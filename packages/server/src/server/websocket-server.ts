@@ -563,6 +563,9 @@ export class VoiceAssistantWebSocketServer {
             wrapSessionMessage({ type: "llm.local.status.update", payload: { model } }),
           );
         },
+        // Lazy read: daemonConfigStore is assigned later in this constructor
+        // and config edits should apply without a daemon restart.
+        getModelConfig: () => this.daemonConfigStore.get().localLlm ?? null,
       });
     this.llmChatService = new LlmChatService({
       paseoHome,

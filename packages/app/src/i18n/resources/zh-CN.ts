@@ -1972,7 +1972,7 @@ export const zhCN: TranslationResources = {
       },
       localLlm: {
         title: "本地 AI 模型",
-        hint: "运行在此主机上（下载约 4.9 GB），为自然语言生成 cron 等本地 AI 功能提供支持。",
+        hint: "运行在此主机上（下载约 7 GB），为自然语言生成 cron 等本地 AI 功能提供支持。",
         download: "下载",
         downloading: "下载中… {{received}} / {{total}} GB（{{percent}}%）",
         ready: "已就绪",
@@ -2271,7 +2271,7 @@ export const zhCN: TranslationResources = {
     send: "发送",
     newChat: "新对话",
     model: {
-      required: "下载本地 AI 模型（约 4.9 GB）后即可开始对话。",
+      required: "下载本地 AI 模型（约 7 GB）后即可开始对话。",
       download: "下载模型",
       downloading: "正在下载模型… {{percent}}%",
       error: "模型错误：{{message}}",
@@ -2838,7 +2838,7 @@ export const zhCN: TranslationResources = {
         placeholder: "描述执行频率，如：每个工作日早上 9:30",
         generate: "生成",
         generating: "生成中…",
-        download: "下载本地模型（约 4.9 GB）",
+        download: "下载本地模型（约 7 GB）",
         downloading: "模型下载中… {{percent}}%",
         failed: "未能生成 cron 表达式，请换个说法。",
       },

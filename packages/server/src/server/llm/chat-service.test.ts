@@ -355,3 +355,28 @@ describe("LlmChatService tool confirmation", () => {
     await sendPromise;
   });
 });
+
+describe("resolveModelConfig", () => {
+  it("falls back to the built-in default", async () => {
+    const { resolveModelConfig } = await import("./llama-service.js");
+    const resolved = resolveModelConfig(null);
+    expect(resolved.filename).toBe("gemma4-v2-Q4_K_M.gguf");
+    expect(resolved.urls.length).toBeGreaterThan(0);
+    expect(resolved.urls[0]).toContain(resolved.filename);
+  });
+
+  it("uses a custom filename with its own urls, never the default urls", async () => {
+    const { resolveModelConfig } = await import("./llama-service.js");
+    const custom = resolveModelConfig({
+      modelFilename: "my-model.gguf",
+      modelUrls: ["https://example.com/my-model.gguf"],
+    });
+    expect(custom).toEqual({
+      filename: "my-model.gguf",
+      urls: ["https://example.com/my-model.gguf"],
+    });
+    // Custom filename without urls: downloadable sources must stay empty so
+    // startDownload errors instead of fetching the wrong file.
+    expect(resolveModelConfig({ modelFilename: "my-model.gguf" }).urls).toEqual([]);
+  });
+});

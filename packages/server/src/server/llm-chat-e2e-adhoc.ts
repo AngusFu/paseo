@@ -63,12 +63,24 @@ try {
   }
   console.log(`[turn2] (${((Date.now() - t0) / 1000).toFixed(1)}s) ->`, second.message.text);
 
-  // Turn 3: tool call — create a schedule via natural language.
+  // Turn 3: tool call — create a schedule via natural language. The daemon
+  // now proposes mutating tools first; approve the proposal like the UI would.
   t0 = Date.now();
+  const turn3Log = logEvent("[turn3]");
   const third = await client.llmChatSend({
     chatId: first.chatId,
     text: `帮我创建一个计划任务：每天早上9点在 ${daemon.paseoHome} 目录运行命令 echo standup`,
-    onEvent: logEvent("[turn3]"),
+    onEvent: (payload) => {
+      turn3Log(payload);
+      if (payload.event.kind === "tool_proposal") {
+        console.log("[turn3] approving proposal", payload.event.proposalId);
+        void client.llmChatToolRespond({
+          chatId: payload.chatId,
+          proposalId: payload.event.proposalId,
+          approve: true,
+        });
+      }
+    },
   });
   console.log(
     `[turn3] (${((Date.now() - t0) / 1000).toFixed(1)}s) ->`,

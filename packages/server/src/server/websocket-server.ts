@@ -438,6 +438,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly llamaService: LlamaService;
   private readonly llmChatService: LlmChatService;
   private llmChatToolCatalogFactory: (() => Promise<PaseoToolCatalog | null>) | null = null;
+  private llmChatDefaultProviderResolver: (() => Promise<string | null>) | null = null;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: ForgeService;
   private readonly workspaceGitService: WorkspaceGitService;
@@ -570,6 +571,10 @@ export class VoiceAssistantWebSocketServer {
       getToolCatalog: async () => {
         const factory = this.llmChatToolCatalogFactory;
         return factory ? await factory() : null;
+      },
+      getDefaultProvider: async () => {
+        const resolver = this.llmChatDefaultProviderResolver;
+        return resolver ? await resolver() : null;
       },
       onEvent: (payload) => {
         this.broadcast(wrapSessionMessage({ type: "llm.chat.event", payload }));
@@ -859,6 +864,12 @@ export class VoiceAssistantWebSocketServer {
   // built-in chat loop access to the whitelisted Paseo tools.
   public setLlmChatToolCatalogFactory(factory: () => Promise<PaseoToolCatalog | null>): void {
     this.llmChatToolCatalogFactory = factory;
+  }
+
+  // First enabled provider id; fills create_schedule new-agent targets minted
+  // from chat, which has no caller agent to inherit a provider from.
+  public setLlmChatDefaultProviderResolver(resolver: () => Promise<string | null>): void {
+    this.llmChatDefaultProviderResolver = resolver;
   }
 
   public async attachExternalSocket(

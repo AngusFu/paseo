@@ -171,12 +171,14 @@ import {
   LlmChatSendRequestSchema,
   LlmChatCancelRequestSchema,
   LlmChatDeleteRequestSchema,
+  LlmChatToolRespondRequestSchema,
   LlmChatListResponseSchema,
   LlmChatGetResponseSchema,
   LlmChatSendResponseSchema,
   LlmChatEventMessageSchema,
   LlmChatCancelResponseSchema,
   LlmChatDeleteResponseSchema,
+  LlmChatToolRespondResponseSchema,
 } from "./llm/chat-rpc-schemas.js";
 import { BrowserAutomationHostCapabilitySchema } from "./browser-automation/capabilities.js";
 import {
@@ -2736,6 +2738,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   LlmChatSendRequestSchema,
   LlmChatCancelRequestSchema,
   LlmChatDeleteRequestSchema,
+  LlmChatToolRespondRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -5456,6 +5459,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   LlmChatEventMessageSchema,
   LlmChatCancelResponseSchema,
   LlmChatDeleteResponseSchema,
+  LlmChatToolRespondResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
   InstallDifftasticProgressMessageSchema,

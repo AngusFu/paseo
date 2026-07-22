@@ -653,6 +653,10 @@ type LlmChatDeletePayload = Extract<
   SessionOutboundMessage,
   { type: "llm.chat.delete.response" }
 >["payload"];
+type LlmChatToolRespondPayload = Extract<
+  SessionOutboundMessage,
+  { type: "llm.chat.tool.respond.response" }
+>["payload"];
 export type LlmChatEventPayload = Extract<
   SessionOutboundMessage,
   { type: "llm.chat.event" }
@@ -5585,6 +5589,23 @@ export class DaemonClient {
     return this.sendNamespacedCorrelatedSessionRequest({
       requestId,
       message: { type: "llm.chat.delete.request", chatId },
+    });
+  }
+
+  async llmChatToolRespond(options: {
+    chatId: string;
+    proposalId: string;
+    approve: boolean;
+    requestId?: string;
+  }): Promise<LlmChatToolRespondPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "llm.chat.tool.respond.request",
+        chatId: options.chatId,
+        proposalId: options.proposalId,
+        approve: options.approve,
+      },
     });
   }
 

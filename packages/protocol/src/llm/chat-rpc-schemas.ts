@@ -9,11 +9,21 @@ import { z } from "zod";
 // Stored chat shapes
 // ---------------------------------------------------------------------------
 
+// Where a successful tool call landed, so clients can render a tap-through
+// to the created entity's screen.
+export const LlmChatToolLinkSchema = z.object({
+  entity: z.enum(["schedule", "workflowRun", "kanbanCard"]),
+  id: z.string(),
+});
+
+export type LlmChatToolLink = z.infer<typeof LlmChatToolLinkSchema>;
+
 export const LlmChatToolCallSchema = z.object({
   name: z.string(),
   input: z.record(z.string(), z.unknown()),
   ok: z.boolean(),
   summary: z.string(),
+  link: LlmChatToolLinkSchema.optional(),
 });
 
 export type LlmChatToolCall = z.infer<typeof LlmChatToolCallSchema>;
@@ -83,6 +93,16 @@ export const LlmChatDeleteRequestSchema = z.object({
   chatId: z.string(),
 });
 
+// Approve or decline a pending tool proposal surfaced via a tool_proposal
+// event on the in-flight send.
+export const LlmChatToolRespondRequestSchema = z.object({
+  type: z.literal("llm.chat.tool.respond.request"),
+  requestId: z.string(),
+  chatId: z.string(),
+  proposalId: z.string(),
+  approve: z.boolean(),
+});
+
 // ---------------------------------------------------------------------------
 // Responses / events (daemon → client)
 // ---------------------------------------------------------------------------
@@ -117,6 +137,14 @@ export const LlmChatSendResponseSchema = z.object({
 
 export const LlmChatEventSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("chunk"), text: z.string() }),
+  // A mutating tool wants to run; the daemon holds the send until a client
+  // answers via llm.chat.tool.respond (or the proposal times out → declined).
+  z.object({
+    kind: z.literal("tool_proposal"),
+    proposalId: z.string(),
+    name: z.string(),
+    input: z.record(z.string(), z.unknown()),
+  }),
   z.object({
     kind: z.literal("tool_call"),
     name: z.string(),
@@ -127,6 +155,7 @@ export const LlmChatEventSchema = z.discriminatedUnion("kind", [
     name: z.string(),
     ok: z.boolean(),
     summary: z.string(),
+    link: LlmChatToolLinkSchema.optional(),
   }),
   z.object({ kind: z.literal("done") }),
   z.object({ kind: z.literal("error"), message: z.string() }),
@@ -158,6 +187,17 @@ export const LlmChatDeleteResponseSchema = z.object({
   payload: z.object({
     requestId: z.string(),
     deleted: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const LlmChatToolRespondResponseSchema = z.object({
+  type: z.literal("llm.chat.tool.respond.response"),
+  payload: z.object({
+    requestId: z.string(),
+    // false when the proposal is unknown or already settled (timed out,
+    // cancelled, or answered from another device).
+    ok: z.boolean(),
     error: z.string().nullable(),
   }),
 });

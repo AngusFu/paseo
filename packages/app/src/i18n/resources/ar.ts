@@ -2307,6 +2307,11 @@ export const ar: TranslationResources = {
       running: "جارٍ تشغيل {{name}}…",
       done: "نجح {{name}}",
       failed: "فشل {{name}}",
+      view: "عرض",
+    },
+    proposal: {
+      title: "تشغيل {{name}}؟",
+      run: "تشغيل",
     },
   },
   promptOptimize: {

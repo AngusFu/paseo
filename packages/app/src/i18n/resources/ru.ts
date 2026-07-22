@@ -2353,6 +2353,11 @@ export const ru: TranslationResources = {
       running: "Выполняется {{name}}…",
       done: "{{name}} выполнено успешно",
       failed: "{{name}} завершилось с ошибкой",
+      view: "Просмотр",
+    },
+    proposal: {
+      title: "Выполнить {{name}}?",
+      run: "Выполнить",
     },
   },
   promptOptimize: {

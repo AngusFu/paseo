@@ -2280,6 +2280,11 @@ export const zhCN: TranslationResources = {
       running: "正在运行 {{name}}…",
       done: "{{name}} 执行成功",
       failed: "{{name}} 执行失败",
+      view: "查看",
+    },
+    proposal: {
+      title: "执行 {{name}}？",
+      run: "执行",
     },
   },
   promptOptimize: {

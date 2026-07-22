@@ -2320,6 +2320,11 @@ export const en = {
       running: "Running {{name}}…",
       done: "{{name}} succeeded",
       failed: "{{name}} failed",
+      view: "View",
+    },
+    proposal: {
+      title: "Run {{name}}?",
+      run: "Run",
     },
   },
   promptOptimize: {

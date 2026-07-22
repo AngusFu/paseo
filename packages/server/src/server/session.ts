@@ -2648,9 +2648,25 @@ export class Session {
         return this.handleLlmChatCancelRequest(msg);
       case "llm.chat.delete.request":
         return this.handleLlmChatDeleteRequest(msg);
+      case "llm.chat.tool.respond.request":
+        return this.handleLlmChatToolRespondRequest(msg);
       default:
         return undefined;
     }
+  }
+
+  private async handleLlmChatToolRespondRequest(
+    msg: Extract<SessionInboundMessage, { type: "llm.chat.tool.respond.request" }>,
+  ): Promise<void> {
+    const ok = this.llmChatService.respondToProposal(msg.chatId, msg.proposalId, msg.approve);
+    this.emit({
+      type: "llm.chat.tool.respond.response",
+      payload: {
+        requestId: msg.requestId,
+        ok,
+        error: ok ? null : "proposal not found or already settled",
+      },
+    });
   }
 
   private async handleLlmChatListRequest(

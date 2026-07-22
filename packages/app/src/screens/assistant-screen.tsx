@@ -10,8 +10,16 @@ import { MenuHeader } from "@/components/headers/menu-header";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { useLlmChat, type LlmChatToolEvent } from "@/hooks/use-llm-chat";
+import {
+  useLlmChat,
+  type LlmChatPendingProposal,
+  type LlmChatToolEvent,
+} from "@/hooks/use-llm-chat";
 import { useHostRuntimeConnectionStatuses, useHosts } from "@/runtime/host-runtime";
+import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
+import { router } from "expo-router";
+import type { LlmChatToolLink } from "@getpaseo/protocol/llm/chat-rpc-schemas";
+import { buildKanbanRoute, buildSchedulesRoute, buildWorkflowsRoute } from "@/utils/host-routes";
 
 export function AssistantScreen(): ReactElement {
   const isFocused = useIsFocused();
@@ -136,6 +144,25 @@ function ChatView({ chat }: { chat: ReturnType<typeof useLlmChat> }): ReactEleme
     void chat.sendMessage(text);
   }, [draft, chat]);
 
+  // Web multiline inputs never fire onSubmitEditing; Enter sends, Shift+Enter
+  // inserts a newline, and an IME confirming a candidate never sends.
+  const handleKeyPress = useCallback(
+    (event: {
+      preventDefault?: () => void;
+      nativeEvent: { key?: string; shiftKey?: boolean; isComposing?: boolean; keyCode?: number };
+    }) => {
+      if (event.nativeEvent.key !== "Enter" || event.nativeEvent.shiftKey) {
+        return;
+      }
+      if (isImeComposingKeyboardEvent(event.nativeEvent)) {
+        return;
+      }
+      event.preventDefault?.();
+      handleSend();
+    },
+    [handleSend],
+  );
+
   return (
     <View style={styles.body}>
       <ChatTabs chat={chat} />
@@ -155,7 +182,12 @@ function ChatView({ chat }: { chat: ReturnType<typeof useLlmChat> }): ReactEleme
           <MessageBubble key={message.id} message={message} />
         ))}
         {chat.isSending ? (
-          <StreamingBubble streamingText={chat.streamingText} toolEvents={chat.toolEvents} />
+          <StreamingBubble
+            streamingText={chat.streamingText}
+            toolEvents={chat.toolEvents}
+            pendingProposal={chat.pendingProposal}
+            onRespondToProposal={chat.respondToProposal}
+          />
         ) : null}
         {chat.error ? (
           <Text style={styles.errorText} testID="assistant-error">
@@ -163,41 +195,48 @@ function ChatView({ chat }: { chat: ReturnType<typeof useLlmChat> }): ReactEleme
           </Text>
         ) : null}
       </ScrollView>
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.input}
-          value={draft}
-          onChangeText={setDraft}
-          placeholder={t("assistant.inputPlaceholder")}
-          placeholderTextColor={styles.inputPlaceholder.color}
-          multiline
-          submitBehavior="submit"
-          onSubmitEditing={handleSend}
-          editable={!chat.isSending}
-          testID="assistant-input"
-        />
-        {chat.isSending ? (
-          <Button
-            variant="outline"
-            size="sm"
-            leftIcon={Square}
-            onPress={chat.cancel}
-            testID="assistant-cancel"
-          >
-            {t("common.actions.cancel")}
-          </Button>
-        ) : (
-          <Button
-            variant="default"
-            size="sm"
-            leftIcon={ArrowUp}
-            onPress={handleSend}
-            disabled={draft.trim().length === 0}
-            testID="assistant-send"
-          >
-            {t("assistant.send")}
-          </Button>
-        )}
+      <View style={styles.inputArea}>
+        <View style={styles.inputShell}>
+          <TextInput
+            style={styles.input}
+            value={draft}
+            onChangeText={setDraft}
+            placeholder={t("assistant.inputPlaceholder")}
+            placeholderTextColor={styles.inputPlaceholder.color}
+            multiline
+            submitBehavior="submit"
+            onSubmitEditing={handleSend}
+            onKeyPress={handleKeyPress}
+            editable={!chat.isSending}
+            testID="assistant-input"
+          />
+          {chat.isSending ? (
+            <Pressable
+              style={styles.stopButton}
+              onPress={chat.cancel}
+              hitSlop={6}
+              accessibilityLabel={t("common.actions.cancel")}
+              testID="assistant-cancel"
+            >
+              <Square
+                size={styles.stopIcon.width}
+                color={styles.stopIcon.color}
+                fill={styles.stopIcon.color}
+              />
+            </Pressable>
+          ) : (
+            <Pressable
+              style={[styles.sendButton, draft.trim().length === 0 && styles.sendButtonDisabled]}
+              onPress={handleSend}
+              disabled={draft.trim().length === 0}
+              hitSlop={6}
+              accessibilityLabel={t("assistant.send")}
+              testID="assistant-send"
+            >
+              <ArrowUp size={styles.sendIcon.width} color={styles.sendIcon.color} />
+            </Pressable>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -282,7 +321,7 @@ function MessageBubble({ message }: { message: LlmChatMessage }): ReactElement {
       {message.toolCalls?.map((call, index) => (
         <ToolEventLine
           key={`${message.id}-tool-${index}`}
-          event={{ name: call.name, ok: call.ok }}
+          event={{ name: call.name, ok: call.ok, link: call.link }}
         />
       ))}
       <MarkdownRenderer text={message.text} compact />
@@ -293,22 +332,82 @@ function MessageBubble({ message }: { message: LlmChatMessage }): ReactElement {
 function StreamingBubble({
   streamingText,
   toolEvents,
+  pendingProposal,
+  onRespondToProposal,
 }: {
   streamingText: string | null;
   toolEvents: LlmChatToolEvent[];
+  pendingProposal: LlmChatPendingProposal | null;
+  onRespondToProposal: (approve: boolean) => void;
 }): ReactElement {
   return (
     <View style={styles.assistantBubble} testID="assistant-streaming">
       {toolEvents.map((event, index) => (
         <ToolEventLine key={`stream-tool-${index}`} event={event} />
       ))}
-      {streamingText ? (
-        <MarkdownRenderer text={streamingText} compact />
-      ) : (
+      {pendingProposal ? (
+        <ProposalCard proposal={pendingProposal} onRespond={onRespondToProposal} />
+      ) : null}
+      {streamingText ? <MarkdownRenderer text={streamingText} compact /> : null}
+      {!streamingText && !pendingProposal ? (
         <LoadingSpinner size="small" color={styles.spinner.color} />
-      )}
+      ) : null}
     </View>
   );
+}
+
+// AG-UI style confirmation: the daemon parks the tool call until the user
+// answers this card (or the proposal times out server-side).
+function ProposalCard({
+  proposal,
+  onRespond,
+}: {
+  proposal: LlmChatPendingProposal;
+  onRespond: (approve: boolean) => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.proposalCard} testID="assistant-proposal">
+      <Text style={styles.proposalTitle}>
+        {t("assistant.proposal.title", { name: proposal.name })}
+      </Text>
+      <Text style={styles.proposalInput} numberOfLines={6}>
+        {JSON.stringify(proposal.input, null, 2)}
+      </Text>
+      <View style={styles.proposalActions}>
+        <Button
+          variant="default"
+          size="sm"
+          onPress={() => onRespond(true)}
+          testID="assistant-proposal-run"
+        >
+          {t("assistant.proposal.run")}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onPress={() => onRespond(false)}
+          testID="assistant-proposal-cancel"
+        >
+          {t("common.actions.cancel")}
+        </Button>
+      </View>
+    </View>
+  );
+}
+
+function navigateToToolLink(link: LlmChatToolLink): void {
+  switch (link.entity) {
+    case "schedule":
+      router.push(buildSchedulesRoute());
+      break;
+    case "workflowRun":
+      router.push(buildWorkflowsRoute());
+      break;
+    case "kanbanCard":
+      router.push(buildKanbanRoute());
+      break;
+  }
 }
 
 function ToolEventLine({ event }: { event: LlmChatToolEvent }): ReactElement {
@@ -320,6 +419,17 @@ function ToolEventLine({ event }: { event: LlmChatToolEvent }): ReactElement {
     label = t("assistant.tool.done", { name: event.name });
   } else {
     label = t("assistant.tool.failed", { name: event.name });
+  }
+  const link = event.link;
+  if (link) {
+    return (
+      <Pressable onPress={() => navigateToToolLink(link)} testID="assistant-tool-link">
+        <Text style={styles.toolLine}>
+          {label}
+          <Text style={styles.toolLinkSuffix}> {t("assistant.tool.view")} →</Text>
+        </Text>
+      </Pressable>
+    );
   }
   return <Text style={styles.toolLine}>{label}</Text>;
 }
@@ -367,6 +477,9 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[3],
+    width: "100%",
+    maxWidth: 860,
+    alignSelf: "center",
     paddingHorizontal: { xs: theme.spacing[3], md: theme.spacing[6] },
     paddingTop: theme.spacing[4],
   },
@@ -437,29 +550,94 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     fontStyle: "italic",
   },
-  inputRow: {
+  toolLinkSuffix: {
+    color: theme.colors.foreground,
+    fontStyle: "normal",
+  },
+  proposalCard: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.surface1,
+    padding: theme.spacing[3],
+    gap: theme.spacing[2],
+    maxWidth: 480,
+  },
+  proposalTitle: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+  },
+  proposalInput: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    fontFamily: theme.fontFamily.mono,
+  },
+  proposalActions: {
+    flexDirection: "row",
+    gap: theme.spacing[2],
+  },
+  inputArea: {
+    width: "100%",
+    maxWidth: 860,
+    alignSelf: "center",
+    paddingHorizontal: { xs: theme.spacing[3], md: theme.spacing[6] },
+    paddingTop: theme.spacing[2],
+    paddingBottom: theme.spacing[4],
+  },
+  inputShell: {
     flexDirection: "row",
     alignItems: "flex-end",
-    gap: theme.spacing[3],
-    paddingHorizontal: { xs: theme.spacing[3], md: theme.spacing[6] },
-    paddingVertical: theme.spacing[4],
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
+    gap: theme.spacing[2],
+    backgroundColor: theme.colors.surface1,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.xl,
+    paddingVertical: theme.spacing[1.5],
+    paddingLeft: theme.spacing[3],
+    paddingRight: theme.spacing[1.5],
   },
   input: {
     flex: 1,
-    minHeight: 40,
+    minHeight: 36,
     maxHeight: 140,
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
-    backgroundColor: theme.colors.surface1,
-    borderRadius: theme.borderRadius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[2],
+    paddingVertical: theme.spacing[1.5],
+    // Kill the web focus ring; the shell border is the affordance.
+    outlineWidth: 0,
+    outlineColor: "transparent",
   },
   inputPlaceholder: {
     color: theme.colors.foregroundMuted,
+  },
+  sendButton: {
+    width: 32,
+    height: 32,
+    borderRadius: theme.borderRadius.full,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.accent,
+  },
+  sendButtonDisabled: {
+    opacity: 0.4,
+  },
+  sendIcon: {
+    width: theme.iconSize.sm,
+    color: theme.colors.accentForeground,
+  },
+  stopButton: {
+    width: 32,
+    height: 32,
+    borderRadius: theme.borderRadius.full,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface2,
+  },
+  stopIcon: {
+    width: theme.iconSize.xs,
+    color: theme.colors.foreground,
   },
 }));

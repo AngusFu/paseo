@@ -2346,6 +2346,11 @@ export const ptBR: TranslationResources = {
       running: "Executando {{name}}…",
       done: "{{name}} concluído com sucesso",
       failed: "{{name}} falhou",
+      view: "Ver",
+    },
+    proposal: {
+      title: "Executar {{name}}?",
+      run: "Executar",
     },
   },
   promptOptimize: {

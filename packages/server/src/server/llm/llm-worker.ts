@@ -3,6 +3,7 @@
 // parent LlamaService serializes. node-llama-cpp is imported lazily so simply
 // forking the worker never pulls native binaries into the daemon process.
 import type {
+  LlmWorkerHistoryItem,
   LlmWorkerParentToWorkerMessage,
   LlmWorkerToParentMessage,
 } from "./worker-protocol.js";
@@ -19,7 +20,7 @@ interface WorkerState {
       >["createContext"]
     >
   >;
-  createSession: (systemPrompt?: string) => InstanceType<LlamaModule["LlamaChatSession"]>;
+  createSession: (systemPrompt?: string) => Promise<InstanceType<LlamaModule["LlamaChatSession"]>>;
   createGrammar: (schema: Record<string, unknown>) => Promise<unknown>;
 }
 
@@ -36,12 +37,18 @@ async function handleLoad(modelPath: string, contextSize: number): Promise<void>
   const llama = await getLlama();
   const model = await llama.loadModel({ modelPath });
   const context = await model.createContext({ contextSize });
+  // The context has a single sequence and disposing a session does not reliably
+  // return it to the pool ("No sequences left" on the next getSequence), so the
+  // worker holds one sequence for its lifetime and resets it between requests.
+  const sequence = context.getSequence();
   state = {
     llama,
     model,
     context,
-    createSession: (systemPrompt) =>
-      new LlamaChatSession({ contextSequence: context.getSequence(), systemPrompt }),
+    createSession: async (systemPrompt) => {
+      await sequence.clearHistory();
+      return new LlamaChatSession({ contextSequence: sequence, systemPrompt });
+    },
     createGrammar: (schema) =>
       // node-llama-cpp types the schema parameter with a generic the wire
       // payload can't satisfy statically; the runtime accepts any JSON Schema.
@@ -54,6 +61,7 @@ async function handleGenerate(msg: {
   id: string;
   prompt: string;
   systemPrompt?: string;
+  history?: LlmWorkerHistoryItem[];
   jsonSchema?: Record<string, unknown>;
   maxTokens?: number;
   stream?: boolean;
@@ -64,8 +72,29 @@ async function handleGenerate(msg: {
   }
   const controller = new AbortController();
   abortControllers.set(msg.id, controller);
-  const session = state.createSession(msg.systemPrompt);
+  let session: Awaited<ReturnType<WorkerState["createSession"]>>;
   try {
+    session = await state.createSession(msg.systemPrompt);
+  } catch (error) {
+    abortControllers.delete(msg.id);
+    send({
+      type: "error",
+      id: msg.id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+  try {
+    if (msg.history && msg.history.length > 0) {
+      session.setChatHistory([
+        ...(msg.systemPrompt ? [{ type: "system" as const, text: msg.systemPrompt }] : []),
+        ...msg.history.map((item) =>
+          item.role === "user"
+            ? { type: "user" as const, text: item.text }
+            : { type: "model" as const, response: [item.text] },
+        ),
+      ]);
+    }
     const grammar = msg.jsonSchema ? await state.createGrammar(msg.jsonSchema) : undefined;
     const text = await session.prompt(msg.prompt, {
       maxTokens: msg.maxTokens ?? 512,
@@ -89,7 +118,8 @@ async function handleGenerate(msg: {
     }
   } finally {
     abortControllers.delete(msg.id);
-    session.dispose({ disposeSequence: true });
+    // Keep the shared sequence alive; createSession resets it next request.
+    session.dispose();
   }
 }
 

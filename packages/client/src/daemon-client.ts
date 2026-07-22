@@ -544,9 +544,36 @@ type LlmLocalCancelPayload = Extract<
   SessionOutboundMessage,
   { type: "llm.local.cancel.response" }
 >["payload"];
+type LlmChatListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "llm.chat.list.response" }
+>["payload"];
+type LlmChatGetPayload = Extract<
+  SessionOutboundMessage,
+  { type: "llm.chat.get.response" }
+>["payload"];
+type LlmChatSendPayload = Extract<
+  SessionOutboundMessage,
+  { type: "llm.chat.send.response" }
+>["payload"];
+type LlmChatCancelPayload = Extract<
+  SessionOutboundMessage,
+  { type: "llm.chat.cancel.response" }
+>["payload"];
+type LlmChatDeletePayload = Extract<
+  SessionOutboundMessage,
+  { type: "llm.chat.delete.response" }
+>["payload"];
+export type LlmChatEventPayload = Extract<
+  SessionOutboundMessage,
+  { type: "llm.chat.event" }
+>["payload"];
 
 // Cold-start generation loads the model from disk first (tens of seconds).
 const LLM_GENERATE_TIMEOUT_MS = 120_000;
+// A chat send may run a tool-router call, a tool, and a streamed reply back to
+// back on top of a cold start.
+const LLM_CHAT_SEND_TIMEOUT_MS = 300_000;
 
 interface LlmLocalGenerateOptions {
   prompt: string;
@@ -555,6 +582,16 @@ interface LlmLocalGenerateOptions {
   maxTokens?: number;
   requestId?: string;
   timeoutMs?: number;
+}
+
+export interface LlmChatSendOptions {
+  // null starts a new chat; the response carries the assigned chatId.
+  chatId: string | null;
+  text: string;
+  requestId?: string;
+  timeoutMs?: number;
+  // Streamed chunk/tool/done events for this send, already filtered to it.
+  onEvent?: (payload: LlmChatEventPayload) => void;
 }
 
 type KanbanSourceCreatePayload = Extract<
@@ -5021,6 +5058,62 @@ export class DaemonClient {
     return this.sendNamespacedCorrelatedSessionRequest({
       requestId,
       message: { type: "llm.local.cancel.request", generateRequestId },
+    });
+  }
+
+  async llmChatList(requestId?: string): Promise<LlmChatListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "llm.chat.list.request" },
+    });
+  }
+
+  async llmChatGet(chatId: string, requestId?: string): Promise<LlmChatGetPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "llm.chat.get.request", chatId },
+    });
+  }
+
+  async llmChatSend(options: LlmChatSendOptions): Promise<LlmChatSendPayload> {
+    const requestId = this.createRequestId(options.requestId);
+    const onEvent = options.onEvent;
+    const unsubscribe = onEvent
+      ? this.on("llm.chat.event", (message) => {
+          if (message.type !== "llm.chat.event") {
+            return;
+          }
+          if (message.payload.sendRequestId === requestId) {
+            onEvent(message.payload);
+          }
+        })
+      : null;
+    try {
+      return await this.sendNamespacedCorrelatedSessionRequest({
+        requestId,
+        timeout: options.timeoutMs ?? LLM_CHAT_SEND_TIMEOUT_MS,
+        message: {
+          type: "llm.chat.send.request",
+          chatId: options.chatId,
+          text: options.text,
+        },
+      });
+    } finally {
+      unsubscribe?.();
+    }
+  }
+
+  async llmChatCancel(chatId: string, requestId?: string): Promise<LlmChatCancelPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "llm.chat.cancel.request", chatId },
+    });
+  }
+
+  async llmChatDelete(chatId: string, requestId?: string): Promise<LlmChatDeletePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "llm.chat.delete.request", chatId },
     });
   }
 

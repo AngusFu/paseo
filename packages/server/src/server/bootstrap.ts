@@ -1223,6 +1223,7 @@ export async function createPaseoDaemon(
     terminalManager,
     getDaemonTcpPort: () => (boundListenTarget?.type === "tcp" ? boundListenTarget.port : null),
     scheduleService,
+    kanbanService,
     providerSnapshotManager,
     github,
     workspaceGitService,
@@ -1511,6 +1512,7 @@ export async function createPaseoDaemon(
               kanbanService,
               workflowService,
             );
+            wsServer.setLlmChatToolCatalogFactory(async () => createAgentToolCatalog({}));
 
             if (relayEnabled) {
               const offer = await createConnectionOfferV2({

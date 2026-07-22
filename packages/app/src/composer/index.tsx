@@ -40,6 +40,7 @@ import {
   type DraftAgentControlsProps,
 } from "@/composer/agent-controls";
 import { ContextWindowMeter } from "@/components/context-window-meter";
+import { PromptOptimizeButton } from "@/components/prompt-optimize-button";
 import { useImageAttachmentPicker } from "@/hooks/use-image-attachment-picker";
 import { useSessionStore } from "@/stores/session-store";
 import { useFilePicker } from "@/hooks/use-file-picker";
@@ -1699,10 +1700,31 @@ export function Composer({
       contextWindowPending,
     ],
   );
-  const { beforeVoiceContent, footerInlineContent } = useMemo(
-    () => resolveContextWindowPlacement(contextWindowMeter, isCompactLayout),
-    [contextWindowMeter, isCompactLayout],
-  );
+  const { beforeVoiceContent, footerInlineContent } = useMemo(() => {
+    const placement = resolveContextWindowPlacement(contextWindowMeter, isCompactLayout);
+    return {
+      beforeVoiceContent: (
+        <>
+          <PromptOptimizeButton
+            serverId={serverId}
+            draft={userInput}
+            onReplace={setUserInput}
+            disabled={isProcessing || isSubmitLoading}
+          />
+          {placement.beforeVoiceContent}
+        </>
+      ),
+      footerInlineContent: placement.footerInlineContent,
+    };
+  }, [
+    contextWindowMeter,
+    isCompactLayout,
+    serverId,
+    userInput,
+    setUserInput,
+    isProcessing,
+    isSubmitLoading,
+  ]);
 
   const githubSearchQueryTrimmed = githubSearchQuery.trim();
   const githubSearchResultsQuery = useGithubSearchQuery({

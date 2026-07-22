@@ -61,6 +61,7 @@ import {
   resolveDefaultModelId,
   resolvePreferredAgentModeId,
 } from "@/provider-selection/resolve-agent-form";
+import { PromptOptimizeButton } from "@/components/prompt-optimize-button";
 import { useHostFeature } from "@/runtime/host-features";
 import {
   useHostRuntimeClient,
@@ -721,6 +722,13 @@ function WorkflowDispatchSheet({
   const { projects } = useProjects();
   const isCompact = useIsCompactFormFactor();
   const [task, setTask] = useState("");
+  // AdaptiveTextInput is uncontrolled (seeded from initialValue); bump the key
+  // to remount it whenever the optimize button replaces the draft externally.
+  const [taskResetKey, setTaskResetKey] = useState(0);
+  const replaceTask = useCallback((text: string) => {
+    setTask(text);
+    setTaskResetKey((key) => key + 1);
+  }, []);
   const [workspaceTitleBody, setWorkspaceTitleBody] = useState(definition.name);
   const [cwd, setCwd] = useState<string | null>(null);
   const [cwdLabel, setCwdLabel] = useState<string | null>(null);
@@ -1023,17 +1031,28 @@ function WorkflowDispatchSheet({
             />
           </View>
           <Field label={t("workflows.task")}>
-            <FormTextInput
-              value={task}
-              initialValue={task}
-              onChangeText={setTask}
-              placeholder={t("workflows.taskPlaceholder")}
-              multiline
-              numberOfLines={5}
-              textAlignVertical="top"
-              style={styles.taskInput}
-              testID="workflow-dispatch-task-input"
-            />
+            <View style={styles.taskInputWrap}>
+              <FormTextInput
+                value={task}
+                initialValue={task}
+                resetKey={taskResetKey}
+                onChangeText={setTask}
+                placeholder={t("workflows.taskPlaceholder")}
+                multiline
+                numberOfLines={5}
+                textAlignVertical="top"
+                style={styles.taskInput}
+                testID="workflow-dispatch-task-input"
+              />
+              <View style={styles.taskOptimizeSlot}>
+                <PromptOptimizeButton
+                  serverId={serverId}
+                  draft={task}
+                  onReplace={replaceTask}
+                  disabled={isDispatching}
+                />
+              </View>
+            </View>
           </Field>
         </View>
       </AdaptiveModalSheet>
@@ -1962,6 +1981,14 @@ const styles = StyleSheet.create((theme) => ({
   },
   taskInput: {
     minHeight: 120,
+  },
+  taskInputWrap: {
+    position: "relative",
+  },
+  taskOptimizeSlot: {
+    position: "absolute",
+    right: theme.spacing[2],
+    bottom: theme.spacing[2],
   },
   descriptionInput: {
     minHeight: 88,

@@ -897,6 +897,7 @@ export const en = {
       schedules: "Schedules",
       kanban: "Kanban",
       workflows: "Workflows",
+      assistant: "Assistant",
       pinned: "Pinned",
     },
     worktreeSetup: {
@@ -2145,6 +2146,29 @@ export const en = {
         cancel: "Cancel",
       },
     },
+  },
+  assistant: {
+    title: "Assistant",
+    unsupported: "Update the host to use the assistant.",
+    empty: "Chat with the on-device model. It can also create schedules and kanban cards.",
+    inputPlaceholder: "Message the local assistant…",
+    send: "Send",
+    newChat: "New chat",
+    model: {
+      required: "Download the local AI model (~4.9 GB) to start chatting.",
+      download: "Download model",
+      downloading: "Downloading model… {{percent}}%",
+      error: "Model error: {{message}}",
+    },
+    tool: {
+      running: "Running {{name}}…",
+      done: "{{name}} succeeded",
+      failed: "{{name}} failed",
+    },
+  },
+  promptOptimize: {
+    action: "Optimize prompt",
+    undo: "Undo optimization",
   },
   kanban: {
     title: "Kanban",

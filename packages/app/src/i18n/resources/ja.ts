@@ -905,6 +905,7 @@ export const ja: TranslationResources = {
       schedules: "スケジュール",
       kanban: "カンバン",
       workflows: "ワークフロー",
+      assistant: "アシスタント",
       pinned: "ピン留め",
     },
     worktreeSetup: {
@@ -2162,6 +2163,29 @@ export const ja: TranslationResources = {
         cancel: "キャンセル",
       },
     },
+  },
+  assistant: {
+    title: "アシスタント",
+    unsupported: "アシスタントを使用するにはホストを更新してください。",
+    empty: "デバイス上のモデルとチャットできます。スケジュールやカンバンカードも作成できます。",
+    inputPlaceholder: "ローカルアシスタントにメッセージ…",
+    send: "送信",
+    newChat: "新しいチャット",
+    model: {
+      required: "チャットを始めるにはローカル AI モデル（約 4.9 GB）をダウンロードしてください。",
+      download: "モデルをダウンロード",
+      downloading: "モデルをダウンロード中… {{percent}}%",
+      error: "モデルエラー：{{message}}",
+    },
+    tool: {
+      running: "{{name}} を実行中…",
+      done: "{{name}} が成功しました",
+      failed: "{{name}} が失敗しました",
+    },
+  },
+  promptOptimize: {
+    action: "プロンプトを最適化",
+    undo: "最適化を取り消す",
   },
   kanban: {
     title: "カンバン",

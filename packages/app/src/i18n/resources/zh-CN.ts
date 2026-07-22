@@ -883,6 +883,7 @@ export const zhCN: TranslationResources = {
       schedules: "计划",
       kanban: "看板",
       workflows: "工作流",
+      assistant: "助手",
       pinned: "已置顶",
     },
     worktreeSetup: {
@@ -2111,6 +2112,29 @@ export const zhCN: TranslationResources = {
         cancel: "取消",
       },
     },
+  },
+  assistant: {
+    title: "助手",
+    unsupported: "更新主机以使用助手。",
+    empty: "与本地模型对话，它还能帮你创建计划任务和看板卡片。",
+    inputPlaceholder: "给本地助手发消息…",
+    send: "发送",
+    newChat: "新对话",
+    model: {
+      required: "下载本地 AI 模型（约 4.9 GB）后即可开始对话。",
+      download: "下载模型",
+      downloading: "正在下载模型… {{percent}}%",
+      error: "模型错误：{{message}}",
+    },
+    tool: {
+      running: "正在运行 {{name}}…",
+      done: "{{name}} 执行成功",
+      failed: "{{name}} 执行失败",
+    },
+  },
+  promptOptimize: {
+    action: "优化提示词",
+    undo: "撤销优化",
   },
   kanban: {
     title: "看板",

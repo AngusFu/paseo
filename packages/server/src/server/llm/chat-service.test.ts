@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildWorkerHistory,
   LlmChatService,
+  projectToolResult,
   sanitizeReply,
   type LlmChatEventPayload,
 } from "./chat-service.js";
@@ -67,6 +68,58 @@ describe("sanitizeReply", () => {
 
   it("passes clean replies through", () => {
     expect(sanitizeReply("已删除该定时任务。")).toBe("已删除该定时任务。");
+  });
+});
+
+describe("projectToolResult", () => {
+  it("keeps every kanban card within the note budget", () => {
+    const cards = Array.from({ length: 20 }, (_, index) => ({
+      id: `card-${index}`,
+      title: `Card ${index} with a reasonably long title`,
+      status: "pending",
+      assignee: "Jun Fu",
+      priority: "high",
+      labels: ["seo"],
+      // Fields that used to blow the budget:
+      metadata: { jiraKey: `SCIF-${5000 + index}`, description: "x".repeat(400) },
+      createdAt: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:00.000Z",
+    }));
+    const projected = projectToolResult("kanban_list_cards", { cards });
+    expect(projected).not.toBeNull();
+    // Fits the widened projected-result budget with room to spare; the raw
+    // JSON of the same 20 cards is several times larger.
+    expect(projected?.length ?? 0).toBeLessThan(4000);
+    const parsed = JSON.parse(projected ?? "") as { total: number; cards: Array<{ id: string }> };
+    expect(parsed.total).toBe(20);
+    expect(parsed.cards[19].id).toBe("card-19");
+  });
+
+  it("projects schedules to id/cron/target essentials", () => {
+    const projected = projectToolResult("list_schedules", {
+      schedules: [
+        {
+          id: "abc",
+          name: null,
+          prompt: "echo hi",
+          cadence: { type: "cron", expression: "0 9 * * *" },
+          target: { type: "command", command: "echo hi", cwd: "/tmp" },
+          status: "active",
+          createdAt: "…",
+          updatedAt: "…",
+        },
+      ],
+    });
+    expect(JSON.parse(projected ?? "")).toEqual({
+      total: 1,
+      schedules: [
+        { id: "abc", prompt: "echo hi", cron: "0 9 * * *", target: "command", status: "active" },
+      ],
+    });
+  });
+
+  it("returns null for tools without a projection", () => {
+    expect(projectToolResult("create_schedule", { id: "x" })).toBeNull();
   });
 });
 

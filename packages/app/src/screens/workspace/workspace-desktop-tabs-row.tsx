@@ -966,9 +966,14 @@ export function WorkspaceDesktopTabsRow({
     [openTabFocused, workspacePersistenceKey],
   );
 
-  const handleOpenWorkflows = useCallback(() => {
-    router.push("/workflows" as Href);
-  }, [router]);
+  // Opens the draft page as a tab here rather than routing to /workflows.
+  // Choosing which workflow to run is something the draft panel already does,
+  // so leaving the workspace to pick one only costs the user the tabs they
+  // were standing in. No definition yet — the panel's picker fills it in and
+  // retargets this tab.
+  const handleOpenWorkflowDraft = useCallback(() => {
+    handleCreateWorkflowDraft("");
+  }, [handleCreateWorkflowDraft]);
 
   const handleCreateBrowser = useCallback(() => {
     onCreateBrowserTab({ paneId });
@@ -1126,7 +1131,7 @@ export function WorkspaceDesktopTabsRow({
           showCreateBrowserTab={showCreateBrowserTab}
           terminalDisabled={terminalDisabled}
         />
-        <WorkflowActionButton onPress={handleOpenWorkflows} />
+        <WorkflowActionButton onPress={handleOpenWorkflowDraft} />
         {showPaneSplitActions ? (
           <>
             <SplitActionButton

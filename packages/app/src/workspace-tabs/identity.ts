@@ -36,9 +36,13 @@ function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): Workspace
       return agentId ? { kind: "agent", agentId } : null;
     }
     case "workflow_draft": {
+      // Only the draft id identifies the tab. The definition is allowed to be
+      // empty: the workflows header button opens a draft with nothing chosen
+      // yet, and the panel's own picker fills it in and retargets the tab. A
+      // draft that hasn't picked a workflow is unfinished, not malformed.
       const draftId = trimNonEmpty(value.draftId);
-      const definitionId = trimNonEmpty(value.definitionId);
-      return draftId && definitionId ? { kind: "workflow_draft", draftId, definitionId } : null;
+      const definitionId = trimNonEmpty(value.definitionId) ?? "";
+      return draftId ? { kind: "workflow_draft", draftId, definitionId } : null;
     }
     case "workflow_run": {
       const runId = trimNonEmpty(value.runId);

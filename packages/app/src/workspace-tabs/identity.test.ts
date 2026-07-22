@@ -108,14 +108,7 @@ describe("workflow draft tab identity", () => {
     ).toEqual({ kind: "workflow_draft", draftId: "draft-1", definitionId: "wf-1" });
   });
 
-  it("rejects a workflow draft target missing either id", () => {
-    expect(
-      normalizeWorkspaceTabTarget({
-        kind: "workflow_draft",
-        draftId: "draft-1",
-        definitionId: "  ",
-      }),
-    ).toBeNull();
+  it("rejects a workflow draft target with no draft id", () => {
     expect(
       normalizeWorkspaceTabTarget({
         kind: "workflow_draft",
@@ -123,6 +116,20 @@ describe("workflow draft tab identity", () => {
         definitionId: "wf-1",
       }),
     ).toBeNull();
+  });
+
+  // The workflows header button opens a draft before any workflow is chosen —
+  // the panel's picker sets it and retargets the tab. Such a draft is
+  // unfinished, not malformed, so it has to survive normalization (including
+  // the round trip through persisted tab state).
+  it("keeps a workflow draft that has not picked a definition yet", () => {
+    expect(
+      normalizeWorkspaceTabTarget({
+        kind: "workflow_draft",
+        draftId: "draft-1",
+        definitionId: "  ",
+      }),
+    ).toEqual({ kind: "workflow_draft", draftId: "draft-1", definitionId: "" });
   });
 
   it("compares both the draft id and the definition id", () => {

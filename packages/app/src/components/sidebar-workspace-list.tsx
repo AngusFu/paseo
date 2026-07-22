@@ -103,7 +103,6 @@ import {
   SidebarWorkspaceRowContent,
   SidebarWorkspaceShortcutBadge,
   SidebarWorkspaceTrailingActionBase,
-  SidebarWorkspaceTrailingActionOverlay,
   SidebarWorkspaceTrailingActionSlot,
 } from "@/components/sidebar/sidebar-workspace-row-content";
 import { Button } from "@/components/ui/button";
@@ -724,53 +723,53 @@ function WorkspaceRowRightGroup({
   const { t } = useTranslation();
   const showShortcut = showShortcutBadge && shortcutNumber !== null;
   const showKebab = Boolean(onArchive && (isHovered || isTouchPlatform));
-  const showKebabInSlot = showKebab && !showShortcut;
-  const shouldRenderActionSlot = Boolean(onArchive || workspace.diffStat);
 
+  // The diff stat, the pin and the kebab share the row's trailing edge instead
+  // of stacking: hovering a workspace with uncommitted changes used to replace
+  // "+123.2k -23.2k" with the buttons, so the one number you hovered to read
+  // vanished. The buttons keep their width reserved even while invisible, so
+  // the stat stays put and nothing shifts when the row lights up.
+  const showPin = Boolean(onTogglePin) && (isHovered || isTouchPlatform);
   return (
     <>
-      {onTogglePin && (isHovered || isTouchPlatform) ? (
-        <WorkspacePinToggle
-          workspaceKey={workspace.workspaceKey}
-          isPinned={Boolean(isPinned)}
-          rowHovered={isHovered}
-          onTogglePin={onTogglePin}
-        />
-      ) : null}
       {isCreating ? (
         <Text style={styles.workspaceCreatingText}>{t("sidebar.workspace.status.creating")}</Text>
       ) : null}
-      {shouldRenderActionSlot ? (
+      {workspace.diffStat ? (
         <SidebarWorkspaceTrailingActionSlot>
-          <SidebarWorkspaceTrailingActionBase
-            visible={Boolean(workspace.diffStat && !showKebabInSlot && !showShortcut)}
-          >
-            {workspace.diffStat ? (
-              <DiffStat
-                additions={workspace.diffStat.additions}
-                deletions={workspace.diffStat.deletions}
-              />
-            ) : null}
-          </SidebarWorkspaceTrailingActionBase>
-          <SidebarWorkspaceTrailingActionOverlay visible={showKebabInSlot}>
-            {onArchive ? (
-              <SidebarWorkspaceMenu
-                workspaceKey={workspace.workspaceKey}
-                onCopyPath={onCopyPath}
-                onCopyBranchName={onCopyBranchName}
-                onRename={onRename}
-                onMarkAsRead={onMarkAsRead}
-                onArchive={onArchive}
-                archiveLabel={archiveLabel}
-                archiveStatus={archiveStatus}
-                archivePendingLabel={archivePendingLabel}
-                archiveShortcutKeys={archiveShortcutKeys}
-                isPinned={isPinned}
-                onTogglePin={onTogglePin}
-              />
-            ) : null}
-          </SidebarWorkspaceTrailingActionOverlay>
+          <DiffStat
+            additions={workspace.diffStat.additions}
+            deletions={workspace.diffStat.deletions}
+          />
         </SidebarWorkspaceTrailingActionSlot>
+      ) : null}
+      {onTogglePin ? (
+        <SidebarWorkspaceTrailingActionBase visible={showPin}>
+          <WorkspacePinToggle
+            workspaceKey={workspace.workspaceKey}
+            isPinned={Boolean(isPinned)}
+            rowHovered={isHovered}
+            onTogglePin={onTogglePin}
+          />
+        </SidebarWorkspaceTrailingActionBase>
+      ) : null}
+      {onArchive && !showShortcut ? (
+        <SidebarWorkspaceTrailingActionBase visible={showKebab}>
+          <SidebarWorkspaceMenu
+            workspaceKey={workspace.workspaceKey}
+            onCopyPath={onCopyPath}
+            onCopyBranchName={onCopyBranchName}
+            onRename={onRename}
+            onMarkAsRead={onMarkAsRead}
+            onArchive={onArchive}
+            archiveLabel={archiveLabel}
+            archiveStatus={archiveStatus}
+            archivePendingLabel={archivePendingLabel}
+            archiveShortcutKeys={archiveShortcutKeys}
+            isPinned={isPinned}
+            onTogglePin={onTogglePin}
+          />
+        </SidebarWorkspaceTrailingActionBase>
       ) : null}
     </>
   );

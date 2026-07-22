@@ -478,6 +478,10 @@ export function SidebarWorkspaceTrailingActionSlot({ children }: { children: Rea
   return <View style={sidebarWorkspaceRowStyles.trailingActionSlot}>{children}</View>;
 }
 
+// Keeps its child's width in the layout even while hiding it, so a trailing
+// row control can fade in on hover without shoving its neighbours around.
+// Hidden means non-interactive too: an invisible button that still takes
+// clicks is a trap, and these slots now hold real buttons, not just text.
 export function SidebarWorkspaceTrailingActionBase({
   visible,
   children,
@@ -486,7 +490,14 @@ export function SidebarWorkspaceTrailingActionBase({
   children: ReactNode;
 }) {
   if (!children) return null;
-  return <View style={visible ? undefined : sidebarWorkspaceRowStyles.hidden}>{children}</View>;
+  return (
+    <View
+      style={visible ? undefined : sidebarWorkspaceRowStyles.hidden}
+      pointerEvents={visible ? "auto" : "none"}
+    >
+      {children}
+    </View>
+  );
 }
 
 export function SidebarWorkspaceTrailingActionOverlay({

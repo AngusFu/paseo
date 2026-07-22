@@ -71,7 +71,11 @@ import {
 import { buildDiffFlatItems, sumHeightsBefore, type DiffFlatItem } from "@/git/diff-flat-items";
 import { buildDiffTree, collectDirPaths, compressSingleChildChains } from "@/git/diff-tree";
 import { DiffFolderRow } from "@/git/diff-folder-row";
-import { TreeIndentGuides, treeRowPaddingLeft } from "@/components/tree-primitives";
+import {
+  TreeIndentGuides,
+  treeRowPaddingLeft,
+  WORKSPACE_FILE_ROW_VERTICAL_PADDING,
+} from "@/components/tree-primitives";
 import { SvgXml } from "react-native-svg";
 import { getFileIconSvg } from "@/components/material-file-icons";
 import { useCheckoutStatusQuery } from "@/git/use-status-query";
@@ -99,6 +103,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import * as Clipboard from "expo-clipboard";
+import { FILE_ACTIONS_MENU_WIDTH, FileActionsMenu } from "@/components/file-actions-menu";
+import { useFileDownload } from "@/hooks/use-file-download";
+import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { lineNumberGutterWidth } from "@/components/code-insets";
 import { useWebScrollViewScrollbar } from "@/components/use-web-scrollbar";
@@ -128,6 +136,7 @@ import {
   hasVisibleDiffTokens,
 } from "@/utils/diff-rendering";
 import { isWeb, isNative } from "@/constants/platform";
+import { useWorkspaceFileDragSource } from "@/attachments/use-workspace-file-drag-source";
 import {
   buildWorkspaceAttachmentScopeKey,
   useWorkspaceAttachmentsStore,
@@ -261,6 +270,7 @@ const WORD_HIGHLIGHT_TEST_PROPS = isWeb
 
 interface DiffFileSectionProps {
   file: ParsedDiffFile;
+  workspaceFileDragScope?: { serverId: string; workspaceId: string };
   isExpanded: boolean;
   /** Tree indentation level (0 on the flat/mobile path). */
   depth?: number;
@@ -268,6 +278,10 @@ interface DiffFileSectionProps {
   showDir?: boolean;
   interactive?: boolean;
   onToggle?: (path: string) => void;
+  onOpenFile?: (path: string) => void;
+  onAddToChat?: (path: string) => void;
+  onCopyPath?: (path: string) => void;
+  onDownload?: (path: string) => void;
   onHeaderHeightChange?: (path: string, height: number) => void;
   testID?: string;
   // The pane's selected engine (see DiffEngineMenu). Used to badge files that fell back to
@@ -983,21 +997,63 @@ function SplitDiffColumn({
   );
 }
 
+// Binds the row's path into each optional file action once, so the header does
+// not carry four near-identical callbacks plus a presence check per menu item.
+// A missing handler stays undefined so FileActionsMenu keeps hiding that item.
+function useDiffFileActionHandlers(
+  path: string,
+  handlers: {
+    onOpenFile?: (path: string) => void;
+    onAddToChat?: (path: string) => void;
+    onCopyPath?: (path: string) => void;
+    onDownload?: (path: string) => void;
+  },
+): {
+  openFile?: () => void;
+  addToChat?: () => void;
+  copyPath?: () => void;
+  download?: () => void;
+} {
+  const { onOpenFile, onAddToChat, onCopyPath, onDownload } = handlers;
+  return useMemo(
+    () => ({
+      openFile: onOpenFile ? () => onOpenFile(path) : undefined,
+      addToChat: onAddToChat ? () => onAddToChat(path) : undefined,
+      copyPath: onCopyPath ? () => onCopyPath(path) : undefined,
+      download: onDownload ? () => onDownload(path) : undefined,
+    }),
+    [path, onOpenFile, onAddToChat, onCopyPath, onDownload],
+  );
+}
+
 const DiffFileHeader = memo(function DiffFileHeader({
   file,
+  workspaceFileDragScope,
   isExpanded,
   depth = 0,
   showDir = true,
   interactive = true,
   onToggle,
+  onOpenFile,
+  onAddToChat,
+  onCopyPath,
+  onDownload,
   onHeaderHeightChange,
   testID,
   activeDiffTool,
 }: DiffFileSectionProps) {
   const { t } = useTranslation();
+  const dragSourceRef = useWorkspaceFileDragSource({
+    enabled: interactive,
+    disabled: file.isDeleted,
+    workspaceId: null,
+    path: file.path,
+    ...workspaceFileDragScope,
+  });
   const layoutYRef = useRef<number | null>(null);
   const pressHandledRef = useRef(false);
   const pressInRef = useRef<{ ts: number; pageX: number; pageY: number } | null>(null);
+  const [isActionsOpen, setIsActionsOpen] = useState(false);
 
   const toggleExpanded = useCallback(() => {
     if (!interactive) {
@@ -1006,6 +1062,22 @@ const DiffFileHeader = memo(function DiffFileHeader({
     pressHandledRef.current = true;
     onToggle?.(file.path);
   }, [file.path, interactive, onToggle]);
+
+  const fileActions = useDiffFileActionHandlers(file.path, {
+    onOpenFile,
+    onAddToChat,
+    onCopyPath,
+    onDownload,
+  });
+
+  const handleContextMenu = useCallback(
+    (event: { preventDefault: () => void; stopPropagation: () => void }) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsActionsOpen(true);
+    },
+    [],
+  );
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -1064,7 +1136,7 @@ const DiffFileHeader = memo(function DiffFileHeader({
   const fileName = file.path.split("/").pop() ?? file.path;
   const headerContent = (
     <>
-      <View style={styles.fileHeaderLeft}>
+      <View ref={dragSourceRef} style={styles.fileHeaderLeft}>
         {showDir ? null : (
           <View style={styles.fileIcon}>
             <SvgXml xml={getFileIconSvg(fileName)} width={16} height={16} />
@@ -1099,38 +1171,55 @@ const DiffFileHeader = memo(function DiffFileHeader({
         )}
       </View>
       <View style={styles.fileHeaderRight}>
-        <DiffStat additions={file.additions} deletions={file.deletions} />
+        <DiffStat
+          additions={file.additions}
+          deletions={file.deletions}
+          testID={testID ? `${testID}-stat` : undefined}
+        />
+        {interactive ? (
+          <FileActionsMenu
+            fileKind="file"
+            fileExists={!file.isDeleted}
+            onOpenFile={fileActions.openFile}
+            onCopyPath={fileActions.copyPath}
+            onDownload={fileActions.download}
+            onAddToChat={fileActions.addToChat}
+            open={isActionsOpen}
+            onOpenChange={setIsActionsOpen}
+            accessibilityLabel={t("workspace.fileActions.moreActions")}
+            testIDPrefix={testID}
+          />
+        ) : null}
       </View>
     </>
   );
 
+  let trigger: ReactElement;
+  if (!interactive) {
+    trigger = (
+      <View style={headerPressableStyle({ hovered: false, pressed: false })}>{headerContent}</View>
+    );
+  } else {
+    trigger = (
+      <Pressable
+        testID={testID ? `${testID}-toggle` : undefined}
+        style={headerPressableStyle}
+        // Android: prevent parent pan/scroll gestures from canceling the tap release.
+        cancelable={false}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onPress={toggleExpanded}
+        // @ts-ignore - onContextMenu is web-only and not in RN types.
+        onContextMenu={handleContextMenu}
+      >
+        {headerContent}
+      </Pressable>
+    );
+  }
   return (
     <View style={containerStyle} onLayout={handleLayout} testID={testID}>
       <TreeIndentGuides depth={depth} />
-      <Tooltip delayDuration={300} enabledOnDesktop enabledOnMobile={false}>
-        <TooltipTrigger asChild>
-          {interactive ? (
-            <Pressable
-              testID={testID ? `${testID}-toggle` : undefined}
-              style={headerPressableStyle}
-              // Android: prevent parent pan/scroll gestures from canceling the tap release.
-              cancelable={false}
-              onPressIn={handlePressIn}
-              onPressOut={handlePressOut}
-              onPress={toggleExpanded}
-            >
-              {headerContent}
-            </Pressable>
-          ) : (
-            <View style={headerPressableStyle({ hovered: false, pressed: false })}>
-              {headerContent}
-            </View>
-          )}
-        </TooltipTrigger>
-        <TooltipContent side="bottom" align="start" offset={6} maxWidth={520}>
-          <Text style={styles.tooltipText}>{file.path}</Text>
-        </TooltipContent>
-      </Tooltip>
+      {trigger}
     </View>
   );
 });
@@ -1332,6 +1421,8 @@ interface GitDiffPaneProps {
   workspaceId?: string | null;
   cwd: string;
   enabled?: boolean;
+  onOpenFile?: (path: string) => void;
+  onAddToChat?: (path: string) => void;
 }
 
 // Arbitrary branch/ref compare state (mode "refs" — see the "Compare with branch…" picker).
@@ -2103,6 +2194,11 @@ interface SharedDiffViewProps {
         expandedPaths: string[];
         collapsedFolders: string[];
         reviewActions?: InlineReviewActions;
+        workspaceFileDragScope?: { serverId: string; workspaceId: string };
+        onOpenFile?: (path: string) => void;
+        onAddToChat?: (path: string) => void;
+        onCopyPath?: (path: string) => void;
+        onDownload?: (path: string) => void;
         onExpandedPathsChange: (paths: string[]) => void;
         onCollapsedFoldersChange: (paths: string[]) => void;
       }
@@ -2135,6 +2231,12 @@ export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffVi
   const stickyHeaders = mode.kind === "working_tree";
   const interactive = mode.kind === "working_tree";
   const reviewActions = mode.kind === "working_tree" ? mode.reviewActions : undefined;
+  const onOpenFile = mode.kind === "working_tree" ? mode.onOpenFile : undefined;
+  const onAddToChat = mode.kind === "working_tree" ? mode.onAddToChat : undefined;
+  const workspaceFileDragScope =
+    mode.kind === "working_tree" ? mode.workspaceFileDragScope : undefined;
+  const onCopyPath = mode.kind === "working_tree" ? mode.onCopyPath : undefined;
+  const onDownload = mode.kind === "working_tree" ? mode.onDownload : undefined;
   const compressedTree = useMemo(() => compressSingleChildChains(buildDiffTree(files)), [files]);
   const allFolderPaths = useMemo(() => collectDirPaths(compressedTree), [compressedTree]);
   const allFolderPathSet = useMemo(() => new Set(allFolderPaths), [allFolderPaths]);
@@ -2381,11 +2483,16 @@ export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffVi
         return (
           <DiffFileHeader
             file={item.file}
+            workspaceFileDragScope={workspaceFileDragScope}
             isExpanded={item.isExpanded}
             depth={item.depth}
             showDir={viewMode === "flat"}
             interactive={interactive}
             onToggle={interactive ? handleToggleExpanded : undefined}
+            onOpenFile={onOpenFile}
+            onAddToChat={onAddToChat}
+            onCopyPath={onCopyPath}
+            onDownload={onDownload}
             onHeaderHeightChange={handleHeaderHeightChange}
             testID={`diff-file-${item.fileIndex}`}
           />
@@ -2413,10 +2520,15 @@ export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffVi
       handleToggleFolder,
       layout,
       reviewActions,
+      workspaceFileDragScope,
       textMetricsStyle,
       viewMode,
       wrapLines,
       interactive,
+      onOpenFile,
+      onAddToChat,
+      onCopyPath,
+      onDownload,
     ],
   );
 
@@ -2446,6 +2558,7 @@ export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffVi
       viewMode,
       wrapLines,
       reviewActions,
+      workspaceFileDragScope,
     }),
     [
       expandedPathsArray,
@@ -2455,6 +2568,7 @@ export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffVi
       reviewActions,
       typographyKey,
       viewMode,
+      workspaceFileDragScope,
       wrapLines,
     ],
   );
@@ -2660,6 +2774,13 @@ function buildDiffModeTriggerStyle(): PressableStyleFn {
 function buildExpandAllButtonStyle(): PressableStyleFn {
   return ({ hovered, pressed }) => [
     styles.expandAllButton,
+    (Boolean(hovered) || pressed) && styles.toggleButtonSelected,
+  ];
+}
+
+function buildOverflowButtonStyle(): PressableStyleFn {
+  return ({ hovered, pressed }) => [
+    styles.overflowButton,
     (Boolean(hovered) || pressed) && styles.toggleButtonSelected,
   ];
 }
@@ -3062,7 +3183,14 @@ function isPlainDiffModeSelected(
 // split re-appears once it's dragged past this; the ~400px default falls back.
 const SPLIT_MIN_PANE_WIDTH = 720;
 
-export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPaneProps) {
+export function GitDiffPane({
+  serverId,
+  workspaceId,
+  cwd,
+  enabled,
+  onOpenFile,
+  onAddToChat,
+}: GitDiffPaneProps) {
   const { settings: appSettings } = useAppSettings();
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
@@ -3137,7 +3265,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
 
   const expandAllToggleStyle = useMemo(() => buildExpandAllButtonStyle(), []);
 
-  const overflowToggleStyle = useMemo(() => buildExpandAllButtonStyle(), []);
+  const overflowToggleStyle = useMemo(() => buildOverflowButtonStyle(), []);
 
   const toast = useToast();
   const openWorkspaceTabFocused = useWorkspaceLayoutStore((state) => state.openTabFocused);
@@ -3687,6 +3815,25 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
     }
   }, [allFileDiffsExpanded, files, setDiffExpandedPathsForWorkspace, workspaceStateKey]);
 
+  // Upstream hangs these off the SharedDiffView "working tree mode" object; our
+  // GitDiffPane renders its own virtualized list, so they feed the row actions
+  // menu directly instead.
+  const downloadFile = useFileDownload({ serverId, workspaceId, workspaceRoot: cwd });
+  const handleCopyPath = useCallback(
+    (path: string) => {
+      void Clipboard.setStringAsync(
+        buildAbsoluteExplorerPath({ workspaceRoot: cwd, entryPath: path }),
+      );
+    },
+    [cwd],
+  );
+  const handleDownloadPath = useCallback(
+    (path: string) => {
+      downloadFile({ fileName: path.split("/").pop() ?? path, path });
+    },
+    [downloadFile],
+  );
+
   const renderFlatItem = useCallback(
     ({ item }: { item: DiffFlatItem }) => {
       if (item.type === "folder") {
@@ -3715,6 +3862,11 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
             onHeaderHeightChange={handleHeaderHeightChange}
             testID={`diff-file-${item.fileIndex}`}
             activeDiffTool={changesPreferences.diffTool}
+            interactive
+            onOpenFile={onOpenFile}
+            onAddToChat={onAddToChat}
+            onCopyPath={handleCopyPath}
+            onDownload={handleDownloadPath}
           />
         );
       }
@@ -3735,6 +3887,10 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
       changesPreferences.diffTool,
       codeFontSize,
       diffTextMetricsStyle,
+      onOpenFile,
+      onAddToChat,
+      handleCopyPath,
+      handleDownloadPath,
       effectiveLayout,
       handleBodyHeightChange,
       handleFolderRowHeightChange,
@@ -4128,6 +4284,18 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.borderRadius.base,
     flexShrink: 0,
   },
+  overflowButton: {
+    width: FILE_ACTIONS_MENU_WIDTH,
+    height: {
+      xs: 32,
+      sm: 32,
+      md: 24,
+    },
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.base,
+    flexShrink: 0,
+  },
   actionErrorText: {
     paddingHorizontal: theme.spacing[3],
     paddingBottom: theme.spacing[1],
@@ -4238,8 +4406,8 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     paddingLeft: theme.spacing[3],
-    paddingRight: theme.spacing[2],
-    paddingVertical: theme.spacing[2],
+    paddingRight: theme.spacing[3],
+    paddingVertical: WORKSPACE_FILE_ROW_VERTICAL_PADDING,
     gap: theme.spacing[1],
     minWidth: 0,
     zIndex: 2,

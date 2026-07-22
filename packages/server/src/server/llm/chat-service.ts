@@ -30,11 +30,12 @@ const ROUTER_MAX_TOKENS = 256;
 const REPLY_MAX_TOKENS = 768;
 const TITLE_MAX_CHARS = 60;
 
-// Tools the 4B model may invoke. Kept to a small, low-risk set — creation and
-// read-only listing; nothing destructive.
+// Tools the 4B model may invoke. Kept to a small set; everything mutating or
+// destructive sits behind the confirmation card below.
 const TOOL_WHITELIST = [
   "create_schedule",
   "list_schedules",
+  "delete_schedule",
   "list_workspaces",
   "list_workflows",
   "dispatch_workflow",
@@ -47,18 +48,26 @@ const TOOL_WHITELIST = [
 // chat UI (llm.chat.tool.respond). Read-only tools execute directly.
 const CONFIRM_TOOLS = new Set<string>([
   "create_schedule",
+  "delete_schedule",
   "dispatch_workflow",
   "kanban_create_card",
 ]);
 // An unanswered proposal declines itself so a send never hangs forever.
 const PROPOSAL_TIMEOUT_MS = 120_000;
 
+// Halt reply generation before Gemma's native tool-call syntax reaches the
+// stream; the router is the only sanctioned tool path.
+const REPLY_STOP_TRIGGERS = ["<|tool_call", "<|tool_response", "<|tool"];
+const EMPTY_REPLY_FALLBACK = "⚠️";
+
 const CHAT_SYSTEM_PROMPT = [
   "You are Paseo's built-in assistant, a small on-device model running inside the Paseo daemon.",
   "Paseo is an app for monitoring and controlling local AI coding agents (Claude Code, Codex, Copilot, OpenCode, Pi) from any device.",
   "Its main areas are: Workspaces (each runs coding agents in a project directory), Schedules (cron jobs that start an agent or run a command), the Kanban board (task cards, optionally synced from Jira/GitLab), and Workflows (multi-agent pipelines).",
-  "You can DO things for the user, not just explain: you can create and list schedules, create and list kanban cards, list workspaces, and list or dispatch workflows.",
+  "You can DO things for the user, not just explain: you can create, list, and delete schedules, create and list kanban cards, list workspaces, and list or dispatch workflows.",
   "When the user asks how to create a schedule, card, or workflow run, offer to do it for them directly instead of describing UI steps; never invent UI instructions.",
+  "Tools are invoked for you by the system in a separate step. NEVER write tool-call syntax, function calls, or tokens like <|tool_call> in your reply — plain prose only.",
+  "If something is beyond your tools (for example editing a card or pausing a schedule), say so plainly instead of pretending.",
   "Be concise. Always answer in the language the user writes in.",
   "If a tool result is provided, base your answer on it and summarize the outcome plainly.",
   "If a tool failed, say so directly; never pretend an action succeeded.",
@@ -148,6 +157,56 @@ function extractToolLink(name: string, structured: unknown): LlmChatToolLink | u
     }
   }
   return undefined;
+}
+
+// Normalizes a router decision into an executable (name, input) pair, or null
+// when this round should stop. The 4B model regularly emits
+// {"action":"none","name":"delete_schedule",...} when it wants a tool, so a
+// valid tool name wins over the action flag — misfires are safe because reads
+// are harmless and mutations sit behind the confirmation card.
+function resolveToolDecision(
+  decision: RouterDecision,
+  toolNotes: string[],
+  toolCalls: LlmChatToolCall[],
+): { name: string; input: Record<string, unknown> } | null {
+  if (!decision.name) {
+    return null;
+  }
+  let name = decision.name;
+  if (!TOOL_WHITELIST.includes(name as (typeof TOOL_WHITELIST)[number])) {
+    toolNotes.push(`[Tool "${name}" is not available. Tell the user you could not do this.]`);
+    return null;
+  }
+  let input = decision.input ?? {};
+  // The model copies example ids from the few-shot prompt. Only allow a delete
+  // for an id we have actually seen in this turn's list results; otherwise
+  // force a list first so the next round has real ids.
+  if (name === "delete_schedule") {
+    const id = typeof input.id === "string" ? input.id : "";
+    const idIsKnown = id.length > 0 && toolNotes.some((note) => note.includes(id));
+    if (!idIsKnown) {
+      name = "list_schedules";
+      input = {};
+    }
+  }
+  // One successful run per mutating tool per turn — the router sometimes
+  // re-proposes an action it already completed.
+  if (CONFIRM_TOOLS.has(name) && toolCalls.some((call) => call.name === name && call.ok)) {
+    return null;
+  }
+  return { name, input };
+}
+
+// Belt-and-braces behind the stop triggers: strip any tool-call syntax that
+// still slipped into the reply, and never persist an empty message.
+export function sanitizeReply(text: string): string {
+  let cleaned = text;
+  const markerIndex = cleaned.search(/<\|tool|call:[a-z_]+\./i);
+  if (markerIndex >= 0) {
+    cleaned = cleaned.slice(0, markerIndex);
+  }
+  cleaned = cleaned.trim();
+  return cleaned.length > 0 ? cleaned : EMPTY_REPLY_FALLBACK;
 }
 
 function formatToolError(error: unknown): string {
@@ -351,6 +410,9 @@ export class LlmChatService {
         history,
         maxTokens: REPLY_MAX_TOKENS,
         stream: true,
+        // Gemma likes to emit its native tool-call tokens in free-form prose
+        // ("<|tool_call>call:schedules.delete(...)"); halt generation instead.
+        stopTriggers: REPLY_STOP_TRIGGERS,
         onChunk: (chunk) => emit({ kind: "chunk", text: chunk }),
       });
       active.currentGenerateId = null;
@@ -358,7 +420,7 @@ export class LlmChatService {
       const assistantMessage: LlmChatMessage = {
         id: randomUUID(),
         role: "assistant",
-        text: replyText,
+        text: sanitizeReply(replyText),
         createdAt: nowIso(),
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       };
@@ -417,15 +479,16 @@ export class LlmChatService {
       } finally {
         active.currentGenerateId = null;
       }
-      if (decision.action !== "tool" || !decision.name) {
+      // The 4B model regularly emits {"action":"none","name":"delete_schedule",...}
+      // when it wants a tool — trust a valid tool name over the action flag.
+      // Misfires are safe: reads are harmless and mutations sit behind the
+      // confirmation card.
+      const resolved = resolveToolDecision(decision, toolNotes, toolCalls);
+      if (!resolved) {
         return;
       }
-      const name = decision.name;
-      if (!TOOL_WHITELIST.includes(name as (typeof TOOL_WHITELIST)[number])) {
-        toolNotes.push(`[Tool "${name}" is not available. Tell the user you could not do this.]`);
-        return;
-      }
-      const toolInput = await this.prepareToolInput(name, decision.input ?? {});
+      const { name } = resolved;
+      const toolInput = await this.prepareToolInput(name, resolved.input);
       const verdict = await this.confirmToolIfNeeded({
         active,
         name,
@@ -618,7 +681,9 @@ function buildRouterSystemPrompt(available: string[], catalog: PaseoToolCatalog)
     "",
     'Reply with JSON only. If no tool is needed (greetings, questions, chit-chat), reply {"action":"none"}.',
     'If a tool is needed, reply {"action":"tool","name":"<tool>","input":{...}} using ONLY the listed parameter names.',
-    'If a [Tool ... Result: ...] note is already present for the request, reply {"action":"none"}.',
+    'If the [Tool ... Result: ...] notes already contain everything needed to answer, reply {"action":"none"}.',
+    "If a next step still needs a tool (for example you listed schedules to find an id and must now delete one), reply with that tool call.",
+    "NEVER invent an id: delete_schedule only accepts an id that appears in a [Tool list_schedules ... Result: ...] note. Without one, call list_schedules first.",
     "",
     "Examples:",
     'User: 你好 → {"action":"none"}',
@@ -626,6 +691,8 @@ function buildRouterSystemPrompt(available: string[], catalog: PaseoToolCatalog)
     'User: every Monday at 8am run npm test in /Users/me/app → {"action":"tool","name":"create_schedule","input":{"cron":"0 8 * * 1","command":"npm test","cwd":"/Users/me/app"}}',
     'User: 创建一张卡：修复登录 bug → {"action":"tool","name":"kanban_create_card","input":{"title":"修复登录 bug"}}',
     'User: what schedules do I have? → {"action":"tool","name":"list_schedules","input":{}}',
+    'User: 删掉"户外活动提醒"这个定时任务 → {"action":"tool","name":"list_schedules","input":{}} (find its id in the result)',
+    'User: 删掉"户外活动提醒" [Tool list_schedules succeeded. Result: [{"id":"ab12cd34","name":"户外活动提醒",…}]] → {"action":"tool","name":"delete_schedule","input":{"id":"ab12cd34"}}',
     'User: 看板上有哪些卡片? → {"action":"tool","name":"kanban_list_cards","input":{}}',
     'User: 有哪些可用的 workflow? → {"action":"tool","name":"list_workspaces","input":{}} (then list_workflows with a cwd from the result)',
     'User: 在 /Users/me/app 跑 scif-review workflow，任务是修复登录 bug → {"action":"tool","name":"dispatch_workflow","input":{"definition":"scif-review","cwd":"/Users/me/app","task":"修复登录 bug"}}',

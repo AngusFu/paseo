@@ -285,7 +285,12 @@ interface ChatTabProps {
 function ChatTab({ summary, isActive, disabled, onSelect, onDelete }: ChatTabProps): ReactElement {
   return (
     <View style={[styles.tab, isActive && styles.tabActive]}>
-      <Pressable onPress={onSelect} disabled={disabled} testID={`assistant-chat-${summary.id}`}>
+      <Pressable
+        onPress={onSelect}
+        disabled={disabled}
+        style={styles.tabPressable}
+        testID={`assistant-chat-${summary.id}`}
+      >
         <Text
           style={[styles.tabLabel, isActive && styles.tabLabelActive]}
           numberOfLines={1}
@@ -502,6 +507,15 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing[3],
     paddingVertical: theme.spacing[1],
     maxWidth: 220,
+    // Without shrink + hidden the label's natural width blows past maxWidth
+    // and paints over the neighbouring chips (numberOfLines only clips once
+    // the parent actually constrains it).
+    flexShrink: 1,
+    overflow: "hidden",
+  },
+  tabPressable: {
+    flexShrink: 1,
+    minWidth: 0,
   },
   tabActive: {
     backgroundColor: theme.colors.surface2,
@@ -509,6 +523,7 @@ const styles = StyleSheet.create((theme) => ({
   tabLabel: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
+    flexShrink: 1,
   },
   tabLabelActive: {
     color: theme.colors.foreground,

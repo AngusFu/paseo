@@ -24,6 +24,9 @@ export interface LlmWorkerGenerateRequest {
   jsonSchema?: Record<string, unknown>;
   maxTokens?: number;
   stream?: boolean;
+  // Generation halts when any of these strings would be produced. Used to keep
+  // Gemma's native tool-call tokens out of free-form chat replies.
+  stopTriggers?: string[];
 }
 
 export interface LlmWorkerCancelRequest {

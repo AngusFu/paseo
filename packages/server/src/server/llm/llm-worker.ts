@@ -65,6 +65,7 @@ async function handleGenerate(msg: {
   jsonSchema?: Record<string, unknown>;
   maxTokens?: number;
   stream?: boolean;
+  stopTriggers?: string[];
 }): Promise<void> {
   if (!state) {
     send({ type: "error", id: msg.id, message: "model not loaded" });
@@ -101,6 +102,9 @@ async function handleGenerate(msg: {
       signal: controller.signal,
       // Grammar-constrained output; typed as never above for the same reason.
       grammar: grammar as never,
+      ...(msg.stopTriggers && msg.stopTriggers.length > 0
+        ? { customStopTriggers: msg.stopTriggers }
+        : {}),
       onTextChunk: msg.stream
         ? (chunk: string) => send({ type: "chunk", id: msg.id, text: chunk })
         : undefined,

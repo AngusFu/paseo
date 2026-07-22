@@ -7,6 +7,7 @@ import type {
   StoredKanbanCard,
   StoredKanbanSource,
 } from "@getpaseo/protocol/kanban/types";
+import { cardBelongsToSource, resolveCardSourceIds } from "@getpaseo/protocol/kanban/card-sources";
 import { KanbanStore, type UpsertKanbanCardBySourcePayload } from "./store.js";
 import type { KanbanSecretsStore } from "./secrets-store.js";
 import type { KanbanOauthService } from "./oauth.js";
@@ -756,11 +757,12 @@ export class KanbanSyncService {
   //
   // Telling those apart is impossible from here, so a truncated walk skips
   // reconciliation entirely rather than mass-flagging healthy cards as
-  // detached. Ownership is by sourceId: a card another source synced is never
-  // touched. Cards predating sourceId (undefined) are still re-fetched — that
-  // backfills the field — but are never flagged as detached on a failed
-  // lookup, since a 404 there is more likely "belongs to another instance"
-  // than "gone".
+  // detached. Candidates are the cards this source's query backs (membership,
+  // not just ownership — a card shared with another source still has to leave
+  // THIS source's queue when it stops matching). Cards with no membership at
+  // all predate the field and are still re-fetched — that backfills them — but
+  // are never flagged as detached on a failed lookup, since a 404 there is more
+  // likely "belongs to another instance" than "gone".
   private async detachmentCandidates(
     source: StoredKanbanSource,
     seenExternalIds: Set<string>,
@@ -777,7 +779,7 @@ export class KanbanSyncService {
       (card) =>
         card.source.kind === source.kind &&
         !seenExternalIds.has(card.externalId ?? "") &&
-        (card.sourceId === source.id || card.sourceId === undefined),
+        (cardBelongsToSource(card, source.id) || resolveCardSourceIds(card).length === 0),
     );
     if (candidates.length <= MAX_RECONCILE_CARDS) {
       return candidates;
@@ -793,11 +795,29 @@ export class KanbanSyncService {
     return candidates.slice(0, MAX_RECONCILE_CARDS);
   }
 
+  // This card left `source`'s query. When another source still returns it, the
+  // card is not going anywhere — it just leaves this source's queue, so only
+  // the membership is dropped and every other field (status, column, detached
+  // flag) is left exactly as the remaining sources have it. Returns true when
+  // the card was released this way, so the caller skips its sole-source
+  // handling (delete, or flag-and-keep).
+  private async releaseSharedCard(
+    card: StoredKanbanCard,
+    source: StoredKanbanSource,
+  ): Promise<boolean> {
+    if (resolveCardSourceIds(card).filter((id: string) => id !== source.id).length === 0) {
+      return false;
+    }
+    await this.store.removeCardSource(card.id, source.id);
+    return true;
+  }
+
   // The tracker no longer serves this card's issue/MR (404, or no longer
   // visible to this token). It isn't coming back through the query either, so
   // flag it and keep the last known status — there is nothing better to show.
-  // Cards with no sourceId are left alone: a failed lookup there more likely
-  // means the card belongs to a different instance than that it is gone.
+  // Cards owned by another source are left alone, and so are cards with no
+  // membership at all: a failed lookup there more likely means the card belongs
+  // to a different instance than that it is gone.
   private async flagUnreachableCard(
     card: StoredKanbanCard,
     source: StoredKanbanSource,
@@ -843,6 +863,12 @@ export class KanbanSyncService {
     const reconciled: StoredKanbanCard[] = [];
     for (const card of candidates) {
       if (card.source.kind !== "jira") {
+        continue;
+      }
+      // Shared with another source that still returns it: this card is only
+      // leaving THIS source's queue, so drop the membership and let the other
+      // source keep its status current. No re-fetch, no detach flag, no delete.
+      if (await this.releaseSharedCard(card, source)) {
         continue;
       }
       // Already flagged and already terminal — its status can't drift further,
@@ -921,6 +947,12 @@ export class KanbanSyncService {
     const reconciled: StoredKanbanCard[] = [];
     for (const card of await this.detachmentCandidates(source, seenExternalIds, truncated)) {
       if (card.source.kind !== "gitlab") {
+        continue;
+      }
+      // Shared with another source that still returns it: this card is only
+      // leaving THIS source's queue, so drop the membership and let the other
+      // source keep its status current. No re-fetch, no detach flag, no delete.
+      if (await this.releaseSharedCard(card, source)) {
         continue;
       }
       // Already flagged and already merged — its state can't drift further, and

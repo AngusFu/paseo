@@ -18,6 +18,7 @@ import { KanbanStore } from "./store.js";
 import type { KanbanSecretsStore } from "./secrets-store.js";
 import type { KanbanOauthService } from "./oauth.js";
 import { jiraAuthHeaders, resolveKanbanToken, trimTrailingSlash } from "./credentials.js";
+import { resolveCardSourceIds } from "@getpaseo/protocol/kanban/card-sources";
 import { resolveSourceForCard } from "./card-context.js";
 import { parseJiraStatusesResponse, type ParsedJiraStatus } from "./sync.js";
 
@@ -235,9 +236,9 @@ export class KanbanSourceStatusService {
   }
 
   // Every distinct Jira project key among this source's own cards — matched
-  // via card.sourceId when the card has one, falling back to the same
-  // kind+baseUrl heuristic card-context.ts uses for older cards synced
-  // before sourceId existed.
+  // via the card's source membership when it has one, falling back to the same
+  // kind+baseUrl heuristic card-context.ts uses for older cards synced before
+  // the field existed.
   private async projectKeysForSource(source: StoredKanbanSource): Promise<string[]> {
     const cards = await this.store.listCards();
     const keys = new Set<string>();
@@ -245,8 +246,14 @@ export class KanbanSourceStatusService {
       if (card.source.kind !== "jira") {
         continue;
       }
-      const ownerId = card.sourceId ?? (await resolveSourceForCard(this.store, card)).id;
-      if (ownerId !== source.id) {
+      // Membership, not ownership: a card two sources both return covers a
+      // project for BOTH of them, so status discovery must see it from either.
+      const sourceIds = resolveCardSourceIds(card);
+      const covered =
+        sourceIds.length > 0
+          ? sourceIds.includes(source.id)
+          : (await resolveSourceForCard(this.store, card)).id === source.id;
+      if (!covered) {
         continue;
       }
       const key = projectKeyForJiraCard(card.source);

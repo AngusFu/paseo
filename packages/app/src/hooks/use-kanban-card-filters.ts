@@ -1,10 +1,9 @@
 import { useMemo, useState } from "react";
 import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 
-// Cards carry only `source.kind` (jira/gitlab/manual), never a sourceId back
-// to a specific configured source — see KanbanCardSourceSchema and the sync
-// upsert payloads in packages/server/src/server/kanban/sync.ts. So "source
-// filter" here means the tracker kind, not an individual configured source.
+// This filter is deliberately by tracker KIND (jira/gitlab/manual), not by
+// configured source: it is the cross-source filter bar, and picking one exact
+// source is what the per-source tabs do instead (see kanban/board-tabs.ts).
 export type KanbanCardSourceKindFilter = "all" | "jira" | "gitlab" | "manual";
 
 // Recency window applied to a card's tracker last-updated time. Default hides

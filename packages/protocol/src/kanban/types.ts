@@ -84,12 +84,22 @@ export const StoredKanbanCardSchema = z.object({
   source: KanbanCardSourceSchema,
   // (source.kind, externalId) idempotency key, e.g. "jira:PROJ-123". null for manual cards.
   externalId: z.string().nullable(),
-  // The StoredKanbanSource.id that synced this card, when known. Lets a
-  // multi-source-per-kind setup (two Jira sources, say) attribute a card to
-  // its exact source instead of guessing by kind — see resolveSourceForCard
-  // in card-context.ts, which this backfills over time as it stays optional
-  // for cards synced before this field existed (never migrated in bulk).
+  // The owning StoredKanbanSource.id — the first source that ever synced this
+  // card. Ownership decides who may delete or flag it (see sync.ts), so it is
+  // deliberately stable: a second source matching the same item joins
+  // `sourceIds` instead of taking it over. Optional for cards synced before
+  // the field existed; backfilled on the next sync, never migrated in bulk.
   sourceId: z.string().optional(),
+  // Every configured source whose query currently returns this card, ordered
+  // with the owner first. One real-world item (an MR, an issue) stays ONE card
+  // no matter how many source queries match it — two GitLab sources that both
+  // return the same MR must not mint two cards with two independent statuses
+  // and two workflow triggers. Membership is what per-source tabs and counts
+  // filter on. Absent on cards synced before this field existed; readers fall
+  // back to `sourceId` (see cardBelongsToSource / resolveCardSourceIds).
+  // COMPAT(kanbanCardSourceIds): added in v0.2.0, drop the sourceId fallback
+  // when the daemon floor is >= v0.2.0.
+  sourceIds: z.array(z.string()).optional(),
   // Sort position within a column (ascending). v1 appends: a new or moved card
   // takes max(order)+1 for its column, so a move never rewrites sibling cards.
   // The type is a float to leave room for future midpoint reinsertion.

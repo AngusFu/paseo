@@ -18,6 +18,12 @@ import { KanbanCardSheet } from "@/components/kanban/kanban-card-sheet";
 import { resolveKanbanCardTheme } from "@/components/kanban/kanban-card-theme";
 import { KanbanHiddenColumnsSheet } from "@/components/kanban/kanban-hidden-columns-sheet";
 import { resolveKanbanSourceView } from "@/components/kanban/kanban-source-view-registry";
+import {
+  buildKanbanBoardTabs,
+  selectCardsForSource,
+  selectKanbanTabCards,
+  type KanbanBoardTab,
+} from "@/kanban/board-tabs";
 import { KanbanSourceFormSheet } from "@/components/kanban/kanban-source-form-sheet";
 import { KanbanSourcesSheet } from "@/components/kanban/kanban-sources-sheet";
 import { Button } from "@/components/ui/button";
@@ -36,17 +42,15 @@ import { formatTimeAgo } from "@/utils/time";
 type SourceFormState = { mode: "create" } | { mode: "edit"; source: StoredKanbanSource } | null;
 
 // Multi-tab kanban (docs/kanban.md roadmap, 2026-07-18 product spec):
-// "overview" is aggregate-only now — per-source summary + focus row, NO board
-// underneath (that's what the kind/manual tabs are for). One tab per source
-// KIND — Jira / GitLab, not per configured source instance — since a card
-// only carries source.kind, never a specific sourceId (see
-// use-kanban-card-filters.ts). "manual" is always present (fixed last) so
-// there's always a place to add + see hand-created cards, and gets the
-// original full-board experience (global columns, drag, long-press, detail)
-// via the generic KanbanBoard directly — it isn't a KanbanSourceKind, so it
-// never goes through the source-view registry.
-const KANBAN_SOURCE_KIND_ORDER: KanbanSourceKind[] = ["jira", "gitlab"];
-type KanbanBoardTab = "overview" | KanbanSourceKind | "manual";
+// "overview" is aggregate-only — per-source summary + focus row, NO board
+// underneath (that's what the source/manual tabs are for). One tab per
+// CONFIGURED SOURCE so two queues of the same kind (a GitLab review queue and
+// an authored-MR board) count separately; see buildKanbanBoardTabs for the tab
+// set and the orphan tab that keeps a deleted source's cards reachable.
+// "manual" is always present (fixed last) so there's always a place to add +
+// see hand-created cards, and gets the original full-board experience (global
+// columns, drag, long-press, detail) via the generic KanbanBoard directly — it
+// has no source kind, so it never goes through the source-view registry.
 // A card counts as stale for the Overview focus row once it's sat this long
 // without an update and isn't in a terminal column.
 const STALE_CARD_MS = 7 * 24 * 60 * 60 * 1000;
@@ -129,44 +133,32 @@ function KanbanScreenContent(): ReactElement {
     kanbanColumnsSupported,
   );
 
-  // Tabs = Overview + every source kind actually in play (from configured
-  // sources, so a freshly-added source gets a tab before its first sync, and
-  // from cards themselves, so cards synced under a since-deleted source still
-  // have a home) + a fixed trailing Manual tab.
-  const tabs = useMemo<KanbanBoardTab[]>(() => {
-    const kinds = new Set<KanbanSourceKind>();
-    for (const source of sources) {
-      kinds.add(source.kind);
-    }
-    for (const card of cards) {
-      if (card.source.kind !== "manual") {
-        kinds.add(card.source.kind);
-      }
-    }
-    return ["overview", ...KANBAN_SOURCE_KIND_ORDER.filter((kind) => kinds.has(kind)), "manual"];
-  }, [sources, cards]);
+  const tabs = useMemo(() => buildKanbanBoardTabs({ sources, cards }), [sources, cards]);
 
-  const [activeTab, setActiveTab] = useState<KanbanBoardTab>("overview");
+  // Keyed by tab key, not by object identity: the tab list is rebuilt on every
+  // card/source change, so holding the descriptor itself would reset the
+  // selection constantly. A tab that disappears (its source was deleted) falls
+  // back to Overview.
+  const [activeTabKey, setActiveTabKey] = useState<string>("overview");
+  const activeTab = useMemo(
+    () => tabs.find((tab) => tab.key === activeTabKey) ?? tabs[0],
+    [tabs, activeTabKey],
+  );
   useEffect(() => {
-    if (!tabs.includes(activeTab)) {
-      setActiveTab("overview");
+    if (!tabs.some((tab) => tab.key === activeTabKey)) {
+      setActiveTabKey("overview");
     }
-  }, [tabs, activeTab]);
+  }, [tabs, activeTabKey]);
 
-  // Overview never renders a board (aggregate-only, see the KanbanBoardTab
-  // doc); "manual" scopes to hand-created cards, everything else scopes to
-  // that source kind.
-  const tabCards = useMemo(() => {
-    if (activeTab === "overview") {
-      return cards;
-    }
-    return cards.filter((card) => card.source.kind === activeTab);
-  }, [cards, activeTab]);
+  const tabCards = useMemo(
+    () => selectKanbanTabCards({ tab: activeTab, cards, sources }),
+    [activeTab, cards, sources],
+  );
   const SourceView = useMemo(() => {
-    if (activeTab === "manual") {
+    if (activeTab.type === "manual") {
       return KanbanBoard;
     }
-    return resolveKanbanSourceView(activeTab === "overview" ? null : activeTab);
+    return resolveKanbanSourceView(activeTab.kind);
   }, [activeTab]);
 
   const [hiddenColumnsOpen, setHiddenColumnsOpen] = useState(false);
@@ -263,7 +255,7 @@ function KanbanScreenContent(): ReactElement {
         sources={sources}
         tabs={tabs}
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={setActiveTabKey}
         SourceView={SourceView}
       />
       <KanbanCardSheet
@@ -334,7 +326,7 @@ interface KanbanScreenBodyProps {
   sources: StoredKanbanSource[];
   tabs: KanbanBoardTab[];
   activeTab: KanbanBoardTab;
-  onTabChange: (tab: KanbanBoardTab) => void;
+  onTabChange: (tabKey: string) => void;
   SourceView: ReturnType<typeof resolveKanbanSourceView>;
 }
 
@@ -404,11 +396,16 @@ function KanbanScreenBody({
     <View style={styles.body}>
       {tabs.length > 1 ? (
         <View style={styles.tabsRow}>
-          <KanbanTabs tabs={tabs} activeTab={activeTab} onTabChange={onTabChange} />
+          <KanbanTabs
+            tabs={tabs}
+            activeTab={activeTab}
+            sources={sources}
+            onTabChange={onTabChange}
+          />
         </View>
       ) : null}
       <View style={styles.actionsRow}>
-        {activeTab === "manual" ? (
+        {activeTab.type === "manual" ? (
           <Button
             variant="outline"
             leftIcon={Plus}
@@ -450,14 +447,14 @@ function KanbanScreenBody({
           </Button>
         ) : null}
       </View>
-      {activeTab === "overview" ? (
-        // Overview is aggregate-only now — summary rows + focus row, no board
-        // underneath (that's what the kind/manual tabs are for).
+      {activeTab.type === "overview" ? (
+        // Overview is aggregate-only — summary rows + focus row, no board
+        // underneath (that's what the source/manual tabs are for).
         <KanbanOverviewSummaries
           sources={sources}
           cards={allCards}
           columns={columns}
-          onSelectKind={onTabChange}
+          onSelectSource={onTabChange}
         />
       ) : (
         <KanbanBoardArea
@@ -470,7 +467,7 @@ function KanbanScreenBody({
           columnMutations={columnMutations}
           sources={sources}
           onCreate={onCreate}
-          showAddCta={activeTab === "manual"}
+          showAddCta={activeTab.type === "manual"}
           SourceView={SourceView}
         />
       )}
@@ -482,32 +479,54 @@ function KanbanScreenBody({
 // SegmentedControl's fixed-width row, so this scrolls horizontally instead —
 // each tab is a themed Button (existing component, no new visual system),
 // icon-tagged with the same glyph the card uses for that source's kind.
-// Overview + one segment per source kind currently in play. A plain
-// component (not inlined) so KanbanScreenBody's early-return branches above
-// don't have to carry SegmentedControl's generic type through.
+// Overview + one segment per configured source + Manual. A plain component
+// (not inlined) so KanbanScreenBody's early-return branches above don't have
+// to carry SegmentedControl's generic type through.
+//
+// A source tab is labelled with the source's own name — that is what tells two
+// GitLab queues apart. Orphan tabs (a deleted source's leftover cards) fall
+// back to the kind label, which reads as the catch-all it is.
+function resolveTabLabel(tab: KanbanBoardTab, sources: StoredKanbanSource[], t: TFunction): string {
+  switch (tab.type) {
+    case "overview":
+      return t("kanban.tabs.overview");
+    case "manual":
+      return t("kanban.filters.source.manual");
+    case "orphan":
+      return t(`kanban.filters.source.${tab.kind}`);
+    case "source":
+      return (
+        sources.find((source) => source.id === tab.sourceId)?.name.trim() ||
+        t(`kanban.filters.source.${tab.kind}`)
+      );
+  }
+}
+
 function KanbanTabs({
   tabs,
   activeTab,
+  sources,
   onTabChange,
 }: {
   tabs: KanbanBoardTab[];
   activeTab: KanbanBoardTab;
-  onTabChange: (tab: KanbanBoardTab) => void;
+  sources: StoredKanbanSource[];
+  onTabChange: (tabKey: string) => void;
 }): ReactElement {
   const { t } = useTranslation();
-  const options = useMemo<SegmentedControlOption<KanbanBoardTab>[]>(
+  const options = useMemo<SegmentedControlOption<string>[]>(
     () =>
       tabs.map((tab) => ({
-        value: tab,
-        label: tab === "overview" ? t("kanban.tabs.overview") : t(`kanban.filters.source.${tab}`),
-        testID: `kanban-tab-${tab}`,
+        value: tab.key,
+        label: resolveTabLabel(tab, sources, t),
+        testID: `kanban-tab-${tab.key}`,
       })),
-    [tabs, t],
+    [tabs, sources, t],
   );
   return (
     <SegmentedControl
       size="sm"
-      value={activeTab}
+      value={activeTab.key}
       onValueChange={onTabChange}
       options={options}
       testID="kanban-tabs"
@@ -524,19 +543,19 @@ function kanbanSourceKindIcon(kind: KanbanSourceKind) {
 
 // Overview: one read-only summary card per CONFIGURED SOURCE (name, kind
 // icon, per-column card counts scoped by kind — see the known-limitation note
-// on KanbanBoardTab, last-sync time, lastSyncError indicator) — clicking one
-// jumps to that source kind's tab. Plus a lightweight focus row (unresolved
+// last-sync time, lastSyncError indicator) — clicking one jumps to that
+// source's own tab. Plus a lightweight focus row (unresolved
 // discussion count, stale-card count). Full board stays underneath, unchanged.
 function KanbanOverviewSummaries({
   sources,
   cards,
   columns,
-  onSelectKind,
+  onSelectSource,
 }: {
   sources: StoredKanbanSource[];
   cards: StoredKanbanCard[];
   columns: KanbanColumn[];
-  onSelectKind: (kind: KanbanSourceKind) => void;
+  onSelectSource: (tabKey: string) => void;
 }): ReactElement {
   return (
     <View style={styles.overviewSection} testID="kanban-overview-summaries">
@@ -547,7 +566,7 @@ function KanbanOverviewSummaries({
             source={source}
             cards={cards}
             columns={columns}
-            onSelect={onSelectKind}
+            onSelect={onSelectSource}
           />
         ))}
       </View>
@@ -578,23 +597,23 @@ function KanbanOverviewSourceRow({
   source: StoredKanbanSource;
   cards: StoredKanbanCard[];
   columns: KanbanColumn[];
-  onSelect: (kind: KanbanSourceKind) => void;
+  onSelect: (tabKey: string) => void;
 }): ReactElement {
   const { t } = useTranslation();
-  const handlePress = useCallback(() => onSelect(source.kind), [onSelect, source.kind]);
-  // Known limitation (see KanbanBoardTab comment): cards only carry
-  // source.kind, so this bucket is "cards of this kind", not "cards from this
-  // exact source" — accurate for the common one-source-per-kind setup.
+  const handlePress = useCallback(() => onSelect(source.id), [onSelect, source.id]);
+  // Scoped to the cards THIS source's query backs, so two sources of the same
+  // kind report their own numbers. A card matched by both is counted by both —
+  // it is one piece of work sitting in two queues, not two cards.
   const columnCounts = useMemo(() => {
-    const kindCards = cards.filter((card) => card.source.kind === source.kind);
+    const sourceCards = selectCardsForSource(cards, source.id);
     return columns
       .map((column) => ({
         column,
-        count: kindCards.filter((card) => resolveCardColumn(card, columns)?.id === column.id)
+        count: sourceCards.filter((card) => resolveCardColumn(card, columns)?.id === column.id)
           .length,
       }))
       .filter((entry) => entry.count > 0);
-  }, [cards, columns, source.kind]);
+  }, [cards, columns, source.id]);
   const total = columnCounts.reduce((sum, entry) => sum + entry.count, 0);
   const Icon = kanbanSourceKindIcon(source.kind);
   const syncStatus = resolveOverviewSyncStatus(source, t);

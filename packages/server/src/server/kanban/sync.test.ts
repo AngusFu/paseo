@@ -1816,4 +1816,106 @@ describe("KanbanSyncService", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(result.cards).toHaveLength(101);
   });
+  // Two GitLab sources can legitimately match the same MR — a review queue
+  // (reviewer_username=me) and an authored-MR board (author_username=me) both
+  // return an MR you opened and are a reviewer on. One MR is one piece of work,
+  // so it stays ONE card that belongs to both sources, not two cards with two
+  // statuses and two workflow triggers.
+  test("keeps one card for an MR matched by two GitLab sources and records both as its sources", async () => {
+    const mr = {
+      iid: 5,
+      project_id: 42,
+      title: "Add feature",
+      web_url: "https://gitlab.example.com/group/project/-/merge_requests/5",
+      state: "opened",
+    };
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => [mr],
+    })) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const reviewQueue = await store.createSource({
+      kind: "gitlab",
+      name: "Review queue",
+      baseUrl: "https://gitlab.example.com",
+      query: "state=opened&reviewer_username=me",
+    });
+    const myMrs = await store.createSource({
+      kind: "gitlab",
+      name: "My MRs",
+      baseUrl: "https://gitlab.example.com",
+      query: "state=opened&author_username=me",
+    });
+
+    await syncService.sync(reviewQueue);
+    await syncService.sync(myMrs);
+
+    const cards = (await store.listCards()).filter((card) => card.externalId === "gitlab:42!5");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.sourceIds).toEqual([reviewQueue.id, myMrs.id]);
+    // Ownership never transfers: the first source to sync it keeps the delete
+    // and detach rights, so a second source joining can't flip it every round.
+    expect(cards[0]?.sourceId).toBe(reviewQueue.id);
+  });
+
+  test("drops only the membership when a shared MR leaves one source's query", async () => {
+    const mr = {
+      iid: 5,
+      project_id: 42,
+      title: "Add feature",
+      state: "opened",
+      reviewers: [{ username: "someone-else" }],
+    };
+    // The review queue stops returning the MR (reviewer changed) while the
+    // authored board still lists it.
+    let reviewQueueCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("merge_requests/5")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => mr };
+      }
+      if (url.includes("reviewer_username=me")) {
+        reviewQueueCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => (reviewQueueCalls === 1 ? [mr] : []),
+        };
+      }
+      return { ok: true, status: 200, statusText: "OK", json: async () => [mr] };
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const reviewQueue = await store.createSource({
+      kind: "gitlab",
+      name: "Review queue",
+      baseUrl: "https://gitlab.example.com",
+      query: "state=opened&reviewer_username=me",
+    });
+    const myMrs = await store.createSource({
+      kind: "gitlab",
+      name: "My MRs",
+      baseUrl: "https://gitlab.example.com",
+      query: "state=opened&author_username=me",
+    });
+
+    await syncService.sync(reviewQueue);
+    await syncService.sync(myMrs);
+    // Second review-queue sync: the MR is gone from that query. Single-source
+    // rules would delete it (reviewer removed) — sharing must prevent that.
+    await syncService.sync(reviewQueue);
+
+    const card = (await store.listCards()).find((entry) => entry.externalId === "gitlab:42!5");
+    expect(card).toBeDefined();
+    expect(card?.sourceIds).toEqual([myMrs.id]);
+    // Ownership follows membership so the card is never left pointing at a
+    // source that no longer backs it.
+    expect(card?.sourceId).toBe(myMrs.id);
+    // The remaining source still returns it, so it is not detached.
+    expect(card?.detachedFromSource).toBeUndefined();
+  });
 });

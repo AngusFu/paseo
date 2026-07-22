@@ -23,12 +23,32 @@ Card identity:
 - Manually-created cards get a generated `kbc_<hex>` id and `source.kind = "manual"`.
 - Synced cards are keyed by `(source.kind, externalId)` — e.g. `jira:PROJ-123`,
   `gitlab:<projectId>!<mrIid>`. Re-syncing upserts (update, never duplicate).
-- `sourceId` (optional, added post-v1): the `StoredKanbanSource.id` that last
-  synced the card. Backfilled naturally on next sync — no migration — so a
-  multi-source-per-kind setup (two Jira sources, say) can attribute a card to
-  its exact source instead of guessing by kind (see `resolveSourceForCard` in
-  `server/kanban/card-context.ts`, used by both card-detail fetch and Jira
-  write-back).
+- **One real item is one card, however many source queries match it.** The key
+  above has no source in it on purpose: a GitLab review queue
+  (`reviewer_username=me`) and an authored-MR board (`author_username=me`) both
+  return an MR you opened and review, and that must stay a single card — two
+  cards would mean two statuses, two drag positions, and two workflow triggers
+  for one piece of work.
+- `sourceIds` (optional, added post-v1): every source whose query currently
+  returns the card, **owner first**. This is what per-source tabs and per-source
+  counts filter on. Helpers live in `protocol/kanban/card-sources.ts`
+  (`resolveCardSourceIds` / `cardBelongsToSource` / `addCardSourceId` /
+  `removeCardSourceId`) and are shared by daemon and app so membership is
+  decided in exactly one place.
+- `sourceId` (optional, added post-v1): the **owner** — the first source that
+  ever synced the card. Ownership never transfers while that source still backs
+  the card, so the delete/detach rules keyed on it can't flip-flop between
+  sources each round; it moves to the next member only when the owner drops out.
+  Both fields are backfilled naturally on next sync — no migration — and readers
+  fall back to `sourceId` for cards written before `sourceIds` existed
+  (`COMPAT(kanbanCardSourceIds)`). See also `resolveSourceForCard` in
+  `server/kanban/card-context.ts`, used by card-detail fetch and Jira write-back.
+
+When a source's query stops returning a card that other sources still return,
+sync drops only that membership (`KanbanStore.removeCardSource`) — the card is
+not deleted and not flagged detached, because another query still vouches for it.
+The delete / flag-detached rules only fire for a card's **last** source. Deleting
+a source likewise prunes its membership and keeps the cards.
 
 `theme` is `"jira" | "gitlab-mr" | "#RRGGBB"`; the render layer resolves it to an
 icon + accent colour, falling back to default grey for anything unrecognized.
@@ -73,17 +93,28 @@ so there's nothing for a later sync to diverge from.
 Both paths call `kanban.card.move.request` (see the Conflict rule above for when
 this pins `statusPinnedByUser`).
 
-## Multi-tab views (Overview / Jira / GitLab)
+## Multi-tab views (Overview / one tab per source / Manual)
 
-The board screen is a tab host: **Overview** (all cards, all kinds, including
-manual — the pre-multi-tab cross-source board) plus one tab per source **kind**
-actually present on the board (`KANBAN_SOURCE_KIND_ORDER` fixes the tab order so
-tabs don't reorder as sources come and go). Manual cards have no kind and only
-ever show in Overview.
+The board screen is a tab host: **Overview** (aggregate-only — a summary row per
+configured source plus the focus row, no board underneath), then **one tab per
+configured source**, then a fixed trailing **Manual** tab. Tab set and per-tab
+card selection are pure functions in `app/src/kanban/board-tabs.ts`
+(`buildKanbanBoardTabs` / `selectKanbanTabCards` / `selectCardsForSource`), unit
+tested in `board-tabs.test.ts`.
+
+Per source, not per kind: two GitLab sources are two queues with their own tabs,
+their own labels (the source's `name`), and their own counts. A card matched by
+both is counted by both — it is one item sitting in two queues. Kinds are ordered
+by `KANBAN_SOURCE_KIND_ORDER` and sources follow their configured order within a
+kind, so tabs don't reorder as cards come and go.
+
+Cards outlive the source that synced them, so a deleted source's leftovers would
+otherwise be reachable from no tab at all. An **orphan tab** (`orphan:<kind>`,
+labelled with the kind) appears only while such cards exist.
 
 Each tab's board component is resolved by source kind through
 `resolveKanbanSourceView` (`app/src/components/kanban/kanban-source-view-registry.tsx`)
-— a kind with no registered view (or Overview itself) falls back to the plain
+— a kind with no registered view (or Manual, which has none) falls back to the plain
 `KanbanBoard`. Registered today: `jira` → `KanbanJiraBoard`, `gitlab` →
 `KanbanGitlabBoard`, both built on the shared `KanbanStatusBoard`.
 

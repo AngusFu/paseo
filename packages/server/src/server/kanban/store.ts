@@ -25,6 +25,11 @@ import {
   type UpdateKanbanConnectionInput,
   type UpdateKanbanSourceInput,
 } from "@getpaseo/protocol/kanban/types";
+import {
+  addCardSourceId,
+  removeCardSourceId,
+  resolveCardSourceIds,
+} from "@getpaseo/protocol/kanban/card-sources";
 import { writeJsonFileAtomic } from "../atomic-file.js";
 
 function generateCardId(): string {
@@ -394,6 +399,35 @@ export class KanbanStore {
     });
   }
 
+  // Drops one source from a card's membership, for when that source's query
+  // stops returning the card but other sources still do. Returns the updated
+  // card, or null when the card is gone. The caller decides what an emptied
+  // membership means — this never deletes, so a card can sit source-less for
+  // the reconcile pass to judge.
+  async removeCardSource(cardId: string, sourceId: string): Promise<StoredKanbanCard | null> {
+    return this.serializeCardMutation(cardId, async () => {
+      const current = await this.getCard(cardId);
+      if (!current) {
+        return null;
+      }
+      const remaining = removeCardSourceId(current, sourceId);
+      if (remaining.length === resolveCardSourceIds(current).length) {
+        return current;
+      }
+      const updated = StoredKanbanCardSchema.parse({
+        ...current,
+        sourceIds: remaining.length > 0 ? remaining : undefined,
+        // Ownership follows membership: when the owner leaves, the next source
+        // in line inherits the delete/flag rights so the card is never stranded
+        // pointing at a source that no longer backs it.
+        sourceId: remaining[0],
+        updatedAt: new Date().toISOString(),
+      });
+      await this.writeCard(updated);
+      return updated;
+    });
+  }
+
   private async resolveMoveTarget(
     input: MoveKanbanCardInput,
   ): Promise<{ status: KanbanStatus; columnId: string }> {
@@ -457,6 +491,7 @@ export class KanbanStore {
           source,
           externalId: source.externalId,
           sourceId: payload.sourceId,
+          sourceIds: payload.sourceId ? [payload.sourceId] : undefined,
           order: this.nextOrderForColumn(cards, payload.columnId),
           statusPinnedByUser: false,
           labels: payload.labels,
@@ -480,7 +515,12 @@ export class KanbanStore {
         url: payload.url,
         theme: payload.theme,
         source,
-        sourceId: payload.sourceId ?? existing.sourceId,
+        // Ownership is first-writer-wins and never transfers: a second source
+        // matching the same item joins the membership set instead of taking
+        // the card over, so the delete/flag rules keyed on `sourceId` keep
+        // answering to one owner rather than flip-flopping every sync round.
+        sourceId: existing.sourceId ?? payload.sourceId,
+        sourceIds: addCardSourceId(existing, payload.sourceId),
         // Once the user drags the card, sync stops overwriting status/column —
         // unless this sync forces it (terminal MR merged/closed wins over a
         // manual drag).
@@ -651,6 +691,15 @@ export class KanbanStore {
         return false;
       }
       await this.writeSources(next);
+      // Cards outlive the source that synced them (they may still be backed by
+      // another source, and a sole-source card stays as a historical record
+      // rather than vanishing). Only the membership goes, so per-source tabs
+      // and counts stop attributing cards to a source that no longer exists.
+      for (const card of await this.listCards()) {
+        if (resolveCardSourceIds(card).includes(id)) {
+          await this.removeCardSource(card.id, id);
+        }
+      }
       return true;
     });
   }

@@ -128,7 +128,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { usePanelStore } from "@/stores/panel-store";
 import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
-import { buildWorkspaceTabPersistenceKey } from "@/stores/workspace-tabs-store";
+import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 import { buildWorkspaceExplorerStateKey } from "@/hooks/use-file-explorer-actions";
 import {
   formatDiffContentText,
@@ -1468,12 +1468,26 @@ const DIFF_OPTIONS_WRAP_ICON = (
 interface DiffLayoutToggleProps {
   layout: "unified" | "split";
   isMobile: boolean;
-  toggleStyle: PressableStyleFn;
+  // Optional so panels that render the toggle on its own get the default
+  // trigger styling instead of having to import a style builder.
+  toggleStyle?: PressableStyleFn;
+  // Panels that show more than one diff surface need distinguishable ids.
+  testID?: string;
   onToggle: () => void;
 }
 
-function DiffLayoutToggle({ layout, isMobile, toggleStyle, onToggle }: DiffLayoutToggleProps) {
+export function DiffLayoutToggle({
+  layout,
+  isMobile,
+  toggleStyle,
+  testID = "changes-toggle-layout",
+  onToggle,
+}: DiffLayoutToggleProps) {
   const { t } = useTranslation();
+  const resolvedToggleStyle = useMemo(
+    () => toggleStyle ?? buildOverflowButtonStyle(),
+    [toggleStyle],
+  );
   const label =
     layout === "unified"
       ? t("workspace.git.diff.switchToSplit")
@@ -1484,9 +1498,9 @@ function DiffLayoutToggle({ layout, isMobile, toggleStyle, onToggle }: DiffLayou
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={label}
-          testID="changes-toggle-layout"
+          testID={testID}
           onPress={onToggle}
-          style={toggleStyle}
+          style={resolvedToggleStyle}
         >
           {layout === "unified" ? (
             <ThemedColumns2 size={isMobile ? 18 : 14} uniProps={foregroundMutedIconColorMapping} />
@@ -3182,6 +3196,14 @@ function isPlainDiffModeSelected(
 // The pane is resizable (explorer-sidebar drag handle, width persisted), so
 // split re-appears once it's dragged past this; the ~400px default falls back.
 const SPLIT_MIN_PANE_WIDTH = 720;
+
+// Split layout needs room; callers that cannot give it fall back to unified.
+export function resolveDiffLayout(
+  layout: "unified" | "split",
+  canUseSplitLayout: boolean,
+): "unified" | "split" {
+  return canUseSplitLayout ? layout : "unified";
+}
 
 export function GitDiffPane({
   serverId,

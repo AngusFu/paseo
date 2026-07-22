@@ -22,6 +22,7 @@ interface UseCheckoutDiffQueryOptions {
   toRef?: string;
   mergeBase?: boolean;
   enabled?: boolean;
+  queryScope?: string;
 }
 
 type CheckoutDiffQueryPayload = Omit<SubscribeCheckoutDiffResponse["payload"], "subscriptionId">;
@@ -95,6 +96,7 @@ export function useCheckoutDiffQuery({
   toRef,
   mergeBase,
   enabled = true,
+  queryScope,
 }: UseCheckoutDiffQueryOptions) {
   const isConnected = useHostRuntimeIsConnected(serverId);
   const normalizedCompare = useMemo(
@@ -119,21 +121,8 @@ export function useCheckoutDiffQuery({
   const compareFromRef = normalizedCompare.fromRef;
   const compareToRef = normalizedCompare.toRef;
   const compareMergeBase = normalizedCompare.mergeBase;
-  const queryKey = useMemo(
-    () =>
-      checkoutDiffQueryKey(
-        serverId,
-        cwd,
-        compareMode,
-        compareBaseRef,
-        compareIgnoreWhitespace,
-        compareTool,
-        compareGitAlgorithm,
-        compareFromRef,
-        compareToRef,
-        compareMergeBase,
-      ),
-    [
+  const queryKey = useMemo(() => {
+    const comparisonKey = checkoutDiffQueryKey(
       serverId,
       cwd,
       compareMode,
@@ -144,8 +133,22 @@ export function useCheckoutDiffQuery({
       compareFromRef,
       compareToRef,
       compareMergeBase,
-    ],
-  );
+    );
+    const normalizedScope = queryScope?.trim();
+    return normalizedScope ? [...comparisonKey, "scope", normalizedScope] : comparisonKey;
+  }, [
+    serverId,
+    cwd,
+    compareMode,
+    compareBaseRef,
+    compareIgnoreWhitespace,
+    compareTool,
+    compareGitAlgorithm,
+    compareFromRef,
+    compareToRef,
+    compareMergeBase,
+    queryScope,
+  ]);
   const subscriptionId = useMemo(() => `checkoutDiff:${JSON.stringify(queryKey)}`, [queryKey]);
   const routeEnabled = Boolean(enabled && isConnected && cwd);
 

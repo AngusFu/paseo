@@ -25,6 +25,9 @@ import type { LlmWorkerHistoryItem } from "./worker-protocol.js";
 const HISTORY_CHAR_BUDGET = 8000;
 const MAX_USER_MESSAGE_CHARS = 4000;
 const TOOL_RESULT_CHAR_LIMIT = 1500;
+// Projected list results are already compact per entry; give them more room
+// so a full board/schedule list survives into the model's context.
+const PROJECTED_RESULT_CHAR_LIMIT = 4000;
 const MAX_TOOL_CALLS = 3;
 const ROUTER_MAX_TOKENS = 256;
 const REPLY_MAX_TOKENS = 768;
@@ -157,6 +160,57 @@ function extractToolLink(name: string, structured: unknown): LlmChatToolLink | u
     }
   }
   return undefined;
+}
+
+// List results carry every stored field per entry; verbatim they blow the
+// 1500-char note budget after one or two entries and the model only "sees"
+// the first card/schedule. Project them down to the fields the model needs.
+export function projectToolResult(name: string, structured: unknown): string | null {
+  if (typeof structured !== "object" || structured === null) {
+    return null;
+  }
+  const record = structured as Record<string, unknown>;
+  if (name === "kanban_list_cards" && Array.isArray(record.cards)) {
+    const cards = record.cards.map((entry) => {
+      const card = entry as Record<string, unknown>;
+      const projected: Record<string, unknown> = {
+        id: card.id,
+        title: truncate(String(card.title ?? ""), 60),
+        status: card.status,
+      };
+      if (card.assignee) {
+        projected.assignee = card.assignee;
+      }
+      if (card.priority) {
+        projected.priority = card.priority;
+      }
+      if (Array.isArray(card.labels) && card.labels.length > 0) {
+        projected.labels = card.labels;
+      }
+      return projected;
+    });
+    return JSON.stringify({ total: cards.length, cards });
+  }
+  if (name === "list_schedules" && Array.isArray(record.schedules)) {
+    const schedules = record.schedules.map((entry) => {
+      const schedule = entry as Record<string, unknown>;
+      const cadence = schedule.cadence as Record<string, unknown> | undefined;
+      const target = schedule.target as Record<string, unknown> | undefined;
+      const projected: Record<string, unknown> = {
+        id: schedule.id,
+        prompt: truncate(String(schedule.prompt ?? ""), 80),
+        cron: cadence?.expression,
+        target: target?.type,
+        status: schedule.status,
+      };
+      if (schedule.name) {
+        projected.name = schedule.name;
+      }
+      return projected;
+    });
+    return JSON.stringify({ total: schedules.length, schedules });
+  }
+  return null;
 }
 
 // Normalizes a router decision into an executable (name, input) pair, or null
@@ -513,13 +567,16 @@ export class LlmChatService {
         const textParts = result.content
           .map((part) => (typeof part.text === "string" ? part.text : ""))
           .filter((part) => part.length > 0);
-        summary = truncate(
-          textParts.join("\n") ||
-            (result.structuredContent !== undefined
-              ? JSON.stringify(result.structuredContent)
-              : "(no output)"),
-          TOOL_RESULT_CHAR_LIMIT,
-        );
+        const projected = projectToolResult(name, result.structuredContent);
+        summary = projected
+          ? truncate(projected, PROJECTED_RESULT_CHAR_LIMIT)
+          : truncate(
+              textParts.join("\n") ||
+                (result.structuredContent !== undefined
+                  ? JSON.stringify(result.structuredContent)
+                  : "(no output)"),
+              TOOL_RESULT_CHAR_LIMIT,
+            );
       } catch (error) {
         // Zod validation failures read as a long JSON issue dump; compress to
         // "field: message" lines so the model can correct its input next round.

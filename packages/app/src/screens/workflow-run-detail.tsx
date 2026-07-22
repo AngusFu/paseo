@@ -18,10 +18,17 @@ import { Copy } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import * as Clipboard from "expo-clipboard";
 import { StyleSheet } from "react-native-unistyles";
-import type { WorkflowRun } from "@getpaseo/protocol/workflow/types";
+import type { WorkflowLogEntry, WorkflowRun } from "@getpaseo/protocol/workflow/types";
 import { getProviderIcon } from "@/components/provider-icons";
+import { useIsCompactFormFactor } from "@/constants/layout";
+import { isNative } from "@/constants/platform";
 import { useToast } from "@/contexts/toast-context";
 import type { useWorkflowRunLogs } from "@/hooks/use-workflow-run-logs";
+import {
+  buildWorkflowLogCopyText,
+  buildWorkflowLogEntryCopyText,
+  formatWorkflowLogEntrySeq,
+} from "@/screens/workflow-run-log-entry";
 import { summarizeWorkflowRun } from "@/screens/workflow-run-summary";
 import { WorkspaceTabIcon } from "@/screens/workspace/workspace-tab-presentation";
 import { useAgentsForWorkflowRun, type SubagentRow } from "@/subagents/select";
@@ -129,6 +136,7 @@ export function WorkflowRunDetailBody({
       />
 
       <WorkflowRunEventLog
+        runId={run.id}
         entries={logs.entries}
         isLoading={logs.isLoading}
         isFetchingMore={logs.isFetchingMore}
@@ -322,6 +330,7 @@ function WorkflowDetailPanel({
 
 function WorkflowRunEventLog({
   title,
+  runId,
   entries,
   isLoading,
   isFetchingMore,
@@ -335,7 +344,8 @@ function WorkflowRunEventLog({
   errorLabel,
 }: {
   title: string;
-  entries: Array<{ seq: number; ts: string; level: string; event: string; message: string }>;
+  runId: string;
+  entries: readonly WorkflowLogEntry[];
   isLoading: boolean;
   isFetchingMore: boolean;
   isError: boolean;
@@ -381,14 +391,7 @@ function WorkflowRunEventLog({
   }
 
   const copyText =
-    entries.length > 0
-      ? entries
-          .map(
-            (entry) =>
-              `${formatLogTime(entry.ts)} ${formatLogLevel(entry.level)} ${entry.event}  ${entry.message}`,
-          )
-          .join("\n")
-      : `# ${placeholder}`;
+    entries.length > 0 ? buildWorkflowLogCopyText(runId, entries) : `# ${placeholder}`;
 
   return (
     <WorkflowDetailPanel
@@ -410,23 +413,7 @@ function WorkflowRunEventLog({
             <Text style={styles.logPlaceholder}>{`# ${placeholder}`}</Text>
           ) : (
             entries.map((entry) => (
-              <Text key={entry.seq} style={styles.logLine}>
-                <Text style={styles.logTime}>{formatLogTime(entry.ts)}</Text>
-                <Text style={styles.logGap}> </Text>
-                <Text style={logLevelStyle(entry.level)}>{formatLogLevel(entry.level)}</Text>
-                <Text style={styles.logGap}> </Text>
-                <Text style={styles.logEvent}>{entry.event}</Text>
-                <Text style={styles.logGap}> </Text>
-                <Text
-                  style={
-                    entry.level === "error" || entry.level === "warn"
-                      ? styles.logMessageError
-                      : styles.logMessage
-                  }
-                >
-                  {entry.message}
-                </Text>
-              </Text>
+              <WorkflowRunEventLogLine key={entry.seq} runId={runId} entry={entry} />
             ))
           )}
         </ScrollView>
@@ -451,6 +438,79 @@ function WorkflowRunEventLog({
         </Pressable>
       ) : null}
     </WorkflowDetailPanel>
+  );
+}
+
+/**
+ * One event-log line. The `#seq` gutter is the visible half of the line's
+ * identifier — the copy action puts the fully qualified `runId#seq` on the
+ * clipboard so a pasted line can be traced back to the exact run.
+ */
+function WorkflowRunEventLogLine({
+  runId,
+  entry,
+}: {
+  runId: string;
+  entry: WorkflowLogEntry;
+}): ReactElement {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const isCompact = useIsCompactFormFactor();
+  const [isHovered, setIsHovered] = useState(false);
+  const showCopy = isHovered || isNative || isCompact;
+
+  const handlePointerEnter = useCallback(() => {
+    setIsHovered(true);
+  }, []);
+  const handlePointerLeave = useCallback(() => {
+    setIsHovered(false);
+  }, []);
+  const handleCopy = useCallback(() => {
+    void (async () => {
+      await Clipboard.setStringAsync(buildWorkflowLogEntryCopyText(runId, entry));
+      toast.copied();
+    })();
+  }, [entry, runId, toast]);
+
+  return (
+    <View
+      style={styles.logLineRow}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+      testID={`workflow-run-log-line-${entry.seq}`}
+    >
+      <Text style={styles.logLine}>
+        <Text style={styles.logSeq}>{formatWorkflowLogEntrySeq(entry.seq)}</Text>
+        <Text style={styles.logGap}> </Text>
+        <Text style={styles.logTime}>{formatLogTime(entry.ts)}</Text>
+        <Text style={styles.logGap}> </Text>
+        <Text style={logLevelStyle(entry.level)}>{formatLogLevel(entry.level)}</Text>
+        <Text style={styles.logGap}> </Text>
+        <Text style={styles.logEvent}>{entry.event}</Text>
+        <Text style={styles.logGap}> </Text>
+        <Text
+          style={
+            entry.level === "error" || entry.level === "warn"
+              ? styles.logMessageError
+              : styles.logMessage
+          }
+        >
+          {entry.message}
+        </Text>
+      </Text>
+      {/* Always laid out — toggling mount would reflow the row under the cursor. */}
+      <Pressable
+        onPress={handleCopy}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={t("common.actions.copy")}
+        style={showCopy ? styles.logLineCopy : styles.logLineCopyHidden}
+        pointerEvents={showCopy ? "auto" : "none"}
+        testID={`workflow-run-log-line-copy-${entry.seq}`}
+      >
+        <Copy size={12} color={styles.copyIcon.color} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -712,10 +772,29 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.xs,
     lineHeight: Math.round(theme.fontSize.xs * 1.5),
   },
+  logLineRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: theme.spacing[2],
+  },
   logLine: {
+    flex: 1,
     fontFamily: theme.fontFamily.mono,
     fontSize: theme.fontSize.xs,
     lineHeight: Math.round(theme.fontSize.xs * 1.5),
+  },
+  logLineCopy: {
+    paddingTop: 1,
+  },
+  logLineCopyHidden: {
+    paddingTop: 1,
+    opacity: 0,
+  },
+  logSeq: {
+    color: theme.colors.foregroundMuted,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.xs,
+    opacity: 0.7,
   },
   logGap: {
     fontFamily: theme.fontFamily.mono,

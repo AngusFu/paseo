@@ -4,7 +4,12 @@ import { join } from "node:path";
 import type { LlmChatMessage } from "@getpaseo/protocol/llm/chat-rpc-schemas";
 import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildWorkerHistory, LlmChatService, type LlmChatEventPayload } from "./chat-service.js";
+import {
+  buildWorkerHistory,
+  LlmChatService,
+  sanitizeReply,
+  type LlmChatEventPayload,
+} from "./chat-service.js";
 import type { LlamaService } from "./llama-service.js";
 
 function message(role: "user" | "assistant", text: string): LlmChatMessage {
@@ -50,6 +55,18 @@ describe("buildWorkerHistory", () => {
       message("user", "next"),
     ]);
     expect(history[0]?.role).toBe("user");
+  });
+});
+
+describe("sanitizeReply", () => {
+  it("strips leaked tool-call syntax", () => {
+    expect(sanitizeReply('好的。<|tool_call>call:schedules.delete(name="x")')).toBe("好的。");
+    expect(sanitizeReply("call:schedules.list()")).toBe("⚠️");
+    expect(sanitizeReply("  <|tool_response>junk")).toBe("⚠️");
+  });
+
+  it("passes clean replies through", () => {
+    expect(sanitizeReply("已删除该定时任务。")).toBe("已删除该定时任务。");
   });
 });
 

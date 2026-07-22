@@ -51,6 +51,7 @@ export interface GenerateParams {
   jsonSchema?: Record<string, unknown>;
   maxTokens?: number;
   stream?: boolean;
+  stopTriggers?: string[];
   onChunk?: (text: string) => void;
 }
 
@@ -273,6 +274,7 @@ export class LlamaService {
         systemPrompt: next.params.systemPrompt,
         history: next.params.history,
         jsonSchema: next.params.jsonSchema,
+        stopTriggers: next.params.stopTriggers,
         maxTokens: next.params.maxTokens,
         stream: next.params.stream,
       });

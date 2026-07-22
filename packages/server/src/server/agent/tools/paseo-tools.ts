@@ -2668,8 +2668,11 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         throw new Error("Schedule service is not configured");
       }
 
+      // Everything except heartbeats ("agent" targets) — matching
+      // requireScheduleTarget's "new-agent" semantics, which also cover
+      // command-target schedules (inspect/delete already accept them).
       const schedules = (await scheduleService.list())
-        .filter((schedule) => schedule.target.type === "new-agent")
+        .filter((schedule) => schedule.target.type !== "agent")
         .map((schedule) => toScheduleSummary(schedule));
       return {
         content: [],

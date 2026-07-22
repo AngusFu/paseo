@@ -91,6 +91,34 @@ try {
   const schedules = await client.scheduleList();
   console.log("schedules after turn3:", JSON.stringify(schedules.schedules));
 
+  // Turn 4: chained deletion — list to find the id, then a confirmed delete.
+  t0 = Date.now();
+  const turn4Log = logEvent("[turn4]");
+  const fourth = await client.llmChatSend({
+    chatId: first.chatId,
+    text: "删掉刚刚创建的那个计划任务",
+    onEvent: (payload) => {
+      turn4Log(payload);
+      if (payload.event.kind === "tool_proposal") {
+        console.log("[turn4] approving proposal", payload.event.proposalId);
+        void client.llmChatToolRespond({
+          chatId: payload.chatId,
+          proposalId: payload.event.proposalId,
+          approve: true,
+        });
+      }
+    },
+  });
+  console.log(
+    `[turn4] (${((Date.now() - t0) / 1000).toFixed(1)}s) ->`,
+    fourth.message?.text ?? fourth.error,
+  );
+  const afterDelete = await client.scheduleList();
+  console.log("schedules after turn4:", JSON.stringify(afterDelete.schedules));
+  if ((afterDelete.schedules?.length ?? 0) > 0) {
+    console.warn("[turn4] WARNING: schedule still present (model may not have chained delete)");
+  }
+
   // Persistence: list + get.
   const list = await client.llmChatList();
   console.log(

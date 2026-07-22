@@ -1,7 +1,7 @@
 // Ad-hoc manual e2e for the llm.chat.* RPCs (docs/ad-hoc-daemon-testing.md).
 // Not part of the automated suite (needs a real GGUF model + minutes of
 // inference). Run it by hand with:
-//   npx tsx packages/server/src/server/llm-chat-e2e-adhoc.ts /path/to/gemma-4-E4B_q4_0-it.gguf
+//   npx tsx packages/server/src/server/llm-chat-e2e-adhoc.ts /path/to/any-gemma.gguf (symlinked in as the default model)
 import { mkdir, symlink } from "node:fs/promises";
 import path from "node:path";
 import { DaemonClient } from "./test-utils/daemon-client.js";
@@ -37,7 +37,7 @@ function logEvent(prefix: string) {
 try {
   const modelsDir = path.join(daemon.paseoHome, "models");
   await mkdir(modelsDir, { recursive: true });
-  await symlink(modelSource, path.join(modelsDir, "gemma-4-E4B_q4_0-it.gguf"));
+  await symlink(modelSource, path.join(modelsDir, "gemma4-v2-Q4_K_M.gguf"));
 
   // Turn 1: plain chat, new conversation.
   let t0 = Date.now();

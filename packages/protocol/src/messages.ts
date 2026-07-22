@@ -280,6 +280,16 @@ export const MutableDaemonConfigSchema = z
     enableTerminalAgentHooks: z.boolean().default(false),
     appendSystemPrompt: z.string().default(""),
     terminalProfiles: z.array(TerminalProfileSchema).optional(),
+    // Built-in local model override. Both fields must be set together: the
+    // download URLs must serve exactly `modelFilename`. Absent → the daemon's
+    // built-in default model.
+    localLlm: z
+      .object({
+        modelFilename: z.string().optional(),
+        modelUrls: z.array(z.string()).optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 
@@ -296,6 +306,13 @@ export const MutableDaemonConfigPatchSchema = z
     enableTerminalAgentHooks: z.boolean().optional(),
     appendSystemPrompt: z.string().optional(),
     terminalProfiles: z.array(TerminalProfileSchema).optional(),
+    localLlm: z
+      .object({
+        modelFilename: z.string().optional(),
+        modelUrls: z.array(z.string()).optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .partial()
   .passthrough();

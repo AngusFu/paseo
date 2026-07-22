@@ -2005,7 +2005,7 @@ export const en = {
       },
       localLlm: {
         title: "Local AI model",
-        hint: "Runs on this host (~4.9 GB download) and powers on-device AI features like natural-language cron generation.",
+        hint: "Runs on this host (~7 GB download) and powers on-device AI features like natural-language cron generation.",
         download: "Download",
         downloading: "Downloading… {{received}} / {{total}} GB ({{percent}}%)",
         ready: "Ready",
@@ -2311,7 +2311,7 @@ export const en = {
     send: "Send",
     newChat: "New chat",
     model: {
-      required: "Download the local AI model (~4.9 GB) to start chatting.",
+      required: "Download the local AI model (~7 GB) to start chatting.",
       download: "Download model",
       downloading: "Downloading model… {{percent}}%",
       error: "Model error: {{message}}",
@@ -2878,7 +2878,7 @@ export const en = {
         placeholder: "Describe the schedule, e.g. every weekday at 9:30",
         generate: "Generate",
         generating: "Generating…",
-        download: "Download local model (~4.9 GB)",
+        download: "Download local model (~7 GB)",
         downloading: "Downloading model… {{percent}}%",
         failed: "Couldn't generate a cron expression. Try rephrasing.",
       },

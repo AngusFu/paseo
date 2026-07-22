@@ -12,6 +12,7 @@ import {
   type LlmChatMessage,
   type LlmChatSummary,
   type LlmChatToolCall,
+  type LlmChatToolLink,
   type StoredLlmChat,
 } from "@getpaseo/protocol/llm/chat-rpc-schemas";
 import type pino from "pino";
@@ -35,14 +36,30 @@ const TOOL_WHITELIST = [
   "create_schedule",
   "list_schedules",
   "list_workspaces",
+  "list_workflows",
+  "dispatch_workflow",
   "kanban_create_card",
   "kanban_list_columns",
   "kanban_list_cards",
 ] as const;
 
+// Mutating tools run only after the user approves the proposal card in the
+// chat UI (llm.chat.tool.respond). Read-only tools execute directly.
+const CONFIRM_TOOLS = new Set<string>([
+  "create_schedule",
+  "dispatch_workflow",
+  "kanban_create_card",
+]);
+// An unanswered proposal declines itself so a send never hangs forever.
+const PROPOSAL_TIMEOUT_MS = 120_000;
+
 const CHAT_SYSTEM_PROMPT = [
-  "You are Paseo's built-in assistant, a small on-device model.",
-  "Be concise and helpful. Always answer in the language the user writes in.",
+  "You are Paseo's built-in assistant, a small on-device model running inside the Paseo daemon.",
+  "Paseo is an app for monitoring and controlling local AI coding agents (Claude Code, Codex, Copilot, OpenCode, Pi) from any device.",
+  "Its main areas are: Workspaces (each runs coding agents in a project directory), Schedules (cron jobs that start an agent or run a command), the Kanban board (task cards, optionally synced from Jira/GitLab), and Workflows (multi-agent pipelines).",
+  "You can DO things for the user, not just explain: you can create and list schedules, create and list kanban cards, list workspaces, and list or dispatch workflows.",
+  "When the user asks how to create a schedule, card, or workflow run, offer to do it for them directly instead of describing UI steps; never invent UI instructions.",
+  "Be concise. Always answer in the language the user writes in.",
   "If a tool result is provided, base your answer on it and summarize the outcome plainly.",
   "If a tool failed, say so directly; never pretend an action succeeded.",
 ].join(" ");
@@ -60,6 +77,9 @@ interface LlmChatServiceOptions {
   // Resolved lazily so bootstrap can wire the catalog factory after the
   // websocket server is constructed. Null → chat runs without tools.
   getToolCatalog?: () => Promise<PaseoToolCatalog | null>;
+  // First enabled agent provider id, used to fill create_schedule new-agent
+  // targets — chat has no caller agent to inherit a provider from.
+  getDefaultProvider?: () => Promise<string | null>;
   onEvent: (payload: LlmChatEventPayload) => void;
 }
 
@@ -75,12 +95,18 @@ export interface LlmChatSendResult {
   error: string | null;
 }
 
+interface PendingProposal {
+  proposalId: string;
+  settle: (approved: boolean) => void;
+}
+
 interface ActiveSend {
   sendRequestId: string;
   // requestId of the llama generate call currently in flight (router or
   // reply phase) so cancel() can abort whichever one is running.
   currentGenerateId: string | null;
   cancelled: boolean;
+  pendingProposal: PendingProposal | null;
 }
 
 interface RouterDecision {
@@ -98,6 +124,31 @@ const ROUTER_JSON_SCHEMA: Record<string, unknown> = {
   },
   required: ["action"],
 };
+
+// Maps a successful mutating tool's structured output to the created entity
+// so clients can render a tap-through link.
+function extractToolLink(name: string, structured: unknown): LlmChatToolLink | undefined {
+  if (typeof structured !== "object" || structured === null) {
+    return undefined;
+  }
+  const record = structured as Record<string, unknown>;
+  if (name === "create_schedule" && typeof record.id === "string") {
+    return { entity: "schedule", id: record.id };
+  }
+  if (name === "dispatch_workflow") {
+    const run = record.run as Record<string, unknown> | undefined;
+    if (run && typeof run.id === "string") {
+      return { entity: "workflowRun", id: run.id };
+    }
+  }
+  if (name === "kanban_create_card") {
+    const card = record.card as Record<string, unknown> | undefined;
+    if (card && typeof card.id === "string") {
+      return { entity: "kanbanCard", id: card.id };
+    }
+  }
+  return undefined;
+}
 
 function formatToolError(error: unknown): string {
   if (error && typeof error === "object" && "issues" in error && Array.isArray(error.issues)) {
@@ -137,6 +188,7 @@ export class LlmChatService {
   private readonly logger: pino.Logger;
   private readonly llamaService: LlamaService;
   private readonly getToolCatalog?: () => Promise<PaseoToolCatalog | null>;
+  private readonly getDefaultProvider?: () => Promise<string | null>;
   private readonly onEvent: (payload: LlmChatEventPayload) => void;
   private readonly activeSends = new Map<string, ActiveSend>();
 
@@ -145,6 +197,7 @@ export class LlmChatService {
     this.logger = options.logger.child({ module: "llm-chat-service" });
     this.llamaService = options.llamaService;
     this.getToolCatalog = options.getToolCatalog;
+    this.getDefaultProvider = options.getDefaultProvider;
     this.onEvent = options.onEvent;
   }
 
@@ -197,9 +250,21 @@ export class LlmChatService {
       return false;
     }
     active.cancelled = true;
+    active.pendingProposal?.settle(false);
     if (active.currentGenerateId) {
       this.llamaService.cancel(active.currentGenerateId);
     }
+    return true;
+  }
+
+  // Answers a tool_proposal event on the in-flight send. Returns false when
+  // there is no matching pending proposal (unknown id, already settled).
+  respondToProposal(chatId: string, proposalId: string, approve: boolean): boolean {
+    const pending = this.activeSends.get(chatId)?.pendingProposal;
+    if (!pending || pending.proposalId !== proposalId) {
+      return false;
+    }
+    pending.settle(approve);
     return true;
   }
 
@@ -233,6 +298,7 @@ export class LlmChatService {
       sendRequestId: input.requestId,
       currentGenerateId: null,
       cancelled: false,
+      pendingProposal: null,
     };
     this.activeSends.set(chat.id, active);
     try {
@@ -359,13 +425,28 @@ export class LlmChatService {
         toolNotes.push(`[Tool "${name}" is not available. Tell the user you could not do this.]`);
         return;
       }
-      const toolInput = decision.input ?? {};
+      const toolInput = await this.prepareToolInput(name, decision.input ?? {});
+      const verdict = await this.confirmToolIfNeeded({
+        active,
+        name,
+        toolInput,
+        toolCalls,
+        toolNotes,
+        emit,
+      });
+      if (verdict !== "run") {
+        return;
+      }
       emit({ kind: "tool_call", name, input: toolInput });
       let ok = false;
       let summary: string;
+      let link: LlmChatToolLink | undefined;
       try {
         const result = await catalog.executeTool(name, toolInput);
         ok = !result.isError;
+        if (ok) {
+          link = extractToolLink(name, result.structuredContent);
+        }
         const textParts = result.content
           .map((part) => (typeof part.text === "string" ? part.text : ""))
           .filter((part) => part.length > 0);
@@ -381,13 +462,92 @@ export class LlmChatService {
         // "field: message" lines so the model can correct its input next round.
         summary = truncate(formatToolError(error), 400);
       }
-      emit({ kind: "tool_result", name, ok, summary });
-      toolCalls.push({ name, input: toolInput, ok, summary });
+      emit({ kind: "tool_result", name, ok, summary, ...(link ? { link } : {}) });
+      toolCalls.push({ name, input: toolInput, ok, summary, ...(link ? { link } : {}) });
       toolNotes.push(
         `[Tool ${name} ${ok ? "succeeded" : "failed"}. Result: ${summary}]` +
           " [Answer the user based on this result.]",
       );
     }
+  }
+
+  // Fills gaps a 4B model reliably leaves: a create_schedule reminder (prompt
+  // target) needs a provider, which chat cannot inherit from a caller agent.
+  private async prepareToolInput(
+    name: string,
+    input: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    if (
+      name === "create_schedule" &&
+      typeof input.prompt === "string" &&
+      input.command === undefined &&
+      input.provider === undefined
+    ) {
+      const provider = await this.getDefaultProvider?.().catch(() => null);
+      if (provider) {
+        return { ...input, provider };
+      }
+    }
+    return input;
+  }
+
+  // Gates mutating tools behind an explicit user approval. Returns "run" when
+  // the tool may execute; "stop" ends the tool loop (declined or cancelled).
+  private async confirmToolIfNeeded(args: {
+    active: ActiveSend;
+    name: string;
+    toolInput: Record<string, unknown>;
+    toolCalls: LlmChatToolCall[];
+    toolNotes: string[];
+    emit: (event: LlmChatEvent) => void;
+  }): Promise<"run" | "stop"> {
+    const { active, name, toolInput, toolCalls, toolNotes, emit } = args;
+    if (!CONFIRM_TOOLS.has(name)) {
+      return "run";
+    }
+    const approved = await this.awaitProposalApproval(active, name, toolInput, emit);
+    if (active.cancelled) {
+      return "stop";
+    }
+    if (!approved) {
+      const summary = "cancelled by user";
+      emit({ kind: "tool_result", name, ok: false, summary });
+      toolCalls.push({ name, input: toolInput, ok: false, summary });
+      toolNotes.push(
+        `[The user declined the ${name} action. Do not perform it; acknowledge briefly.]`,
+      );
+      return "stop";
+    }
+    return "run";
+  }
+
+  // Emits a tool_proposal event and parks the send until a client answers via
+  // respondToProposal, the send is cancelled, or the proposal times out.
+  private awaitProposalApproval(
+    active: ActiveSend,
+    name: string,
+    input: Record<string, unknown>,
+    emit: (event: LlmChatEvent) => void,
+  ): Promise<boolean> {
+    const proposalId = randomUUID();
+    let resolvePromise!: (approved: boolean) => void;
+    const promise = new Promise<boolean>((resolve) => {
+      resolvePromise = resolve;
+    });
+    let settled = false;
+    const timer = setTimeout(() => settle(false), PROPOSAL_TIMEOUT_MS);
+    const settle = (approved: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      active.pendingProposal = null;
+      resolvePromise(approved);
+    };
+    active.pendingProposal = { proposalId, settle };
+    emit({ kind: "tool_proposal", proposalId, name, input });
+    return promise;
   }
 
   private chatPath(chatId: string): string {
@@ -467,5 +627,7 @@ function buildRouterSystemPrompt(available: string[], catalog: PaseoToolCatalog)
     'User: 创建一张卡：修复登录 bug → {"action":"tool","name":"kanban_create_card","input":{"title":"修复登录 bug"}}',
     'User: what schedules do I have? → {"action":"tool","name":"list_schedules","input":{}}',
     'User: 看板上有哪些卡片? → {"action":"tool","name":"kanban_list_cards","input":{}}',
+    'User: 有哪些可用的 workflow? → {"action":"tool","name":"list_workspaces","input":{}} (then list_workflows with a cwd from the result)',
+    'User: 在 /Users/me/app 跑 scif-review workflow，任务是修复登录 bug → {"action":"tool","name":"dispatch_workflow","input":{"definition":"scif-review","cwd":"/Users/me/app","task":"修复登录 bug"}}',
   ].join("\n");
 }

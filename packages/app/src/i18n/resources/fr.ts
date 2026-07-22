@@ -2367,6 +2367,11 @@ export const fr: TranslationResources = {
       running: "Exécution de {{name}}…",
       done: "{{name}} a réussi",
       failed: "{{name}} a échoué",
+      view: "Afficher",
+    },
+    proposal: {
+      title: "Exécuter {{name}} ?",
+      run: "Exécuter",
     },
   },
   promptOptimize: {

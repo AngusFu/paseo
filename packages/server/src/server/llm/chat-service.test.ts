@@ -149,3 +149,139 @@ describe("LlmChatService", () => {
     expect(result.message).toBeNull();
   });
 });
+
+describe("LlmChatService tool confirmation", () => {
+  let tempDir: string;
+  let events: LlmChatEventPayload[];
+  let executed: string[];
+  let executedInputs: Array<Record<string, unknown>>;
+
+  function createServiceWithTools(
+    routerInput: Record<string, unknown> = { cron: "0 9 * * *", command: "echo hi", cwd: "/tmp" },
+  ): LlmChatService {
+    let routerCalls = 0;
+    const fakeLlama = {
+      generate: async (params: {
+        requestId: string;
+        prompt: string;
+        jsonSchema?: Record<string, unknown>;
+        stream?: boolean;
+        onChunk?: (text: string) => void;
+      }) => {
+        if (params.jsonSchema) {
+          routerCalls += 1;
+          // First router round proposes a schedule; later rounds stand down.
+          return routerCalls === 1
+            ? JSON.stringify({ action: "tool", name: "create_schedule", input: routerInput })
+            : JSON.stringify({ action: "none" });
+        }
+        params.onChunk?.("ok");
+        return "ok";
+      },
+      cancel: () => true,
+    } as unknown as LlamaService;
+    const catalog = {
+      tools: new Map(),
+      getTool: (name: string) =>
+        name === "create_schedule"
+          ? {
+              name,
+              description: "Create a schedule",
+              inputSchema: {},
+              handler: async () => ({ content: [] }),
+            }
+          : undefined,
+      executeTool: async (name: string, input: unknown) => {
+        executed.push(name);
+        executedInputs.push(input as Record<string, unknown>);
+        return {
+          content: [],
+          structuredContent: { id: "sched-1", cadence: { type: "cron", expression: "0 9 * * *" } },
+        };
+      },
+    };
+    return new LlmChatService({
+      paseoHome: tempDir,
+      logger: pino({ enabled: false }),
+      llamaService: fakeLlama,
+      getToolCatalog: async () => catalog as never,
+      getDefaultProvider: async () => "claude",
+      onEvent: (payload) => events.push(payload),
+    });
+  }
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "llm-chat-confirm-test-"));
+    events = [];
+    executed = [];
+    executedInputs = [];
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  async function waitForProposal(): Promise<{ chatId: string; proposalId: string }> {
+    for (let i = 0; i < 100; i++) {
+      const proposal = events.find((event) => event.event.kind === "tool_proposal");
+      if (proposal && proposal.event.kind === "tool_proposal") {
+        return { chatId: proposal.chatId, proposalId: proposal.event.proposalId };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("no tool_proposal event arrived");
+  }
+
+  it("runs the tool with a link after the user approves the proposal", async () => {
+    const service = createServiceWithTools();
+    const sendPromise = service.send({ chatId: null, text: "9点提醒", requestId: "req-c1" });
+    const { chatId, proposalId } = await waitForProposal();
+    expect(executed).toEqual([]);
+    expect(service.respondToProposal(chatId, proposalId, true)).toBe(true);
+    const result = await sendPromise;
+    expect(executed).toEqual(["create_schedule"]);
+    expect(result.message?.toolCalls?.[0]).toMatchObject({
+      name: "create_schedule",
+      ok: true,
+      link: { entity: "schedule", id: "sched-1" },
+    });
+    const toolResult = events.find((event) => event.event.kind === "tool_result");
+    expect(toolResult?.event).toMatchObject({
+      ok: true,
+      link: { entity: "schedule", id: "sched-1" },
+    });
+  });
+
+  it("skips the tool when the user declines", async () => {
+    const service = createServiceWithTools();
+    const sendPromise = service.send({ chatId: null, text: "9点提醒", requestId: "req-c2" });
+    const { chatId, proposalId } = await waitForProposal();
+    expect(service.respondToProposal(chatId, proposalId, false)).toBe(true);
+    const result = await sendPromise;
+    expect(executed).toEqual([]);
+    expect(result.message?.toolCalls?.[0]).toMatchObject({
+      name: "create_schedule",
+      ok: false,
+      summary: "cancelled by user",
+    });
+  });
+
+  it("fills the default provider for prompt-target schedules", async () => {
+    const service = createServiceWithTools({ cron: "0 10 * * *", prompt: "提醒我户外活动" });
+    const sendPromise = service.send({ chatId: null, text: "10点提醒", requestId: "req-c4" });
+    const { chatId, proposalId } = await waitForProposal();
+    service.respondToProposal(chatId, proposalId, true);
+    await sendPromise;
+    expect(executedInputs[0]).toMatchObject({ prompt: "提醒我户外活动", provider: "claude" });
+  });
+
+  it("rejects responses for unknown proposals", async () => {
+    const service = createServiceWithTools();
+    const sendPromise = service.send({ chatId: null, text: "9点提醒", requestId: "req-c3" });
+    const { chatId, proposalId } = await waitForProposal();
+    expect(service.respondToProposal(chatId, "wrong-id", true)).toBe(false);
+    expect(service.respondToProposal("wrong-chat", proposalId, true)).toBe(false);
+    service.respondToProposal(chatId, proposalId, false);
+    await sendPromise;
+  });
+});

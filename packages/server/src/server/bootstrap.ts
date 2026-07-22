@@ -1627,6 +1627,10 @@ export async function createPaseoDaemon(
               workflowService,
             );
             wsServer.setLlmChatToolCatalogFactory(async () => createAgentToolCatalog({}));
+            wsServer.setLlmChatDefaultProviderResolver(async () => {
+              const entries = await providerSnapshotManager.listProviders({ wait: true });
+              return entries.find((entry) => entry.enabled)?.provider ?? null;
+            });
 
             if (relayEnabled) {
               const offer = await createConnectionOfferV2({

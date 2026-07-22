@@ -2333,6 +2333,11 @@ export const ja: TranslationResources = {
       running: "{{name}} を実行中…",
       done: "{{name}} が成功しました",
       failed: "{{name}} が失敗しました",
+      view: "表示",
+    },
+    proposal: {
+      title: "{{name}} を実行しますか？",
+      run: "実行",
     },
   },
   promptOptimize: {

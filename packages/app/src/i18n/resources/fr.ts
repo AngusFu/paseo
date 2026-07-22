@@ -1018,6 +1018,7 @@ export const fr: TranslationResources = {
       schedules: "Planifications",
       kanban: "Kanban",
       workflows: "Workflows",
+      assistant: "Assistant",
       pinned: "Épinglés",
     },
     worktreeSetup: {
@@ -2347,6 +2348,30 @@ export const fr: TranslationResources = {
         cancel: "Annuler",
       },
     },
+  },
+  assistant: {
+    title: "Assistant",
+    unsupported: "Mettez à jour l’hôte pour utiliser l’assistant.",
+    empty:
+      "Discutez avec le modèle sur l’appareil. Il peut aussi créer des planifications et des cartes du kanban.",
+    inputPlaceholder: "Écrire à l’assistant local…",
+    send: "Envoyer",
+    newChat: "Nouvelle discussion",
+    model: {
+      required: "Téléchargez le modèle d’IA local (~4,9 Go) pour commencer à discuter.",
+      download: "Télécharger le modèle",
+      downloading: "Téléchargement du modèle… {{percent}}%",
+      error: "Erreur du modèle : {{message}}",
+    },
+    tool: {
+      running: "Exécution de {{name}}…",
+      done: "{{name}} a réussi",
+      failed: "{{name}} a échoué",
+    },
+  },
+  promptOptimize: {
+    action: "Optimiser le prompt",
+    undo: "Annuler l’optimisation",
   },
   kanban: {
     title: "Kanban",

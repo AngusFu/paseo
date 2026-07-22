@@ -1009,6 +1009,7 @@ export const ptBR: TranslationResources = {
       schedules: "Agendamentos",
       kanban: "Kanban",
       workflows: "Workflows",
+      assistant: "Assistente",
       pinned: "Fixados",
     },
     worktreeSetup: {
@@ -2326,6 +2327,30 @@ export const ptBR: TranslationResources = {
         cancel: "Cancelar",
       },
     },
+  },
+  assistant: {
+    title: "Assistente",
+    unsupported: "Atualize o host para usar o assistente.",
+    empty:
+      "Converse com o modelo no dispositivo. Ele também pode criar agendamentos e cartões do kanban.",
+    inputPlaceholder: "Envie uma mensagem ao assistente local…",
+    send: "Enviar",
+    newChat: "Novo chat",
+    model: {
+      required: "Baixe o modelo de IA local (~4,9 GB) para começar a conversar.",
+      download: "Baixar modelo",
+      downloading: "Baixando modelo… {{percent}}%",
+      error: "Erro do modelo: {{message}}",
+    },
+    tool: {
+      running: "Executando {{name}}…",
+      done: "{{name}} concluído com sucesso",
+      failed: "{{name}} falhou",
+    },
+  },
+  promptOptimize: {
+    action: "Otimizar prompt",
+    undo: "Desfazer otimização",
   },
   kanban: {
     title: "Kanban",

@@ -215,6 +215,7 @@ import { ScheduleService } from "./schedule/service.js";
 import { KanbanService } from "./kanban/service.js";
 import { WorkflowService } from "./workflow/service.js";
 import { LlamaService, LlmGenerateError } from "./llm/llama-service.js";
+import { LlmChatService } from "./llm/chat-service.js";
 import {
   createGitHubService,
   GitHubAuthenticationError,
@@ -437,6 +438,7 @@ export interface SessionOptions {
   kanbanService: KanbanService;
   workflowService: WorkflowService;
   llamaService: LlamaService;
+  llmChatService: LlmChatService;
   loopService: LoopService;
   checkoutDiffManager: CheckoutDiffManager;
   github?: ForgeService;
@@ -617,6 +619,7 @@ export class Session {
   private readonly kanbanService: KanbanService;
   private readonly workflowService: WorkflowService;
   private readonly llamaService: LlamaService;
+  private readonly llmChatService: LlmChatService;
   private readonly providerCatalogSession: ProviderCatalogSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
   private readonly agentConfigSession: AgentConfigSession;
@@ -651,6 +654,7 @@ export class Session {
       kanbanService,
       workflowService,
       llamaService,
+      llmChatService,
       loopService,
       checkoutDiffManager,
       github,
@@ -802,6 +806,7 @@ export class Session {
     this.kanbanService = kanbanService;
     this.workflowService = workflowService;
     this.llamaService = llamaService;
+    this.llmChatService = llmChatService;
     this.providerCatalogSession = new ProviderCatalogSession({
       host: {
         emit: (msg) => this.emit(msg),
@@ -2633,9 +2638,86 @@ export class Session {
         return this.handleLlmGenerateRequest(msg);
       case "llm.local.cancel.request":
         return this.handleLlmCancelRequest(msg);
+      case "llm.chat.list.request":
+        return this.handleLlmChatListRequest(msg);
+      case "llm.chat.get.request":
+        return this.handleLlmChatGetRequest(msg);
+      case "llm.chat.send.request":
+        return this.handleLlmChatSendRequest(msg);
+      case "llm.chat.cancel.request":
+        return this.handleLlmChatCancelRequest(msg);
+      case "llm.chat.delete.request":
+        return this.handleLlmChatDeleteRequest(msg);
       default:
         return undefined;
     }
+  }
+
+  private async handleLlmChatListRequest(
+    msg: Extract<SessionInboundMessage, { type: "llm.chat.list.request" }>,
+  ): Promise<void> {
+    const chats = await this.llmChatService.listChats();
+    this.emit({
+      type: "llm.chat.list.response",
+      payload: { requestId: msg.requestId, chats },
+    });
+  }
+
+  private async handleLlmChatGetRequest(
+    msg: Extract<SessionInboundMessage, { type: "llm.chat.get.request" }>,
+  ): Promise<void> {
+    const chat = await this.llmChatService.getChat(msg.chatId);
+    this.emit({
+      type: "llm.chat.get.response",
+      payload: {
+        requestId: msg.requestId,
+        chat,
+        error: chat ? null : "chat not found",
+      },
+    });
+  }
+
+  private async handleLlmChatSendRequest(
+    msg: Extract<SessionInboundMessage, { type: "llm.chat.send.request" }>,
+  ): Promise<void> {
+    const result = await this.llmChatService.send({
+      chatId: msg.chatId,
+      text: msg.text,
+      requestId: msg.requestId,
+    });
+    this.emit({
+      type: "llm.chat.send.response",
+      payload: {
+        requestId: msg.requestId,
+        chatId: result.chatId,
+        message: result.message,
+        error: result.error,
+      },
+    });
+  }
+
+  private async handleLlmChatCancelRequest(
+    msg: Extract<SessionInboundMessage, { type: "llm.chat.cancel.request" }>,
+  ): Promise<void> {
+    const cancelled = this.llmChatService.cancel(msg.chatId);
+    this.emit({
+      type: "llm.chat.cancel.response",
+      payload: { requestId: msg.requestId, cancelled },
+    });
+  }
+
+  private async handleLlmChatDeleteRequest(
+    msg: Extract<SessionInboundMessage, { type: "llm.chat.delete.request" }>,
+  ): Promise<void> {
+    const deleted = await this.llmChatService.deleteChat(msg.chatId);
+    this.emit({
+      type: "llm.chat.delete.response",
+      payload: {
+        requestId: msg.requestId,
+        deleted,
+        error: deleted ? null : "chat not found",
+      },
+    });
   }
 
   private async handleLlmStatusRequest(

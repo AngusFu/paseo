@@ -8,11 +8,19 @@ export interface LlmWorkerLoadRequest {
   contextSize: number;
 }
 
+// Prior turns replayed into the chat session before prompting. The worker is
+// stateless across requests — multi-turn callers resend the full history.
+export interface LlmWorkerHistoryItem {
+  role: "user" | "model";
+  text: string;
+}
+
 export interface LlmWorkerGenerateRequest {
   type: "generate";
   id: string;
   prompt: string;
   systemPrompt?: string;
+  history?: LlmWorkerHistoryItem[];
   jsonSchema?: Record<string, unknown>;
   maxTokens?: number;
   stream?: boolean;

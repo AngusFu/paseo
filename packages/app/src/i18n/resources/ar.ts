@@ -987,6 +987,7 @@ export const ar: TranslationResources = {
       schedules: "الجداول",
       kanban: "كانبان",
       workflows: "Workflows",
+      assistant: "المساعد",
       pinned: "المثبتة",
     },
     worktreeSetup: {
@@ -2288,6 +2289,29 @@ export const ar: TranslationResources = {
         cancel: "يلغي",
       },
     },
+  },
+  assistant: {
+    title: "المساعد",
+    unsupported: "حدّث المضيف لاستخدام المساعد.",
+    empty: "تحدّث مع النموذج على الجهاز. يمكنه أيضاً إنشاء الجداول الزمنية وبطاقات لوحة كانبان.",
+    inputPlaceholder: "راسل المساعد المحلي…",
+    send: "إرسال",
+    newChat: "محادثة جديدة",
+    model: {
+      required: "نزّل نموذج الذكاء الاصطناعي المحلي (~4.9 غيغابايت) لبدء المحادثة.",
+      download: "تنزيل النموذج",
+      downloading: "جارٍ تنزيل النموذج… {{percent}}%",
+      error: "خطأ في النموذج: {{message}}",
+    },
+    tool: {
+      running: "جارٍ تشغيل {{name}}…",
+      done: "نجح {{name}}",
+      failed: "فشل {{name}}",
+    },
+  },
+  promptOptimize: {
+    action: "تحسين المطالبة",
+    undo: "التراجع عن التحسين",
   },
   kanban: {
     title: "كانبان",

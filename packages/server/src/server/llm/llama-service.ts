@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import type { LlmLocalModelState } from "@getpaseo/protocol/llm/rpc-schemas";
 import type pino from "pino";
 import type {
+  LlmWorkerHistoryItem,
   LlmWorkerParentToWorkerMessage,
   LlmWorkerToParentMessage,
 } from "./worker-protocol.js";
@@ -41,10 +42,12 @@ interface LlamaServiceOptions {
   onStatusUpdate?: (state: LlmLocalModelState) => void;
 }
 
-interface GenerateParams {
+export interface GenerateParams {
   requestId: string;
   prompt: string;
   systemPrompt?: string;
+  // Prior turns replayed before prompting; the worker is stateless.
+  history?: LlmWorkerHistoryItem[];
   jsonSchema?: Record<string, unknown>;
   maxTokens?: number;
   stream?: boolean;
@@ -268,6 +271,7 @@ export class LlamaService {
         id: next.params.requestId,
         prompt: next.params.prompt,
         systemPrompt: next.params.systemPrompt,
+        history: next.params.history,
         jsonSchema: next.params.jsonSchema,
         maxTokens: next.params.maxTokens,
         stream: next.params.stream,

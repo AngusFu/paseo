@@ -36,6 +36,13 @@ import { expandUserPath, isSameOrDescendantPath, resolvePathFromBase } from "../
 import type { TerminalManager } from "../../../terminal/terminal-manager.js";
 import type { CreatePaseoWorktreeWorkflowFn } from "../../worktree-session.js";
 import type { ScheduleService } from "../../schedule/service.js";
+import type { KanbanService } from "../../kanban/service.js";
+import {
+  KanbanColumnSchema,
+  KanbanPrioritySchema,
+  KanbanStatusSchema,
+  StoredKanbanCardSchema,
+} from "@getpaseo/protocol/kanban/types";
 import {
   ScheduleRunSchema,
   ScheduleSummarySchema,
@@ -124,6 +131,7 @@ export interface PaseoToolHostDependencies {
     title?: string | null,
     projectId?: string,
   ) => Promise<PersistedWorkspaceRecord>;
+  kanbanService?: Pick<KanbanService, "createCard" | "listCards" | "listColumns"> | null;
   markWorkspaceArchiving?: ArchiveDependencies["markWorkspaceArchiving"];
   clearWorkspaceArchiving?: ArchiveDependencies["clearWorkspaceArchiving"];
   createPaseoWorktree?: CreatePaseoWorktreeWorkflowFn;
@@ -3550,6 +3558,88 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       };
     },
   );
+
+  const kanbanService = options.kanbanService;
+  if (kanbanService) {
+    registerTool(
+      "kanban_create_card",
+      {
+        title: "Create kanban card",
+        description: "Create a card on the global Paseo kanban board.",
+        inputSchema: {
+          title: z.string().min(1).describe("Card title."),
+          status: KanbanStatusSchema.optional().describe(
+            "Initial status (maps to a board column). Defaults to pending.",
+          ),
+          labels: z.array(z.string()).optional().describe("Optional labels."),
+          priority: KanbanPrioritySchema.optional().describe("Optional priority."),
+        },
+        outputSchema: {
+          card: StoredKanbanCardSchema.nullable(),
+          error: z.string().nullable(),
+        },
+      },
+      async ({ title, status, labels, priority }) => {
+        const result = await kanbanService.createCard({
+          title,
+          ...(status !== undefined ? { status } : {}),
+          ...(labels !== undefined ? { labels } : {}),
+          ...(priority !== undefined ? { priority } : {}),
+        });
+        if (result.error) {
+          throw new Error(result.error);
+        }
+        return {
+          content: [],
+          structuredContent: ensureValidJson({ card: result.card, error: result.error }),
+        };
+      },
+    );
+
+    registerTool(
+      "kanban_list_columns",
+      {
+        title: "List kanban columns",
+        description: "List the columns of the global Paseo kanban board.",
+        inputSchema: {},
+        outputSchema: {
+          columns: z.array(KanbanColumnSchema),
+        },
+      },
+      async () => {
+        const result = await kanbanService.listColumns();
+        if (result.error) {
+          throw new Error(result.error);
+        }
+        return {
+          content: [],
+          structuredContent: ensureValidJson({ columns: result.columns }),
+        };
+      },
+    );
+
+    registerTool(
+      "kanban_list_cards",
+      {
+        title: "List kanban cards",
+        description: "List cards on the global Paseo kanban board.",
+        inputSchema: {},
+        outputSchema: {
+          cards: z.array(StoredKanbanCardSchema),
+        },
+      },
+      async () => {
+        const result = await kanbanService.listCards();
+        if (result.error) {
+          throw new Error(result.error);
+        }
+        return {
+          content: [],
+          structuredContent: ensureValidJson({ cards: result.cards }),
+        };
+      },
+    );
+  }
 
   return toCatalog();
 }

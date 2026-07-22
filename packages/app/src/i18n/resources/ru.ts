@@ -1009,6 +1009,7 @@ export const ru: TranslationResources = {
       schedules: "Расписания",
       kanban: "Канбан",
       workflows: "Workflows",
+      assistant: "Ассистент",
       pinned: "Закреплённые",
     },
     worktreeSetup: {
@@ -2333,6 +2334,30 @@ export const ru: TranslationResources = {
         cancel: "Отмена",
       },
     },
+  },
+  assistant: {
+    title: "Ассистент",
+    unsupported: "Обновите хост, чтобы использовать ассистента.",
+    empty:
+      "Общайтесь с локальной моделью. Она также может создавать расписания и карточки канбана.",
+    inputPlaceholder: "Написать локальному ассистенту…",
+    send: "Отправить",
+    newChat: "Новый чат",
+    model: {
+      required: "Скачайте локальную ИИ-модель (~4,9 ГБ), чтобы начать общение.",
+      download: "Скачать модель",
+      downloading: "Загрузка модели… {{percent}}%",
+      error: "Ошибка модели: {{message}}",
+    },
+    tool: {
+      running: "Выполняется {{name}}…",
+      done: "{{name}} выполнено успешно",
+      failed: "{{name}} завершилось с ошибкой",
+    },
+  },
+  promptOptimize: {
+    action: "Оптимизировать промпт",
+    undo: "Отменить оптимизацию",
   },
   kanban: {
     title: "Канбан",

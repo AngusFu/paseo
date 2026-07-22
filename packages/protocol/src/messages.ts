@@ -165,6 +165,19 @@ import {
   LlmLocalGenerateResponseSchema,
   LlmLocalCancelResponseSchema,
 } from "./llm/rpc-schemas.js";
+import {
+  LlmChatListRequestSchema,
+  LlmChatGetRequestSchema,
+  LlmChatSendRequestSchema,
+  LlmChatCancelRequestSchema,
+  LlmChatDeleteRequestSchema,
+  LlmChatListResponseSchema,
+  LlmChatGetResponseSchema,
+  LlmChatSendResponseSchema,
+  LlmChatEventMessageSchema,
+  LlmChatCancelResponseSchema,
+  LlmChatDeleteResponseSchema,
+} from "./llm/chat-rpc-schemas.js";
 import { BrowserAutomationHostCapabilitySchema } from "./browser-automation/capabilities.js";
 import {
   PaseoConfigRawSchema,
@@ -2718,6 +2731,11 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   LlmLocalDownloadRequestSchema,
   LlmLocalGenerateRequestSchema,
   LlmLocalCancelRequestSchema,
+  LlmChatListRequestSchema,
+  LlmChatGetRequestSchema,
+  LlmChatSendRequestSchema,
+  LlmChatCancelRequestSchema,
+  LlmChatDeleteRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -2963,6 +2981,8 @@ export const ServerInfoStatusPayloadSchema = z
         localLlm: z.boolean().optional(),
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: z.boolean().optional(),
+        // COMPAT(llmChat): added in v0.1.106, drop the gate when floor >= v0.1.106.
+        llmChat: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: z.boolean().optional(),
         // COMPAT(workspacePinning): added in v0.1.107, remove gate after 2027-01-12.
@@ -5430,6 +5450,12 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   LlmLocalGenerateChunkSchema,
   LlmLocalGenerateResponseSchema,
   LlmLocalCancelResponseSchema,
+  LlmChatListResponseSchema,
+  LlmChatGetResponseSchema,
+  LlmChatSendResponseSchema,
+  LlmChatEventMessageSchema,
+  LlmChatCancelResponseSchema,
+  LlmChatDeleteResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
   InstallDifftasticProgressMessageSchema,

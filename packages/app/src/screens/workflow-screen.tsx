@@ -75,6 +75,7 @@ import { confirmDialog } from "@/utils/confirm-dialog";
 import { toErrorMessage } from "@/utils/error-messages";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { formatTimeAgo } from "@/utils/time";
+import { resolveWorkflowProjectRoots } from "@/screens/workflow-project-roots";
 import { requireWorkspaceDirectory } from "@/utils/workspace-directory";
 import { shortenPath } from "@/utils/shorten-path";
 
@@ -105,11 +106,9 @@ function useScreenProjectWorkflows(
       ),
     [projects, serverId],
   );
-  const projectCwds = useMemo(() => projectTargets.map((target) => target.cwd), [projectTargets]);
-  const projectNameByCwd = useMemo(
-    () => new Map(projectTargets.map((target) => [target.cwd, target.projectName])),
-    [projectTargets],
-  );
+  const projectRoots = useMemo(() => resolveWorkflowProjectRoots(projectTargets), [projectTargets]);
+  const projectCwds = projectRoots.cwds;
+  const projectNameByCwd = projectRoots.nameByCwd;
   const { definitions } = useProjectWorkflowDefinitions(
     active && supported ? serverId : null,
     projectCwds,

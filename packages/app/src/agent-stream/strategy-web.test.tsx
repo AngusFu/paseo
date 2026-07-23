@@ -148,6 +148,142 @@ describe("createWebStreamStrategy", () => {
     expect(rowRenderCount.mock.calls.length).toBeLessThanOrEqual(historyVirtualized.length);
   });
 
+  it("rerenders a stable live-head row when its revision changes", () => {
+    const strategy = createWebStreamStrategy({ isMobileBreakpoint: false });
+    const viewportRef = React.createRef<StreamViewportHandle>();
+    const liveHead = [userMessage(1)];
+    let label = "collapsed";
+    const renderLiveHeadRow = vi.fn(() => <div>{label}</div>);
+    const renderInput: StreamRenderInput = {
+      agentId: "agent",
+      segments: {
+        historyVirtualized: [],
+        historyMounted: [],
+        liveHead,
+      },
+      boundary: {
+        hasVirtualizedHistory: false,
+        hasMountedHistory: false,
+        hasLiveHead: true,
+      },
+      renderers: {
+        ...createRenderers(vi.fn()),
+        renderLiveHeadRow,
+      },
+      listEmptyComponent: null,
+      viewportRef,
+      routeBottomAnchorRequest: null,
+      isAuthoritativeHistoryReady: true,
+      onNearBottomChange: vi.fn(),
+      onNearHistoryStart: vi.fn(),
+      isLoadingOlderHistory: false,
+      hasOlderHistory: false,
+      scrollEnabled: true,
+      listStyle: null,
+      baseListContentContainerStyle: null,
+      forwardListContentContainerStyle: null,
+    };
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => {
+      root?.render(strategy.render({ ...renderInput, liveHeadRowRevision: 0 }));
+    });
+    expect(container.textContent).toContain("collapsed");
+
+    label = "expanded";
+    act(() => {
+      root?.render(strategy.render({ ...renderInput, liveHeadRowRevision: 1 }));
+    });
+
+    expect(container.textContent).toContain("expanded");
+    expect(renderLiveHeadRow).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps bottom anchoring through subpixel browser rounding", () => {
+    const scrollTo = vi.fn();
+    HTMLElement.prototype.scrollTo = scrollTo;
+    const strategy = createWebStreamStrategy({ isMobileBreakpoint: false });
+    const viewportRef = React.createRef<StreamViewportHandle>();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => {
+      root?.render(
+        strategy.render({
+          agentId: "agent",
+          segments: {
+            historyVirtualized: [],
+            historyMounted: [userMessage(1)],
+            liveHead: [],
+          },
+          boundary: {
+            hasVirtualizedHistory: false,
+            hasMountedHistory: true,
+            hasLiveHead: false,
+          },
+          renderers: createRenderers(vi.fn()),
+          listEmptyComponent: null,
+          viewportRef,
+          routeBottomAnchorRequest: null,
+          isAuthoritativeHistoryReady: true,
+          onNearBottomChange: vi.fn(),
+          onNearHistoryStart: vi.fn(),
+          isLoadingOlderHistory: false,
+          hasOlderHistory: false,
+          scrollEnabled: true,
+          listStyle: null,
+          baseListContentContainerStyle: null,
+          forwardListContentContainerStyle: null,
+        }),
+      );
+    });
+
+    const scrollContainer = container.querySelector('[data-testid="agent-chat-scroll"]');
+    if (!(scrollContainer instanceof HTMLElement)) {
+      throw new Error("Expected agent chat scroll container");
+    }
+    Object.defineProperty(scrollContainer, "clientHeight", { configurable: true, value: 766 });
+    Object.defineProperty(scrollContainer, "scrollHeight", { configurable: true, value: 5725 });
+    Object.defineProperty(scrollContainer, "scrollTop", {
+      configurable: true,
+      value: 4959.1708984375,
+    });
+    scrollTo.mockClear();
+
+    act(() => {
+      viewportRef.current?.scrollToBottom("message-sent");
+    });
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 5725, behavior: "auto" });
+
+    scrollTo.mockClear();
+    Object.defineProperty(scrollContainer, "scrollTop", {
+      configurable: true,
+      value: 4960.5,
+    });
+
+    act(() => {
+      viewportRef.current?.scrollToBottom("message-sent");
+    });
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 5725, behavior: "auto" });
+
+    scrollTo.mockClear();
+    Object.defineProperty(scrollContainer, "scrollTop", {
+      configurable: true,
+      value: 4967,
+    });
+
+    act(() => {
+      viewportRef.current?.scrollToBottom("message-sent");
+    });
+
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
   it("fires near-history-start when the user scrolls near the top", async () => {
     const strategy = createWebStreamStrategy({ isMobileBreakpoint: true });
     const viewportRef = React.createRef<StreamViewportHandle>();

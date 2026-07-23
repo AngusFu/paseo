@@ -11,8 +11,14 @@
  * request while letting a transient failure heal by itself.
  */
 
-/** Long enough that a broken provider is not re-probed per request. */
-export const PROVIDER_ERROR_RETRY_COOLDOWN_MS = 30_000;
+/**
+ * Long enough that a broken provider is not re-probed per request, short enough
+ * that a workflow's own retry backoff crosses it: the first backend-error retry
+ * waits 2s and the second 4s (see retry-backoff.ts in @getpaseo/agents-workflow),
+ * so a run that hits a stale failure re-probes on its second retry rather than
+ * failing the whole run on a provider that had already recovered.
+ */
+export const PROVIDER_ERROR_RETRY_COOLDOWN_MS = 5_000;
 
 interface RetryableEntry {
   status: string;

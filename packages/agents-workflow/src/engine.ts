@@ -35,6 +35,7 @@ import { runInSandbox, evalLiteralInRealm } from "./sandbox.js";
 // (FlowPolicy — the runtime role-ordering belt — was retired.)
 import { validateScript } from "./validator.js";
 import { WorkflowError } from "./errors.js";
+import { retryDelayMs, type RetryReason } from "./retry-backoff.js";
 
 export const AGENT_CAP = 1000; // k0y
 export const BATCH_CAP = 4096; // single parallel()/pipeline() fan-out cap
@@ -168,6 +169,11 @@ export interface EngineConfig {
    * Default 30_000; null disables.
    */
   sandboxTimeoutMs?: number | null;
+  /**
+   * Waits between retry attempts. Injectable so tests can assert the delays
+   * without spending them.
+   */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface EngineStats {
@@ -203,6 +209,8 @@ export function createEngine(cfg: EngineConfig): Engine {
   if (!cfg || !(cfg.backend instanceof AgentBackend))
     throw new Error("createEngine requires an AgentBackend");
   const backend = cfg.backend;
+  const sleep =
+    cfg.sleep ?? ((ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms)));
   // Swap 2: p-limit is the limiter now. Only agent()'s backend.run consumes a
   // slot; parallel()/pipeline() do NOT wrap callbacks (would deadlock).
   const limit = pLimit(cfg.maxConcurrency ?? defaultConcurrency(os.cpus().length));
@@ -294,6 +302,7 @@ export function createEngine(cfg: EngineConfig): Engine {
     let suffix = "";
     let spent = 0;
     let lastFailure = "structured output failed after retries";
+    let retryReason: RetryReason = "bad-output";
     const maxRetries = clampMaxRetries(opts.maxRetries);
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const spec = toSpec(
@@ -306,16 +315,15 @@ export function createEngine(cfg: EngineConfig): Engine {
       // flat estimate for an attempt the backend gave no usage for.
       spent += r?.usage?.outputTokens || DEFAULT_EST_TOKENS;
       if (r?.error) {
-        // The agent never produced output — the backend refused before it ran
-        // (provider disabled, provider not available, create failed). This
-        // loop's retries append instructions telling the model to fix the JSON
-        // it emitted, which cannot fix a call that never happened, and the loop
-        // has no backoff: the extra attempts land within milliseconds against
-        // the same cached provider state. Stop, and report the backend's reason
-        // rather than a retry count that means nothing.
+        // The agent never ran — the backend refused first (provider disabled,
+        // provider not available, create failed). Keep the previous suffix
+        // rather than adding one: the suffix tells the model how to fix the
+        // JSON it emitted, and there was no output to fix. The wait below is
+        // what gives this attempt a chance to land differently.
         lastFailure = r.error;
-        break;
+        retryReason = "backend-error";
       } else {
+        retryReason = "bad-output";
         const text = r?.text ?? "";
         const parsed = tryParseJson(text);
         if (parsed.ok) {
@@ -344,6 +352,10 @@ export function createEngine(cfg: EngineConfig): Engine {
           attempt: attempt + 1,
           error: lastFailure,
         });
+        const waitMs = retryDelayMs(retryReason, attempt);
+        if (waitMs > 0) {
+          await sleep(waitMs);
+        }
       }
     }
     return { ok: false, value: null, spent, error: lastFailure };

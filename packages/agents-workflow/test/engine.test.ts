@@ -126,21 +126,49 @@ test("structured loop retries on bad JSON then succeeds", async () => {
 });
 
 // A provider that failed its probe made every workflow run log three retries
-// inside 7ms — the backend refused before the agent ran, so re-prompting could
-// not change anything and the "retries" were pure noise in the log.
-test("structured loop does not retry a backend error", async () => {
+// inside 7ms, all landing on the same cached provider state. Retries of a
+// backend error now wait for the condition to have a chance to clear.
+test("a backend error is retried with an exponential backoff", async () => {
   const schema = { type: "object", required: ["n"], properties: { n: { type: "number" } } };
   const b = new MockBackend({
     respond: () => ({ error: "Internal error: Failed to initialize session services" }),
   });
-  const e = createEngine({ backend: b });
-  const { result, stats } = await e.run(
+  const waits: number[] = [];
+  const e = createEngine({
+    backend: b,
+    sleep: async (ms) => {
+      waits.push(ms);
+    },
+  });
+  const { result } = await e.run(
     wrap(`return await agent("x", { schema: ${JSON.stringify(schema)}, maxRetries: 2 });`),
   );
 
   expect(result).toBe(null);
-  expect(b.calls.length).toBe(1);
-  expect(stats.structuredRetries).toBe(0);
+  expect(b.calls.length).toBe(3);
+  expect(waits).toEqual([2_000, 4_000]);
+});
+
+// Malformed output is the model's fault, not an external condition — asking it
+// again immediately is the whole point, so nothing should be waited out.
+test("a malformed-output retry does not wait", async () => {
+  const schema = { type: "object", required: ["n"], properties: { n: { type: "number" } } };
+  let i = 0;
+  const replies = ["not json", '{"n":7}'];
+  const b = new MockBackend({ respond: () => ({ text: replies[i++] }) });
+  const waits: number[] = [];
+  const e = createEngine({
+    backend: b,
+    sleep: async (ms) => {
+      waits.push(ms);
+    },
+  });
+  const { result } = await e.run(
+    wrap(`return await agent("x", { schema: ${JSON.stringify(schema)} });`),
+  );
+
+  expect(result).toEqual({ n: 7 });
+  expect(waits).toEqual([]);
 });
 
 test("structured loop returns null after exhausting retries", async () => {

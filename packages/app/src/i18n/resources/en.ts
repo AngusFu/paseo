@@ -914,7 +914,7 @@ export const en = {
         textSizeXxxl: "Gigantic",
         commits: {
           title: "Commits",
-          countLabel: "{{count}} recent commits",
+          countLabel: "{{count}} workspace commits",
           fileDiffEmpty: "No changes to display",
           fileDiffError: "Failed to load file diff",
           loading: "Loading commits…",

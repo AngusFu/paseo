@@ -926,7 +926,7 @@ export const ru: TranslationResources = {
         textSizeXxxl: "Гигантский",
         commits: {
           title: "Коммиты",
-          countLabel: "{{count}} последних коммитов",
+          countLabel: "{{count}} коммитов рабочего пространства",
           fileDiffEmpty: "Нет изменений для отображения",
           fileDiffError: "Не удалось загрузить различия файла",
           loading: "Загрузка коммитов…",

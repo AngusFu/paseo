@@ -935,7 +935,7 @@ export const fr: TranslationResources = {
         textSizeXxxl: "Géant",
         commits: {
           title: "Commits",
-          countLabel: "{{count}} commits récents",
+          countLabel: "{{count}} commits de l’espace de travail",
           fileDiffEmpty: "Aucune modification à afficher",
           fileDiffError: "Échec du chargement du diff du fichier",
           loading: "Chargement des commits…",

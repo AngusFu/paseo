@@ -904,7 +904,7 @@ export const ar: TranslationResources = {
         textSizeXxxl: "عملاق",
         commits: {
           title: "الإيداعات",
-          countLabel: "{{count}} من الإيداعات الأخيرة",
+          countLabel: "{{count}} من إيداعات مساحة العمل",
           fileDiffEmpty: "لا توجد تغييرات لعرضها",
           fileDiffError: "تعذّر تحميل فروق الملف",
           loading: "جارٍ تحميل الإيداعات…",

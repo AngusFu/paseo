@@ -108,6 +108,7 @@ function createHarness(input: {
       get: async () => null,
     }),
     projectRegistry: createStub<SessionOptions["projectRegistry"]>({
+      subscribeToMutations: () => () => {},
       initialize: async () => {},
       existsOnDisk: async () => true,
       list: async () => Array.from(projects.values()),
@@ -140,6 +141,7 @@ function createHarness(input: {
       },
     }),
     workspaceRegistry: createStub<SessionOptions["workspaceRegistry"]>({
+      subscribeToMutations: () => () => {},
       initialize: async () => {},
       existsOnDisk: async () => true,
       list: async () => Array.from(workspaces.values()),

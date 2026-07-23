@@ -185,6 +185,7 @@ import type {
 } from "./agent/provider-launch-config.js";
 import { loadPersistedConfig, type PersistedConfig } from "./persisted-config.js";
 import { createServiceProxySubsystem, type ServiceProxySubsystem } from "./service-proxy.js";
+import { releaseWorkspaceServicePortPlan } from "./workspace-service-port-registry.js";
 import { ScriptHealthMonitor } from "./script-health-monitor.js";
 import { createScriptStatusEmitter } from "./script-status-projection.js";
 import { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
@@ -986,18 +987,13 @@ export async function createPaseoDaemon(
     workspaceGitService,
   });
   const archiveWorkspaceRecordExternal = async (workspaceId: string) => {
-    const sessions = wsServer?.listActiveSessions() ?? [];
-    if (sessions.length > 0) {
-      await Promise.all(
-        sessions.map((session) => session.archiveWorkspaceRecordForExternalMutation(workspaceId)),
-      );
-      return;
-    }
-
-    await archivePersistedWorkspaceRecord({
+    const existingWorkspace = await archivePersistedWorkspaceRecord({
       workspaceId,
       workspaceRegistry,
     });
+    if (!existingWorkspace || existingWorkspace.archivedAt) return;
+    scriptRuntimeStore.removeForWorkspace(workspaceId);
+    releaseWorkspaceServicePortPlan(workspaceId);
   };
   // external path→workspace adapter, not ownership: archive-by-path requests that
   // arrive with a worktree path and no workspaceId (old clients / CLI).

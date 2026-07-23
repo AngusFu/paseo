@@ -28,6 +28,7 @@ import {
   type ProviderDefinition,
 } from "./provider-registry.js";
 import { BUILTIN_PROVIDER_IDS } from "@getpaseo/protocol/provider-manifest";
+import { shouldRetryProviderError } from "./provider-snapshot-retry.js";
 import { applyMutableProviderConfigToOverrides } from "../daemon-config-store.js";
 import {
   formatProviderDiagnostic,
@@ -655,6 +656,18 @@ export class ProviderSnapshotManager {
       this.resetSnapshotToLoading(cwd, missingProviders);
     }
 
+    // A provider that failed its probe is re-opened once the failure is old
+    // enough. Without this a transient failure — the agent CLI still starting
+    // up when the daemon first looked — was answered from cache for the life of
+    // the daemon, because only `loading` entries are ever refreshed.
+    const now = Date.now();
+    const staleErrors = providersToInspect.filter((provider) =>
+      shouldRetryProviderError(snapshot.get(provider), now),
+    );
+    if (staleErrors.length > 0) {
+      this.resetSnapshotToLoading(cwd, staleErrors);
+    }
+
     return providersToInspect.filter((provider) => snapshot.get(provider)?.status === "loading");
   }
 
@@ -813,6 +826,9 @@ export class ProviderSnapshotManager {
         status: "error",
         enabled: true,
         error: toErrorMessage(error),
+        // Stamped so the failure can age out and be probed again; see
+        // provider-snapshot-retry.ts.
+        fetchedAt: new Date().toISOString(),
       });
       if (emitted) {
         this.logger.warn(

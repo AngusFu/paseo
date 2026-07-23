@@ -34,6 +34,7 @@ import {
   writePaseoWorktreeMetadata,
   writePaseoWorktreeRuntimeMetadata,
 } from "./worktree-metadata.js";
+import { resolveRepositoryDefaultBranch } from "./repository-default-branch.js";
 import { runGitCommand } from "./run-git-command.js";
 import { spawnProcess } from "./spawn.js";
 import { resolvePaseoHome } from "../server/paseo-home.js";
@@ -1325,6 +1326,20 @@ interface WorktreeSourcePlan {
   };
 }
 
+/**
+ * The base to record for a worktree opened on a branch that already existed.
+ *
+ * Not the branch itself: baseRefName is what the "committed" diff compares HEAD
+ * against, and `branch...branch` is empty by definition — a worktree opened on
+ * an existing branch showed no changes however many commits it carried. The
+ * branch was not created here, so its base is the repository's default branch;
+ * falling back to the branch keeps the old (empty-diff) behaviour only when the
+ * repository has no discoverable default.
+ */
+async function resolveCheckedOutBranchBaseRef(cwd: string, branchName: string): Promise<string> {
+  return (await resolveRepositoryDefaultBranch(cwd)) ?? branchName;
+}
+
 async function resolveWorktreeSourcePlan({
   cwd,
   source,
@@ -1365,7 +1380,7 @@ async function resolveWorktreeSourcePlan({
 
       return {
         branchName: source.branchName,
-        metadataBaseRefName: source.branchName,
+        metadataBaseRefName: await resolveCheckedOutBranchBaseRef(cwd, source.branchName),
         addArguments: [source.branchName],
       };
     }

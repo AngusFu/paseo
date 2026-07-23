@@ -267,9 +267,30 @@ describe.skipIf(isPlatform("win32"))("worktree POSIX-only", () => {
         .trim();
       expect(currentBranch).toBe("dev");
 
+      // The base is the repo's default branch, NOT "dev" itself: baseRefName is
+      // what the committed diff compares HEAD against, and `dev...dev` is empty
+      // however many commits the branch carries.
       const metadataPath = getPaseoWorktreeMetadataPath(result.worktreePath);
       const metadata = JSON.parse(readFileSync(metadataPath, "utf8"));
-      expect(metadata).toMatchObject({ version: 1, baseRefName: "dev" });
+      expect(metadata).toMatchObject({ version: 1, baseRefName: "main" });
+    });
+
+    it("bases a checked-out branch on the default branch so its commits show as a diff", async () => {
+      execFileSync("git", ["branch", "feature/thing"], { cwd: repoDir });
+
+      const result = await createLegacyWorktreeForTest({
+        cwd: repoDir,
+        worktreeSlug: "feature-thing",
+        source: { kind: "checkout-branch", branchName: "feature/thing" },
+        runSetup: true,
+        paseoHome,
+      });
+
+      const metadata = JSON.parse(
+        readFileSync(getPaseoWorktreeMetadataPath(result.worktreePath), "utf8"),
+      );
+      expect(metadata.baseRefName).not.toBe("feature/thing");
+      expect(metadata.baseRefName).toBe("main");
     });
 
     it("checks out an existing local branch whose name contains uppercase letters and dots", async () => {

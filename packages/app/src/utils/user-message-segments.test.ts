@@ -61,6 +61,43 @@ describe("segmentUserMessage", () => {
     ]);
   });
 
+  it("stops a URL at CJK text that follows it without a space", () => {
+    expect(pairs(segmentUserMessage("见 https://example.com（注释）继续"))).toEqual([
+      ["plain", "见 "],
+      ["url", "https://example.com"],
+      ["plain", "（注释）继续"],
+    ]);
+  });
+
+  it("strips full-width punctuation trailing a URL", () => {
+    expect(pairs(segmentUserMessage("打开 https://example.com/a。"))).toEqual([
+      ["plain", "打开 "],
+      ["url", "https://example.com/a"],
+      ["plain", "。"],
+    ]);
+  });
+
+  it("keeps a URL whole when CJK sits before it, not after", () => {
+    expect(pairs(segmentUserMessage("工单：https://mdpi.atlassian.net/browse/SCIF-5173"))).toEqual([
+      ["plain", "工单："],
+      ["url", "https://mdpi.atlassian.net/browse/SCIF-5173"],
+    ]);
+  });
+
+  it("keeps a long query string with ASCII punctuation intact", () => {
+    const url = "https://media.example.net/?type=file&id=9c26aa2e-f2a6&width=1781&url=null";
+    expect(pairs(segmentUserMessage(`![](blob:${url})`))).toEqual([
+      ["plain", "![](blob:"],
+      ["url", url],
+      ["plain", ")"],
+    ]);
+  });
+
+  it("is lossless around CJK", () => {
+    const input = "见 https://example.com（注释）继续，另见 https://example.org/a。";
+    expect(reassemble(segmentUserMessage(input))).toBe(input);
+  });
+
   it("returns a single plain segment for ordinary text", () => {
     expect(pairs(segmentUserMessage("just a normal message"))).toEqual([
       ["plain", "just a normal message"],

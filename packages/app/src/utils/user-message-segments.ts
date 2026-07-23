@@ -14,9 +14,19 @@ export interface UserMessageSegment {
 // Includes ":" so plugin-namespaced commands like "/claude-hud:configure" are
 // captured whole rather than stopping at the colon.
 const LEADING_COMMAND = /^\/[A-Za-z0-9][A-Za-z0-9_:-]*/;
-const URL_PATTERN = /https?:\/\/[^\s]+/g;
-// Punctuation that commonly trails a URL in prose but is not part of it.
-const TRAILING_PUNCTUATION = /[.,;:!?)\]}'"]+$/;
+// A URL runs to the next character that cannot be in one. Stopping only at
+// whitespace swallowed the prose after it whenever a link was followed
+// immediately by CJK text — `https://example.com（注释）` linked the note too.
+// The excluded ranges are CJK ideographs, kana, Hangul, CJK punctuation,
+// full-width forms, and typographic quotes and dashes; a URL carrying any of
+// those would be percent-encoded in practice.
+const NOT_IN_URL =
+  "\\s\\u2013\\u2014\\u2018-\\u201f\\u3000-\\u303f\\u3040-\\u30ff\\u4e00-\\u9fff\\uac00-\\ud7af\\uff00-\\uffef";
+const URL_PATTERN = new RegExp(`https?://[^${NOT_IN_URL}]+`, "g");
+// Punctuation that commonly trails a URL in prose but is not part of it. The
+// full-width halves are here for the same reason as the ranges above: a link
+// pasted into a Chinese sentence is usually followed by 。or ）.
+const TRAILING_PUNCTUATION = /[.,;:!?)\]}'"，。；：！？）】》」』、]+$/;
 
 // Split a run of plain text into url + plain segments.
 function splitUrls(text: string): UserMessageSegment[] {

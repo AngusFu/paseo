@@ -962,6 +962,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
             onOpenChange={handleThinkingOpenChange}
             anchorRef={thinkingAnchorRef}
             desktopPlacement={desktopPlacement}
+            desktopMinWidth={200}
             renderOption={renderThinkingOption}
           />
         </>

@@ -9,6 +9,7 @@ import {
   extractWorkflowResultError,
   matchesKanbanWorkflowRule,
   mergeWorkflowError,
+  resolveDispatchWorkspaceTitle,
   resolveWorkflowWorkspaceTitle,
   WorkflowService,
 } from "./service.js";
@@ -245,6 +246,35 @@ describe("WorkflowService builtins and authoring", () => {
     }
   });
 
+  it("names a title-less dispatch after the prompt, ticket first", () => {
+    const base = { resumeFrom: null, definitionName: "scif-fix" } as const;
+    expect(
+      resolveDispatchWorkspaceTitle({
+        ...base,
+        requestedTitle: undefined,
+        args: { task: "Fix https://mdpi.atlassian.net/browse/SCIF-5129 please" },
+      }),
+    ).toBe("⚙️ SCIF-5129");
+    expect(
+      resolveDispatchWorkspaceTitle({
+        ...base,
+        requestedTitle: undefined,
+        args: { task: "Rework the queue" },
+      }),
+    ).toBe("⚙️ Rework the queue");
+    // An explicit title still wins, and an empty dispatch keeps the definition name.
+    expect(
+      resolveDispatchWorkspaceTitle({
+        ...base,
+        requestedTitle: "SCIF-5041 RCA",
+        args: { task: "https://mdpi.atlassian.net/browse/SCIF-5129" },
+      }),
+    ).toBe("⚙️ SCIF-5041 RCA");
+    expect(
+      resolveDispatchWorkspaceTitle({ ...base, requestedTitle: undefined, args: undefined }),
+    ).toBe("⚙️ scif-fix");
+  });
+
   it("reuses a targeted workspace instead of minting one, and takes its cwd", async () => {
     const dir = await mkdtemp(join(tmpdir(), "paseo-workflow-"));
     dirs.push(dir);
@@ -341,7 +371,8 @@ describe("WorkflowService builtins and authoring", () => {
           expect(latest.workspaceId).toBe("wks_workflow_shared");
           expect(ensureCalls).toHaveLength(1);
           expect(ensureCalls[0]?.cwd).toBe(dir);
-          expect(ensureCalls[0]?.title).toContain("shared-ws");
+          // No dispatch title: the prompt names the workspace, not the definition.
+          expect(ensureCalls[0]?.title).toContain("noop");
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, 20));

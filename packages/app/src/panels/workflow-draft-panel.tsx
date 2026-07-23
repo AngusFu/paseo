@@ -23,7 +23,6 @@ import { useTranslation } from "react-i18next";
 import invariant from "tiny-invariant";
 import { StyleSheet } from "react-native-unistyles";
 import type { WorkflowDefinition } from "@getpaseo/protocol/workflow/types";
-import { formatWorkflowWorkspaceTitle } from "@getpaseo/protocol/workflow/workspace-title";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -168,7 +167,8 @@ function WorkflowDraftPanel(): ReactElement {
       const run = await mutations.dispatch({
         definitionId: definition.id,
         cwd: cwd.trim(),
-        workspaceTitle: formatWorkflowWorkspaceTitle(definition.name, definition.name),
+        // No title: the daemon names the workspace after the prompt (a linked
+        // Jira ticket if there is one) instead of the definition name.
         args: form.buildArgs(),
       });
       // Replace this draft tab in place — the run's own workspace opens its own

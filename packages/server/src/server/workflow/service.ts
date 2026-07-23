@@ -29,6 +29,7 @@ import {
   WORKFLOW_RUN_ID_LABEL,
   WORKFLOW_RUN_WORKSPACE_LABEL,
 } from "@getpaseo/protocol/agent-labels";
+import { workflowWorkspaceNameFromPrompt } from "@getpaseo/protocol/workflow/workspace-name-from-prompt";
 import { formatWorkflowWorkspaceTitle } from "@getpaseo/protocol/workflow/workspace-title";
 import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 import type { Logger } from "pino";
@@ -181,6 +182,34 @@ function readArgFeatureValues(args: Record<string, unknown>): Record<string, unk
   return Object.keys(featureValues).length > 0 ? featureValues : undefined;
 }
 
+/** The prompt text a dispatch carries, under whichever key the caller used. */
+function readWorkflowPrompt(args: Record<string, unknown>): string | undefined {
+  return (
+    readArgString(args, "task") ?? readArgString(args, "prompt") ?? readArgString(args, "title")
+  );
+}
+
+/**
+ * Name for the workspace a dispatch will mint: the caller's title, else the one
+ * the resumed run used, else the prompt (a linked Jira ticket when there is one)
+ * — the definition name is last because every run of a workflow shares it.
+ */
+export function resolveDispatchWorkspaceTitle(input: {
+  requestedTitle: string | undefined;
+  args: Record<string, unknown> | undefined;
+  resumeFrom: WorkflowRun | null;
+  definitionName: string;
+}): string {
+  const resumedTitle = input.resumeFrom
+    ? readArgString(input.resumeFrom.args, "workspaceTitle")
+    : undefined;
+  const promptTitle = input.args
+    ? workflowWorkspaceNameFromPrompt(readWorkflowPrompt(input.args))
+    : null;
+  const body = input.requestedTitle?.trim() || resumedTitle || promptTitle || input.definitionName;
+  return formatWorkflowWorkspaceTitle(body, input.definitionName);
+}
+
 export function resolveWorkflowWorkspaceTitle(
   definition: WorkflowDefinition,
   run: WorkflowRun,
@@ -209,10 +238,7 @@ export function buildWorkflowEngineArgs(input: {
     runtimeDir: input.workspacePath,
     key: input.runId,
   };
-  const task =
-    readArgString(merged, "task") ??
-    readArgString(merged, "prompt") ??
-    readArgString(merged, "title");
+  const task = readWorkflowPrompt(merged);
 
   // Keys that are either the task text, already consumed as backend defaults,
   // or host bookkeeping — not a structured script payload on their own.
@@ -652,14 +678,15 @@ export class WorkflowService {
         // Prior run never reached an agent call — nothing to replay.
       }
     }
-    const workspaceTitle = formatWorkflowWorkspaceTitle(
-      input.workspaceTitle?.trim() ||
-        (resumeFrom ? (readArgString(resumeFrom.args, "workspaceTitle") ?? "") : "") ||
-        definition.name,
-      definition.name,
-    );
+    const dispatchArgs = input.args === undefined && resumeFrom ? resumeFrom.args : input.args;
+    const workspaceTitle = resolveDispatchWorkspaceTitle({
+      requestedTitle: input.workspaceTitle,
+      args: dispatchArgs,
+      resumeFrom,
+      definitionName: definition.name,
+    });
     const args: Record<string, unknown> = {
-      ...(input.args === undefined && resumeFrom ? resumeFrom.args : input.args),
+      ...dispatchArgs,
       workspaceTitle,
     };
     const run: WorkflowRun = {

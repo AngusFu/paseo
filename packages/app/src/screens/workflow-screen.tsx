@@ -63,6 +63,7 @@ import {
 import { summarizeWorkflowRun } from "@/screens/workflow-run-summary";
 import { buildScheduleProjectTargets } from "@/schedules/schedule-project-targets";
 import type { DispatchWorkflowRunInput } from "@getpaseo/protocol/workflow/types";
+import { workflowWorkspaceNameFromPrompt } from "@getpaseo/protocol/workflow/workspace-name-from-prompt";
 import {
   WORKFLOW_WORKSPACE_EMOJI_PREFIX,
   formatWorkflowWorkspaceTitle,
@@ -821,7 +822,8 @@ function WorkflowDispatchSheet({
 }): ReactElement {
   const { t } = useTranslation();
   const isCompact = useIsCompactFormFactor();
-  const [workspaceTitleBody, setWorkspaceTitleBody] = useState(definition.name);
+  // null until the user types their own name — see `workspaceTitleBody` below.
+  const [workspaceTitleEdit, setWorkspaceTitleEdit] = useState<string | null>(null);
   const [pickingDirectory, setPickingDirectory] = useState(false);
   // Dispatching into an existing workspace needs a daemon that understands the
   // workspaceId field; without it the picker would silently mint a new one.
@@ -861,6 +863,10 @@ function WorkflowDispatchSheet({
     features: draftFeatures,
     directoryShortcuts,
   } = form;
+  // Left alone, the workspace is named after the prompt — the linked Jira ticket
+  // when there is one — which is what the daemon derives for title-less dispatches.
+  const workspaceTitleBody =
+    workspaceTitleEdit ?? workflowWorkspaceNameFromPrompt(task) ?? definition.name;
   // AdaptiveTextInput is uncontrolled (seeded from initialValue); bump the key
   // to remount it whenever the optimize button replaces the draft externally.
   const [taskResetKey, setTaskResetKey] = useState(0);
@@ -1006,7 +1012,7 @@ function WorkflowDispatchSheet({
                 <WorkflowWorkspaceTitleField
                   value={workspaceTitleBody}
                   definitionName={definition.name}
-                  onChangeText={setWorkspaceTitleBody}
+                  onChangeText={setWorkspaceTitleEdit}
                 />
               </Field>
             </>

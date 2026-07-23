@@ -125,6 +125,24 @@ test("structured loop retries on bad JSON then succeeds", async () => {
   expect(stats.structuredRetries).toBe(2);
 });
 
+// A provider that failed its probe made every workflow run log three retries
+// inside 7ms — the backend refused before the agent ran, so re-prompting could
+// not change anything and the "retries" were pure noise in the log.
+test("structured loop does not retry a backend error", async () => {
+  const schema = { type: "object", required: ["n"], properties: { n: { type: "number" } } };
+  const b = new MockBackend({
+    respond: () => ({ error: "Internal error: Failed to initialize session services" }),
+  });
+  const e = createEngine({ backend: b });
+  const { result, stats } = await e.run(
+    wrap(`return await agent("x", { schema: ${JSON.stringify(schema)}, maxRetries: 2 });`),
+  );
+
+  expect(result).toBe(null);
+  expect(b.calls.length).toBe(1);
+  expect(stats.structuredRetries).toBe(0);
+});
+
 test("structured loop returns null after exhausting retries", async () => {
   const schema = { type: "object", required: ["n"], properties: { n: { type: "number" } } };
   const b = new MockBackend({ respond: () => ({ text: "garbage" }) });

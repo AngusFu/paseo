@@ -306,10 +306,15 @@ export function createEngine(cfg: EngineConfig): Engine {
       // flat estimate for an attempt the backend gave no usage for.
       spent += r?.usage?.outputTokens || DEFAULT_EST_TOKENS;
       if (r?.error) {
-        // Prefer the host/backend error (e.g. provider disabled) over a vague
-        // "not valid JSON" retry suffix — empty text from a failed create.
+        // The agent never produced output — the backend refused before it ran
+        // (provider disabled, provider not available, create failed). This
+        // loop's retries append instructions telling the model to fix the JSON
+        // it emitted, which cannot fix a call that never happened, and the loop
+        // has no backoff: the extra attempts land within milliseconds against
+        // the same cached provider state. Stop, and report the backend's reason
+        // rather than a retry count that means nothing.
         lastFailure = r.error;
-        suffix = structuredRetrySuffix(r.error);
+        break;
       } else {
         const text = r?.text ?? "";
         const parsed = tryParseJson(text);

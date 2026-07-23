@@ -451,6 +451,7 @@ export type ManagedAgent =
 
 export interface AgentMetricsSnapshot {
   total: number;
+  subscriptionCount: number;
   byLifecycle: Record<string, number>;
   withActiveForegroundTurn: number;
   timelineStats: {
@@ -859,6 +860,7 @@ export class AgentManager {
 
     return {
       total: this.agents.size,
+      subscriptionCount: this.subscribers.size,
       byLifecycle,
       withActiveForegroundTurn,
       timelineStats: {

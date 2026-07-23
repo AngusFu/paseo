@@ -9,6 +9,7 @@ import type {
   CheckoutCommitFileDiffRequest,
   CheckoutRefreshRequest,
   CheckoutRenameBranchRequest,
+  CheckoutDiffContextRequest,
   CheckoutSetBaseRefRequest,
   CheckoutStatusRequest,
   SessionInboundMessage,
@@ -52,6 +53,7 @@ import {
   listCheckoutCommits,
   getCommitFileDiff,
 } from "../../../utils/checkout-git.js";
+import { readDiffContextLines } from "../../../utils/diff-context.js";
 import { execCommand } from "../../../utils/spawn.js";
 import { expandTilde } from "../../../utils/path.js";
 import { updatePaseoWorktreeBaseRef } from "../../../utils/worktree-metadata.js";
@@ -603,6 +605,34 @@ export class CheckoutSession {
           cwd,
           success: false,
           currentBranch: null,
+          error: toCheckoutError(error),
+          requestId,
+        },
+      });
+    }
+  }
+
+  async handleCheckoutDiffContextRequest(msg: CheckoutDiffContextRequest): Promise<void> {
+    const { cwd, path, compare, startLine, endLine, requestId } = msg;
+    try {
+      const slice = await readDiffContextLines({ cwd, path, compare, startLine, endLine });
+      if (!slice) {
+        throw new Error(`Cannot read ${path} for context`);
+      }
+      this.host.emit({
+        type: "checkout.diff.context.response",
+        payload: { cwd, path, ...slice, error: null, requestId },
+      });
+    } catch (error) {
+      this.host.emit({
+        type: "checkout.diff.context.response",
+        payload: {
+          cwd,
+          path,
+          startLine: 0,
+          lines: [],
+          reachedStart: false,
+          reachedEnd: false,
           error: toCheckoutError(error),
           requestId,
         },

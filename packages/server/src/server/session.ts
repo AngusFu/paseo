@@ -1845,6 +1845,8 @@ export class Session {
         return this.checkoutSession.handleCheckoutRenameBranchRequest(msg);
       case "checkout.baseRef.set.request":
         return this.checkoutSession.handleCheckoutSetBaseRefRequest(msg);
+      case "checkout.diff.context.request":
+        return this.checkoutSession.handleCheckoutDiffContextRequest(msg);
       case "checkout_commit_request":
         return this.checkoutSession.handleCheckoutCommitRequest(msg);
       case "checkout_merge_request":

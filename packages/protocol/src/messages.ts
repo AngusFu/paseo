@@ -1965,6 +1965,21 @@ export const CheckoutRenameBranchRequestSchema = z.object({
   requestId: z.string(),
 });
 
+export const CheckoutDiffContextRequestSchema = z.object({
+  type: z.literal("checkout.diff.context.request"),
+  cwd: z.string(),
+  // Path as it appears on the new side of the diff.
+  path: z.string(),
+  // Which side of the comparison to read the context from. The diff's new side
+  // is the working tree for an uncommitted diff and a revision otherwise, so the
+  // server resolves it from `compare` rather than the client guessing.
+  compare: CheckoutDiffCompareSchema,
+  // Inclusive 1-based line range on the new side.
+  startLine: z.number().int().min(1),
+  endLine: z.number().int().min(1),
+  requestId: z.string(),
+});
+
 export const CheckoutSetBaseRefRequestSchema = z.object({
   type: z.literal("checkout.baseRef.set.request"),
   cwd: z.string(),
@@ -2635,6 +2650,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   CheckoutSwitchBranchRequestSchema,
   CheckoutRenameBranchRequestSchema,
   CheckoutSetBaseRefRequestSchema,
+  CheckoutDiffContextRequestSchema,
   StashSaveRequestSchema,
   StashPopRequestSchema,
   StashListRequestSchema,
@@ -2998,6 +3014,8 @@ export const ServerInfoStatusPayloadSchema = z
         workflowRunResume: z.boolean().optional(),
         // COMPAT(workflowRunPause): added in v0.1.113, drop the gate when floor >= v0.1.113.
         workflowRunPause: z.boolean().optional(),
+        // COMPAT(diffContextExpand): added in v0.1.106, drop the gate when floor >= v0.1.106.
+        diffContextExpand: z.boolean().optional(),
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
         localLlm: z.boolean().optional(),
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
@@ -4654,6 +4672,24 @@ export const CheckoutRenameBranchResponseSchema = z.object({
   }),
 });
 
+export const CheckoutDiffContextResponseSchema = z.object({
+  type: z.literal("checkout.diff.context.response"),
+  payload: z.object({
+    requestId: z.string(),
+    cwd: z.string(),
+    path: z.string(),
+    // Echoes the range actually returned, which is clamped to the file.
+    startLine: z.number().int().min(0),
+    // The requested lines, in order, without trailing newlines.
+    lines: z.array(z.string()),
+    // True when `startLine` is 1 / the range reached the last line, so the UI can
+    // retire its expand affordance instead of offering a no-op.
+    reachedStart: z.boolean(),
+    reachedEnd: z.boolean(),
+    error: CheckoutErrorSchema.nullable(),
+  }),
+});
+
 export const CheckoutSetBaseRefResponseSchema = z.object({
   type: z.literal("checkout.baseRef.set.response"),
   payload: z.object({
@@ -5361,6 +5397,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   CheckoutSwitchBranchResponseSchema,
   CheckoutRenameBranchResponseSchema,
   CheckoutSetBaseRefResponseSchema,
+  CheckoutDiffContextResponseSchema,
   StashSaveResponseSchema,
   StashPopResponseSchema,
   StashListResponseSchema,
@@ -5869,6 +5906,8 @@ export type CheckoutSwitchBranchResponse = z.infer<typeof CheckoutSwitchBranchRe
 export type CheckoutRenameBranchRequest = z.infer<typeof CheckoutRenameBranchRequestSchema>;
 export type CheckoutRenameBranchResponse = z.infer<typeof CheckoutRenameBranchResponseSchema>;
 export type CheckoutSetBaseRefRequest = z.infer<typeof CheckoutSetBaseRefRequestSchema>;
+export type CheckoutDiffContextRequest = z.infer<typeof CheckoutDiffContextRequestSchema>;
+export type CheckoutDiffContextResponse = z.infer<typeof CheckoutDiffContextResponseSchema>;
 export type CheckoutSetBaseRefResponse = z.infer<typeof CheckoutSetBaseRefResponseSchema>;
 export type StashSaveRequest = z.infer<typeof StashSaveRequestSchema>;
 export type StashSaveResponse = z.infer<typeof StashSaveResponseSchema>;

@@ -1395,6 +1395,8 @@ export class VoiceAssistantWebSocketServer {
         workflowRunResume: true,
         workflowRunPause: true,
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
+        // COMPAT(diffContextExpand): added in v0.1.106, drop the gate when floor >= v0.1.106.
+        diffContextExpand: true,
         localLlm: true,
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: true,

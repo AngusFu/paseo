@@ -33,6 +33,7 @@ import {
   AgentResumedStatusPayloadSchema,
   CheckoutRenameBranchResponseSchema,
   CheckoutSetBaseRefResponseSchema,
+  CheckoutDiffContextResponseSchema,
   parseServerInfoStatusPayload,
   RenameTerminalResponseSchema,
   RestartRequestedStatusPayloadSchema,
@@ -420,6 +421,7 @@ type PullRequestTimelinePayload = PullRequestTimelineResponse["payload"];
 type CheckoutSwitchBranchPayload = CheckoutSwitchBranchResponse["payload"];
 export type RenameBranchResult = z.infer<typeof CheckoutRenameBranchResponseSchema>["payload"];
 export type SetBaseRefResult = z.infer<typeof CheckoutSetBaseRefResponseSchema>["payload"];
+export type DiffContextResult = z.infer<typeof CheckoutDiffContextResponseSchema>["payload"];
 type StashSavePayload = StashSaveResponse["payload"];
 type StashPopPayload = StashPopResponse["payload"];
 type StashListPayload = StashListResponse["payload"];
@@ -1083,6 +1085,15 @@ export interface RenameBranchInput {
 export interface SetBaseRefInput {
   cwd: string;
   baseRef: string;
+  requestId?: string;
+}
+export interface DiffContextInput {
+  cwd: string;
+  path: string;
+  compare: CheckoutDiffCompare;
+  /** Inclusive 1-based range on the new side of the diff. */
+  startLine: number;
+  endLine: number;
   requestId?: string;
 }
 export interface RenameTerminalInput {
@@ -4143,6 +4154,22 @@ export class DaemonClient {
         baseRef: input.baseRef,
       },
       responseType: "checkout.baseRef.set.response",
+    });
+  }
+
+  /** Lines around a hunk, for expanding the context shown in a diff. */
+  async readDiffContext(input: DiffContextInput): Promise<DiffContextResult> {
+    return this.sendCorrelatedSessionRequest({
+      requestId: input.requestId,
+      message: {
+        type: "checkout.diff.context.request",
+        cwd: input.cwd,
+        path: input.path,
+        compare: input.compare,
+        startLine: input.startLine,
+        endLine: input.endLine,
+      },
+      responseType: "checkout.diff.context.response",
     });
   }
 

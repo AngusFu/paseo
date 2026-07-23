@@ -2690,7 +2690,7 @@ const styles = StyleSheet.create((theme) => ({
     opacity: 0,
   },
   projectKebabButtonHovered: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surfaceSidebarHover,
   },
   projectTrailingControlSlot: {
     width: 24,
@@ -2829,13 +2829,13 @@ const styles = StyleSheet.create((theme) => ({
   pinButton: {
     width: 20,
     height: 20,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: theme.borderRadius.md,
     flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",
   },
   pinButtonHovered: {
-    backgroundColor: theme.colors.surface3,
+    backgroundColor: theme.colors.surfaceSidebarHover,
   },
   statusDotNeedsInput: {
     backgroundColor: theme.colors.palette.amber[500],

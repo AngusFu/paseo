@@ -11,6 +11,8 @@ export interface ScheduleProjectTarget {
   projectName: string;
   cwd: string;
   isGit: boolean;
+  /** Whether this project actually lives at `cwd` — see ProjectHostEntry. */
+  ownsRepoRoot: boolean;
 }
 
 export function buildProjectOptionId(serverId: string, projectKey: string): string {
@@ -40,6 +42,7 @@ export function buildScheduleProjectTargets(
         projectName: project.projectName,
         cwd,
         isGit: Boolean(host.gitRuntime),
+        ownsRepoRoot: host.ownsRepoRoot,
       });
     }
   }
@@ -50,13 +53,33 @@ function projectNameKey(serverId: string, cwd: string): string {
   return `${serverId}:${cwd.trim()}`;
 }
 
-/** Map (serverId, cwd) -> project name for naming a schedule's stored cwd. */
+/**
+ * Map (serverId, cwd) -> project name for naming a schedule's stored cwd.
+ *
+ * More than one project can claim a path: a project made of Paseo worktrees
+ * reports the repo root it was branched from, which is the root another project
+ * actually sits at. A schedule stores only the cwd, so the name has to be
+ * chosen here — and it goes to the project that is really there. Letting the
+ * last one win labelled a schedule with the name of a worktree project that
+ * merely pointed at the same root.
+ */
 export function buildProjectNameByCwd(
   targets: readonly ScheduleProjectTarget[],
 ): Map<string, string> {
   const byCwd = new Map<string, string>();
+  const claimedByOwner = new Set<string>();
   for (const target of targets) {
-    byCwd.set(projectNameKey(target.serverId, target.cwd), target.projectName);
+    const key = projectNameKey(target.serverId, target.cwd);
+    if (claimedByOwner.has(key)) {
+      continue;
+    }
+    if (target.ownsRepoRoot) {
+      claimedByOwner.add(key);
+    } else if (byCwd.has(key)) {
+      // Keep the first borrower until an owner turns up.
+      continue;
+    }
+    byCwd.set(key, target.projectName);
   }
   return byCwd;
 }

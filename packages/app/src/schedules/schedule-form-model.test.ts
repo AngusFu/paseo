@@ -60,6 +60,7 @@ function target(input: {
     serverName: input.serverId === "host-a" ? "Host A" : "Host B",
     projectKey: input.projectKey,
     projectName: input.projectName,
+    ownsRepoRoot: true,
     cwd: input.cwd,
     isGit: input.isGit ?? true,
   };

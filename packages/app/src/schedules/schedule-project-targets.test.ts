@@ -24,6 +24,7 @@ function makeHost(overrides: Partial<ProjectSummary["hosts"][number]>) {
     serverName: "Host 1",
     isOnline: true,
     repoRoot: "/tmp/project",
+    ownsRepoRoot: true,
     workspaceCount: 0,
     workspaces: [],
     ...overrides,
@@ -69,5 +70,50 @@ describe("describeScheduleCwd", () => {
     expect(
       describeScheduleCwd({ serverId: "host-1", cwd: "/Users/sam/api", projectNameByCwd: byCwd }),
     ).toBe("~/api");
+  });
+
+  it("names a shared root after the project that lives there, not a worktree project", () => {
+    // A project made of Paseo worktrees reports the repo root it branched from,
+    // so it claims the same path as the checkout that is actually there. The
+    // schedule stores only that path, and used to be labelled with whichever
+    // project was listed last — the worktree one, since projects sort by name.
+    const byCwd = buildProjectNameByCwd(
+      buildScheduleProjectTargets([
+        makeProject({
+          projectKey: "sciforum",
+          projectName: "dev/sciforum-frontend-v2",
+          hosts: [makeHost({ repoRoot: "/repos/sciforum", ownsRepoRoot: true })],
+        }),
+        makeProject({
+          projectKey: "sso-worktrees",
+          projectName: "feat__SCIF-3507_full_sso_migration",
+          hosts: [makeHost({ repoRoot: "/repos/sciforum", ownsRepoRoot: false })],
+        }),
+      ]),
+    );
+
+    expect(
+      describeScheduleCwd({ serverId: "host-1", cwd: "/repos/sciforum", projectNameByCwd: byCwd }),
+    ).toBe("dev/sciforum-frontend-v2");
+  });
+
+  it("still names a root claimed only by worktree projects", () => {
+    const byCwd = buildProjectNameByCwd(
+      buildScheduleProjectTargets([
+        makeProject({
+          projectName: "first-worktree",
+          hosts: [makeHost({ repoRoot: "/repos/sciforum", ownsRepoRoot: false })],
+        }),
+        makeProject({
+          projectKey: "other",
+          projectName: "second-worktree",
+          hosts: [makeHost({ repoRoot: "/repos/sciforum", ownsRepoRoot: false })],
+        }),
+      ]),
+    );
+
+    expect(
+      describeScheduleCwd({ serverId: "host-1", cwd: "/repos/sciforum", projectNameByCwd: byCwd }),
+    ).toBe("first-worktree");
   });
 });

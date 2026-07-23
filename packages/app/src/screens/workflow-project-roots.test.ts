@@ -11,6 +11,7 @@ function target(projectName: string, cwd: string): ScheduleProjectTarget {
     projectName,
     cwd,
     isGit: true,
+    ownsRepoRoot: true,
   };
 }
 

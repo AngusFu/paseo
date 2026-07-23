@@ -17,6 +17,14 @@ export interface ProjectHostEntry {
   serverName: string;
   isOnline: boolean;
   repoRoot: string;
+  /**
+   * Whether this project has a checkout living at `repoRoot`.
+   *
+   * A project made of Paseo worktrees reports its *main* repo root here, which
+   * is the root of the project it was branched from — so two projects can name
+   * the same path, and only one of them is actually there.
+   */
+  ownsRepoRoot: boolean;
   workspaceCount: number;
   workspaces: WorkspaceSummary[];
   gitRuntime?: WorkspaceDescriptor["gitRuntime"];
@@ -132,14 +140,15 @@ function toWorkspaceSummary(workspace: WorkspaceDescriptor): WorkspaceSummary {
 
 function toHostEntry(group: HostGroup): ProjectHostEntry {
   const repoRoot = resolveHostRepoRoot(group);
-  const canonical =
-    group.workspaces.find((workspace) => workspace.projectRootPath === repoRoot) ??
-    group.workspaces[0];
+  const rootWorkspace =
+    group.workspaces.find((workspace) => workspace.projectRootPath === repoRoot) ?? null;
+  const canonical = rootWorkspace ?? group.workspaces[0];
   return {
     serverId: group.serverId,
     serverName: group.serverName,
     isOnline: group.isOnline,
     repoRoot,
+    ownsRepoRoot: rootWorkspace !== null,
     workspaceCount: group.workspaces.length,
     workspaces: group.workspaces.map(toWorkspaceSummary),
     gitRuntime: canonical?.gitRuntime,

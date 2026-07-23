@@ -2326,12 +2326,17 @@ export const ja: TranslationResources = {
     },
   },
   assistant: {
+    clear: "クリア",
+    kind: {
+      paseo: "Paseo",
+      polish: "英文を推敲",
+      free: "フリーチャット",
+    },
     title: "アシスタント",
     unsupported: "アシスタントを使用するにはホストを更新してください。",
-    empty: "デバイス上のモデルとチャットできます。スケジュールやカンバンカードも作成できます。",
+    empty: "Paseo について質問したり、スケジュールやカンバンカードを作成させたりできます。",
     inputPlaceholder: "ローカルアシスタントにメッセージ…",
     send: "送信",
-    newChat: "新しいチャット",
     model: {
       required: "チャットを始めるにはローカル AI モデル（約 7 GB）をダウンロードしてください。",
       download: "モデルをダウンロード",

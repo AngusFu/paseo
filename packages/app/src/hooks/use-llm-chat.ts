@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  LlmAssistantKind,
   LlmChatMessage,
-  LlmChatSummary,
   LlmChatToolLink,
 } from "@getpaseo/protocol/llm/chat-rpc-schemas";
 import { useLocalLlmModel, type UseLocalLlmModelResult } from "@/hooks/use-local-llm-model";
 import { useHostFeature } from "@/runtime/host-features";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
+
+const EMPTY_MESSAGES: LlmChatMessage[] = [];
 
 export interface LlmChatToolEvent {
   name: string;
@@ -28,42 +30,52 @@ export interface UseLlmChatResult {
   supported: boolean;
   model: UseLocalLlmModelResult["model"];
   startDownload: () => void;
-  chats: LlmChatSummary[];
-  activeChatId: string | null;
+  assistant: LlmAssistantKind;
+  selectAssistant: (assistant: LlmAssistantKind) => void;
   messages: LlmChatMessage[];
-  isLoadingChat: boolean;
   isSending: boolean;
   // Accumulated streamed reply for the in-flight send; null when idle.
   streamingText: string | null;
   toolEvents: LlmChatToolEvent[];
   pendingProposal: LlmChatPendingProposal | null;
   error: string | null;
-  selectChat: (chatId: string | null) => void;
   sendMessage: (text: string) => Promise<void>;
   respondToProposal: (approve: boolean) => void;
   cancel: () => void;
-  deleteChat: (chatId: string) => Promise<void>;
+  // Drops the current assistant's conversation, on screen and on the daemon.
+  clearConversation: () => void;
 }
 
-// Drives the built-in assistant screen: multi-turn chats with the daemon's
-// on-device model over the llm.chat.* RPCs, with streamed reply chunks and
-// tool activity surfaced while a send is in flight.
+// Drives the built-in assistant screen: one conversation per assistant kind
+// against the daemon's on-device model over the llm.chat.* RPCs, with streamed
+// reply chunks and tool activity surfaced while a send is in flight.
+//
+// Conversations are deliberately not restored across visits. Each assistant is
+// a scratchpad — ask, read, move on — so the screen has no chat list and no
+// history to manage, just a Clear button. Switching assistants keeps whatever
+// each one has said so far for as long as the screen stays mounted.
 export function useLlmChat(serverId: string | null | undefined): UseLlmChatResult {
   const supported = useHostFeature(serverId, "llmChat");
   const { model, startDownload } = useLocalLlmModel(serverId);
   const client = useHostRuntimeClient(serverId ?? "");
-  const [chats, setChats] = useState<LlmChatSummary[]>([]);
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<LlmChatMessage[]>([]);
-  const [isLoadingChat, setIsLoadingChat] = useState(false);
+  const [assistant, setAssistant] = useState<LlmAssistantKind>("paseo");
+  // Keyed by assistant so switching tabs doesn't discard the other's replies.
+  const [messagesByAssistant, setMessagesByAssistant] = useState<
+    Partial<Record<LlmAssistantKind, LlmChatMessage[]>>
+  >({});
   const [isSending, setIsSending] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [toolEvents, setToolEvents] = useState<LlmChatToolEvent[]>([]);
   const [pendingProposal, setPendingProposal] = useState<LlmChatPendingProposal | null>(null);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
-  const activeChatIdRef = useRef<string | null>(null);
-  activeChatIdRef.current = activeChatId;
+  // The daemon chat backing each assistant, created on its first send. Held in
+  // a ref, not state: nothing renders it, and it must survive tab switches
+  // without re-running the send effect.
+  const chatIdsRef = useRef<Partial<Record<LlmAssistantKind, string>>>({});
+  const assistantRef = useRef<LlmAssistantKind>(assistant);
+  assistantRef.current = assistant;
+  const messages = messagesByAssistant[assistant] ?? EMPTY_MESSAGES;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -72,55 +84,29 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
     };
   }, []);
 
-  const refreshChats = useCallback(async () => {
-    if (!client) {
-      return;
-    }
-    try {
-      const payload = await client.llmChatList();
-      if (mountedRef.current) {
-        setChats(payload.chats);
-      }
-    } catch {
-      // The list is cosmetic; leave the last known state in place.
-    }
-  }, [client]);
+  const appendMessage = useCallback((target: LlmAssistantKind, message: LlmChatMessage) => {
+    setMessagesByAssistant((current) => ({
+      ...current,
+      [target]: [...(current[target] ?? []), message],
+    }));
+  }, []);
 
-  useEffect(() => {
-    if (!supported || !client) {
-      return;
-    }
-    void refreshChats();
-  }, [supported, client, refreshChats]);
-
-  const selectChat = useCallback(
-    (chatId: string | null) => {
-      setActiveChatId(chatId);
+  // Switching away mid-reply would leave the stream writing into a tab the user
+  // can no longer see, so the in-flight send is cancelled first.
+  const selectAssistant = useCallback(
+    (next: LlmAssistantKind) => {
       setError(null);
-      if (!chatId) {
-        setMessages([]);
-        return;
-      }
-      if (!client) {
-        return;
-      }
-      setIsLoadingChat(true);
-      void (async () => {
-        try {
-          const payload = await client.llmChatGet(chatId);
-          if (mountedRef.current && activeChatIdRef.current === chatId) {
-            setMessages(payload.chat?.messages ?? []);
-          }
-        } catch {
-          // Keep whatever is on screen; the next send re-syncs from disk.
-        } finally {
-          if (mountedRef.current) {
-            setIsLoadingChat(false);
+      setAssistant((current) => {
+        if (current !== next && isSending) {
+          const chatId = chatIdsRef.current[current];
+          if (client && chatId) {
+            void client.llmChatCancel(chatId).catch(() => undefined);
           }
         }
-      })();
+        return next;
+      });
     },
-    [client],
+    [client, isSending],
   );
 
   const sendMessage = useCallback(
@@ -129,7 +115,8 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
       if (!client || !trimmed || isSending) {
         return;
       }
-      const chatId = activeChatIdRef.current;
+      const target = assistantRef.current;
+      const chatId = chatIdsRef.current[target] ?? null;
       setIsSending(true);
       setError(null);
       setStreamingText(null);
@@ -140,11 +127,12 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
         text: trimmed,
         createdAt: new Date().toISOString(),
       };
-      setMessages((current) => [...current, localUserMessage]);
+      appendMessage(target, localUserMessage);
       try {
         const payload = await client.llmChatSend({
           chatId,
           text: trimmed,
+          assistant: target,
           onEvent: (event) => {
             if (!mountedRef.current) {
               return;
@@ -191,15 +179,13 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
         if (!mountedRef.current) {
           return;
         }
-        setActiveChatId(payload.chatId);
+        chatIdsRef.current[target] = payload.chatId;
         if (payload.message) {
-          const message = payload.message;
-          setMessages((current) => [...current, message]);
+          appendMessage(target, payload.message);
         }
         if (payload.error) {
           setError(payload.error);
         }
-        void refreshChats();
       } catch (sendError) {
         if (mountedRef.current) {
           setError(sendError instanceof Error ? sendError.message : String(sendError));
@@ -213,7 +199,7 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
         }
       }
     },
-    [client, isSending, refreshChats],
+    [appendMessage, client, isSending],
   );
 
   const respondToProposal = useCallback(
@@ -237,51 +223,41 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
   );
 
   const cancel = useCallback(() => {
-    const chatId = activeChatIdRef.current;
+    const chatId = chatIdsRef.current[assistantRef.current];
     if (!client || !chatId) {
       return;
     }
     void client.llmChatCancel(chatId).catch(() => undefined);
   }, [client]);
 
-  const deleteChat = useCallback(
-    async (chatId: string) => {
-      if (!client) {
-        return;
-      }
-      try {
-        await client.llmChatDelete(chatId);
-      } catch {
-        // Deletion failures leave the entry; the next refresh re-syncs.
-      }
-      if (mountedRef.current) {
-        if (activeChatIdRef.current === chatId) {
-          setActiveChatId(null);
-          setMessages([]);
-        }
-        void refreshChats();
-      }
-    },
-    [client, refreshChats],
-  );
+  const clearConversation = useCallback(() => {
+    const target = assistantRef.current;
+    const chatId = chatIdsRef.current[target];
+    chatIdsRef.current[target] = undefined;
+    setMessagesByAssistant((current) => ({ ...current, [target]: [] }));
+    setError(null);
+    if (client && chatId) {
+      // Best effort: the screen has already forgotten the chat either way, so
+      // a failed delete would only leave a file the user never sees again.
+      void client.llmChatDelete(chatId).catch(() => undefined);
+    }
+  }, [client]);
 
   return {
     supported: supported && client !== null,
     model,
     startDownload,
-    chats,
-    activeChatId,
+    assistant,
+    selectAssistant,
     messages,
-    isLoadingChat,
     isSending,
     streamingText,
     toolEvents,
     pendingProposal,
     error,
-    selectChat,
     sendMessage,
     respondToProposal,
     cancel,
-    deleteChat,
+    clearConversation,
   };
 }

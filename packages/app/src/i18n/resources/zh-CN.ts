@@ -2273,12 +2273,17 @@ export const zhCN: TranslationResources = {
     },
   },
   assistant: {
+    clear: "清空",
+    kind: {
+      paseo: "Paseo",
+      polish: "润色英文",
+      free: "自由对话",
+    },
     title: "助手",
     unsupported: "更新主机以使用助手。",
-    empty: "与本地模型对话，它还能帮你创建计划任务和看板卡片。",
+    empty: "询问 Paseo 相关问题，也可以让它创建 schedule 或看板卡片。",
     inputPlaceholder: "给本地助手发消息…",
     send: "发送",
-    newChat: "新对话",
     model: {
       required: "下载本地 AI 模型（约 7 GB）后即可开始对话。",
       download: "下载模型",

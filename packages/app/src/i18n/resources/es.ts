@@ -2353,13 +2353,18 @@ export const es: TranslationResources = {
     },
   },
   assistant: {
+    clear: "Limpiar",
+    kind: {
+      paseo: "Paseo",
+      polish: "Pulir inglés",
+      free: "Chat libre",
+    },
     title: "Asistente",
     unsupported: "Actualiza el host para usar el asistente.",
     empty:
       "Chatea con el modelo en el dispositivo. También puede crear programaciones y tarjetas del kanban.",
     inputPlaceholder: "Escribe al asistente local…",
     send: "Enviar",
-    newChat: "Nuevo chat",
     model: {
       required: "Descarga el modelo de IA local (~7 GB) para empezar a chatear.",
       download: "Descargar modelo",
@@ -2383,7 +2388,7 @@ export const es: TranslationResources = {
   },
   kanban: {
     title: "Kanban",
-    empty: "Aún no hay tarjetas",
+    empty: "Pregunta sobre Paseo o pídele que cree una programación o una tarjeta kanban.",
     emptyFiltered: "Ninguna tarjeta coincide con los filtros",
     loadError: "No se pudieron cargar las tarjetas",
     unsupported: "Actualiza el host para usar Kanban.",

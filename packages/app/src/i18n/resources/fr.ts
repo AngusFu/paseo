@@ -2359,13 +2359,18 @@ export const fr: TranslationResources = {
     },
   },
   assistant: {
+    clear: "Effacer",
+    kind: {
+      paseo: "Paseo",
+      polish: "Peaufiner l'anglais",
+      free: "Discussion libre",
+    },
     title: "Assistant",
     unsupported: "Mettez à jour l’hôte pour utiliser l’assistant.",
     empty:
       "Discutez avec le modèle sur l’appareil. Il peut aussi créer des planifications et des cartes du kanban.",
     inputPlaceholder: "Écrire à l’assistant local…",
     send: "Envoyer",
-    newChat: "Nouvelle discussion",
     model: {
       required: "Téléchargez le modèle d’IA local (~7 Go) pour commencer à discuter.",
       download: "Télécharger le modèle",
@@ -2389,7 +2394,8 @@ export const fr: TranslationResources = {
   },
   kanban: {
     title: "Kanban",
-    empty: "Aucune carte pour l'instant",
+    empty:
+      "Posez des questions sur Paseo, ou demandez-lui de créer une planification ou une carte kanban.",
     emptyFiltered: "Aucune carte ne correspond aux filtres",
     loadError: "Impossible de charger les cartes",
     unsupported: "Mettez à jour l'hôte pour utiliser Kanban.",

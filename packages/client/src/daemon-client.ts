@@ -24,6 +24,7 @@ import type {
   UpdateKanbanWorkflowRuleInput,
   UpdateWorkflowDefinitionInput,
 } from "@getpaseo/protocol/workflow/types";
+import type { LlmAssistantKind } from "@getpaseo/protocol/llm/chat-rpc-schemas";
 import type { AgentAttentionNotificationPayload } from "@getpaseo/protocol/agent-attention-notification";
 import {
   AgentCreateFailedStatusPayloadSchema,
@@ -681,6 +682,8 @@ export interface LlmChatSendOptions {
   // null starts a new chat; the response carries the assigned chatId.
   chatId: string | null;
   text: string;
+  // Which built-in assistant a new chat starts with; ignored for an existing one.
+  assistant?: LlmAssistantKind;
   requestId?: string;
   timeoutMs?: number;
   // Streamed chunk/tool/done events for this send, already filtered to it.
@@ -5571,6 +5574,7 @@ export class DaemonClient {
           type: "llm.chat.send.request",
           chatId: options.chatId,
           text: options.text,
+          assistant: options.assistant,
         },
       });
     } finally {

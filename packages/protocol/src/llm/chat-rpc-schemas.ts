@@ -11,6 +11,18 @@ import { z } from "zod";
 
 // Where a successful tool call landed, so clients can render a tap-through
 // to the created entity's screen.
+// Which built-in assistant answers a chat. One small local model, several
+// jobs: only the Paseo assistant reaches for tools, so the others stay quick
+// and cannot act on the user's data by accident.
+//   paseo  — knows Paseo and can create/list schedules, cards, workflow runs
+//   polish — rewrites English text, replies with the rewrite and nothing else
+//   free   — a plain chat with no tools and no product knowledge
+// COMPAT(llmAssistantKind): added in v0.2.0; absent means "paseo", which is
+// what every chat was before this field existed.
+export const LlmAssistantKindSchema = z.enum(["paseo", "polish", "free"]);
+
+export type LlmAssistantKind = z.infer<typeof LlmAssistantKindSchema>;
+
 export const LlmChatToolLinkSchema = z.object({
   entity: z.enum(["schedule", "workflowRun", "kanbanCard"]),
   id: z.string(),
@@ -41,6 +53,7 @@ export type LlmChatMessage = z.infer<typeof LlmChatMessageSchema>;
 export const StoredLlmChatSchema = z.object({
   id: z.string(),
   title: z.string(),
+  assistant: LlmAssistantKindSchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   messages: z.array(LlmChatMessageSchema),
@@ -79,6 +92,9 @@ export const LlmChatSendRequestSchema = z.object({
   // null starts a new chat; the response carries the assigned chatId.
   chatId: z.string().nullable(),
   text: z.string().min(1),
+  // Only read when starting a new chat; an existing chat keeps the assistant
+  // it was created with.
+  assistant: LlmAssistantKindSchema.optional(),
 });
 
 export const LlmChatCancelRequestSchema = z.object({

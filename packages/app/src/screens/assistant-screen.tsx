@@ -3,9 +3,9 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from "rea
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
-import { ArrowUp, Bot, Plus, Square, Trash2 } from "lucide-react-native";
+import { ArrowUp, Bot, Square, Trash2 } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
-import type { LlmChatMessage, LlmChatSummary } from "@getpaseo/protocol/llm/chat-rpc-schemas";
+import type { LlmAssistantKind, LlmChatMessage } from "@getpaseo/protocol/llm/chat-rpc-schemas";
 import { MenuHeader } from "@/components/headers/menu-header";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { Button } from "@/components/ui/button";
@@ -242,73 +242,59 @@ function ChatView({ chat }: { chat: ReturnType<typeof useLlmChat> }): ReactEleme
   );
 }
 
+// One tab per assistant kind, not per past conversation: the screen keeps no
+// history, so there is nothing to browse — only which assistant you are
+// talking to, and a way to wipe what it has said.
+const ASSISTANT_TABS: { kind: LlmAssistantKind; labelKey: string }[] = [
+  { kind: "paseo", labelKey: "assistant.kind.paseo" },
+  { kind: "polish", labelKey: "assistant.kind.polish" },
+  { kind: "free", labelKey: "assistant.kind.free" },
+];
+
 function ChatTabs({ chat }: { chat: ReturnType<typeof useLlmChat> }): ReactElement {
   const { t } = useTranslation();
   return (
     <View style={styles.tabsRow}>
-      <Button
-        variant="outline"
-        size="sm"
-        leftIcon={Plus}
-        onPress={() => chat.selectChat(null)}
-        disabled={chat.isSending}
-        testID="assistant-new-chat"
-      >
-        {t("assistant.newChat")}
-      </Button>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
         <View style={styles.tabsInner}>
-          {chat.chats.map((summary) => (
-            <ChatTab
-              key={summary.id}
-              summary={summary}
-              isActive={summary.id === chat.activeChatId}
-              disabled={chat.isSending}
-              onSelect={() => chat.selectChat(summary.id)}
-              onDelete={() => void chat.deleteChat(summary.id)}
+          {ASSISTANT_TABS.map((tab) => (
+            <AssistantTab
+              key={tab.kind}
+              label={t(tab.labelKey)}
+              isActive={tab.kind === chat.assistant}
+              onSelect={() => chat.selectAssistant(tab.kind)}
             />
           ))}
         </View>
       </ScrollView>
+      <Button
+        variant="outline"
+        size="sm"
+        leftIcon={Trash2}
+        onPress={chat.clearConversation}
+        disabled={chat.isSending || chat.messages.length === 0}
+        testID="assistant-clear-chat"
+      >
+        {t("assistant.clear")}
+      </Button>
     </View>
   );
 }
 
-interface ChatTabProps {
-  summary: LlmChatSummary;
+interface AssistantTabProps {
+  label: string;
   isActive: boolean;
-  disabled: boolean;
   onSelect: () => void;
-  onDelete: () => void;
 }
 
-function ChatTab({ summary, isActive, disabled, onSelect, onDelete }: ChatTabProps): ReactElement {
+function AssistantTab({ label, isActive, onSelect }: AssistantTabProps): ReactElement {
   return (
-    <View style={[styles.tab, isActive && styles.tabActive]}>
-      <Pressable
-        onPress={onSelect}
-        disabled={disabled}
-        style={styles.tabPressable}
-        testID={`assistant-chat-${summary.id}`}
-      >
-        <Text
-          style={[styles.tabLabel, isActive && styles.tabLabelActive]}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-        >
-          {summary.title}
+    <View style={isActive ? styles.tabActive : styles.tab}>
+      <Pressable onPress={onSelect} style={styles.tabPressable} testID={`assistant-tab-${label}`}>
+        <Text style={isActive ? styles.tabLabelActive : styles.tabLabel} numberOfLines={1}>
+          {label}
         </Text>
       </Pressable>
-      {isActive ? (
-        <Pressable
-          onPress={onDelete}
-          disabled={disabled}
-          hitSlop={8}
-          testID={`assistant-chat-delete-${summary.id}`}
-        >
-          <Trash2 size={styles.tabDeleteIcon.width} color={styles.tabDeleteIcon.color} />
-        </Pressable>
-      ) : null}
     </View>
   );
 }

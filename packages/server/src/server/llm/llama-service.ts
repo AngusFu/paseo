@@ -127,6 +127,10 @@ export class LlamaService {
   private active: PendingGenerate | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Set by probeModelFile: the model actually loaded, which is the configured
+  // one unless that is missing and another usable model is present.
+  private activeModelPath: string | null = null;
+
   private downloading: { receivedBytes: number; totalBytes: number | null } | null = null;
   private downloadError: string | null = null;
 
@@ -145,29 +149,91 @@ export class LlamaService {
     return path.join(this.paseoHome, "models", this.resolvedModel.filename);
   }
 
+  // A valid model file starts with the GGUF magic; a partial download (daemon
+  // killed mid-write) won't have been renamed into place.
+  private async isUsableModelFile(filePath: string): Promise<boolean> {
+    try {
+      const handle = await fs.open(filePath, "r");
+      try {
+        const { buffer } = await handle.read(Buffer.alloc(4), 0, 4, 0);
+        return buffer.equals(GGUF_MAGIC);
+      } finally {
+        await handle.close();
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  // Any other model already sitting in the models directory. The configured
+  // filename changes — a new default ships, the user picks a different build —
+  // and a model that took an hour to download should not become invisible
+  // because it no longer matches the name we now expect. Companion files
+  // (mmproj projectors) are GGUF too but cannot answer on their own.
+  private async findAlternateModel(): Promise<string | null> {
+    const dir = path.dirname(this.modelPath);
+    let entries: string[];
+    try {
+      entries = await fs.readdir(dir);
+    } catch {
+      return null;
+    }
+    const candidates = entries
+      .filter((name) => name.endsWith(".gguf") && !name.includes("mmproj"))
+      .sort();
+    for (const name of candidates) {
+      const candidate = path.join(dir, name);
+      if (await this.isUsableModelFile(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  // What is actually on disk right now, independent of anything this process
+  // remembers or expects to be named.
+  private async probeModelFile(): Promise<"ready" | "corrupt" | "absent"> {
+    if (await this.isUsableModelFile(this.modelPath)) {
+      this.activeModelPath = this.modelPath;
+      return "ready";
+    }
+    const alternate = await this.findAlternateModel();
+    if (alternate) {
+      this.activeModelPath = alternate;
+      return "ready";
+    }
+    this.activeModelPath = null;
+    // The configured file exists but isn't a GGUF: a truncated or wrong
+    // download, worth reporting rather than silently treating as missing.
+    try {
+      await fs.stat(this.modelPath);
+      return "corrupt";
+    } catch {
+      return "absent";
+    }
+  }
+
   async getStatus(): Promise<LlmLocalModelState> {
     if (this.downloading) {
       return { status: "downloading", ...this.downloading };
     }
+    // The file wins over remembered failure. A usable model can appear without
+    // this process downloading it — copied in by hand, restored from a backup,
+    // fetched by an earlier run, or simply a different file after the model
+    // config changed — and a download error kept from an earlier attempt would
+    // otherwise hide a model that is sitting right there.
+    const probe = await this.probeModelFile();
+    if (probe === "ready") {
+      this.downloadError = null;
+      return { status: "ready", loaded: this.workerLoaded };
+    }
     if (this.downloadError) {
       return { status: "error", message: this.downloadError };
     }
-    try {
-      // A valid model file starts with the GGUF magic; a partial download
-      // (daemon killed mid-write) won't have been renamed into place.
-      const handle = await fs.open(this.modelPath, "r");
-      try {
-        const { buffer } = await handle.read(Buffer.alloc(4), 0, 4, 0);
-        if (!buffer.equals(GGUF_MAGIC)) {
-          return { status: "error", message: "model file is corrupt (bad GGUF header)" };
-        }
-      } finally {
-        await handle.close();
-      }
-      return { status: "ready", loaded: this.workerLoaded };
-    } catch {
-      return { status: "absent" };
+    if (probe === "corrupt") {
+      return { status: "error", message: "model file is corrupt (bad GGUF header)" };
     }
+    return { status: "absent" };
   }
 
   private emitStatus(state: LlmLocalModelState): void {
@@ -395,7 +461,9 @@ export class LlamaService {
 
       this.sendToWorker({
         type: "load",
-        modelPath: this.modelPath,
+        // getStatus ran before generate() got here, so this points at whichever
+        // model the probe accepted.
+        modelPath: this.activeModelPath ?? this.modelPath,
         contextSize: CONTEXT_SIZE,
       });
     });

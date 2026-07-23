@@ -2313,12 +2313,17 @@ export const en = {
     },
   },
   assistant: {
+    clear: "Clear",
+    kind: {
+      paseo: "Paseo",
+      polish: "Polish English",
+      free: "Free chat",
+    },
     title: "Assistant",
     unsupported: "Update the host to use the assistant.",
-    empty: "Chat with the on-device model. It can also create schedules and kanban cards.",
+    empty: "Ask about Paseo, or have it create a schedule or a kanban card.",
     inputPlaceholder: "Message the local assistant…",
     send: "Send",
-    newChat: "New chat",
     model: {
       required: "Download the local AI model (~7 GB) to start chatting.",
       download: "Download model",

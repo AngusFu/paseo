@@ -2695,6 +2695,7 @@ export class Session {
       chatId: msg.chatId,
       text: msg.text,
       requestId: msg.requestId,
+      assistant: msg.assistant,
     });
     this.emit({
       type: "llm.chat.send.response",

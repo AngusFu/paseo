@@ -2326,16 +2326,23 @@ export const ja: TranslationResources = {
     },
   },
   assistant: {
-    clear: "クリア",
-    kind: {
-      paseo: "Paseo",
-      polish: "英文を推敲",
-      free: "フリーチャット",
+    add: "アシスタントを追加",
+    noAssistants: "アシスタントがありません。追加して会話を始めましょう。",
+    form: {
+      createTitle: "アシスタントを追加",
+      editTitle: "アシスタントを編集",
+      name: "名前",
+      namePlaceholder: "コードレビュアー",
+      prompt: "指示",
+      promptHint: "モデルの役割と回答方針を伝えます。",
+      promptPlaceholder:
+        "あなたは厳格なコードレビュアーです。実際の欠陥を指摘し、些細なスタイルは無視してください。",
     },
+    clear: "クリア",
     title: "アシスタント",
     unsupported: "アシスタントを使用するにはホストを更新してください。",
-    empty: "Paseo について質問したり、スケジュールやカンバンカードを作成させたりできます。",
-    inputPlaceholder: "ローカルアシスタントにメッセージ…",
+    empty: "{{name}} と会話します。",
+    inputPlaceholder: "{{name}} にメッセージ…",
     send: "送信",
     model: {
       required: "チャットを始めるにはローカル AI モデル（約 7 GB）をダウンロードしてください。",

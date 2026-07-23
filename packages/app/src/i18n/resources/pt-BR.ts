@@ -2338,17 +2338,24 @@ export const ptBR: TranslationResources = {
     },
   },
   assistant: {
-    clear: "Limpar",
-    kind: {
-      paseo: "Paseo",
-      polish: "Aprimorar inglês",
-      free: "Conversa livre",
+    add: "Novo assistente",
+    noAssistants: "Nenhum assistente. Crie um para começar a conversar.",
+    form: {
+      createTitle: "Novo assistente",
+      editTitle: "Editar assistente",
+      name: "Nome",
+      namePlaceholder: "Revisor de código",
+      prompt: "Instruções",
+      promptHint: "Diz ao modelo quem ele é e como responder.",
+      promptPlaceholder:
+        "Você é um revisor de código rigoroso. Aponte defeitos reais e ignore detalhes de estilo.",
     },
+    clear: "Limpar",
     title: "Assistente",
     unsupported: "Atualize o host para usar o assistente.",
     empty:
       "Converse com o modelo no dispositivo. Ele também pode criar agendamentos e cartões do kanban.",
-    inputPlaceholder: "Envie uma mensagem ao assistente local…",
+    inputPlaceholder: "Mensagem para {{name}}…",
     send: "Enviar",
     model: {
       required: "Baixe o modelo de IA local (~7 GB) para começar a conversar.",
@@ -2373,7 +2380,7 @@ export const ptBR: TranslationResources = {
   },
   kanban: {
     title: "Kanban",
-    empty: "Pergunte sobre o Paseo ou peça para criar um agendamento ou um cartão kanban.",
+    empty: "Converse com {{name}}.",
     emptyFiltered: "Nenhum cartão corresponde aos filtros",
     loadError: "Não foi possível carregar os cartões",
     unsupported: "Atualize o host para usar o Kanban.",

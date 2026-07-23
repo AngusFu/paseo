@@ -135,6 +135,10 @@ export interface LlmChatSendInput {
   // Which built-in assistant to create the chat with; ignored for an existing
   // chat, which keeps the assistant it started with.
   assistant?: LlmAssistantKind;
+  // A client-defined assistant's instructions, used verbatim when present.
+  systemPrompt?: string;
+  // Whether this send may call tools; defaults to the built-in policy.
+  tools?: boolean;
 }
 
 export interface LlmChatSendResult {
@@ -452,7 +456,10 @@ export class LlmChatService {
     };
     this.activeSends.set(chat.id, active);
     try {
-      return await this.runSend(chat, text, active);
+      return await this.runSend(chat, text, active, {
+        systemPrompt: input.systemPrompt,
+        tools: input.tools,
+      });
     } finally {
       this.activeSends.delete(chat.id);
     }
@@ -462,6 +469,7 @@ export class LlmChatService {
     chat: StoredLlmChat,
     text: string,
     active: ActiveSend,
+    overrides: { systemPrompt?: string; tools?: boolean },
   ): Promise<LlmChatSendResult> {
     const emit = (event: LlmChatEvent) => {
       this.onEvent({ chatId: chat.id, sendRequestId: active.sendRequestId, event });
@@ -483,8 +491,8 @@ export class LlmChatService {
       const toolCalls: LlmChatToolCall[] = [];
       const toolNotes: string[] = [];
       const assistant = resolveAssistant(chat);
-      const catalog =
-        assistantUsesTools(assistant) && this.getToolCatalog ? await this.getToolCatalog() : null;
+      const usesTools = overrides.tools ?? assistantUsesTools(assistant);
+      const catalog = usesTools && this.getToolCatalog ? await this.getToolCatalog() : null;
       if (catalog) {
         await this.runToolLoop({ active, catalog, userText, history, toolCalls, toolNotes, emit });
       }
@@ -499,7 +507,7 @@ export class LlmChatService {
       const replyText = await this.llamaService.generate({
         requestId: replyId,
         prompt: replyPrompt,
-        systemPrompt: SYSTEM_PROMPT_BY_ASSISTANT[assistant],
+        systemPrompt: overrides.systemPrompt?.trim() || SYSTEM_PROMPT_BY_ASSISTANT[assistant],
         history,
         maxTokens: REPLY_MAX_TOKENS,
         stream: true,

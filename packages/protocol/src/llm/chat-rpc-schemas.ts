@@ -95,6 +95,15 @@ export const LlmChatSendRequestSchema = z.object({
   // Only read when starting a new chat; an existing chat keeps the assistant
   // it was created with.
   assistant: LlmAssistantKindSchema.optional(),
+  // The assistant's own instructions. Assistants are defined on the client
+  // (name + prompt, editable by the user), so the prompt travels with the
+  // message and the daemon never stores a catalog of them. Absent falls back
+  // to the built-in prompt for `assistant`.
+  // COMPAT(llmAssistantPrompt): added in v0.2.0.
+  systemPrompt: z.string().optional(),
+  // Whether this assistant may call Paseo tools. Absent keeps the old
+  // behaviour, where only the built-in Paseo assistant had them.
+  tools: z.boolean().optional(),
 });
 
 export const LlmChatCancelRequestSchema = z.object({

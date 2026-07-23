@@ -2359,17 +2359,24 @@ export const fr: TranslationResources = {
     },
   },
   assistant: {
-    clear: "Effacer",
-    kind: {
-      paseo: "Paseo",
-      polish: "Peaufiner l'anglais",
-      free: "Discussion libre",
+    add: "Nouvel assistant",
+    noAssistants: "Aucun assistant. Créez-en un pour commencer.",
+    form: {
+      createTitle: "Nouvel assistant",
+      editTitle: "Modifier l'assistant",
+      name: "Nom",
+      namePlaceholder: "Relecteur de code",
+      prompt: "Instructions",
+      promptHint: "Indique au modèle qui il est et comment répondre.",
+      promptPlaceholder:
+        "Tu es un relecteur de code exigeant. Signale les vrais défauts et ignore le style.",
     },
+    clear: "Effacer",
     title: "Assistant",
     unsupported: "Mettez à jour l’hôte pour utiliser l’assistant.",
     empty:
       "Discutez avec le modèle sur l’appareil. Il peut aussi créer des planifications et des cartes du kanban.",
-    inputPlaceholder: "Écrire à l’assistant local…",
+    inputPlaceholder: "Message à {{name}}…",
     send: "Envoyer",
     model: {
       required: "Téléchargez le modèle d’IA local (~7 Go) pour commencer à discuter.",

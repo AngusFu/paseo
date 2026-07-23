@@ -684,6 +684,10 @@ export interface LlmChatSendOptions {
   text: string;
   // Which built-in assistant a new chat starts with; ignored for an existing one.
   assistant?: LlmAssistantKind;
+  // A client-defined assistant's instructions, used verbatim when present.
+  systemPrompt?: string;
+  // Whether this send may call Paseo tools.
+  tools?: boolean;
   requestId?: string;
   timeoutMs?: number;
   // Streamed chunk/tool/done events for this send, already filtered to it.
@@ -5575,6 +5579,8 @@ export class DaemonClient {
           chatId: options.chatId,
           text: options.text,
           assistant: options.assistant,
+          systemPrompt: options.systemPrompt,
+          tools: options.tools,
         },
       });
     } finally {

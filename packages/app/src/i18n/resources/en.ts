@@ -2313,16 +2313,23 @@ export const en = {
     },
   },
   assistant: {
-    clear: "Clear",
-    kind: {
-      paseo: "Paseo",
-      polish: "Polish English",
-      free: "Free chat",
+    add: "New assistant",
+    noAssistants: "No assistants. Add one to start chatting.",
+    form: {
+      createTitle: "New assistant",
+      editTitle: "Edit assistant",
+      name: "Name",
+      namePlaceholder: "Code reviewer",
+      prompt: "Instructions",
+      promptHint: "Tells the model who it is and how to answer.",
+      promptPlaceholder:
+        "You are a strict code reviewer. Point out real defects and skip style nits.",
     },
+    clear: "Clear",
     title: "Assistant",
     unsupported: "Update the host to use the assistant.",
-    empty: "Ask about Paseo, or have it create a schedule or a kanban card.",
-    inputPlaceholder: "Message the local assistant…",
+    empty: "Chat with {{name}}.",
+    inputPlaceholder: "Message {{name}}…",
     send: "Send",
     model: {
       required: "Download the local AI model (~7 GB) to start chatting.",

@@ -1,11 +1,20 @@
 // oxlint-disable react-perf/jsx-no-new-function-as-prop, react-perf/jsx-no-new-array-as-prop, react-perf/jsx-no-new-object-as-prop, react/no-array-index-key
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+  type PressableStateCallbackType,
+} from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
-import { ArrowUp, Bot, Square, Trash2 } from "lucide-react-native";
+import { ArrowUp, Bot, Pencil, Plus, Square, Trash2 } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
-import type { LlmAssistantKind, LlmChatMessage } from "@getpaseo/protocol/llm/chat-rpc-schemas";
+import type { LlmChatMessage } from "@getpaseo/protocol/llm/chat-rpc-schemas";
+import { AssistantFormSheet } from "@/components/assistant-form-sheet";
+import { isNative } from "@/constants/platform";
 import { MenuHeader } from "@/components/headers/menu-header";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { Button } from "@/components/ui/button";
@@ -16,6 +25,11 @@ import {
   type LlmChatToolEvent,
 } from "@/hooks/use-llm-chat";
 import { useHostRuntimeConnectionStatuses, useHosts } from "@/runtime/host-runtime";
+import {
+  useAssistantStore,
+  type AssistantDraft,
+  type LocalAssistant,
+} from "@/stores/assistant-store";
 import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
 import { router } from "expo-router";
 import type { LlmChatToolLink } from "@getpaseo/protocol/llm/chat-rpc-schemas";
@@ -40,11 +54,51 @@ function AssistantScreenContent(): ReactElement {
   const connectionStatus = serverId ? (connectionStatuses.get(serverId) ?? "connecting") : null;
   const isOnline = connectionStatus === "online";
   const chat = useLlmChat(serverId);
+  const addAssistant = useAssistantStore((state) => state.addAssistant);
+  const updateAssistant = useAssistantStore((state) => state.updateAssistant);
+  const removeAssistant = useAssistantStore((state) => state.removeAssistant);
+  // null = closed; { assistant: null } = creating.
+  const [editing, setEditing] = useState<{ assistant: LocalAssistant | null } | null>(null);
+
+  const handleAddAssistant = useCallback(() => setEditing({ assistant: null }), []);
+  const handleEditAssistant = useCallback(
+    (assistant: LocalAssistant) => setEditing({ assistant }),
+    [],
+  );
+  const handleCloseEditor = useCallback(() => setEditing(null), []);
+  const handleSubmitAssistant = useCallback(
+    (draft: AssistantDraft) => {
+      const target = editing?.assistant;
+      if (target) {
+        updateAssistant(target.id, draft);
+        return;
+      }
+      chat.selectAssistant(addAssistant(draft));
+    },
+    [addAssistant, chat, editing?.assistant, updateAssistant],
+  );
+  const handleDeleteAssistant = useCallback(
+    (assistant: LocalAssistant) => removeAssistant(assistant.id),
+    [removeAssistant],
+  );
 
   return (
     <View style={styles.container}>
       <MenuHeader title={t("assistant.title")} />
-      <AssistantBody serverId={serverId} isOnline={isOnline} chat={chat} />
+      <AssistantBody
+        serverId={serverId}
+        isOnline={isOnline}
+        chat={chat}
+        onAddAssistant={handleAddAssistant}
+        onEditAssistant={handleEditAssistant}
+      />
+      <AssistantFormSheet
+        visible={editing !== null}
+        assistant={editing?.assistant ?? null}
+        onClose={handleCloseEditor}
+        onSubmit={handleSubmitAssistant}
+        onDelete={handleDeleteAssistant}
+      />
     </View>
   );
 }
@@ -53,9 +107,17 @@ interface AssistantBodyProps {
   serverId: string | null;
   isOnline: boolean;
   chat: ReturnType<typeof useLlmChat>;
+  onAddAssistant: () => void;
+  onEditAssistant: (assistant: LocalAssistant) => void;
 }
 
-function AssistantBody({ serverId, isOnline, chat }: AssistantBodyProps): ReactElement {
+function AssistantBody({
+  serverId,
+  isOnline,
+  chat,
+  onAddAssistant,
+  onEditAssistant,
+}: AssistantBodyProps): ReactElement {
   const { t } = useTranslation();
 
   if (serverId && isOnline && !chat.supported) {
@@ -80,7 +142,7 @@ function AssistantBody({ serverId, isOnline, chat }: AssistantBodyProps): ReactE
     return <ModelGate chat={chat} />;
   }
 
-  return <ChatView chat={chat} />;
+  return <ChatView chat={chat} onAddAssistant={onAddAssistant} onEditAssistant={onEditAssistant} />;
 }
 
 function ModelGate({ chat }: { chat: ReturnType<typeof useLlmChat> }): ReactElement {
@@ -122,7 +184,15 @@ function ModelGate({ chat }: { chat: ReturnType<typeof useLlmChat> }): ReactElem
   );
 }
 
-function ChatView({ chat }: { chat: ReturnType<typeof useLlmChat> }): ReactElement {
+function ChatView({
+  chat,
+  onAddAssistant,
+  onEditAssistant,
+}: {
+  chat: ReturnType<typeof useLlmChat>;
+  onAddAssistant: () => void;
+  onEditAssistant: (assistant: LocalAssistant) => void;
+}): ReactElement {
   const { t } = useTranslation();
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<ScrollView>(null);
@@ -165,7 +235,7 @@ function ChatView({ chat }: { chat: ReturnType<typeof useLlmChat> }): ReactEleme
 
   return (
     <View style={styles.body}>
-      <ChatTabs chat={chat} />
+      <ChatTabs chat={chat} onAddAssistant={onAddAssistant} onEditAssistant={onEditAssistant} />
       <ScrollView
         ref={scrollRef}
         style={styles.transcript}
@@ -175,7 +245,11 @@ function ChatView({ chat }: { chat: ReturnType<typeof useLlmChat> }): ReactEleme
         {chat.messages.length === 0 && !chat.isSending ? (
           <View style={styles.emptyState} testID="assistant-empty">
             <Bot size={styles.emptyIcon.width} color={styles.emptyIcon.color} />
-            <Text style={styles.message}>{t("assistant.empty")}</Text>
+            <Text style={styles.message}>
+              {chat.assistant
+                ? t("assistant.empty", { name: chat.assistant.name })
+                : t("assistant.noAssistants")}
+            </Text>
           </View>
         ) : null}
         {chat.messages.map((message) => (
@@ -201,7 +275,9 @@ function ChatView({ chat }: { chat: ReturnType<typeof useLlmChat> }): ReactEleme
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
-            placeholder={t("assistant.inputPlaceholder")}
+            placeholder={t("assistant.inputPlaceholder", {
+              name: chat.assistant?.name ?? "",
+            })}
             placeholderTextColor={styles.inputPlaceholder.color}
             multiline
             submitBehavior="submit"
@@ -242,59 +318,107 @@ function ChatView({ chat }: { chat: ReturnType<typeof useLlmChat> }): ReactEleme
   );
 }
 
-// One tab per assistant kind, not per past conversation: the screen keeps no
-// history, so there is nothing to browse — only which assistant you are
-// talking to, and a way to wipe what it has said.
-const ASSISTANT_TABS: { kind: LlmAssistantKind; labelKey: string }[] = [
-  { kind: "paseo", labelKey: "assistant.kind.paseo" },
-  { kind: "polish", labelKey: "assistant.kind.polish" },
-  { kind: "free", labelKey: "assistant.kind.free" },
-];
-
-function ChatTabs({ chat }: { chat: ReturnType<typeof useLlmChat> }): ReactElement {
+function ChatTabs({
+  chat,
+  onEditAssistant,
+  onAddAssistant,
+}: {
+  chat: ReturnType<typeof useLlmChat>;
+  onEditAssistant: (assistant: LocalAssistant) => void;
+  onAddAssistant: () => void;
+}): ReactElement {
   const { t } = useTranslation();
+
   return (
     <View style={styles.tabsRow}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
         <View style={styles.tabsInner}>
-          {ASSISTANT_TABS.map((tab) => (
+          {chat.assistants.map((assistant) => (
             <AssistantTab
-              key={tab.kind}
-              label={t(tab.labelKey)}
-              isActive={tab.kind === chat.assistant}
-              onSelect={() => chat.selectAssistant(tab.kind)}
+              key={assistant.id}
+              assistant={assistant}
+              isActive={assistant.id === chat.assistant?.id}
+              onSelect={chat.selectAssistant}
+              onEdit={onEditAssistant}
             />
           ))}
+          <Pressable
+            onPress={onAddAssistant}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t("assistant.add")}
+            style={iconButtonStyle}
+            testID="assistant-add"
+          >
+            <Plus size={styles.tabIcon.width} color={styles.tabIcon.color} />
+          </Pressable>
         </View>
       </ScrollView>
-      <Button
-        variant="outline"
-        size="sm"
-        leftIcon={Trash2}
+      <Pressable
         onPress={chat.clearConversation}
         disabled={chat.isSending || chat.messages.length === 0}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={t("assistant.clear")}
+        style={iconButtonStyle}
         testID="assistant-clear-chat"
       >
-        {t("assistant.clear")}
-      </Button>
+        <Trash2 size={styles.tabIcon.width} color={styles.tabIcon.color} />
+      </Pressable>
     </View>
   );
 }
 
-interface AssistantTabProps {
-  label: string;
-  isActive: boolean;
-  onSelect: () => void;
+function iconButtonStyle({ hovered, pressed }: PressableStateCallbackType) {
+  return [styles.iconButton, (hovered || pressed) && styles.iconButtonActive];
 }
 
-function AssistantTab({ label, isActive, onSelect }: AssistantTabProps): ReactElement {
+// The tab itself selects; the pencil (hover on web, always on touch) edits.
+// Editing is per-assistant rather than a settings screen because the prompt is
+// the assistant — there is nothing else to configure.
+function AssistantTab({
+  assistant,
+  isActive,
+  onSelect,
+  onEdit,
+}: {
+  assistant: LocalAssistant;
+  isActive: boolean;
+  onSelect: (id: string) => void;
+  onEdit: (assistant: LocalAssistant) => void;
+}): ReactElement {
+  const [hovered, setHovered] = useState(false);
+  const handlePointerEnter = useCallback(() => setHovered(true), []);
+  const handlePointerLeave = useCallback(() => setHovered(false), []);
+  const handleSelect = useCallback(() => onSelect(assistant.id), [assistant.id, onSelect]);
+  const handleEdit = useCallback(() => onEdit(assistant), [assistant, onEdit]);
+  const showEdit = hovered || isNative || isActive;
+
   return (
-    <View style={isActive ? styles.tabActive : styles.tab}>
-      <Pressable onPress={onSelect} style={styles.tabPressable} testID={`assistant-tab-${label}`}>
+    <View
+      style={isActive ? styles.tabActive : styles.tab}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+    >
+      <Pressable
+        onPress={handleSelect}
+        style={styles.tabPressable}
+        testID={`assistant-tab-${assistant.id}`}
+      >
         <Text style={isActive ? styles.tabLabelActive : styles.tabLabel} numberOfLines={1}>
-          {label}
+          {assistant.name}
         </Text>
       </Pressable>
+      {showEdit ? (
+        <Pressable
+          onPress={handleEdit}
+          hitSlop={6}
+          accessibilityRole="button"
+          testID={`assistant-edit-${assistant.id}`}
+        >
+          <Pencil size={styles.tabEditIcon.width} color={styles.tabEditIcon.color} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -467,6 +591,7 @@ const styles = StyleSheet.create((theme) => ({
   tabsRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: theme.spacing[3],
     width: "100%",
     maxWidth: 860,
@@ -481,30 +606,36 @@ const styles = StyleSheet.create((theme) => ({
   tabsInner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[2],
+    gap: theme.spacing[1],
   },
   tab: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[2],
+    gap: theme.spacing[1],
     borderRadius: theme.borderRadius.full,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     paddingHorizontal: theme.spacing[3],
     paddingVertical: theme.spacing[1],
-    maxWidth: 220,
-    // Without shrink + hidden the label's natural width blows past maxWidth
-    // and paints over the neighbouring chips (numberOfLines only clips once
-    // the parent actually constrains it).
+    maxWidth: 200,
+    // Without shrink + hidden a long name paints over its neighbour;
+    // numberOfLines only clips once the parent actually constrains it.
     flexShrink: 1,
     overflow: "hidden",
+  },
+  tabActive: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[1],
+    maxWidth: 200,
+    flexShrink: 1,
+    overflow: "hidden",
+    backgroundColor: theme.colors.foreground,
   },
   tabPressable: {
     flexShrink: 1,
     minWidth: 0,
-  },
-  tabActive: {
-    backgroundColor: theme.colors.surface2,
   },
   tabLabel: {
     color: theme.colors.foregroundMuted,
@@ -512,9 +643,27 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
   },
   tabLabelActive: {
-    color: theme.colors.foreground,
+    color: theme.colors.background,
+    fontSize: theme.fontSize.sm,
+    fontWeight: "500",
+    flexShrink: 1,
   },
-  tabDeleteIcon: {
+  tabEditIcon: {
+    color: theme.colors.foregroundMuted,
+    width: theme.iconSize.xs,
+  },
+  // Add and Clear are icon-only so they never compete with the tab labels.
+  iconButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 28,
+    height: 28,
+    borderRadius: theme.borderRadius.md,
+  },
+  iconButtonActive: {
+    backgroundColor: theme.colors.surface2,
+  },
+  tabIcon: {
     color: theme.colors.foregroundMuted,
     width: theme.iconSize.sm,
   },

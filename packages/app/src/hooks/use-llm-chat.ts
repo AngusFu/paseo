@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type {
-  LlmAssistantKind,
-  LlmChatMessage,
-  LlmChatToolLink,
-} from "@getpaseo/protocol/llm/chat-rpc-schemas";
+import type { LlmChatMessage, LlmChatToolLink } from "@getpaseo/protocol/llm/chat-rpc-schemas";
+import { useAssistantStore, type LocalAssistant } from "@/stores/assistant-store";
 import { useLocalLlmModel, type UseLocalLlmModelResult } from "@/hooks/use-local-llm-model";
 import { useHostFeature } from "@/runtime/host-features";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
@@ -30,8 +27,9 @@ export interface UseLlmChatResult {
   supported: boolean;
   model: UseLocalLlmModelResult["model"];
   startDownload: () => void;
-  assistant: LlmAssistantKind;
-  selectAssistant: (assistant: LlmAssistantKind) => void;
+  assistants: LocalAssistant[];
+  assistant: LocalAssistant | null;
+  selectAssistant: (assistantId: string) => void;
   messages: LlmChatMessage[];
   isSending: boolean;
   // Accumulated streamed reply for the in-flight send; null when idle.
@@ -58,11 +56,12 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
   const supported = useHostFeature(serverId, "llmChat");
   const { model, startDownload } = useLocalLlmModel(serverId);
   const client = useHostRuntimeClient(serverId ?? "");
-  const [assistant, setAssistant] = useState<LlmAssistantKind>("paseo");
-  // Keyed by assistant so switching tabs doesn't discard the other's replies.
-  const [messagesByAssistant, setMessagesByAssistant] = useState<
-    Partial<Record<LlmAssistantKind, LlmChatMessage[]>>
-  >({});
+  const assistants = useAssistantStore((state) => state.assistants);
+  const [assistantId, setAssistantId] = useState<string | null>(null);
+  // Keyed by assistant id so switching tabs doesn't discard the other's replies.
+  const [messagesByAssistant, setMessagesByAssistant] = useState<Record<string, LlmChatMessage[]>>(
+    {},
+  );
   const [isSending, setIsSending] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [toolEvents, setToolEvents] = useState<LlmChatToolEvent[]>([]);
@@ -72,10 +71,15 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
   // The daemon chat backing each assistant, created on its first send. Held in
   // a ref, not state: nothing renders it, and it must survive tab switches
   // without re-running the send effect.
-  const chatIdsRef = useRef<Partial<Record<LlmAssistantKind, string>>>({});
-  const assistantRef = useRef<LlmAssistantKind>(assistant);
+  const chatIdsRef = useRef<Record<string, string | undefined>>({});
+  // Falls back to the first tab so a deleted assistant never leaves the screen
+  // pointing at nothing.
+  const assistant = assistants.find((entry) => entry.id === assistantId) ?? assistants[0] ?? null;
+  const assistantRef = useRef<LocalAssistant | null>(assistant);
   assistantRef.current = assistant;
-  const messages = messagesByAssistant[assistant] ?? EMPTY_MESSAGES;
+  const messages = assistant
+    ? (messagesByAssistant[assistant.id] ?? EMPTY_MESSAGES)
+    : EMPTY_MESSAGES;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -84,27 +88,26 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
     };
   }, []);
 
-  const appendMessage = useCallback((target: LlmAssistantKind, message: LlmChatMessage) => {
+  const appendMessage = useCallback((targetId: string, message: LlmChatMessage) => {
     setMessagesByAssistant((current) => ({
       ...current,
-      [target]: [...(current[target] ?? []), message],
+      [targetId]: [...(current[targetId] ?? []), message],
     }));
   }, []);
 
   // Switching away mid-reply would leave the stream writing into a tab the user
   // can no longer see, so the in-flight send is cancelled first.
   const selectAssistant = useCallback(
-    (next: LlmAssistantKind) => {
+    (nextId: string) => {
       setError(null);
-      setAssistant((current) => {
-        if (current !== next && isSending) {
-          const chatId = chatIdsRef.current[current];
-          if (client && chatId) {
-            void client.llmChatCancel(chatId).catch(() => undefined);
-          }
+      const current = assistantRef.current;
+      if (current && current.id !== nextId && isSending) {
+        const chatId = chatIdsRef.current[current.id];
+        if (client && chatId) {
+          void client.llmChatCancel(chatId).catch(() => undefined);
         }
-        return next;
-      });
+      }
+      setAssistantId(nextId);
     },
     [client, isSending],
   );
@@ -116,7 +119,10 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
         return;
       }
       const target = assistantRef.current;
-      const chatId = chatIdsRef.current[target] ?? null;
+      if (!target) {
+        return;
+      }
+      const chatId = chatIdsRef.current[target.id] ?? null;
       setIsSending(true);
       setError(null);
       setStreamingText(null);
@@ -127,12 +133,13 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
         text: trimmed,
         createdAt: new Date().toISOString(),
       };
-      appendMessage(target, localUserMessage);
+      appendMessage(target.id, localUserMessage);
       try {
         const payload = await client.llmChatSend({
           chatId,
           text: trimmed,
-          assistant: target,
+          systemPrompt: target.systemPrompt,
+          tools: target.tools,
           onEvent: (event) => {
             if (!mountedRef.current) {
               return;
@@ -179,9 +186,9 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
         if (!mountedRef.current) {
           return;
         }
-        chatIdsRef.current[target] = payload.chatId;
+        chatIdsRef.current[target.id] = payload.chatId;
         if (payload.message) {
-          appendMessage(target, payload.message);
+          appendMessage(target.id, payload.message);
         }
         if (payload.error) {
           setError(payload.error);
@@ -223,7 +230,8 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
   );
 
   const cancel = useCallback(() => {
-    const chatId = chatIdsRef.current[assistantRef.current];
+    const active = assistantRef.current;
+    const chatId = active ? chatIdsRef.current[active.id] : undefined;
     if (!client || !chatId) {
       return;
     }
@@ -232,9 +240,12 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
 
   const clearConversation = useCallback(() => {
     const target = assistantRef.current;
-    const chatId = chatIdsRef.current[target];
-    chatIdsRef.current[target] = undefined;
-    setMessagesByAssistant((current) => ({ ...current, [target]: [] }));
+    if (!target) {
+      return;
+    }
+    const chatId = chatIdsRef.current[target.id];
+    chatIdsRef.current[target.id] = undefined;
+    setMessagesByAssistant((current) => ({ ...current, [target.id]: [] }));
     setError(null);
     if (client && chatId) {
       // Best effort: the screen has already forgotten the chat either way, so
@@ -247,6 +258,7 @@ export function useLlmChat(serverId: string | null | undefined): UseLlmChatResul
     supported: supported && client !== null,
     model,
     startDownload,
+    assistants,
     assistant,
     selectAssistant,
     messages,

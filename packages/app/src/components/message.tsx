@@ -342,6 +342,19 @@ function shouldStopDetailWheelPropagation(detailRoot: HTMLElement, event: WheelE
 // imported member expressions referenced inside the create callback.
 const MESSAGE_LINK_COLOR = baseColors.blue[500];
 
+/**
+ * Lets a long unbroken run — a 400-character tracking URL pasted into a prompt —
+ * break mid-token.
+ *
+ * `anywhere` rather than `break-word` because only `anywhere` shrinks the
+ * element's intrinsic minimum width; `break-word` wraps during layout but still
+ * reports the whole token as its minimum, which keeps the flex item from
+ * shrinking. It has to be repeated on every nested Text: react-native-web gives
+ * a nested Text its own `word-wrap: break-word`, which overrides the value it
+ * would otherwise inherit.
+ */
+const BREAK_ANYWHERE = { overflowWrap: "anywhere" } as const;
+
 const userMessageStylesheet = StyleSheet.create((theme) => ({
   container: {
     flexDirection: "row",
@@ -351,6 +364,10 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
   content: {
     alignItems: "flex-end",
     maxWidth: "100%",
+    // A flex item defaults to min-width:auto, which is its content's intrinsic
+    // minimum — so an unbreakable run of text would refuse to shrink and, since
+    // the row is right-aligned, push the bubble off the left edge.
+    minWidth: 0,
     cursor: "auto",
   },
   expandToggle: {
@@ -385,17 +402,18 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     // Between fontSize.sm (14) and fontSize.base (16) — no token for this size.
     fontSize: 15,
-    ...(isWeb ? { lineHeight: 24, overflowWrap: "anywhere" as const } : {}),
+    ...(isWeb ? { lineHeight: 24, ...BREAK_ANYWHERE } : {}),
   },
   // Leading slash-command, e.g. "/bug-ticket-fix".
   commandText: {
     color: theme.colors.statusWarning,
     fontWeight: theme.fontWeight.medium,
+    ...(isWeb ? BREAK_ANYWHERE : {}),
   },
   // Inline URL — same blue link color as assistant markdown links.
   linkText: {
     color: MESSAGE_LINK_COLOR,
-    ...(isWeb ? { cursor: "pointer" as const } : {}),
+    ...(isWeb ? { cursor: "pointer" as const, ...BREAK_ANYWHERE } : {}),
   },
   imagePreviewContainer: {
     flexDirection: "row",

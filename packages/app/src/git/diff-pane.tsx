@@ -2626,6 +2626,8 @@ interface SharedDiffViewProps {
     codeFontSize: number;
     monoFontFamily: string;
   };
+  /** Null when the caller hasn't wired context expansion, or the daemon can't serve it. */
+  contextExpansion?: DiffContextExpansionController | null;
   mode:
     | {
         kind: "working_tree";
@@ -2646,7 +2648,12 @@ interface SharedDiffViewProps {
       };
 }
 
-export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffViewProps) {
+export function SharedDiffView({
+  files,
+  displayPreferences,
+  contextExpansion,
+  mode,
+}: SharedDiffViewProps) {
   const { layout, wrapLines, codeFontSize, monoFontFamily } = displayPreferences;
   const diffBodyLineHeight = Math.round(codeFontSize * 1.5);
   const typographyKey = [monoFontFamily, codeFontSize, diffBodyLineHeight].join(":");
@@ -2945,6 +2952,7 @@ export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffVi
           codeFontSize={codeFontSize}
           textMetricsStyle={textMetricsStyle}
           reviewActions={reviewActions}
+          contextExpansion={contextExpansion}
           onBodyHeightChange={handleBodyHeightChange}
           testID={`diff-file-${item.fileIndex}-body`}
         />
@@ -2952,6 +2960,7 @@ export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffVi
     },
     [
       codeFontSize,
+      contextExpansion,
       handleBodyHeightChange,
       handleFolderRowHeightChange,
       handleHeaderHeightChange,
@@ -2998,10 +3007,12 @@ export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffVi
       wrapLines,
       reviewActions,
       workspaceFileDragScope,
+      contextExpansion,
     }),
     [
       expandedPathsArray,
       collapsedFoldersArray,
+      contextExpansion,
       heightVersion,
       layout,
       reviewActions,

@@ -8,6 +8,7 @@ import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useIsCompactFormFactor, WORKSPACE_SECONDARY_HEADER_HEIGHT } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
 import { DiffLayoutToggle, GitDiffPane, resolveDiffLayout, SharedDiffView } from "@/git/diff-pane";
+import { useDiffContextExpansion } from "@/git/use-diff-context-expansion";
 import { useCommitDiffFiles } from "@/git/use-diff-files";
 import { useChangesPreferences } from "@/hooks/use-changes-preferences";
 import { useAppSettings } from "@/hooks/use-settings";
@@ -106,6 +107,19 @@ function CommitDiffPanel() {
     sha: target.sha,
     enabled: Boolean(cwd),
   });
+  // Context for a commit diff is read from the commit's own tree: `toRef` is
+  // the commit sha, `fromRef` its parent. A root commit has no parent, but
+  // that's harmless here — the server only reads content at `toRef`.
+  const contextCompare = useMemo(
+    () => ({ mode: "refs" as const, fromRef: `${target.sha}^`, toRef: target.sha }),
+    [target.sha],
+  );
+  const contextExpansion = useDiffContextExpansion({
+    serverId,
+    cwd: cwd ?? "",
+    compare: contextCompare,
+    enabled: Boolean(cwd),
+  });
   const mode = useMemo(() => ({ kind: "commit" as const }), []);
 
   let body: ReactNode;
@@ -131,6 +145,7 @@ function CommitDiffPanel() {
       <SharedDiffView
         files={files}
         displayPreferences={panelPreferences.displayPreferences}
+        contextExpansion={contextExpansion}
         mode={mode}
       />
     );

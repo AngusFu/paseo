@@ -2,6 +2,7 @@ import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-
 import { i18n } from "@/i18n/i18next";
 import { encodeFilePathForPathSegment, encodeWorkspaceIdForPathSegment } from "@/utils/host-routes";
 import { buildDeterministicWorkspaceTabId } from "@/workspace-tabs/identity";
+import { countClosableTabs } from "@/workspace-tabs/pins";
 
 export type WorkspaceTabMenuSurface = "desktop" | "mobile";
 
@@ -10,6 +11,8 @@ export interface WorkspaceTabMenuLabels {
   copyAgentId: string;
   copyFilePath: string;
   rename: string;
+  pin: string;
+  unpin: string;
   closeAbove: string;
   closeBelow: string;
   closeLeft: string;
@@ -25,6 +28,8 @@ export const DEFAULT_WORKSPACE_TAB_MENU_LABELS: WorkspaceTabMenuLabels = {
   copyAgentId: i18n.t("workspace.tabs.menu.copyAgentId"),
   copyFilePath: i18n.t("workspace.tabs.menu.copyFilePath"),
   rename: i18n.t("workspace.tabs.menu.rename"),
+  pin: i18n.t("workspace.tabs.menu.pin"),
+  unpin: i18n.t("workspace.tabs.menu.unpin"),
   closeAbove: i18n.t("workspace.tabs.menu.closeAbove"),
   closeBelow: i18n.t("workspace.tabs.menu.closeBelow"),
   closeLeft: i18n.t("workspace.tabs.menu.closeLeft"),
@@ -47,6 +52,8 @@ export type WorkspaceTabMenuEntry =
         | "arrow-right-to-line"
         | "copy-x"
         | "pencil"
+        | "pin"
+        | "pin-off"
         | "x";
       hint?: string;
       tooltip?: string;
@@ -65,12 +72,15 @@ interface BuildWorkspaceTabMenuEntriesInput {
   tab: WorkspaceTabDescriptor;
   index: number;
   tabCount: number;
+  /** How many tabs at the front of the pane are pinned. */
+  pinnedTabCount?: number;
   menuTestIDBase: string;
   onCopyResumeCommand: (agentId: string) => Promise<void> | void;
   onCopyAgentId: (agentId: string) => Promise<void> | void;
   onCopyFilePath: (path: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
   onRenameTab: (tab: WorkspaceTabDescriptor) => void;
+  onSetTabPinned: (tabId: string, pinned: boolean) => void;
   onCloseTab: (tabId: string) => Promise<void> | void;
   onCloseTabsBefore: (tabId: string) => Promise<void> | void;
   onCloseTabsAfter: (tabId: string) => Promise<void> | void;
@@ -82,11 +92,13 @@ interface BuildWorkspaceDesktopTabActionsInput {
   tab: WorkspaceTabDescriptor;
   index: number;
   tabCount: number;
+  pinnedTabCount?: number;
   onCopyResumeCommand: (agentId: string) => Promise<void> | void;
   onCopyAgentId: (agentId: string) => Promise<void> | void;
   onCopyFilePath: (path: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
   onRenameTab: (tab: WorkspaceTabDescriptor) => void;
+  onSetTabPinned: (tabId: string, pinned: boolean) => void;
   onCloseTab: (tabId: string) => Promise<void> | void;
   onCloseTabsToLeft: (tabId: string) => Promise<void> | void;
   onCloseTabsToRight: (tabId: string) => Promise<void> | void;
@@ -170,15 +182,19 @@ export function buildWorkspaceTabMenuEntries(
     onCopyFilePath,
     onReloadAgent,
     onRenameTab,
+    onSetTabPinned,
     onCloseTab,
     onCloseTabsBefore,
     onCloseTabsAfter,
     onCloseOtherTabs,
   } = input;
   const labels = input.labels ?? DEFAULT_WORKSPACE_TAB_MENU_LABELS;
-  const isFirstTab = index === 0;
-  const isLastTab = index === tabCount - 1;
-  const isOnlyTab = tabCount <= 1;
+  const closable = countClosableTabs({
+    index,
+    tabCount,
+    pinnedTabCount: input.pinnedTabCount ?? 0,
+  });
+  const isPinned = tab.pinned === true;
   const entries: WorkspaceTabMenuEntry[] = [];
 
   if (tab.target.kind === "agent") {
@@ -231,18 +247,29 @@ export function buildWorkspaceTabMenuEntries(
         onRenameTab(tab);
       },
     });
-    entries.push({
-      kind: "separator",
-      key: "rename-separator",
-    });
   }
+
+  entries.push({
+    kind: "item",
+    key: "pin",
+    label: isPinned ? labels.unpin : labels.pin,
+    icon: isPinned ? "pin-off" : "pin",
+    testID: `${menuTestIDBase}-${isPinned ? "unpin" : "pin"}`,
+    onSelect: () => {
+      onSetTabPinned(tab.tabId, !isPinned);
+    },
+  });
+  entries.push({
+    kind: "separator",
+    key: "tab-actions-separator",
+  });
 
   entries.push({
     kind: "item",
     key: "close-before",
     label: buildCloseBeforeLabel(surface, labels),
     icon: "arrow-left-to-line",
-    disabled: isFirstTab,
+    disabled: closable.before === 0,
     testID: `${menuTestIDBase}-${buildCloseBeforeTestIDSuffix(surface)}`,
     onSelect: () => {
       void onCloseTabsBefore(tab.tabId);
@@ -253,7 +280,7 @@ export function buildWorkspaceTabMenuEntries(
     key: "close-after",
     label: buildCloseAfterLabel(surface, labels),
     icon: "arrow-right-to-line",
-    disabled: isLastTab,
+    disabled: closable.after === 0,
     testID: `${menuTestIDBase}-${buildCloseAfterTestIDSuffix(surface)}`,
     onSelect: () => {
       void onCloseTabsAfter(tab.tabId);
@@ -264,7 +291,7 @@ export function buildWorkspaceTabMenuEntries(
     key: "close-others",
     label: labels.closeOthers,
     icon: "copy-x",
-    disabled: isOnlyTab,
+    disabled: closable.others === 0,
     testID: `${menuTestIDBase}-close-others`,
     onSelect: () => {
       void onCloseOtherTabs(tab.tabId);
@@ -309,12 +336,14 @@ export function buildWorkspaceDesktopTabActions(
       tab: input.tab,
       index: input.index,
       tabCount: input.tabCount,
+      pinnedTabCount: input.pinnedTabCount,
       menuTestIDBase: contextMenuTestId,
       onCopyResumeCommand: input.onCopyResumeCommand,
       onCopyAgentId: input.onCopyAgentId,
       onCopyFilePath: input.onCopyFilePath,
       onReloadAgent: input.onReloadAgent,
       onRenameTab: input.onRenameTab,
+      onSetTabPinned: input.onSetTabPinned,
       onCloseTab: input.onCloseTab,
       onCloseTabsBefore: input.onCloseTabsToLeft,
       onCloseTabsAfter: input.onCloseTabsToRight,

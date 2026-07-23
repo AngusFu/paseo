@@ -205,4 +205,34 @@ describe("workspace-pane-state", () => {
       }),
     ).toEqual({ kind: "split-side-pane", paneId: "main" });
   });
+
+  it("floats pinned tabs to the front of the pane", () => {
+    const tabs: WorkspaceTab[] = [
+      createTab("agent_agent-a", { kind: "agent", agentId: "agent-a" }),
+      { ...createTab("terminal_term-1", { kind: "terminal", terminalId: "term-1" }), pinned: true },
+      createTab("file_/repo/README.md", { kind: "file", path: "/repo/README.md" }),
+    ];
+    const layout: WorkspaceLayout = {
+      root: {
+        kind: "pane",
+        pane: {
+          id: "main",
+          tabIds: ["agent_agent-a", "terminal_term-1", "file_/repo/README.md"],
+          focusedTabId: "agent_agent-a",
+        },
+      },
+      focusedPaneId: "main",
+    };
+
+    const state = deriveWorkspacePaneState({ layout, tabs });
+
+    expect(state.tabs.map((tab) => tab.descriptor.tabId)).toEqual([
+      "terminal_term-1",
+      "agent_agent-a",
+      "file_/repo/README.md",
+    ]);
+    // The pin has to reach the descriptor, or the tab menu cannot offer to
+    // unpin and the bulk-close actions cannot skip it.
+    expect(state.tabs[0].descriptor.pinned).toBe(true);
+  });
 });

@@ -354,6 +354,41 @@ describe("workspace-layout-store actions", () => {
     ]);
   });
 
+  it("pins and unpins a tab, and keeps the flag through normalization", () => {
+    const workspaceKey = createWorkspaceKey();
+    const store = workspaceLayoutStore.getState();
+    const tabId = store.openTabFocused(workspaceKey, {
+      kind: "file",
+      path: "/repo/worktree/pinned.ts",
+    });
+
+    store.setTabPinned(workspaceKey, tabId!, true);
+    const pinnedLayout = workspaceLayoutStore.getState().layoutByWorkspace[workspaceKey];
+
+    expect(collectAllTabs(pinnedLayout.root).find((tab) => tab.tabId === tabId)?.pinned).toBe(true);
+    // The flag has to survive the round trip through persistence, which runs
+    // every layout back through normalizeLayout on rehydration.
+    expect(
+      collectAllTabs(normalizeLayout(pinnedLayout).root).find((tab) => tab.tabId === tabId)?.pinned,
+    ).toBe(true);
+
+    // Reopening the same target focuses the tab that is already there; it must
+    // not hand back an unpinned replacement.
+    store.openTabFocused(workspaceKey, { kind: "file", path: "/repo/worktree/pinned.ts" });
+    expect(
+      collectAllTabs(workspaceLayoutStore.getState().layoutByWorkspace[workspaceKey].root).find(
+        (tab) => tab.tabId === tabId,
+      )?.pinned,
+    ).toBe(true);
+
+    store.setTabPinned(workspaceKey, tabId!, false);
+    const unpinnedLayout = workspaceLayoutStore.getState().layoutByWorkspace[workspaceKey];
+
+    expect(
+      collectAllTabs(unpinnedLayout.root).find((tab) => tab.tabId === tabId)?.pinned,
+    ).toBeUndefined();
+  });
+
   it("updates an existing file tab when opening the same path at a new line range", () => {
     const workspaceKey = createWorkspaceKey();
     const store = workspaceLayoutStore.getState();

@@ -93,6 +93,7 @@ import {
   normalizeWorkspaceTabTarget,
   workspaceTabTargetsEqual,
 } from "@/workspace-tabs/identity";
+import { excludePinnedTabs } from "@/workspace-tabs/pins";
 import { selectVisibleAgentIds } from "./visible-agent-ids";
 import {
   getHostRuntimeStore,
@@ -434,6 +435,7 @@ interface MobileWorkspaceTabSwitcherProps {
   onCopyFilePath: (path: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
   onRenameTab: (tab: WorkspaceTabDescriptor) => void;
+  onSetTabPinned: (tabId: string, pinned: boolean) => void;
   onCloseTab: (tabId: string) => Promise<void> | void;
   onCloseTabsAbove: (tabId: string) => Promise<void> | void;
   onCloseTabsBelow: (tabId: string) => Promise<void> | void;
@@ -612,6 +614,7 @@ function MobileWorkspaceTabOption({
   tab,
   tabIndex,
   tabCount,
+  pinnedTabCount,
   normalizedServerId,
   normalizedWorkspaceId,
   selected,
@@ -622,6 +625,7 @@ function MobileWorkspaceTabOption({
   onCopyFilePath,
   onReloadAgent,
   onRenameTab,
+  onSetTabPinned,
   onCloseTab,
   onCloseTabsAbove,
   onCloseTabsBelow,
@@ -630,6 +634,7 @@ function MobileWorkspaceTabOption({
   tab: WorkspaceTabDescriptor;
   tabIndex: number;
   tabCount: number;
+  pinnedTabCount: number;
   normalizedServerId: string;
   normalizedWorkspaceId: string;
   selected: boolean;
@@ -640,6 +645,7 @@ function MobileWorkspaceTabOption({
   onCopyFilePath: (path: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
   onRenameTab: (tab: WorkspaceTabDescriptor) => void;
+  onSetTabPinned: (tabId: string, pinned: boolean) => void;
   onCloseTab: (tabId: string) => Promise<void> | void;
   onCloseTabsAbove: (tabId: string) => Promise<void> | void;
   onCloseTabsBelow: (tabId: string) => Promise<void> | void;
@@ -652,6 +658,8 @@ function MobileWorkspaceTabOption({
       copyAgentId: t("workspace.tabs.menu.copyAgentId"),
       copyFilePath: t("workspace.tabs.menu.copyFilePath"),
       rename: t("workspace.tabs.menu.rename"),
+      pin: t("workspace.tabs.menu.pin"),
+      unpin: t("workspace.tabs.menu.unpin"),
       closeAbove: t("workspace.tabs.menu.closeAbove"),
       closeBelow: t("workspace.tabs.menu.closeBelow"),
       closeLeft: t("workspace.tabs.menu.closeLeft"),
@@ -669,12 +677,14 @@ function MobileWorkspaceTabOption({
     tab,
     index: tabIndex,
     tabCount,
+    pinnedTabCount,
     menuTestIDBase,
     onCopyResumeCommand,
     onCopyAgentId,
     onCopyFilePath,
     onReloadAgent,
     onRenameTab,
+    onSetTabPinned,
     onCloseTab,
     onCloseTabsBefore: onCloseTabsAbove,
     onCloseTabsAfter: onCloseTabsBelow,
@@ -743,6 +753,7 @@ const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitcher({
   onCopyFilePath,
   onReloadAgent,
   onRenameTab,
+  onSetTabPinned,
   onCloseTab,
   onCloseTabsAbove,
   onCloseTabsBelow,
@@ -751,6 +762,7 @@ const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitcher({
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const anchorRef = useRef<View>(null);
+  const pinnedTabCount = useMemo(() => tabs.filter((tab) => tab.pinned).length, [tabs]);
   const tabIndexByKey = useMemo(() => {
     const map = new Map<string, number>();
     tabs.forEach((tab, index) => {
@@ -789,6 +801,7 @@ const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitcher({
           tab={tab}
           tabIndex={tabIndex}
           tabCount={tabs.length}
+          pinnedTabCount={pinnedTabCount}
           normalizedServerId={normalizedServerId}
           normalizedWorkspaceId={normalizedWorkspaceId}
           selected={selected}
@@ -799,6 +812,7 @@ const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitcher({
           onCopyFilePath={onCopyFilePath}
           onReloadAgent={onReloadAgent}
           onRenameTab={onRenameTab}
+          onSetTabPinned={onSetTabPinned}
           onCloseTab={onCloseTab}
           onCloseTabsAbove={onCloseTabsAbove}
           onCloseTabsBelow={onCloseTabsBelow}
@@ -810,6 +824,7 @@ const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitcher({
       tabByKey,
       tabIndexByKey,
       tabs.length,
+      pinnedTabCount,
       normalizedServerId,
       normalizedWorkspaceId,
       onCopyResumeCommand,
@@ -817,6 +832,7 @@ const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitcher({
       onCopyFilePath,
       onReloadAgent,
       onRenameTab,
+      onSetTabPinned,
       onCloseTab,
       onCloseTabsAbove,
       onCloseTabsBelow,
@@ -2011,6 +2027,7 @@ function WorkspaceScreenContent({
   const paneFocusSuppressedRef = useRef(false);
   const resizeWorkspaceSplit = useWorkspaceLayoutStore((state) => state.resizeSplit);
   const reorderWorkspaceTabsInPane = useWorkspaceLayoutStore((state) => state.reorderTabsInPane);
+  const setWorkspaceTabPinned = useWorkspaceLayoutStore((state) => state.setTabPinned);
   const _pinnedAgentIds = useWorkspaceLayoutStore((state) =>
     persistenceKey
       ? (state.pinnedAgentIdsByWorkspace[persistenceKey] ?? EMPTY_PINNED_AGENT_IDS)
@@ -2902,7 +2919,10 @@ function WorkspaceScreenContent({
 
   const handleBulkCloseTabs = useCallback(
     async (input: { tabsToClose: WorkspaceTabDescriptor[]; title: string; logLabel: string }) => {
-      const { tabsToClose, title, logLabel } = input;
+      const { title, logLabel } = input;
+      // Every bulk close funnels through here, so dropping the pinned tabs once
+      // covers close-to-the-left, close-to-the-right and close-others alike.
+      const tabsToClose = excludePinnedTabs(input.tabsToClose);
       if (tabsToClose.length === 0) {
         return;
       }
@@ -3407,6 +3427,16 @@ function WorkspaceScreenContent({
     [persistenceKey, resizeWorkspaceSplit],
   );
 
+  const handleSetTabPinned = useCallback(
+    (tabId: string, pinned: boolean) => {
+      if (!persistenceKey) {
+        return;
+      }
+      setWorkspaceTabPinned(persistenceKey, tabId, pinned);
+    },
+    [persistenceKey, setWorkspaceTabPinned],
+  );
+
   const handleReorderTabsInPane = useCallback(
     function handleReorderTabsInPane(paneId: string, tabIds: string[]) {
       if (!persistenceKey) {
@@ -3656,6 +3686,7 @@ function WorkspaceScreenContent({
         onCopyFilePath={handleCopyFilePath}
         onReloadAgent={handleReloadAgent}
         onRenameTab={handleRenameTab}
+        onSetTabPinned={handleSetTabPinned}
         onCloseTabsToLeft={handleCloseTabsToLeftInPane}
         onCloseTabsToRight={handleCloseTabsToRightInPane}
         onCloseOtherTabs={handleCloseOtherTabsInPane}
@@ -3692,6 +3723,7 @@ function WorkspaceScreenContent({
     handleCopyFilePath,
     handleReloadAgent,
     handleRenameTab,
+    handleSetTabPinned,
     handleCloseTabsToLeftInPane,
     handleCloseTabsToRightInPane,
     handleCloseOtherTabsInPane,
@@ -3773,6 +3805,7 @@ function WorkspaceScreenContent({
           onCopyFilePath={handleCopyFilePath}
           onReloadAgent={handleReloadAgent}
           onRenameTab={handleRenameTab}
+          onSetTabPinned={handleSetTabPinned}
           onCloseTab={handleCloseTabById}
           onCloseTabsAbove={handleCloseTabsToLeft}
           onCloseTabsBelow={handleCloseTabsToRight}
@@ -3795,6 +3828,7 @@ function WorkspaceScreenContent({
           onCopyFilePath={handleCopyFilePath}
           onReloadAgent={handleReloadAgent}
           onRenameTab={handleRenameTab}
+          onSetTabPinned={handleSetTabPinned}
           onCloseTabsToLeft={handleCloseTabsToLeft}
           onCloseTabsToRight={handleCloseTabsToRight}
           onCloseOtherTabs={handleCloseOtherTabs}

@@ -191,6 +191,12 @@ interface ReorderPaneTabsInLayoutInput {
   tabIds: string[];
 }
 
+interface SetTabPinnedInLayoutInput {
+  layout: WorkspaceLayout;
+  tabId: string;
+  pinned: boolean;
+}
+
 export interface WorkspaceTabReconcileState {
   layout: WorkspaceLayout;
   pinnedAgentIds?: ReadonlySet<string> | null;
@@ -299,11 +305,26 @@ function normalizeWorkspaceTab(value: unknown): WorkspaceTab | null {
     return null;
   }
 
-  return {
-    tabId,
-    target,
-    createdAt: typeof tab.createdAt === "number" ? tab.createdAt : Date.now(),
-  };
+  return withPinnedFlag(
+    {
+      tabId,
+      target,
+      createdAt: typeof tab.createdAt === "number" ? tab.createdAt : Date.now(),
+    },
+    tab.pinned === true,
+  );
+}
+
+/**
+ * Sets the pin flag, dropping the key entirely when unpinned so an unpinned tab
+ * serializes exactly as it did before pinning existed.
+ */
+function withPinnedFlag(tab: WorkspaceTab, pinned: boolean): WorkspaceTab {
+  if (!pinned) {
+    const { pinned: _unpinned, ...rest } = tab;
+    return rest;
+  }
+  return { ...tab, pinned: true };
 }
 
 function normalizeWorkspaceTabs(input: unknown): WorkspaceTab[] {
@@ -1494,6 +1515,42 @@ export function resizeSplitInLayout(input: ResizeSplitInLayoutInput): WorkspaceL
     root: updateGroupSizesInTree(layout.root, {
       groupId: input.groupId,
       sizes: input.sizes,
+    }),
+    focusedPaneId: layout.focusedPaneId,
+    parentTabIdByTabId: input.layout.parentTabIdByTabId,
+  });
+}
+
+/**
+ * Pins or unpins a tab. Returns null when the tab is gone or already in the
+ * requested state, so the caller can leave the store untouched.
+ *
+ * The flag stays on the tab rather than reordering the pane: the pinned-first
+ * order is applied when the pane is rendered, which keeps the user's own drag
+ * order intact underneath.
+ */
+export function setTabPinnedInLayout(input: SetTabPinnedInLayoutInput): WorkspaceLayout | null {
+  const layout = asInternalLayout(input.layout);
+  const pane = findPaneContainingTab(layout.root, input.tabId);
+  if (!pane) {
+    return null;
+  }
+
+  const currentTab = collectAllTabs(layout.root).find((tab) => tab.tabId === input.tabId) ?? null;
+  if (!currentTab || (currentTab.pinned ?? false) === input.pinned) {
+    return null;
+  }
+
+  return withNormalizedParentTabMap({
+    root: updatePaneInTree(layout.root, {
+      paneId: pane.id,
+      updater: (paneToUpdate) =>
+        normalizePaneAfterTabChange({
+          ...paneToUpdate,
+          tabs: paneToUpdate.tabs.map((tab) =>
+            tab.tabId === input.tabId ? withPinnedFlag(tab, input.pinned) : tab,
+          ),
+        }),
     }),
     focusedPaneId: layout.focusedPaneId,
     parentTabIdByTabId: input.layout.parentTabIdByTabId,

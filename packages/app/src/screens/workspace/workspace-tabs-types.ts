@@ -5,4 +5,6 @@ export interface WorkspaceTabDescriptor {
   tabId: string;
   kind: WorkspaceTabTarget["kind"];
   target: WorkspaceTabTarget;
+  /** Pinned tabs sort to the front and are skipped by the bulk-close actions. */
+  pinned?: boolean;
 }

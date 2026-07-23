@@ -563,6 +563,8 @@ export const ru: TranslationResources = {
         copyAgentId: "Скопировать идентификатор агента",
         copyFilePath: "Copy file path",
         rename: "Переименовать",
+        pin: "Закрепить вкладку",
+        unpin: "Открепить вкладку",
         closeAbove: "Закрыть вкладки выше",
         closeBelow: "Закройте вкладки ниже",
         closeLeft: "Ближе к левому краю",

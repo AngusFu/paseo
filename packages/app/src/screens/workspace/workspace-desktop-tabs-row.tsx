@@ -15,6 +15,8 @@ import {
   View,
   type LayoutChangeEvent,
   type PressableStateCallbackType,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
 import {
   CopyX,
@@ -24,6 +26,8 @@ import {
   Columns2,
   Copy,
   Pencil,
+  Pin,
+  PinOff,
   RotateCw,
   Rows2,
   Globe,
@@ -106,6 +110,8 @@ const ThemedArrowLeftToLine = withUnistyles(ArrowLeftToLine);
 const ThemedArrowRightToLine = withUnistyles(ArrowRightToLine);
 const ThemedCopyX = withUnistyles(CopyX);
 const ThemedPencil = withUnistyles(Pencil);
+const ThemedPin = withUnistyles(Pin);
+const ThemedPinOff = withUnistyles(PinOff);
 const ThemedSquarePen = withUnistyles(SquarePen);
 const ThemedSquareTerminal = withUnistyles(SquareTerminal);
 const ThemedChevronDown = withUnistyles(ChevronDown);
@@ -124,6 +130,19 @@ const BROWSER_ICON = <ThemedGlobe size={14} uniProps={mutedColorMapping} />;
 const DRAFT_TARGET: PinnedTabTarget = { kind: "draft" };
 const TERMINAL_TARGET: PinnedTabTarget = { kind: "terminal" };
 const BROWSER_TARGET: PinnedTabTarget = { kind: "browser" };
+
+// Keeps a press on the trailing button from starting a tab drag. Constant, so
+// it is defined once rather than rebuilt for every tab on every render.
+const CLOSE_BUTTON_DRAG_BLOCKERS = isWeb
+  ? ({
+      onPointerDown: (event: { stopPropagation?: () => void }) => {
+        event.stopPropagation?.();
+      },
+      onMouseDown: (event: { stopPropagation?: () => void }) => {
+        event.stopPropagation?.();
+      },
+    } as const)
+  : undefined;
 
 function newTabActionButtonStyle({ hovered, pressed }: PressableStateCallbackType) {
   return [styles.newTabActionButton, (hovered || pressed) && styles.newTabActionButtonHovered];
@@ -352,6 +371,10 @@ function TabContextMenuItem({
         return <ThemedCopyX size={16} uniProps={mutedColorMapping} />;
       case "pencil":
         return <ThemedPencil size={16} uniProps={mutedColorMapping} />;
+      case "pin":
+        return <ThemedPin size={16} uniProps={mutedColorMapping} />;
+      case "pin-off":
+        return <ThemedPinOff size={16} uniProps={mutedColorMapping} />;
       case "x":
         return <ThemedX size={16} uniProps={mutedColorMapping} />;
       default:
@@ -458,6 +481,7 @@ interface WorkspaceDesktopTabsRowProps {
   onCopyFilePath: (path: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
   onRenameTab: (tab: WorkspaceTabDescriptor) => void;
+  onSetTabPinned: (tabId: string, pinned: boolean) => void;
   onCloseTabsToLeft: (tabId: string) => Promise<void> | void;
   onCloseTabsToRight: (tabId: string) => Promise<void> | void;
   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
@@ -557,6 +581,47 @@ function TabHandleContent({
   );
 }
 
+/**
+ * The trailing slot on a pinned tab.
+ *
+ * A pinned tab trades its close button for the pin: pinning is a way of saying
+ * "stop losing this one", so a stray click on the same pixel should not be the
+ * thing that closes it. Closing stays available from the tab menu.
+ */
+function TabPinAffordance({
+  tab,
+  dragBlockers,
+  buttonStyle,
+  onPressIn,
+  onPress,
+}: {
+  tab: WorkspaceTabDescriptor;
+  dragBlockers: object | undefined;
+  buttonStyle: (state: PressableStateCallbackType & { hovered?: boolean }) => StyleProp<ViewStyle>;
+  onPressIn: (event: { stopPropagation?: () => void }) => void;
+  onPress: (event: { stopPropagation?: () => void }) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Pressable
+      {...dragBlockers}
+      testID={`workspace-tab-unpin-${buildDeterministicWorkspaceTabId(tab.target)}`}
+      accessibilityRole="button"
+      accessibilityLabel={t("workspace.tabs.menu.unpin")}
+      onPressIn={onPressIn}
+      onPress={onPress}
+      style={buttonStyle}
+    >
+      {({ hovered, pressed }) => (
+        <ThemedPin
+          size={12}
+          uniProps={hovered || pressed ? foregroundColorMapping : mutedColorMapping}
+        />
+      )}
+    </Pressable>
+  );
+}
+
 function TabChip({
   tab,
   isActive,
@@ -573,6 +638,7 @@ function TabChip({
   setHoveredCloseTabKey,
   onNavigateTab,
   onCloseTab,
+  onSetTabPinned,
   dragHandleProps,
 }: {
   tab: WorkspaceTabDescriptor;
@@ -590,6 +656,7 @@ function TabChip({
   setHoveredCloseTabKey: Dispatch<SetStateAction<string | null>>;
   onNavigateTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => Promise<void> | void;
+  onSetTabPinned: (tabId: string, pinned: boolean) => void;
   dragHandleProps: DraggableListDragHandleProps | undefined;
 }) {
   const { t } = useTranslation();
@@ -600,16 +667,6 @@ function TabChip({
   const [hovered, setHovered] = useState(false);
   const isHighlighted = isActive || hovered || isCloseHovered;
   const showTrailingAffordance = showCloseButton || presentation.modified;
-  const closeButtonDragBlockers = isWeb
-    ? ({
-        onPointerDown: (event: { stopPropagation?: () => void }) => {
-          event.stopPropagation?.();
-        },
-        onMouseDown: (event: { stopPropagation?: () => void }) => {
-          event.stopPropagation?.();
-        },
-      } as const)
-    : undefined;
 
   const tabChipStyle = useCallback(
     () => [
@@ -654,6 +711,14 @@ function TabChip({
       void onCloseTab(tab.tabId);
     },
     [onCloseTab, tab.tabId],
+  );
+
+  const handleUnpinButtonPress = useCallback(
+    (event: { stopPropagation?: () => void }) => {
+      event.stopPropagation?.();
+      onSetTabPinned(tab.tabId, false);
+    },
+    [onSetTabPinned, tab.tabId],
   );
 
   const closeButtonStyle = useCallback(
@@ -716,9 +781,18 @@ function TabChip({
                 tabLabelStyle={tabLabelStyle}
               />
 
-              {showTrailingAffordance ? (
+              {tab.pinned ? (
+                <TabPinAffordance
+                  tab={tab}
+                  dragBlockers={CLOSE_BUTTON_DRAG_BLOCKERS}
+                  buttonStyle={closeButtonStyle}
+                  onPressIn={handleCloseButtonPressIn}
+                  onPress={handleUnpinButtonPress}
+                />
+              ) : null}
+              {!tab.pinned && showTrailingAffordance ? (
                 <Pressable
-                  {...(closeButtonDragBlockers as object | undefined)}
+                  {...(CLOSE_BUTTON_DRAG_BLOCKERS as object | undefined)}
                   testID={closeButtonTestId}
                   disabled={isClosingTab}
                   onPressIn={handleCloseButtonPressIn}
@@ -803,6 +877,7 @@ export function WorkspaceDesktopTabsRow({
   onCopyFilePath,
   onReloadAgent,
   onRenameTab,
+  onSetTabPinned,
   onCloseTabsToLeft,
   onCloseTabsToRight,
   onCloseOtherTabs,
@@ -885,6 +960,8 @@ export function WorkspaceDesktopTabsRow({
       copyAgentId: t("workspace.tabs.menu.copyAgentId"),
       copyFilePath: t("workspace.tabs.menu.copyFilePath"),
       rename: t("workspace.tabs.menu.rename"),
+      pin: t("workspace.tabs.menu.pin"),
+      unpin: t("workspace.tabs.menu.unpin"),
       closeAbove: t("workspace.tabs.menu.closeAbove"),
       closeBelow: t("workspace.tabs.menu.closeBelow"),
       closeLeft: t("workspace.tabs.menu.closeLeft"),
@@ -985,6 +1062,10 @@ export function WorkspaceDesktopTabsRow({
 
   const terminalDisabled = disableCreateTerminal || isWaitingOnTerminalReadiness;
 
+  // Pinned tabs always sit at the front of the pane, so the count is enough to
+  // tell the tab menu how much of a left/right sweep is actually closable.
+  const pinnedTabCount = useMemo(() => tabs.filter((entry) => entry.tab.pinned).length, [tabs]);
+
   const renderTab = useCallback(
     ({
       item,
@@ -1017,6 +1098,8 @@ export function WorkspaceDesktopTabsRow({
           onCopyFilePath={onCopyFilePath}
           onReloadAgent={onReloadAgent}
           onRenameTab={onRenameTab}
+          onSetTabPinned={onSetTabPinned}
+          pinnedTabCount={pinnedTabCount}
           onCloseTabsToLeft={onCloseTabsToLeft}
           onCloseTabsToRight={onCloseTabsToRight}
           onCloseOtherTabs={onCloseOtherTabs}
@@ -1050,6 +1133,8 @@ export function WorkspaceDesktopTabsRow({
       onNavigateTab,
       onReloadAgent,
       onRenameTab,
+      onSetTabPinned,
+      pinnedTabCount,
       setHoveredCloseTabKey,
       tabMenuLabels,
       tabDropPreviewIndex,
@@ -1171,6 +1256,8 @@ function ResolvedDesktopTabChip({
   onCopyFilePath,
   onReloadAgent,
   onRenameTab,
+  onSetTabPinned,
+  pinnedTabCount,
   onCloseTabsToLeft,
   onCloseTabsToRight,
   onCloseOtherTabs,
@@ -1197,6 +1284,8 @@ function ResolvedDesktopTabChip({
   onCopyFilePath: (path: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
   onRenameTab: (tab: WorkspaceTabDescriptor) => void;
+  onSetTabPinned: (tabId: string, pinned: boolean) => void;
+  pinnedTabCount: number;
   onCloseTabsToLeft: (tabId: string) => Promise<void> | void;
   onCloseTabsToRight: (tabId: string) => Promise<void> | void;
   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
@@ -1218,11 +1307,13 @@ function ResolvedDesktopTabChip({
         tab: item.tab,
         index,
         tabCount,
+        pinnedTabCount,
         onCopyResumeCommand,
         onCopyAgentId,
         onCopyFilePath,
         onReloadAgent,
         onRenameTab,
+        onSetTabPinned,
         onCloseTab,
         onCloseTabsToLeft,
         onCloseTabsToRight,
@@ -1242,6 +1333,8 @@ function ResolvedDesktopTabChip({
       labels,
       onReloadAgent,
       onRenameTab,
+      onSetTabPinned,
+      pinnedTabCount,
       tabCount,
     ],
   );
@@ -1279,6 +1372,7 @@ function ResolvedDesktopTabChip({
               setHoveredCloseTabKey={setHoveredCloseTabKey}
               onNavigateTab={onNavigateTab}
               onCloseTab={onCloseTab}
+              onSetTabPinned={onSetTabPinned}
               dragHandleProps={dragHandleProps}
             />
             {showDropIndicatorAfter ? (

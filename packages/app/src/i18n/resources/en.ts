@@ -558,6 +558,8 @@ export const en = {
         copyAgentId: "Copy agent id",
         copyFilePath: "Copy file path",
         rename: "Rename",
+        pin: "Pin tab",
+        unpin: "Unpin tab",
         closeAbove: "Close tabs above",
         closeBelow: "Close tabs below",
         closeLeft: "Close to the left",

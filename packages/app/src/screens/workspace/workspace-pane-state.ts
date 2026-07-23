@@ -10,6 +10,7 @@ import {
   normalizeWorkspaceTabTarget,
   workspaceTabTargetsEqual,
 } from "@/workspace-tabs/identity";
+import { orderPinnedTabsFirst } from "@/workspace-tabs/pins";
 import { findAdjacentPane } from "@/utils/split-navigation";
 
 export interface WorkspaceDerivedTab {
@@ -58,12 +59,13 @@ function normalizeWorkspaceTab(tab: WorkspaceTab): WorkspaceTab | null {
     tabId,
     target,
     createdAt: tab.createdAt,
+    pinned: tab.pinned,
   };
 }
 
 function orderPaneTabs(input: { pane: SplitPane | null; tabs: WorkspaceTab[] }): WorkspaceTab[] {
   if (!input.pane) {
-    return input.tabs;
+    return orderPinnedTabsFirst(input.tabs);
   }
 
   const tabsById = new Map<string, WorkspaceTab>();
@@ -78,7 +80,7 @@ function orderPaneTabs(input: { pane: SplitPane | null; tabs: WorkspaceTab[] }):
       orderedTabs.push(tab);
     }
   }
-  return orderedTabs;
+  return orderPinnedTabsFirst(orderedTabs);
 }
 
 function normalizeWorkspacePaneTabs(tabs: WorkspaceTab[]): NormalizeWorkspacePaneTabsResult {
@@ -98,6 +100,7 @@ function normalizeWorkspacePaneTabs(tabs: WorkspaceTab[]): NormalizeWorkspacePan
         tabId: normalizedTab.tabId,
         kind: normalizedTab.target.kind,
         target: normalizedTab.target,
+        pinned: normalizedTab.pinned,
       },
     });
   }

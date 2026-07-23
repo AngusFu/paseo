@@ -30,6 +30,7 @@ import {
   removeTabFromTree,
   reorderFocusedPaneTabsInLayout,
   reorderPaneTabsInLayout,
+  setTabPinnedInLayout,
   retargetTabInLayout,
   splitPaneEmptyInLayout,
   splitPaneInLayout,
@@ -113,6 +114,7 @@ interface WorkspaceLayoutStore {
   restorePaneFocus: (workspaceKey: string, token: string) => void;
   resizeSplit: (workspaceKey: string, groupId: string, sizes: number[]) => void;
   reorderTabsInPane: (workspaceKey: string, paneId: string, tabIds: string[]) => void;
+  setTabPinned: (workspaceKey: string, tabId: string, pinned: boolean) => void;
   pinAgent: (workspaceKey: string, agentId: string) => void;
   unpinAgent: (workspaceKey: string, agentId: string) => void;
   hideAgent: (workspaceKey: string, agentId: string) => void;
@@ -817,6 +819,32 @@ export function createWorkspaceLayoutStore(
 
             return {
               ...withoutFocusRestoration(state, normalizedWorkspaceKey),
+              layoutByWorkspace: {
+                ...state.layoutByWorkspace,
+                [normalizedWorkspaceKey]: nextLayout,
+              },
+            };
+          });
+        },
+        setTabPinned: (workspaceKey, tabId, pinned) => {
+          const normalizedWorkspaceKey = trimNonEmpty(workspaceKey);
+          const normalizedTabId = trimNonEmpty(tabId);
+          if (!normalizedWorkspaceKey || !normalizedTabId) {
+            return;
+          }
+
+          set((state) => {
+            const nextLayout = setTabPinnedInLayout({
+              layout: getWorkspaceLayout(state.layoutByWorkspace, normalizedWorkspaceKey),
+              tabId: normalizedTabId,
+              pinned,
+            });
+            if (!nextLayout) {
+              return state;
+            }
+
+            return {
+              ...state,
               layoutByWorkspace: {
                 ...state.layoutByWorkspace,
                 [normalizedWorkspaceKey]: nextLayout,

@@ -34,6 +34,8 @@ export interface WorkspaceTab {
   tabId: string;
   target: WorkspaceTabTarget;
   createdAt: number;
+  /** Pinned tabs sort to the front and survive the bulk-close actions. */
+  pinned?: boolean;
 }
 
 export function buildWorkspaceTabPersistenceKey(input: {

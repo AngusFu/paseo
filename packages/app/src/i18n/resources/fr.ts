@@ -564,6 +564,8 @@ export const fr: TranslationResources = {
         copyAgentId: "Copier l'identifiant de l'agent",
         copyFilePath: "Copy file path",
         rename: "Rebaptiser",
+        pin: "Épingler l'onglet",
+        unpin: "Détacher l'onglet",
         closeAbove: "Fermer les onglets ci-dessus",
         closeBelow: "Fermer les onglets ci-dessous",
         closeLeft: "Près de la gauche",

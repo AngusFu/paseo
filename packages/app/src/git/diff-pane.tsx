@@ -59,6 +59,7 @@ import {
   RotateCw,
   Upload,
   WrapText,
+  Maximize2,
 } from "lucide-react-native";
 import {
   useCheckoutDiffQuery,
@@ -127,7 +128,7 @@ import { useSessionStore } from "@/stores/session-store";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { usePanelStore } from "@/stores/panel-store";
-import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
+import { collectAllTabs, useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
 import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 import { buildWorkspaceExplorerStateKey } from "@/hooks/use-file-explorer-actions";
 import {
@@ -1440,6 +1441,7 @@ type PressableStyleFn = (
 
 const foregroundMutedIconColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
+const ThemedMaximize2 = withUnistyles(Maximize2);
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedAlignJustify = withUnistyles(AlignJustify);
 const ThemedColumns2 = withUnistyles(Columns2);
@@ -1510,6 +1512,46 @@ export function DiffLayoutToggle({
               uniProps={foregroundMutedIconColorMapping}
             />
           )}
+        </Pressable>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        <Text style={styles.tooltipText}>{label}</Text>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+interface ChangesTabToggleProps {
+  isMobile: boolean;
+  selected: boolean;
+  onPress: () => void;
+}
+
+// Opens (or closes) the full Changes tab. Desktop only: the tab layout is a
+// desktop concept, and on mobile this pane already is the whole surface.
+function ChangesTabToggle({ isMobile, selected, onPress }: ChangesTabToggleProps) {
+  const { t } = useTranslation();
+  const buttonStyle = useMemo(
+    () => buildToggleButtonStyle(selected, styles.expandAllButton),
+    [selected],
+  );
+  const label = t(
+    selected ? "workspace.git.diff.closeChangesTab" : "workspace.git.diff.openChangesTab",
+  );
+  if (isMobile) {
+    return null;
+  }
+  return (
+    <Tooltip delayDuration={300}>
+      <TooltipTrigger asChild>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          testID="changes-open-tab"
+          onPress={onPress}
+          style={buttonStyle}
+        >
+          <ThemedMaximize2 size={14} uniProps={foregroundMutedIconColorMapping} />
         </Pressable>
       </TooltipTrigger>
       <TooltipContent side="bottom">
@@ -3307,6 +3349,36 @@ export function GitDiffPane({
     },
     [commitDiffPersistenceKey, openWorkspaceTabFocused],
   );
+  const closeWorkspaceTab = useWorkspaceLayoutStore((state) => state.closeTab);
+  // The Changes tab shows this same pane full-width, so the toggle both opens
+  // it and closes the one that is already open rather than stacking duplicates.
+  const changesTabId = useWorkspaceLayoutStore((state) => {
+    if (!commitDiffPersistenceKey) {
+      return null;
+    }
+    const layout = state.layoutByWorkspace[commitDiffPersistenceKey];
+    return layout?.root
+      ? (collectAllTabs(layout.root).find((tab) => tab.target.kind === "working_diff")?.tabId ??
+          null)
+      : null;
+  });
+  const changesTabOpen = !isMobile && Boolean(changesTabId);
+  const handleToggleChangesTab = useCallback(() => {
+    if (!commitDiffPersistenceKey || isMobile) {
+      return;
+    }
+    if (changesTabId) {
+      closeWorkspaceTab(commitDiffPersistenceKey, changesTabId);
+      return;
+    }
+    openWorkspaceTabFocused(commitDiffPersistenceKey, { kind: "working_diff" });
+  }, [
+    changesTabId,
+    closeWorkspaceTab,
+    commitDiffPersistenceKey,
+    isMobile,
+    openWorkspaceTabFocused,
+  ]);
   const refreshSupported = useSessionStore(
     (s) => s.sessions[serverId]?.serverInfo?.features?.checkoutRefresh === true,
   );
@@ -4142,6 +4214,11 @@ export function GitDiffPane({
               onToggleMergeBase={handleToggleBranchCompareMergeBase}
             />
             <View style={styles.diffStatusButtons}>
+              <ChangesTabToggle
+                isMobile={isMobile}
+                selected={changesTabOpen}
+                onPress={handleToggleChangesTab}
+              />
               <DiffEngineMenu
                 diffTool={changesPreferences.diffTool}
                 gitAlgorithm={changesPreferences.gitAlgorithm}

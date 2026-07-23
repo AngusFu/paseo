@@ -400,6 +400,23 @@ npm run cli -- provider features claude --cwd . --model <id>  # Fast/plan/… fe
 npm run cli -- clone owner/repo --dir ~/workspace           # Clone GitHub repo and register project
 ```
 
+### Getting a workspace id back from worktree creation
+
+Creating a worktree registers a workspace for it, and anything you do next —
+spawning an agent into it, opening it in the app — needs that workspace id.
+Both creation commands report it, so scripts should read it from the output
+rather than deriving it from the path:
+
+```bash
+npm run cli -- worktree create --mode checkout-branch --branch feat/X --json \
+  | jq -r '.workspaceId'
+npm run cli -- workspace create --mode checkout-branch --branch feat/X --json \
+  | jq -r '.workspaceId'
+```
+
+The table output carries the same value (`WORKSPACE` / `WORKSPACE ID`). Prefer
+`workspace create` — `worktree create` is a compatibility alias.
+
 Use `--host <host:port>` to point the CLI at a different daemon:
 
 ```bash

@@ -9,6 +9,13 @@ export interface WorktreeCreateResult {
   name: string;
   branchName: string;
   worktreePath: string;
+  /**
+   * The workspace the daemon registered for this worktree. Callers that go on
+   * to drive the workspace — spawning an agent into it, opening it in the app —
+   * need this, and previously had to go digging for it because the command
+   * printed only the path.
+   */
+  workspaceId: string;
 }
 
 export const createSchema: OutputSchema<WorktreeCreateResult> = {
@@ -16,6 +23,7 @@ export const createSchema: OutputSchema<WorktreeCreateResult> = {
   columns: [
     { header: "NAME", field: "name", width: 24 },
     { header: "BRANCH", field: "branchName", width: 28 },
+    { header: "WORKSPACE", field: "workspaceId", width: 22 },
     { header: "PATH", field: "worktreePath", width: 50 },
   ],
 };
@@ -28,13 +36,20 @@ export async function runCreateCommand(
   options: WorktreeCreateOptions,
   _command: Command,
 ): Promise<SingleResult<WorktreeCreateResult>> {
+  return runCreateCommandWithDeps(options, { connectToDaemon });
+}
+
+export async function runCreateCommandWithDeps(
+  options: WorktreeCreateOptions,
+  deps: { connectToDaemon: typeof connectToDaemon },
+): Promise<SingleResult<WorktreeCreateResult>> {
   const cwd = options.cwd ?? process.cwd();
   const request = buildCreateWorktreeRequest(options, cwd);
 
   const host = getDaemonHost({ host: options.host });
   let client: DaemonClient;
   try {
-    client = await connectToDaemon({ host: options.host });
+    client = await deps.connectToDaemon({ host: options.host });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw cmdError(
@@ -69,6 +84,7 @@ export async function runCreateCommand(
         name: path.basename(worktreePath),
         branchName: workspace.name,
         worktreePath,
+        workspaceId: workspace.id,
       },
       schema: createSchema,
     };

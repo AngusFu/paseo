@@ -332,10 +332,16 @@ export function buildSplitDiffRows(file: ParsedDiffFile): SplitDiffRow[] {
   const rows: SplitDiffRow[] = [];
 
   for (const hunk of buildNumberedDiffHunks(file)) {
-    rows.push({
-      kind: "header",
-      content: hunk.hunkHeader,
-    });
+    // Only when the hunk still carries its `@@` line. Context expansion strips
+    // that line once a hunk reaches the top of the file, and unified renders the
+    // hunk's lines directly — split builds its header from a separate field, so
+    // without this check it kept showing a header unified had already dropped.
+    if (hunk.lines.some((numberedLine) => numberedLine.line.type === "header")) {
+      rows.push({
+        kind: "header",
+        content: hunk.hunkHeader,
+      });
+    }
 
     let pendingRemovals: NumberedDiffCell[] = [];
     let pendingAdditions: NumberedDiffCell[] = [];

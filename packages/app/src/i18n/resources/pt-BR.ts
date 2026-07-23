@@ -2364,8 +2364,7 @@ export const ptBR: TranslationResources = {
     clear: "Limpar",
     title: "Assistente",
     unsupported: "Atualize o host para usar o assistente.",
-    empty:
-      "Converse com o modelo no dispositivo. Ele também pode criar agendamentos e cartões do kanban.",
+    empty: "Converse com {{name}}.",
     inputPlaceholder: "Mensagem para {{name}}…",
     send: "Enviar",
     model: {
@@ -2391,7 +2390,7 @@ export const ptBR: TranslationResources = {
   },
   kanban: {
     title: "Kanban",
-    empty: "Converse com {{name}}.",
+    empty: "Nenhum cartão ainda",
     emptyFiltered: "Nenhum cartão corresponde aos filtros",
     loadError: "Não foi possível carregar os cartões",
     unsupported: "Atualize o host para usar o Kanban.",

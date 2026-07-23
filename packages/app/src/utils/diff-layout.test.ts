@@ -66,6 +66,32 @@ describe("buildSplitDiffRows", () => {
     expect(rows[1].right?.reviewTarget?.key).toBe("example.ts:new:10");
   });
 
+  // Context expansion strips a hunk's `@@` line once it reaches the top of the
+  // file. Unified renders the hunk's lines, so it stops showing a header; split
+  // builds one from a separate field and used to leave a bare `@@` row behind.
+  it("omits the header row for a hunk that no longer carries an @@ line", () => {
+    const rows = buildSplitDiffRows(
+      makeFile([
+        { type: "context", content: "first line of the file" },
+        { type: "add", content: "added" },
+      ]),
+    );
+
+    expect(rows.some((row) => row.kind === "header")).toBe(false);
+    expect(rows[0]?.kind).toBe("pair");
+  });
+
+  it("keeps the header row for an ordinary hunk", () => {
+    const rows = buildSplitDiffRows(
+      makeFile([
+        { type: "header", content: "@@ -10,1 +20,1 @@" },
+        { type: "context", content: "same line" },
+      ]),
+    );
+
+    expect(rows[0]).toEqual({ kind: "header", content: "@@ -10,1 +20,1 @@" });
+  });
+
   it("pairs replacement runs by index", () => {
     const rows = buildSplitDiffRows(
       makeFile([

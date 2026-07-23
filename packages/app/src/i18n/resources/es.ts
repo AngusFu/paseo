@@ -2379,8 +2379,7 @@ export const es: TranslationResources = {
     clear: "Limpiar",
     title: "Asistente",
     unsupported: "Actualiza el host para usar el asistente.",
-    empty:
-      "Chatea con el modelo en el dispositivo. También puede crear programaciones y tarjetas del kanban.",
+    empty: "Chatea con {{name}}.",
     inputPlaceholder: "Mensaje para {{name}}…",
     send: "Enviar",
     model: {
@@ -2406,7 +2405,7 @@ export const es: TranslationResources = {
   },
   kanban: {
     title: "Kanban",
-    empty: "Chatea con {{name}}.",
+    empty: "Aún no hay tarjetas",
     emptyFiltered: "Ninguna tarjeta coincide con los filtros",
     loadError: "No se pudieron cargar las tarjetas",
     unsupported: "Actualiza el host para usar Kanban.",

@@ -2371,8 +2371,7 @@ export const ru: TranslationResources = {
     clear: "Очистить",
     title: "Ассистент",
     unsupported: "Обновите хост, чтобы использовать ассистента.",
-    empty:
-      "Общайтесь с локальной моделью. Она также может создавать расписания и карточки канбана.",
+    empty: "Общайтесь с {{name}}.",
     inputPlaceholder: "Сообщение для {{name}}…",
     send: "Отправить",
     model: {
@@ -2398,7 +2397,7 @@ export const ru: TranslationResources = {
   },
   kanban: {
     title: "Канбан",
-    empty: "Разговор с {{name}}.",
+    empty: "Пока нет карточек",
     emptyFiltered: "Нет карточек, соответствующих фильтрам",
     loadError: "Не удалось загрузить карточки",
     unsupported: "Обновите хост, чтобы использовать Канбан.",

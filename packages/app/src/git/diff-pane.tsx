@@ -46,6 +46,9 @@ import {
   Archive,
   ArrowDownUp,
   ChevronDown,
+  ChevronsDown,
+  ChevronsUp,
+  ChevronsUpDown,
   Columns2,
   Download,
   FolderTree,
@@ -70,6 +73,19 @@ import {
   type GitDiffAlgorithm,
 } from "@/git/use-diff-query";
 import { buildDiffFlatItems, sumHeightsBefore, type DiffFlatItem } from "@/git/diff-flat-items";
+import {
+  buildDiffContextFileKey,
+  computeDiffContextGaps,
+  EMPTY_DIFF_FILE_CONTEXT_STATE,
+  mergeLoadedDiffContext,
+  type DiffContextDirection,
+  type DiffContextGap,
+} from "@/git/diff-context-ranges";
+import {
+  useDiffContextExpansion,
+  type DiffContextCompare,
+  type DiffContextExpansionController,
+} from "@/git/use-diff-context-expansion";
 import { buildDiffTree, collectDirPaths, compressSingleChildChains } from "@/git/diff-tree";
 import { DiffFolderRow } from "@/git/diff-folder-row";
 import {
@@ -829,6 +845,7 @@ function SplitDiffColumn({
   wrapLines,
   textMetricsStyle,
   reviewActions,
+  expanders,
   showDivider = false,
 }: {
   rows: SplitDiffRow[];
@@ -837,6 +854,7 @@ function SplitDiffColumn({
   wrapLines: boolean;
   textMetricsStyle: TextStyle;
   reviewActions?: InlineReviewActions;
+  expanders?: DiffContextExpanderModel | null;
   showDivider?: boolean;
 }) {
   const [scrollWidth, setScrollWidth] = useState(0);
@@ -862,14 +880,42 @@ function SplitDiffColumn({
     [textMetricsStyle],
   );
 
-  const keyedRows = useMemo(() => rows.map((row, i) => ({ key: `row-${i}`, row })), [rows]);
+  // Header rows are numbered as they go past so an expander can be matched to
+  // the gap it belongs to — the nth header row is the nth expandable boundary.
+  const keyedRows = useMemo(() => {
+    let headerIndex = -1;
+    return rows.map((row, i) => {
+      if (row.kind === "header") {
+        headerIndex += 1;
+      }
+      return { key: `row-${i}`, row, headerIndex };
+    });
+  }, [rows]);
+
+  const gapFor = useCallback(
+    (headerIndex: number): DiffContextGap | null =>
+      expanders?.gapByHeaderIndex[headerIndex] ?? null,
+    [expanders],
+  );
 
   if (wrapLines) {
     return (
       <View style={wrapCellStyle}>
         <View style={styles.linesContainer}>
-          {keyedRows.map(({ key, row }) => {
+          {keyedRows.map(({ key, row, headerIndex }) => {
             if (row.kind === "header") {
+              const gap = gapFor(headerIndex);
+              if (gap && expanders) {
+                return (
+                  <DiffContextExpanderRow
+                    key={key}
+                    gap={gap}
+                    textMetricsStyle={textMetricsStyle}
+                    isPending={expanders.isPending(gap)}
+                    onExpand={expanders.onExpand}
+                  />
+                );
+              }
               return (
                 <View key={key} style={styles.splitHeaderRow}>
                   <Text style={headerLineTextStyle}>{row.content}</Text>
@@ -900,6 +946,14 @@ function SplitDiffColumn({
               </View>
             );
           })}
+          {expanders?.trailingGap ? (
+            <DiffContextExpanderRow
+              gap={expanders.trailingGap}
+              textMetricsStyle={textMetricsStyle}
+              isPending={expanders.isPending(expanders.trailingGap)}
+              onExpand={expanders.onExpand}
+            />
+          ) : null}
         </View>
       </View>
     );
@@ -949,6 +1003,14 @@ function SplitDiffColumn({
             </View>
           );
         })}
+        {expanders?.trailingGap ? (
+          <DiffGutterCell
+            lineNumber={null}
+            type="header"
+            gutterWidth={gutterWidth}
+            textMetricsStyle={textMetricsStyle}
+          />
+        ) : null}
       </View>
       <DiffScroll
         scrollViewWidth={scrollWidth}
@@ -957,8 +1019,20 @@ function SplitDiffColumn({
         contentContainerStyle={styles.diffContentInner}
       >
         <View style={linesContainerRowStyle}>
-          {keyedRows.map(({ key, row }) => {
+          {keyedRows.map(({ key, row, headerIndex }) => {
             if (row.kind === "header") {
+              const gap = gapFor(headerIndex);
+              if (gap && expanders) {
+                return (
+                  <DiffContextExpanderRow
+                    key={key}
+                    gap={gap}
+                    textMetricsStyle={textMetricsStyle}
+                    isPending={expanders.isPending(gap)}
+                    onExpand={expanders.onExpand}
+                  />
+                );
+              }
               return (
                 <View key={key} style={styles.splitHeaderRow}>
                   <Text style={headerLineTextStyle}>{row.content}</Text>
@@ -992,6 +1066,14 @@ function SplitDiffColumn({
               </View>
             );
           })}
+          {expanders?.trailingGap ? (
+            <DiffContextExpanderRow
+              gap={expanders.trailingGap}
+              textMetricsStyle={textMetricsStyle}
+              isPending={expanders.isPending(expanders.trailingGap)}
+              onExpand={expanders.onExpand}
+            />
+          ) : null}
         </View>
       </DiffScroll>
     </View>
@@ -1225,6 +1307,245 @@ const DiffFileHeader = memo(function DiffFileHeader({
   );
 });
 
+const ThemedChevronsUp = withUnistyles(ChevronsUp);
+const ThemedChevronsDown = withUnistyles(ChevronsDown);
+const ThemedChevronsUpDown = withUnistyles(ChevronsUpDown);
+
+function contextExpanderButtonStyle({
+  pressed,
+  hovered,
+}: PressableStateCallbackType & { hovered?: boolean }) {
+  return [
+    styles.contextExpanderButton,
+    (pressed || Boolean(hovered)) && styles.contextExpanderButtonActive,
+  ];
+}
+
+interface DiffContextExpanderButtonProps {
+  icon: typeof ThemedChevronsUp;
+  label: string;
+  size: number;
+  disabled: boolean;
+  onPress: () => void;
+  testID: string;
+}
+
+function DiffContextExpanderButton({
+  icon: Icon,
+  label,
+  size,
+  disabled,
+  onPress,
+  testID,
+}: DiffContextExpanderButtonProps) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      disabled={disabled}
+      onPress={onPress}
+      style={contextExpanderButtonStyle}
+      testID={testID}
+    >
+      <Icon size={size} uniProps={foregroundMutedIconColorMapping} />
+    </Pressable>
+  );
+}
+
+/**
+ * The elided run between two hunks, as a row that pulls more of the file in.
+ *
+ * It replaces the `@@` header row of the hunk below the gap (and is rendered on
+ * its own after the last hunk), so the diff keeps exactly one row per boundary
+ * whether or not the daemon can serve context. The range arithmetic behind the
+ * three controls lives in `@/git/diff-context-ranges`.
+ */
+function DiffContextExpanderRow({
+  gap,
+  textMetricsStyle,
+  isPending,
+  onExpand,
+  gutterWidth,
+  testID,
+}: {
+  gap: DiffContextGap;
+  textMetricsStyle: TextStyle;
+  isPending: boolean;
+  onExpand: (gap: DiffContextGap, direction: DiffContextDirection) => void;
+  /** Set on layouts where this row owns its gutter cell; the column layouts render theirs. */
+  gutterWidth?: number;
+  testID?: string;
+}) {
+  const { t } = useTranslation();
+  const rowMetricsStyle = useDiffRowMetricsStyle(textMetricsStyle);
+  const rowStyle = useMemo(() => [styles.contextExpanderRow, rowMetricsStyle], [rowMetricsStyle]);
+  const labelStyle = useMemo(
+    () => [styles.diffTextMetrics, textMetricsStyle, styles.contextExpanderLabel],
+    [textMetricsStyle],
+  );
+  const controlsStyle = useMemo(
+    () => [styles.contextExpanderControls, isPending && styles.contextExpanderControlsPending],
+    [isPending],
+  );
+  const iconSize =
+    typeof textMetricsStyle.fontSize === "number" ? Math.max(10, textMetricsStyle.fontSize) : 12;
+
+  const handleUp = useCallback(() => onExpand(gap, "up"), [gap, onExpand]);
+  const handleDown = useCallback(() => onExpand(gap, "down"), [gap, onExpand]);
+  const handleAll = useCallback(() => onExpand(gap, "all"), [gap, onExpand]);
+
+  const label =
+    gap.hiddenCount === null
+      ? t("workspace.git.diff.contextExpandMore")
+      : t(
+          gap.hiddenCount === 1
+            ? "workspace.git.diff.contextHiddenLine"
+            : "workspace.git.diff.contextHiddenLines",
+          { count: gap.hiddenCount },
+        );
+
+  return (
+    <View style={rowStyle} testID={testID}>
+      {gutterWidth === undefined ? null : (
+        <DiffGutterCell
+          lineNumber={null}
+          type="header"
+          gutterWidth={gutterWidth}
+          textMetricsStyle={textMetricsStyle}
+          style={styles.lineNumberGutter}
+        />
+      )}
+      <View style={controlsStyle}>
+        {gap.expandUp ? (
+          <DiffContextExpanderButton
+            icon={ThemedChevronsUp}
+            label={t("workspace.git.diff.contextExpandUp")}
+            size={iconSize}
+            disabled={isPending}
+            onPress={handleUp}
+            testID={`diff-context-expand-up-${gap.id}`}
+          />
+        ) : null}
+        {gap.expandAll ? (
+          <DiffContextExpanderButton
+            icon={ThemedChevronsUpDown}
+            label={t("workspace.git.diff.contextExpandAll")}
+            size={iconSize}
+            disabled={isPending}
+            onPress={handleAll}
+            testID={`diff-context-expand-all-${gap.id}`}
+          />
+        ) : null}
+        {gap.expandDown ? (
+          <DiffContextExpanderButton
+            icon={ThemedChevronsDown}
+            label={t("workspace.git.diff.contextExpandDown")}
+            size={iconSize}
+            disabled={isPending}
+            onPress={handleDown}
+            testID={`diff-context-expand-down-${gap.id}`}
+          />
+        ) : null}
+        <Text style={labelStyle} numberOfLines={1}>
+          {label}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+interface DiffContextExpanderModel {
+  /** Gap for the expander that replaces a unified row, keyed by that row's key. */
+  gapByLineKey: ReadonlyMap<string, DiffContextGap>;
+  /** Gap for the expander that replaces the nth header row of the split layout. */
+  gapByHeaderIndex: readonly (DiffContextGap | null)[];
+  trailingGap: DiffContextGap | null;
+  isPending: (gap: DiffContextGap) => boolean;
+  onExpand: (gap: DiffContextGap, direction: DiffContextDirection) => void;
+}
+
+const NO_CONTEXT_GAPS: DiffContextGap[] = [];
+
+/**
+ * Folds whatever context has been loaded for this file back into its hunks, and
+ * says where the expanders go. Returns the file untouched when the daemon can't
+ * serve context — there is no degraded rendering to fall back to.
+ */
+function useDiffContextExpanders(
+  file: ParsedDiffFile,
+  contextExpansion: DiffContextExpansionController | null | undefined,
+): { displayFile: ParsedDiffFile; expanders: DiffContextExpanderModel | null } {
+  const fileKey = useMemo(() => buildDiffContextFileKey(file), [file]);
+  const state = contextExpansion?.statesByFileKey.get(fileKey) ?? null;
+  const enabled = Boolean(contextExpansion) && file.hunks.length > 0;
+
+  const gaps = useMemo(
+    () =>
+      enabled
+        ? computeDiffContextGaps({ hunks: file.hunks, state: state ?? undefined })
+        : NO_CONTEXT_GAPS,
+    [enabled, file.hunks, state],
+  );
+  const merged = useMemo(
+    () =>
+      enabled
+        ? mergeLoadedDiffContext({
+            hunks: file.hunks,
+            gaps,
+            state: state ?? EMPTY_DIFF_FILE_CONTEXT_STATE,
+          })
+        : null,
+    [enabled, file.hunks, gaps, state],
+  );
+  const displayFile = useMemo(
+    () => (merged ? { ...file, hunks: merged.hunks } : file),
+    [file, merged],
+  );
+
+  const pendingKeys = contextExpansion?.pendingKeys;
+  const expand = contextExpansion?.expand;
+  const onExpand = useCallback(
+    (gap: DiffContextGap, direction: DiffContextDirection) => {
+      expand?.({ file, gap, direction });
+    },
+    [expand, file],
+  );
+  const isPending = useCallback(
+    (gap: DiffContextGap) => pendingKeys?.has(`${fileKey}:${gap.id}`) === true,
+    [fileKey, pendingKeys],
+  );
+
+  const expanders = useMemo<DiffContextExpanderModel | null>(() => {
+    if (!merged) {
+      return null;
+    }
+    const gapById = new Map(gaps.map((gap) => [gap.id, gap]));
+    const gapByLineKey = new Map<string, DiffContextGap>();
+    const gapByHeaderIndex: (DiffContextGap | null)[] = [];
+    for (const [hunkIndex, hunk] of merged.hunks.entries()) {
+      const gapId = merged.gapIdByHunkIndex[hunkIndex];
+      const gap = gapId ? (gapById.get(gapId) ?? null) : null;
+      // The split layout emits one header row per hunk whether or not the hunk
+      // kept its @@ line, so this list stays index-aligned with those rows.
+      gapByHeaderIndex.push(gap);
+      if (gap && hunk.lines[0]?.type === "header") {
+        // The header is always the merged hunk's first line, which is the key
+        // the unified layout gives that row.
+        gapByLineKey.set(`${hunkIndex}-0`, gap);
+      }
+    }
+    return {
+      gapByLineKey,
+      gapByHeaderIndex,
+      trailingGap: merged.trailingGapId ? (gapById.get(merged.trailingGapId) ?? null) : null,
+      isPending,
+      onExpand,
+    };
+  }, [gaps, isPending, merged, onExpand]);
+
+  return { displayFile, expanders };
+}
+
 export function DiffFileBody({
   file,
   layout,
@@ -1232,6 +1553,7 @@ export function DiffFileBody({
   codeFontSize,
   textMetricsStyle,
   reviewActions,
+  contextExpansion,
   onBodyHeightChange,
   testID,
 }: {
@@ -1241,6 +1563,7 @@ export function DiffFileBody({
   codeFontSize: number;
   textMetricsStyle: TextStyle;
   reviewActions?: InlineReviewActions;
+  contextExpansion?: DiffContextExpansionController | null;
   onBodyHeightChange?: (file: ParsedDiffFile, height: number) => void;
   testID?: string;
 }) {
@@ -1248,7 +1571,13 @@ export function DiffFileBody({
   const [bodyWidth, setBodyWidth] = useState(0);
   const [hoveredReviewTargetKey, setHoveredReviewTargetKey] = useState<string | null>(null);
   const { t } = useTranslation();
+  // Loaded context is folded into the hunks, so every renderer below draws it as
+  // ordinary context; only the expander rows are new.
+  const { displayFile, expanders } = useDiffContextExpanders(file, contextExpansion);
 
+  // The measured height is cached against the ORIGINAL file, which is also what
+  // the list's height lookup passes in. Expanding grows the body, onLayout
+  // re-measures, and the cache follows.
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => {
       setBodyWidth(event.nativeEvent.layout.width);
@@ -1286,7 +1615,7 @@ export function DiffFileBody({
         }
 
         let maxLineNo = 0;
-        for (const hunk of file.hunks) {
+        for (const hunk of displayFile.hunks) {
           maxLineNo = Math.max(
             maxLineNo,
             hunk.oldStart + hunk.oldCount,
@@ -1296,7 +1625,7 @@ export function DiffFileBody({
         const gutterWidth = lineNumberGutterWidth(maxLineNo, codeFontSize);
 
         if (layout === "split") {
-          const rows = buildSplitDiffRows(file);
+          const rows = buildSplitDiffRows(displayFile);
           return (
             <View style={[styles.diffContent, styles.splitRow]} dataSet={CODE_SURFACE_DATASET}>
               <SplitDiffColumn
@@ -1306,6 +1635,7 @@ export function DiffFileBody({
                 wrapLines={wrapLines}
                 textMetricsStyle={textMetricsStyle}
                 reviewActions={reviewActions}
+                expanders={expanders}
               />
               <SplitDiffColumn
                 rows={rows}
@@ -1314,39 +1644,62 @@ export function DiffFileBody({
                 wrapLines={wrapLines}
                 textMetricsStyle={textMetricsStyle}
                 reviewActions={reviewActions}
+                expanders={expanders}
                 showDivider
               />
             </View>
           );
         }
 
-        const computedLines = buildUnifiedDiffLines(file);
+        const computedLines = buildUnifiedDiffLines(displayFile);
 
         if (wrapLines) {
           return (
             <View style={styles.diffContent} dataSet={CODE_SURFACE_DATASET}>
               <View style={styles.linesContainer}>
                 {computedLines.map(
-                  ({ line, changedRanges, lineNumber, key, reviewTarget }, index) => (
-                    <View key={key} testID={`diff-wrapped-row-${index}`}>
-                      <DiffLineView
-                        line={line}
-                        changedRanges={changedRanges}
-                        lineNumber={lineNumber}
-                        gutterWidth={gutterWidth}
-                        wrapLines={wrapLines}
-                        textMetricsStyle={textMetricsStyle}
-                        reviewTarget={reviewTarget}
-                        reviewActions={reviewActions}
-                      />
-                      <InlineReviewRow
-                        reviewTarget={reviewTarget}
-                        reviewActions={reviewActions}
-                        gutterWidth={gutterWidth}
-                      />
-                    </View>
-                  ),
+                  ({ line, changedRanges, lineNumber, key, reviewTarget }, index) => {
+                    const gap = expanders?.gapByLineKey.get(key) ?? null;
+                    return (
+                      <View key={key} testID={`diff-wrapped-row-${index}`}>
+                        {gap && expanders ? (
+                          <DiffContextExpanderRow
+                            gap={gap}
+                            textMetricsStyle={textMetricsStyle}
+                            isPending={expanders.isPending(gap)}
+                            onExpand={expanders.onExpand}
+                            gutterWidth={gutterWidth}
+                          />
+                        ) : (
+                          <DiffLineView
+                            line={line}
+                            changedRanges={changedRanges}
+                            lineNumber={lineNumber}
+                            gutterWidth={gutterWidth}
+                            wrapLines={wrapLines}
+                            textMetricsStyle={textMetricsStyle}
+                            reviewTarget={reviewTarget}
+                            reviewActions={reviewActions}
+                          />
+                        )}
+                        <InlineReviewRow
+                          reviewTarget={reviewTarget}
+                          reviewActions={reviewActions}
+                          gutterWidth={gutterWidth}
+                        />
+                      </View>
+                    );
+                  },
                 )}
+                {expanders?.trailingGap ? (
+                  <DiffContextExpanderRow
+                    gap={expanders.trailingGap}
+                    textMetricsStyle={textMetricsStyle}
+                    isPending={expanders.isPending(expanders.trailingGap)}
+                    onExpand={expanders.onExpand}
+                    gutterWidth={gutterWidth}
+                  />
+                ) : null}
               </View>
             </View>
           );
@@ -1379,6 +1732,14 @@ export function DiffFileBody({
                   />
                 </View>
               ))}
+              {expanders?.trailingGap ? (
+                <DiffGutterCell
+                  lineNumber={null}
+                  type="header"
+                  gutterWidth={gutterWidth}
+                  textMetricsStyle={textMetricsStyle}
+                />
+              ) : null}
             </View>
             <DiffScroll
               scrollViewWidth={scrollViewWidth}
@@ -1387,27 +1748,49 @@ export function DiffFileBody({
               contentContainerStyle={styles.diffContentInner}
             >
               <View style={linesContainerRowStyle}>
-                {computedLines.map(({ line, changedRanges, key, reviewTarget }, index) => (
-                  <View key={key} testID={`diff-code-row-${index}`}>
-                    <DiffTextLine
-                      line={line}
-                      changedRanges={changedRanges}
-                      wrapLines={false}
-                      textMetricsStyle={textMetricsStyle}
-                      reviewTarget={reviewTarget}
-                      reviewActions={reviewActions}
-                      hoverTargetKey={reviewTarget?.key ?? null}
-                      onHoverTargetChange={setHoveredReviewTargetKey}
-                      textTestID={`diff-code-text-${index}`}
-                    />
-                    <InlineReviewThreadContent
-                      reviewTarget={reviewTarget}
-                      reviewActions={reviewActions}
-                      viewportWidth={textViewportWidth}
-                      pinToViewport
-                    />
-                  </View>
-                ))}
+                {computedLines.map(({ line, changedRanges, key, reviewTarget }, index) => {
+                  const gap = expanders?.gapByLineKey.get(key) ?? null;
+                  return (
+                    <View key={key} testID={`diff-code-row-${index}`}>
+                      {gap && expanders ? (
+                        <DiffContextExpanderRow
+                          gap={gap}
+                          textMetricsStyle={textMetricsStyle}
+                          isPending={expanders.isPending(gap)}
+                          onExpand={expanders.onExpand}
+                          testID={`diff-context-expander-${gap.id}`}
+                        />
+                      ) : (
+                        <DiffTextLine
+                          line={line}
+                          changedRanges={changedRanges}
+                          wrapLines={false}
+                          textMetricsStyle={textMetricsStyle}
+                          reviewTarget={reviewTarget}
+                          reviewActions={reviewActions}
+                          hoverTargetKey={reviewTarget?.key ?? null}
+                          onHoverTargetChange={setHoveredReviewTargetKey}
+                          textTestID={`diff-code-text-${index}`}
+                        />
+                      )}
+                      <InlineReviewThreadContent
+                        reviewTarget={reviewTarget}
+                        reviewActions={reviewActions}
+                        viewportWidth={textViewportWidth}
+                        pinToViewport
+                      />
+                    </View>
+                  );
+                })}
+                {expanders?.trailingGap ? (
+                  <DiffContextExpanderRow
+                    gap={expanders.trailingGap}
+                    textMetricsStyle={textMetricsStyle}
+                    isPending={expanders.isPending(expanders.trailingGap)}
+                    onExpand={expanders.onExpand}
+                    testID={`diff-context-expander-${expanders.trailingGap.id}`}
+                  />
+                ) : null}
               </View>
             </DiffScroll>
           </View>
@@ -2903,6 +3286,26 @@ function useDiffPaneCheckoutDiff({
   };
 }
 
+// The comparison context expansion reads the new side of. Whitespace and engine
+// options only shape how the diff was computed, so they're left out — the
+// surrounding lines are the same either way.
+function buildDiffContextCompare(input: {
+  branchCompare: BranchCompareState | null;
+  diffMode: "uncommitted" | "base";
+  baseRef: string | undefined;
+}): DiffContextCompare {
+  const { branchCompare, diffMode, baseRef } = input;
+  if (branchCompare) {
+    return {
+      mode: "refs",
+      fromRef: branchCompare.fromRef,
+      ...(branchCompare.toRef ? { toRef: branchCompare.toRef } : {}),
+      mergeBase: branchCompare.mergeBase,
+    };
+  }
+  return { mode: diffMode, ...(baseRef ? { baseRef } : {}) };
+}
+
 interface UseDiffPaneBranchCompareInput {
   serverId: string;
   cwd: string;
@@ -3512,6 +3915,17 @@ export function GitDiffPane({
     [baseRef, changesPreferences.hideWhitespace, cwd, diffMode, serverId, workspaceId],
   );
 
+  const contextCompare = useMemo(
+    () => buildDiffContextCompare({ branchCompare, diffMode, baseRef }),
+    [baseRef, branchCompare, diffMode],
+  );
+  const contextExpansion = useDiffContextExpansion({
+    serverId,
+    cwd,
+    compare: contextCompare,
+    enabled: shouldEnableCheckoutDiff({ paneEnabled: enabled !== false, isGit }),
+  });
+
   const handleSelectUncommitted = useCallback(() => {
     clearBranchCompare();
     setDiffModeOverride({
@@ -3972,6 +4386,7 @@ export function GitDiffPane({
           codeFontSize={codeFontSize}
           textMetricsStyle={diffTextMetricsStyle}
           reviewActions={reviewActions}
+          contextExpansion={contextExpansion}
           onBodyHeightChange={handleBodyHeightChange}
           testID={`diff-file-${item.fileIndex}-body`}
         />
@@ -3980,6 +4395,7 @@ export function GitDiffPane({
     [
       changesPreferences.diffTool,
       codeFontSize,
+      contextExpansion,
       diffTextMetricsStyle,
       onOpenFile,
       onAddToChat,
@@ -4023,10 +4439,14 @@ export function GitDiffPane({
       viewMode,
       wrapLines,
       reviewActions,
+      // Expanding a gap changes only what a body renders, so the list needs this
+      // to know a cell is stale.
+      contextExpansion,
       diffTool: changesPreferences.diffTool,
     }),
     [
       changesPreferences.diffTool,
+      contextExpansion,
       expandedPathsArray,
       collapsedFoldersArray,
       effectiveLayout,
@@ -4736,6 +5156,37 @@ const styles = StyleSheet.create((theme) => ({
   },
   contextLineContainer: {
     backgroundColor: theme.colors.surface1,
+  },
+  contextExpanderRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    backgroundColor: theme.colors.surface2,
+  },
+  contextExpanderControls: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+    paddingHorizontal: theme.spacing[2],
+  },
+  contextExpanderControlsPending: {
+    opacity: 0.5,
+  },
+  contextExpanderButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing[1],
+    borderRadius: theme.borderRadius.base,
+  },
+  // Hover only changes the background, never the box, so the row can't shift
+  // out from under the cursor (see docs/hover.md).
+  contextExpanderButtonActive: {
+    backgroundColor: theme.colors.surface3,
+  },
+  contextExpanderLabel: {
+    color: theme.colors.foregroundMuted,
+    userSelect: "none",
   },
   contextLineText: {
     color: theme.colors.foregroundMuted,

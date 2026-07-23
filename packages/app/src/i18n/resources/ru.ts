@@ -2356,6 +2356,8 @@ export const ru: TranslationResources = {
       promptHint: "Объясняет модели, кто она и как отвечать.",
       promptPlaceholder:
         "Ты строгий ревьюер кода. Указывай на реальные дефекты и пропускай мелочи стиля.",
+      delete: "Удалить",
+      save: "Сохранить",
     },
     clear: "Очистить",
     title: "Ассистент",

@@ -2364,6 +2364,8 @@ export const es: TranslationResources = {
       promptHint: "Indica al modelo quién es y cómo responder.",
       promptPlaceholder:
         "Eres un revisor de código estricto. Señala defectos reales y omite detalles de estilo.",
+      delete: "Eliminar",
+      save: "Guardar",
     },
     clear: "Limpiar",
     title: "Asistente",

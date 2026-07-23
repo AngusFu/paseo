@@ -1474,7 +1474,7 @@ export function Composer({
     async (files: PickedFile[]) => {
       if (files.length === 0) return;
       if (!client) {
-        toastErrorRef.current(t("composer.errors.daemonClientDisconnected"));
+        toastErrorRef.current(t("common.errors.daemonClientUnavailable"));
         return;
       }
 
@@ -1504,7 +1504,7 @@ export function Composer({
 
   const handlePickFile = useCallback(async () => {
     if (!client) {
-      toastErrorRef.current(t("composer.errors.daemonClientDisconnected"));
+      toastErrorRef.current(t("common.errors.daemonClientUnavailable"));
       return;
     }
     try {
@@ -1525,7 +1525,7 @@ export function Composer({
         const files = await droppedItemsToPickedFiles(items);
         if (files.length === 0) return;
         if (!client || !isConnected) {
-          toastErrorRef.current(t("composer.errors.daemonClientDisconnected"));
+          toastErrorRef.current(t("common.errors.daemonClientUnavailable"));
           return;
         }
         await uploadPickedFiles(files);

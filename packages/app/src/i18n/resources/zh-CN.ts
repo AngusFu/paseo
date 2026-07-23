@@ -2283,6 +2283,8 @@ export const zhCN: TranslationResources = {
       prompt: "提示词",
       promptHint: "告诉模型它是谁、该怎么回答。",
       promptPlaceholder: "你是一个严格的代码评审者。指出真正的缺陷，忽略风格细节。",
+      delete: "删除",
+      save: "保存",
     },
     clear: "清空",
     title: "助手",

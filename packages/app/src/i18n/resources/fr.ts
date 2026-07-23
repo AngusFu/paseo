@@ -2370,6 +2370,8 @@ export const fr: TranslationResources = {
       promptHint: "Indique au modèle qui il est et comment répondre.",
       promptPlaceholder:
         "Tu es un relecteur de code exigeant. Signale les vrais défauts et ignore le style.",
+      delete: "Supprimer",
+      save: "Enregistrer",
     },
     clear: "Effacer",
     title: "Assistant",

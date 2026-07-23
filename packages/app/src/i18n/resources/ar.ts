@@ -2310,6 +2310,8 @@ export const ar: TranslationResources = {
       prompt: "التعليمات",
       promptHint: "تخبر النموذج بدوره وكيفية الإجابة.",
       promptPlaceholder: "أنت مراجع شيفرة صارم. أشر إلى العيوب الحقيقية وتجاهل تفاصيل الأسلوب.",
+      delete: "حذف",
+      save: "حفظ",
     },
     clear: "مسح",
     title: "المساعد",

@@ -2337,6 +2337,8 @@ export const ja: TranslationResources = {
       promptHint: "モデルの役割と回答方針を伝えます。",
       promptPlaceholder:
         "あなたは厳格なコードレビュアーです。実際の欠陥を指摘し、些細なスタイルは無視してください。",
+      delete: "削除",
+      save: "保存",
     },
     clear: "クリア",
     title: "アシスタント",

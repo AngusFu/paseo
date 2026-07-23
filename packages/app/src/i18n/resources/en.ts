@@ -2324,6 +2324,8 @@ export const en = {
       promptHint: "Tells the model who it is and how to answer.",
       promptPlaceholder:
         "You are a strict code reviewer. Point out real defects and skip style nits.",
+      delete: "Delete",
+      save: "Save",
     },
     clear: "Clear",
     title: "Assistant",

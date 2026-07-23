@@ -76,7 +76,7 @@ export function AssistantFormSheet({
         <View style={styles.footerStart}>
           {assistant && onDelete ? (
             <Button variant="destructive" onPress={handleDelete} testID="assistant-form-delete">
-              {t("common.actions.delete")}
+              {t("assistant.form.delete")}
             </Button>
           ) : null}
         </View>
@@ -84,7 +84,7 @@ export function AssistantFormSheet({
           {t("common.actions.cancel")}
         </Button>
         <Button onPress={handleSubmit} disabled={!canSubmit} testID="assistant-form-submit">
-          {t("common.actions.save")}
+          {t("assistant.form.save")}
         </Button>
       </View>
     ),

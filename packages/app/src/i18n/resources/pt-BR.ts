@@ -2349,6 +2349,8 @@ export const ptBR: TranslationResources = {
       promptHint: "Diz ao modelo quem ele é e como responder.",
       promptPlaceholder:
         "Você é um revisor de código rigoroso. Aponte defeitos reais e ignore detalhes de estilo.",
+      delete: "Excluir",
+      save: "Salvar",
     },
     clear: "Limpar",
     title: "Assistente",

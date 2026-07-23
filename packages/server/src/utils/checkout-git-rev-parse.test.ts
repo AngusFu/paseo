@@ -95,7 +95,10 @@ describe("checkout git rev-parse path handling", () => {
 
     const status = await getCheckoutStatus(VALID_WINDOWS_ROOT);
 
-    expect(status).toEqual({ isGit: false });
+    // directoryMissing rides along because the fixture path is deliberately
+    // fake and so exists nowhere; what this test pins is that multi-line
+    // stdout is rejected rather than parsed into a repo root.
+    expect(status).toEqual({ isGit: false, directoryMissing: true });
     expect(runGitCommand).toHaveBeenCalledWith(["rev-parse", "--show-toplevel"], expect.anything());
     expect(runGitCommand).not.toHaveBeenCalledWith(
       ["rev-parse", "--path-format=absolute", "--show-toplevel"],

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StreamItem } from "@/types/stream";
 import { buildAgentStreamRenderModel } from "./model";
+import { DEFAULT_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD } from "./web-virtualization";
 
 function createTimestamp(seed: number): Date {
   return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
@@ -26,13 +27,17 @@ function assistantMessage(id: string, seed: number): StreamItem {
 
 describe("buildAgentStreamRenderModel", () => {
   it("keeps head separate from committed history on desktop web", () => {
+    // Derived from the threshold rather than hardcoded: history only splits once
+    // a conversation is longer than it, and this test silently stopped covering
+    // the split when the threshold was raised past its old fixed count.
+    const pairCount = DEFAULT_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD;
     const tail: StreamItem[] = [];
-    for (let index = 0; index < 60; index += 1) {
+    for (let index = 0; index < pairCount; index += 1) {
       const seed = index * 2;
       tail.push(userMessage(`u${index}`, seed + 1));
       tail.push(assistantMessage(`a${index}`, seed + 2));
     }
-    const head = [assistantMessage("live-a", 121)];
+    const head = [assistantMessage("live-a", pairCount * 2 + 1)];
 
     const model = buildAgentStreamRenderModel({
       agentStatus: "running",

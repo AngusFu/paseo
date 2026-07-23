@@ -741,12 +741,15 @@ test("does not mark checkout branch worktrees as eligible for first-agent rename
     createDeps(),
   );
 
+  // The default branch, not "dev": baseRefName is what the committed diff
+  // compares HEAD against, and `dev...dev` is empty however many commits the
+  // branch carries.
   expect(readPaseoWorktreeMetadata(created.worktree.worktreePath)).toMatchObject({
     version: 1,
-    baseRefName: "dev",
+    baseRefName: "main",
   });
-  // A checkout-branch worktree has no distinct base, so the workspace records a
-  // null baseBranch even though worktree.json's baseRefName is the branch itself.
+  // The workspace records no base branch because none was requested at creation;
+  // that is a record of the caller's intent, not the diff base.
   expect(created.workspace.baseBranch).toBe(null);
   await expect(
     attemptFirstAgentBranchAutoName({

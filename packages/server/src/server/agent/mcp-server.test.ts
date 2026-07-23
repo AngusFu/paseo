@@ -2358,7 +2358,8 @@ describe("create_agent MCP tool", () => {
       });
       expect(readPaseoWorktreeMetadata(agentCwd)).toMatchObject({
         version: 1,
-        baseRefName: "existing-feature",
+        // The default branch, not the checked-out one — see worktree.ts.
+        baseRefName: "main",
       });
       expect(generateCalls).toBe(1);
       expect(workspaceGitService.getSnapshot).not.toHaveBeenCalled();

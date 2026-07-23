@@ -1025,7 +1025,6 @@ export const ru: TranslationResources = {
       schedules: "Расписания",
       kanban: "Канбан",
       workflows: "Workflows",
-      assistant: "Ассистент",
       pinned: "Закреплённые",
     },
     worktreeSetup: {
@@ -2351,44 +2350,6 @@ export const ru: TranslationResources = {
         saving: "Сохранение...",
         cancel: "Отмена",
       },
-    },
-  },
-  assistant: {
-    add: "Новый ассистент",
-    noAssistants: "Ассистентов нет. Создайте одного, чтобы начать.",
-    form: {
-      createTitle: "Новый ассистент",
-      editTitle: "Изменить ассистента",
-      name: "Название",
-      namePlaceholder: "Ревьюер кода",
-      prompt: "Инструкции",
-      promptHint: "Объясняет модели, кто она и как отвечать.",
-      promptPlaceholder:
-        "Ты строгий ревьюер кода. Указывай на реальные дефекты и пропускай мелочи стиля.",
-      delete: "Удалить",
-      save: "Сохранить",
-    },
-    clear: "Очистить",
-    title: "Ассистент",
-    unsupported: "Обновите хост, чтобы использовать ассистента.",
-    empty: "Общайтесь с {{name}}.",
-    inputPlaceholder: "Сообщение для {{name}}…",
-    send: "Отправить",
-    model: {
-      required: "Скачайте локальную ИИ-модель (~7 ГБ), чтобы начать общение.",
-      download: "Скачать модель",
-      downloading: "Загрузка модели… {{percent}}%",
-      error: "Ошибка модели: {{message}}",
-    },
-    tool: {
-      running: "Выполняется {{name}}…",
-      done: "{{name}} выполнено успешно",
-      failed: "{{name}} завершилось с ошибкой",
-      view: "Просмотр",
-    },
-    proposal: {
-      title: "Выполнить {{name}}?",
-      run: "Выполнить",
     },
   },
   promptOptimize: {

@@ -3020,7 +3020,9 @@ export const ServerInfoStatusPayloadSchema = z
         localLlm: z.boolean().optional(),
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: z.boolean().optional(),
-        // COMPAT(llmChat): added in v0.1.106, drop the gate when floor >= v0.1.106.
+        // COMPAT(llmChat): the assistant chat feature was removed; the daemon no
+        // longer emits this and no client reads it. Kept so an old daemon's
+        // server_info still parses. Drop by 2027-01.
         llmChat: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: z.boolean().optional(),

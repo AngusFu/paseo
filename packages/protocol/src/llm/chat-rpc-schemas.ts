@@ -4,6 +4,9 @@ import { z } from "zod";
 // the daemon's built-in on-device model. The daemon owns the chat loop (history
 // replay, optional tool calls) and persists each chat to
 // $PASEO_HOME/llm-chat/<chatId>.json; clients render streamed events.
+//
+// COMPAT(llmChat): handler removed in v0.1.x, schemas kept so old clients
+// still parse; drop by 2027-01.
 
 // ---------------------------------------------------------------------------
 // Stored chat shapes

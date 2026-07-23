@@ -1017,7 +1017,6 @@ export const ja: TranslationResources = {
       schedules: "スケジュール",
       kanban: "カンバン",
       workflows: "ワークフロー",
-      assistant: "アシスタント",
       pinned: "ピン留め",
     },
     worktreeSetup: {
@@ -2332,44 +2331,6 @@ export const ja: TranslationResources = {
         saving: "保存中...",
         cancel: "キャンセル",
       },
-    },
-  },
-  assistant: {
-    add: "アシスタントを追加",
-    noAssistants: "アシスタントがありません。追加して会話を始めましょう。",
-    form: {
-      createTitle: "アシスタントを追加",
-      editTitle: "アシスタントを編集",
-      name: "名前",
-      namePlaceholder: "コードレビュアー",
-      prompt: "指示",
-      promptHint: "モデルの役割と回答方針を伝えます。",
-      promptPlaceholder:
-        "あなたは厳格なコードレビュアーです。実際の欠陥を指摘し、些細なスタイルは無視してください。",
-      delete: "削除",
-      save: "保存",
-    },
-    clear: "クリア",
-    title: "アシスタント",
-    unsupported: "アシスタントを使用するにはホストを更新してください。",
-    empty: "{{name}} と会話します。",
-    inputPlaceholder: "{{name}} にメッセージ…",
-    send: "送信",
-    model: {
-      required: "チャットを始めるにはローカル AI モデル（約 7 GB）をダウンロードしてください。",
-      download: "モデルをダウンロード",
-      downloading: "モデルをダウンロード中… {{percent}}%",
-      error: "モデルエラー：{{message}}",
-    },
-    tool: {
-      running: "{{name}} を実行中…",
-      done: "{{name}} が成功しました",
-      failed: "{{name}} が失敗しました",
-      view: "表示",
-    },
-    proposal: {
-      title: "{{name}} を実行しますか？",
-      run: "実行",
     },
   },
   promptOptimize: {

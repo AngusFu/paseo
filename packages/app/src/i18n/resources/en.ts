@@ -1013,7 +1013,6 @@ export const en = {
       schedules: "Schedules",
       kanban: "Kanban",
       workflows: "Workflows",
-      assistant: "Assistant",
       pinned: "Pinned",
     },
     worktreeSetup: {
@@ -2319,44 +2318,6 @@ export const en = {
         saving: "Saving...",
         cancel: "Cancel",
       },
-    },
-  },
-  assistant: {
-    add: "New assistant",
-    noAssistants: "No assistants. Add one to start chatting.",
-    form: {
-      createTitle: "New assistant",
-      editTitle: "Edit assistant",
-      name: "Name",
-      namePlaceholder: "Code reviewer",
-      prompt: "Instructions",
-      promptHint: "Tells the model who it is and how to answer.",
-      promptPlaceholder:
-        "You are a strict code reviewer. Point out real defects and skip style nits.",
-      delete: "Delete",
-      save: "Save",
-    },
-    clear: "Clear",
-    title: "Assistant",
-    unsupported: "Update the host to use the assistant.",
-    empty: "Chat with {{name}}.",
-    inputPlaceholder: "Message {{name}}…",
-    send: "Send",
-    model: {
-      required: "Download the local AI model (~7 GB) to start chatting.",
-      download: "Download model",
-      downloading: "Downloading model… {{percent}}%",
-      error: "Model error: {{message}}",
-    },
-    tool: {
-      running: "Running {{name}}…",
-      done: "{{name}} succeeded",
-      failed: "{{name}} failed",
-      view: "View",
-    },
-    proposal: {
-      title: "Run {{name}}?",
-      run: "Run",
     },
   },
   promptOptimize: {

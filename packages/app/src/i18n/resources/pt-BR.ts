@@ -1025,7 +1025,6 @@ export const ptBR: TranslationResources = {
       schedules: "Agendamentos",
       kanban: "Kanban",
       workflows: "Workflows",
-      assistant: "Assistente",
       pinned: "Fixados",
     },
     worktreeSetup: {
@@ -2344,44 +2343,6 @@ export const ptBR: TranslationResources = {
         saving: "Salvando...",
         cancel: "Cancelar",
       },
-    },
-  },
-  assistant: {
-    add: "Novo assistente",
-    noAssistants: "Nenhum assistente. Crie um para começar a conversar.",
-    form: {
-      createTitle: "Novo assistente",
-      editTitle: "Editar assistente",
-      name: "Nome",
-      namePlaceholder: "Revisor de código",
-      prompt: "Instruções",
-      promptHint: "Diz ao modelo quem ele é e como responder.",
-      promptPlaceholder:
-        "Você é um revisor de código rigoroso. Aponte defeitos reais e ignore detalhes de estilo.",
-      delete: "Excluir",
-      save: "Salvar",
-    },
-    clear: "Limpar",
-    title: "Assistente",
-    unsupported: "Atualize o host para usar o assistente.",
-    empty: "Converse com {{name}}.",
-    inputPlaceholder: "Mensagem para {{name}}…",
-    send: "Enviar",
-    model: {
-      required: "Baixe o modelo de IA local (~7 GB) para começar a conversar.",
-      download: "Baixar modelo",
-      downloading: "Baixando modelo… {{percent}}%",
-      error: "Erro do modelo: {{message}}",
-    },
-    tool: {
-      running: "Executando {{name}}…",
-      done: "{{name}} concluído com sucesso",
-      failed: "{{name}} falhou",
-      view: "Ver",
-    },
-    proposal: {
-      title: "Executar {{name}}?",
-      run: "Executar",
     },
   },
   promptOptimize: {

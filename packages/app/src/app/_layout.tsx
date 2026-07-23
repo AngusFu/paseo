@@ -857,7 +857,6 @@ function AppWithSidebar({ children }: { children: ReactNode }) {
       pathname === "/schedules" ||
       pathname === "/kanban" ||
       pathname === "/workflows" ||
-      pathname === "/assistant" ||
       routeHasKnownHost);
 
   return <AppContainer chromeEnabled={shouldShowAppChrome}>{children}</AppContainer>;
@@ -890,7 +889,6 @@ function RootStack() {
         <Stack.Screen name="schedules" />
         <Stack.Screen name="kanban" />
         <Stack.Screen name="workflows" />
-        <Stack.Screen name="assistant" />
         <Stack.Screen name="pair-scan" />
       </Stack.Protected>
       <Stack.Screen name="h/[serverId]" />

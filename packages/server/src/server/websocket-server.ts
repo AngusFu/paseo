@@ -17,8 +17,6 @@ import type { ScheduleService } from "./schedule/service.js";
 import { KanbanService } from "./kanban/service.js";
 import { WorkflowService } from "./workflow/service.js";
 import { LlamaService } from "./llm/llama-service.js";
-import { LlmChatService } from "./llm/chat-service.js";
-import type { PaseoToolCatalog } from "./agent/tools/types.js";
 import type { CheckoutDiffManager, CheckoutDiffMetrics } from "./checkout-diff-manager.js";
 import type { DaemonConfigStore, MutableDaemonConfig } from "./daemon-config-store.js";
 import {
@@ -436,9 +434,6 @@ export class VoiceAssistantWebSocketServer {
   private readonly kanbanService: KanbanService;
   private readonly workflowService: WorkflowService;
   private readonly llamaService: LlamaService;
-  private readonly llmChatService: LlmChatService;
-  private llmChatToolCatalogFactory: (() => Promise<PaseoToolCatalog | null>) | null = null;
-  private llmChatDefaultProviderResolver: (() => Promise<string | null>) | null = null;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: ForgeService;
   private readonly workspaceGitService: WorkspaceGitService;
@@ -567,22 +562,6 @@ export class VoiceAssistantWebSocketServer {
         // and config edits should apply without a daemon restart.
         getModelConfig: () => this.daemonConfigStore.get().localLlm ?? null,
       });
-    this.llmChatService = new LlmChatService({
-      paseoHome,
-      logger,
-      llamaService: this.llamaService,
-      getToolCatalog: async () => {
-        const factory = this.llmChatToolCatalogFactory;
-        return factory ? await factory() : null;
-      },
-      getDefaultProvider: async () => {
-        const resolver = this.llmChatDefaultProviderResolver;
-        return resolver ? await resolver() : null;
-      },
-      onEvent: (payload) => {
-        this.broadcast(wrapSessionMessage({ type: "llm.chat.event", payload }));
-      },
-    });
     this.checkoutDiffManager = requiredServices.checkoutDiffManager;
     this.github = github ?? createGitHubService();
     this.workspaceGitService = workspaceGitService ?? createFallbackWorkspaceGitService();
@@ -863,18 +842,6 @@ export class VoiceAssistantWebSocketServer {
     this.broadcastCapabilitiesUpdate();
   }
 
-  // Wired from bootstrap once the agent tool catalog factory exists; gives the
-  // built-in chat loop access to the whitelisted Paseo tools.
-  public setLlmChatToolCatalogFactory(factory: () => Promise<PaseoToolCatalog | null>): void {
-    this.llmChatToolCatalogFactory = factory;
-  }
-
-  // First enabled provider id; fills create_schedule new-agent targets minted
-  // from chat, which has no caller agent to inherit a provider from.
-  public setLlmChatDefaultProviderResolver(resolver: () => Promise<string | null>): void {
-    this.llmChatDefaultProviderResolver = resolver;
-  }
-
   public async attachExternalSocket(
     ws: WebSocketLike,
     metadata?: ExternalSocketMetadata,
@@ -1137,7 +1104,6 @@ export class VoiceAssistantWebSocketServer {
       kanbanService: this.kanbanService,
       workflowService: this.workflowService,
       llamaService: this.llamaService,
-      llmChatService: this.llmChatService,
       checkoutDiffManager: this.checkoutDiffManager,
       github: this.github,
       workspaceGitService: this.workspaceGitService,
@@ -1400,8 +1366,6 @@ export class VoiceAssistantWebSocketServer {
         localLlm: true,
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: true,
-        // COMPAT(llmChat): added in v0.1.106, drop the gate when floor >= v0.1.106.
-        llmChat: true,
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: true,
         // COMPAT(workspacePinning): added in v0.1.107, remove gate after 2027-01-12.

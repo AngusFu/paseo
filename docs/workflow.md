@@ -133,8 +133,26 @@ Dispatch args conventionally include:
   ACP `fast`, Copilot `agent`, OpenCode auto-accept, …). Keys are
   provider-specific — e.g. Cursor uses `{ fast: "true" }`, not `fast_mode`.
 - `workspaceTitle` — optional sidebar title for the one Paseo workspace minted
-  for the run (dispatch field or args; always prefixed with `⚙️ `; default body
-  is the definition name)
+  for the run (dispatch field or args; always prefixed with `⚙️ `). When it is
+  absent the body is derived from the prompt, not from the definition name —
+  see below.
+
+### Workspace name from the prompt
+
+`workflowWorkspaceNameFromPrompt` (`packages/protocol/src/workflow/workspace-name-from-prompt.ts`)
+picks the body of the minted workspace's title when dispatch supplied no
+explicit `workspaceTitle`:
+
+1. The first Jira ticket id linked anywhere in the prompt
+   (`*.atlassian.net/browse/<KEY>-<n>`, first link wins, key must match
+   `[A-Z][A-Z\d]+-\d+`). A run started from a ticket URL is far easier to find
+   in the sidebar as `SCIF-5129` than as a sentence.
+2. Otherwise the prompt's first non-empty line, whitespace-collapsed and
+   clamped to `MAX_WORKFLOW_WORKSPACE_NAME_CHARS` (60), mirroring the
+   derived-agent-title clamp.
+3. Null for an empty prompt — the caller keeps the definition name.
+
+The host half of the URL is matched case-insensitively; the ticket key is not.
 
 Scripts can override per call:
 
@@ -184,6 +202,31 @@ See `skills/paseo-create-workflow/SKILL.md` (“Discover what you can pass”) a
    FIFO. Excess stays `queued` until a slot frees (success/fail/cancel).
 2. **Engine `p-limit`**: limits concurrent `agent()` calls **inside** one run.
    Does not replace the product queue.
+
+## Agent retries and backoff
+
+`retryDelayMs` (`packages/agents-workflow/src/retry-backoff.ts`) decides how
+long the engine waits before re-attempting a failed `agent()` call, and the two
+failure kinds are deliberately not treated alike:
+
+- **`backend-error`** — the agent never ran (provider unavailable, create
+  failed). Waits `2s * 2^attempt`, capped at 30s. It used to retry with no
+  delay at all: three attempts inside 7ms, every one landing on the same cached
+  provider snapshot. Nothing that fails can recover in that window, so the
+  attempts burned tokens and made the log read as though a transient fault had
+  been ruled out when nothing had actually been tried twice.
+- **`bad-output`** — the model answered but the answer didn't parse. No delay:
+  the model is simply being asked again with a corrected prompt, and waiting
+  changes nothing.
+
+The engine's `sleep` is injectable via `EngineConfig.sleep` so tests don't
+spend the real delay.
+
+Note that `PROVIDER_ERROR_RETRY_COOLDOWN_MS` in
+`packages/server/src/server/agent/provider-snapshot-retry.ts` composes with
+this: it is deliberately short (5s) so a provider snapshot that failed
+transiently is re-probed rather than cached as broken for the whole backoff
+chain.
 
 ## Cancel & daemon restart recovery
 

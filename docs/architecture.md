@@ -314,6 +314,37 @@ Two workspaces can share the same `cwd` (e.g. a `directory` workspace and a `loc
 
 One deliberate non-violation: `AgentFileExplorerState.directories`/`files` cache directory listings inside the `workspaceId`-keyed explorer map. Same-`cwd` workspaces therefore keep duplicate caches, but they can never diverge — both fetch the identical directory via `listDirectory(workspaceRoot, …)`. This is duplication, not leakage, and is left as-is.
 
+## Diff context expansion
+
+A rendered diff only carries the lines git chose to emit. The GitLab-style
+"expand N more lines" controls read the surrounding lines on demand.
+
+- **Wire:** `checkout.diff.context.request` / `.response`
+  (`packages/protocol/src/messages.ts`), gated by the
+  `features.diffContextExpand` capability flag. The client renders no expanders
+  at all when the daemon lacks it — there is no fallback path.
+- **Daemon:** `packages/server/src/utils/diff-context.ts`.
+  `resolveDiffContextSource` decides where the lines come from: `uncommitted`
+  and `base` read the **working tree** (both compare against it, so reading a
+  revision would show stale surroundings), while `refs` reads
+  `git show <toRef>:<path>`. Requests with absolute paths or `..` are rejected.
+- **Client:** `useDiffContextExpansion`
+  (`packages/app/src/git/use-diff-context-expansion.ts`) owns one surface's
+  loaded context. Gap geometry and merging live in
+  `packages/app/src/git/diff-context-ranges.ts`.
+
+Two invalidation keys keep expanded context from being shown against a diff it
+no longer lines up with: the controller drops everything when the _comparison_
+changes (`JSON.stringify({serverId, cwd, compare})`), and each file's state is
+keyed by `buildDiffContextFileKey` — path **plus hunk geometry** — so a new
+commit underneath invalidates it too.
+
+One rendering consequence: expansion strips a hunk's `@@` line once the hunk
+reaches the top of the file. Unified renders hunk lines directly, but split
+builds its header from a separate field, so `buildSplitDiffRows`
+(`packages/app/src/utils/diff-layout.ts`) emits a header row only when the hunk
+still carries a `header` line.
+
 ## Agent providers
 
 Each provider implements the `AgentClient` interface in `agent/agent-sdk-types.ts`. Provider implementations live in `agent/providers/`.

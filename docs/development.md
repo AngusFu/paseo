@@ -363,6 +363,33 @@ For tighter loops, you can rebuild a single workspace:
 - Changed `packages/agents-workflow/src/*`: `npm run build --workspace=@getpaseo/agents-workflow` — the daemon imports the ENGINE's `dist/` (tsx only transpiles server source, not dependencies), so a stale engine dist silently runs old engine semantics (field lesson: journal recorded failures for days after the source fix).
 - Changed app build dependencies: `npm run build:app-deps`.
 
+### Verify the desktop package, don't trust the build exit code
+
+The desktop package is built through the **clean** chain
+(`build:desktop` → desktop `build` → `build:server:clean` → `build:server-deps:clean`),
+which is a separate list from `build:server-deps`. A package missing from the
+clean list builds fine, typechecks fine, tests green — and then ships whatever
+stale `dist/` happened to be on disk, with no error anywhere.
+`@getpaseo/agents-workflow` was missing from it until `59428736b`; changes to
+the workflow engine simply never reached the packaged app.
+
+So after packaging, grep the asar for a symbol your change introduced:
+
+```bash
+rg -c "<new symbol>" packages/desktop/release/mac-arm64/Paseo.app/Contents/Resources/app.asar
+```
+
+Zero hits means the clean chain doesn't reach your package — fix the chain, not
+the symptom.
+
+### Commits touching only lint-ignored paths
+
+`.oxlintrc.json` ignores `packages/agents-workflow/**`. lefthook passes staged
+files to oxlint, so a commit touching only that package used to fail the hook
+with "No files found to lint" (exit 1). The lefthook invocation now passes
+`--no-error-on-unmatched-pattern`. That flag is deliberately **not** in
+`npm run lint` itself, so a mistyped path on a manual run still errors.
+
 ## ACP provider catalog versions
 
 The in-app ACP provider catalog pins package-runner entries (`npx`, `npm exec`,

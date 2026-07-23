@@ -10,6 +10,10 @@ pre-commit:
       run: npm run format:check:files -- {staged_files}
     - name: lint
       glob: "*.{js,jsx,ts,tsx}"
-      run: npm run lint -- {staged_files}
+      # Staging only files oxlint ignores (see ignorePatterns in .oxlintrc.json)
+      # leaves it with nothing to lint, which it reports as an error — so a
+      # commit touching just those paths could not pass the hook. Kept off the
+      # `lint` script itself so a mistyped path still fails when run by hand.
+      run: npm run lint -- --no-error-on-unmatched-pattern {staged_files}
     - name: typecheck
       run: npm run typecheck

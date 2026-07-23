@@ -93,10 +93,7 @@ function formatListenTarget(listenTarget: ListenTarget | null): string | null {
 export async function fanOutReconciledWorkspaceUpdates(input: {
   sessions: Iterable<{
     syncWorkspaceGitObserversForExternalWorkspaceIds(workspaceIds: Iterable<string>): Promise<void>;
-    emitWorkspaceUpdatesForExternalWorkspaceIds(
-      workspaceIds: Iterable<string>,
-      options: { skipReconcile: boolean },
-    ): Promise<void>;
+    emitWorkspaceUpdatesForExternalWorkspaceIds(workspaceIds: Iterable<string>): Promise<void>;
   }>;
   workspaceIds: readonly string[];
   logger: Pick<Logger, "warn">;
@@ -112,9 +109,7 @@ export async function fanOutReconciledWorkspaceUpdates(input: {
         );
       }
       try {
-        await session.emitWorkspaceUpdatesForExternalWorkspaceIds(input.workspaceIds, {
-          skipReconcile: true,
-        });
+        await session.emitWorkspaceUpdatesForExternalWorkspaceIds(input.workspaceIds);
       } catch (error) {
         input.logger.warn({ err: error }, "Failed to emit workspace updates after reconciliation");
       }
@@ -961,12 +956,17 @@ export async function createPaseoDaemon(
     logger,
   });
   logger.info({ elapsed: elapsed() }, "Workspace registries bootstrapped");
+  const teardownArchivedWorkspaceRuntime = (workspaceId: string): void => {
+    scriptRuntimeStore.removeForWorkspace(workspaceId);
+    releaseWorkspaceServicePortPlan(workspaceId);
+  };
   const workspaceReconciliation = new WorkspaceReconciliationService({
     projectRegistry,
     workspaceRegistry,
     logger,
     workspaceGitService,
     onProjectUpdate: (update) => wsServer?.publishProjectUpdate(update),
+    onWorkspaceArchived: teardownArchivedWorkspaceRuntime,
     onWorkspacesChanged: async (workspaceIds) => {
       await fanOutReconciledWorkspaceUpdates({
         sessions: wsServer?.listActiveSessions() ?? [],
@@ -992,8 +992,7 @@ export async function createPaseoDaemon(
       workspaceRegistry,
     });
     if (!existingWorkspace || existingWorkspace.archivedAt) return;
-    scriptRuntimeStore.removeForWorkspace(workspaceId);
-    releaseWorkspaceServicePortPlan(workspaceId);
+    teardownArchivedWorkspaceRuntime(workspaceId);
   };
   // external path→workspace adapter, not ownership: archive-by-path requests that
   // arrive with a worktree path and no workspaceId (old clients / CLI).

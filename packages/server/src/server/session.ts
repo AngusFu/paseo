@@ -180,7 +180,6 @@ import {
   archiveWorkspaceContents,
   requireActiveWorkspaceForArchive,
 } from "./workspace-archive-service.js";
-import { WorkspaceReconciliationService } from "./workspace-reconciliation-service.js";
 import type { ServiceProxySubsystem } from "./service-proxy.js";
 import { renameCurrentBranch as renameCurrentBranchDefault } from "../utils/checkout-git.js";
 import {
@@ -229,7 +228,6 @@ import type { ForgeService } from "../services/forge-service.js";
 import type { ProviderUsageService } from "../services/quota-fetcher/service.js";
 import {
   summarizeFetchWorkspacesEntries,
-  workspaceIdsForProjects,
   workspaceIdsOnCheckout,
   WorkspaceDirectory,
   type WorkspaceUpdatesFilter,
@@ -1141,7 +1139,7 @@ export class Session {
   }
 
   async emitWorkspaceUpdateForWorkspaceId(workspaceId: string): Promise<void> {
-    await this.emitWorkspaceUpdatesForWorkspaceIds([workspaceId], { skipReconcile: true });
+    await this.emitWorkspaceUpdatesForWorkspaceIds([workspaceId]);
   }
 
   private async emitCreatedWorkspaceUpdate(
@@ -1149,10 +1147,10 @@ export class Session {
     optimisticStatus?: WorkspaceDescriptorPayload["status"],
   ): Promise<void> {
     if (this.workspaceUpdatesSubscription) {
-      await this.emitWorkspaceUpdatesForWorkspaceIds([workspace.id], {
-        skipReconcile: true,
-        ...(optimisticStatus ? { optimisticStatus } : {}),
-      });
+      await this.emitWorkspaceUpdatesForWorkspaceIds(
+        [workspace.id],
+        optimisticStatus ? { optimisticStatus } : undefined,
+      );
       return;
     }
     // COMPAT(workspaceCreateCausalUpdate): added in v0.1.106, remove after 2027-01-12.
@@ -1177,11 +1175,8 @@ export class Session {
     this.clearWorkspaceArchiving(workspaceIds);
   }
 
-  async emitWorkspaceUpdatesForExternalWorkspaceIds(
-    workspaceIds: Iterable<string>,
-    options?: { skipReconcile?: boolean },
-  ): Promise<void> {
-    await this.emitWorkspaceUpdatesForWorkspaceIds(workspaceIds, options);
+  async emitWorkspaceUpdatesForExternalWorkspaceIds(workspaceIds: Iterable<string>): Promise<void> {
+    await this.emitWorkspaceUpdatesForWorkspaceIds(workspaceIds);
   }
 
   async syncWorkspaceGitObserversForExternalWorkspaceIds(
@@ -1413,10 +1408,10 @@ export class Session {
       if (this.isCleanedUp) {
         return;
       }
-      await this.emitWorkspaceUpdatesForWorkspaceIds([mutation.workspaceId], {
-        skipReconcile: true,
-        ...(mutation.expectsInitialAgent ? { optimisticStatus: "running" } : {}),
-      });
+      await this.emitWorkspaceUpdatesForWorkspaceIds(
+        [mutation.workspaceId],
+        mutation.expectsInitialAgent ? { optimisticStatus: "running" } : undefined,
+      );
     } catch (error) {
       this.sessionLogger.warn(
         { err: error, workspaceId: mutation.workspaceId, mutationKind: mutation.kind },
@@ -1486,7 +1481,6 @@ export class Session {
           this.workspaceGitObserver.removeForWorkspaceId(workspaceId);
         }
         await this.emitWorkspaceUpdatesForWorkspaceIds(updateIds, {
-          skipReconcile: true,
           removedProjectId: mutation.projectId,
         });
         return;
@@ -1497,9 +1491,7 @@ export class Session {
           this.workspaceGitObserver.removeForWorkspaceId(workspaceId);
         }
       }
-      await this.emitWorkspaceUpdatesForWorkspaceIds(projectWorkspaceIds, {
-        skipReconcile: true,
-      });
+      await this.emitWorkspaceUpdatesForWorkspaceIds(projectWorkspaceIds);
     } catch (error) {
       this.sessionLogger.warn(
         { err: error, projectId: mutation.projectId, mutationKind: mutation.kind },
@@ -3605,9 +3597,7 @@ export class Session {
         }
       }
 
-      await this.emitWorkspaceUpdatesForWorkspaceIds(affectedWorkspaceIds, {
-        skipReconcile: true,
-      });
+      await this.emitWorkspaceUpdatesForWorkspaceIds(affectedWorkspaceIds);
 
       this.emit({
         type: "agent.detach.response",
@@ -3812,9 +3802,7 @@ export class Session {
         .filter((workspace) => workspace.projectId === projectId)
         .map((workspace) => workspace.workspaceId);
       if (affectedWorkspaceIds.length > 0) {
-        await this.emitWorkspaceUpdatesForWorkspaceIds(affectedWorkspaceIds, {
-          skipReconcile: true,
-        });
+        await this.emitWorkspaceUpdatesForWorkspaceIds(affectedWorkspaceIds);
       }
     } catch (error) {
       this.sessionLogger.error(
@@ -3859,9 +3847,7 @@ export class Session {
 
       if (activeWorkspaceIds.length > 0) {
         this.markWorkspaceArchiving(activeWorkspaceIds, new Date().toISOString());
-        await this.emitWorkspaceUpdatesForWorkspaceIds(activeWorkspaceIds, {
-          skipReconcile: true,
-        });
+        await this.emitWorkspaceUpdatesForWorkspaceIds(activeWorkspaceIds);
       }
 
       const removedWorkspaceIds: string[] = [];
@@ -3893,7 +3879,6 @@ export class Session {
           ? removedWorkspaceIds
           : [projectWorkspaces[0]?.workspaceId ?? projectId];
       await this.emitWorkspaceUpdatesForWorkspaceIds(updateIds, {
-        skipReconcile: true,
         removedProjectId: projectId,
       });
 
@@ -3978,9 +3963,7 @@ export class Session {
         },
       });
 
-      await this.emitWorkspaceUpdatesForWorkspaceIds([workspaceId], {
-        skipReconcile: true,
-      });
+      await this.emitWorkspaceUpdatesForWorkspaceIds([workspaceId]);
     } catch (error) {
       this.sessionLogger.error(
         { err: error, workspaceId, requestId },
@@ -4035,7 +4018,7 @@ export class Session {
         return;
       }
       emitResponse(true, nextPinnedAt, null);
-      await this.emitWorkspaceUpdatesForWorkspaceIds([workspaceId], { skipReconcile: true });
+      await this.emitWorkspaceUpdatesForWorkspaceIds([workspaceId]);
     } catch (error) {
       this.sessionLogger.error(
         { ...logContext, err: error },
@@ -5766,67 +5749,9 @@ export class Session {
     releaseWorkspaceServicePortPlan(workspaceId);
   }
 
-  private async reconcileAndEmitWorkspaceUpdates(): Promise<void> {
-    if (!this.workspaceUpdatesSubscription) {
-      return;
-    }
-    try {
-      const changedWorkspaceIds = await this.reconcileActiveWorkspaceRecords();
-      if (changedWorkspaceIds.size === 0) {
-        return;
-      }
-      await this.emitWorkspaceUpdatesForWorkspaceIds(changedWorkspaceIds, {
-        skipReconcile: true,
-      });
-    } catch (error) {
-      this.sessionLogger.error({ err: error }, "Background workspace reconciliation failed");
-    }
-  }
-
-  private async reconcileActiveWorkspaceRecords(): Promise<Set<string>> {
-    const service = new WorkspaceReconciliationService({
-      projectRegistry: this.projectRegistry,
-      workspaceRegistry: this.workspaceRegistry,
-      logger: this.sessionLogger,
-      workspaceGitService: this.workspaceGitService,
-    });
-    const result = await service.runOnce();
-    const changedWorkspaceIds = new Set<string>();
-    const changedProjectIds = new Set<string>();
-
-    await Promise.all(
-      result.changesApplied.map(async (change) => {
-        switch (change.kind) {
-          case "workspace_archived":
-            await this.teardownArchivedWorkspace(change.workspaceId);
-            changedWorkspaceIds.add(change.workspaceId);
-            break;
-          case "workspace_updated":
-            changedWorkspaceIds.add(change.workspaceId);
-            break;
-          case "project_updated":
-            changedProjectIds.add(change.projectId);
-            break;
-        }
-      }),
-    );
-
-    if (changedProjectIds.size > 0) {
-      for (const workspaceId of workspaceIdsForProjects(
-        await this.workspaceRegistry.list(),
-        changedProjectIds,
-      )) {
-        changedWorkspaceIds.add(workspaceId);
-      }
-    }
-
-    return changedWorkspaceIds;
-  }
-
   private async emitWorkspaceUpdatesForWorkspaceIds(
     workspaceIds: Iterable<string>,
     options?: {
-      skipReconcile?: boolean;
       dedupeGitState?: boolean;
       removedProjectId?: string;
       optimisticStatus?: WorkspaceDescriptorPayload["status"];
@@ -5893,10 +5818,6 @@ export class Session {
 
       this.bufferOrEmitWorkspaceUpdate(subscription, nextPayload);
     }
-
-    if (!options?.skipReconcile) {
-      void this.reconcileAndEmitWorkspaceUpdates();
-    }
   }
 
   private applyOptimisticWorkspaceStatus(
@@ -5957,9 +5878,7 @@ export class Session {
     if (!event.workspaceId) {
       return;
     }
-    await this.emitWorkspaceUpdatesForWorkspaceIds([event.workspaceId], {
-      skipReconcile: true,
-    });
+    await this.emitWorkspaceUpdatesForWorkspaceIds([event.workspaceId]);
   }
 
   // A git fact (branch, diff, dirty, PR) changed at `cwd`. Every workspace whose
@@ -5970,7 +5889,6 @@ export class Session {
   private async emitWorkspaceUpdateForCwd(
     cwd: string,
     options?: {
-      skipReconcile?: boolean;
       dedupeGitState?: boolean;
     },
   ): Promise<void> {
@@ -6164,7 +6082,6 @@ export class Session {
 
       if (subscriptionId && this.workspaceUpdatesSubscription?.subscriptionId === subscriptionId) {
         this.flushBootstrappedWorkspaceUpdates(snapshot);
-        void this.reconcileAndEmitWorkspaceUpdates();
       }
     } catch (error) {
       if (subscriptionId && this.workspaceUpdatesSubscription?.subscriptionId === subscriptionId) {

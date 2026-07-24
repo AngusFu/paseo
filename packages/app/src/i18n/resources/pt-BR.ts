@@ -1745,7 +1745,7 @@ export const ptBR: TranslationResources = {
     hostSections: {
       connections: "Conexões",
       agents: "Agentes",
-      workspaces: "Workspaces",
+      workspaces: "Espaços de trabalho",
       providers: "Provedores",
       integrations: "Jira & GitLab",
       usage: "Uso",
@@ -2051,6 +2051,9 @@ export const ptBR: TranslationResources = {
         apiKeyPlaceholder: "Deixe em branco para servidores locais sem autenticação",
         model: "Modelo",
         modelPlaceholder: "qwen3.5:0.8b",
+        modelEmpty: "Nenhum modelo — buscar no Ollama",
+        modelSearchPlaceholder: "Buscar modelos",
+        fetchModels: "Buscar no Ollama",
         save: "Salvar",
         test: "Testar",
         testFailed: "Falha na solicitação de teste",
@@ -2096,12 +2099,33 @@ export const ptBR: TranslationResources = {
           save: "Salvar",
           saving: "Salvando...",
         },
+        browserTools: {
+          title: "Ferramentas do navegador",
+          hint: "Permite que agentes acessem e controlem abas do navegador do Paseo, incluindo estado de login. Ative apenas para agentes confiáveis.",
+          accessibilityLabel: "Ativar ferramentas do navegador",
+          updating: "Atualizando ferramentas do navegador…",
+        },
       },
       agents: {
         unavailable: "Conecte-se a este host para gerenciar agentes",
       },
       workspaces: {
-        unavailable: "Conecte-se a este host para gerenciar workspaces",
+        unavailable: "Conecte-se a este host para gerenciar espaços de trabalho",
+        autoArchive: {
+          title: "Arquivar workspaces com PR mesclado",
+          hint: "Arquivar automaticamente workspaces limpos do Paseo após o merge do pull request",
+          accessibilityLabel: "Arquivar workspaces com PR mesclado",
+          updateErrorTitle: "Não foi possível atualizar workspaces",
+        },
+      },
+      terminalAgents: {
+        sectionTitle: "Agentes de terminal",
+        enableHooks: {
+          title: "Ativar hooks de agentes de terminal",
+          hint: "Receba notificações e status de agentes de terminal. Isso instala hooks nos arquivos de configuração do agente.",
+          accessibilityLabel: "Ativar hooks de agentes de terminal",
+          updateErrorTitle: "Não foi possível atualizar hooks de agentes de terminal",
+        },
       },
       terminalProfiles: {
         unavailable: "Conecte-se a este host para gerenciar perfis de terminal",

@@ -210,6 +210,7 @@ import { ScheduleService } from "./schedule/service.js";
 import { KanbanService } from "./kanban/service.js";
 import { WorkflowService } from "./workflow/service.js";
 import { LlamaService, LlmGenerateError } from "./llm/llama-service.js";
+import { detectAndListOllamaModels } from "./llm/ollama.js";
 import {
   createGitHubService,
   GitHubAuthenticationError,
@@ -2630,6 +2631,8 @@ export class Session {
         return this.handleLlmGenerateRequest(msg);
       case "llm.local.cancel.request":
         return this.handleLlmCancelRequest(msg);
+      case "llm.local.ollama.list_models.request":
+        return this.handleLlmOllamaListModelsRequest(msg);
       default:
         return undefined;
     }
@@ -2713,6 +2716,26 @@ export class Session {
     this.emit({
       type: "llm.local.cancel.response",
       payload: { requestId: msg.requestId, cancelled },
+    });
+  }
+
+  private async handleLlmOllamaListModelsRequest(
+    msg: Extract<SessionInboundMessage, { type: "llm.local.ollama.list_models.request" }>,
+  ): Promise<void> {
+    const persisted = this.daemonConfigStore.get().localLlm;
+    const result = await detectAndListOllamaModels({
+      baseUrl: msg.baseUrl ?? persisted?.baseUrl,
+      apiKey: msg.apiKey ?? persisted?.apiKey,
+    });
+    this.emit({
+      type: "llm.local.ollama.list_models.response",
+      payload: {
+        requestId: msg.requestId,
+        ollamaAvailable: result.ollamaAvailable,
+        ollamaPath: result.ollamaPath,
+        models: result.models,
+        error: result.error,
+      },
     });
   }
 

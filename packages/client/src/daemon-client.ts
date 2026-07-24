@@ -635,6 +635,10 @@ type LlmLocalCancelPayload = Extract<
   SessionOutboundMessage,
   { type: "llm.local.cancel.response" }
 >["payload"];
+type LlmLocalOllamaListModelsPayload = Extract<
+  SessionOutboundMessage,
+  { type: "llm.local.ollama.list_models.response" }
+>["payload"];
 // Cold-start generation loads the model from disk first (tens of seconds).
 const LLM_GENERATE_TIMEOUT_MS = 120_000;
 interface LlmLocalGenerateOptions {
@@ -644,6 +648,11 @@ interface LlmLocalGenerateOptions {
   maxTokens?: number;
   requestId?: string;
   timeoutMs?: number;
+}
+interface LlmLocalOllamaListModelsOptions {
+  baseUrl?: string;
+  apiKey?: string;
+  requestId?: string;
 }
 
 type KanbanSourceCreatePayload = Extract<
@@ -5517,6 +5526,19 @@ export class DaemonClient {
     return this.sendNamespacedCorrelatedSessionRequest({
       requestId,
       message: { type: "llm.local.cancel.request", generateRequestId },
+    });
+  }
+
+  async llmLocalOllamaListModels(
+    options: LlmLocalOllamaListModelsOptions = {},
+  ): Promise<LlmLocalOllamaListModelsPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "llm.local.ollama.list_models.request",
+        ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
+        ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
+      },
     });
   }
 

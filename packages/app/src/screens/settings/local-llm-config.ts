@@ -1,5 +1,7 @@
 import type { MutableDaemonConfig, MutableDaemonConfigPatch } from "@getpaseo/protocol/messages";
 
+export const DEFAULT_LOCAL_LLM_BASE_URL = "http://127.0.0.1:11434/v1";
+
 export interface LocalLlmDraft {
   baseUrl: string;
   apiKey: string;

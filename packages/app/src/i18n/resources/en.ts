@@ -2029,6 +2029,9 @@ export const en = {
         apiKeyPlaceholder: "Leave blank for local servers without auth",
         model: "Model",
         modelPlaceholder: "qwen3.5:0.8b",
+        modelEmpty: "No models yet — fetch from Ollama",
+        modelSearchPlaceholder: "Search models",
+        fetchModels: "Fetch from Ollama",
         save: "Save",
         test: "Test",
         testFailed: "Test request failed",
@@ -2074,12 +2077,33 @@ export const en = {
           save: "Save",
           saving: "Saving...",
         },
+        browserTools: {
+          title: "Browser tools",
+          hint: "Allow agents to access and control Paseo browser tabs, including logged-in browser state. Only enable this for agents you trust.",
+          accessibilityLabel: "Enable browser tools",
+          updating: "Updating browser tools…",
+        },
       },
       agents: {
         unavailable: "Connect to this host to manage agents",
       },
       workspaces: {
         unavailable: "Connect to this host to manage workspaces",
+        autoArchive: {
+          title: "Archive merged PR workspaces",
+          hint: "Automatically archive clean Paseo workspaces after their pull request is merged",
+          accessibilityLabel: "Archive merged PR workspaces",
+          updateErrorTitle: "Unable to update workspaces",
+        },
+      },
+      terminalAgents: {
+        sectionTitle: "Terminal agents",
+        enableHooks: {
+          title: "Enable terminal agent hooks",
+          hint: "Get notifications and status from terminal agents. This installs hooks in your agent config files.",
+          accessibilityLabel: "Enable terminal agent hooks",
+          updateErrorTitle: "Unable to update terminal agent hooks",
+        },
       },
       terminalProfiles: {
         unavailable: "Connect to this host to manage terminal profiles",

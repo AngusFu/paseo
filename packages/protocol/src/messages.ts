@@ -158,12 +158,14 @@ import {
   LlmLocalDownloadRequestSchema,
   LlmLocalGenerateRequestSchema,
   LlmLocalCancelRequestSchema,
+  LlmLocalOllamaListModelsRequestSchema,
   LlmLocalStatusResponseSchema,
   LlmLocalDownloadResponseSchema,
   LlmLocalStatusUpdateSchema,
   LlmLocalGenerateChunkSchema,
   LlmLocalGenerateResponseSchema,
   LlmLocalCancelResponseSchema,
+  LlmLocalOllamaListModelsResponseSchema,
 } from "./llm/rpc-schemas.js";
 import {
   LlmChatListRequestSchema,
@@ -2788,6 +2790,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   LlmLocalDownloadRequestSchema,
   LlmLocalGenerateRequestSchema,
   LlmLocalCancelRequestSchema,
+  LlmLocalOllamaListModelsRequestSchema,
   LlmChatListRequestSchema,
   LlmChatGetRequestSchema,
   LlmChatSendRequestSchema,
@@ -5532,6 +5535,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   LlmLocalGenerateChunkSchema,
   LlmLocalGenerateResponseSchema,
   LlmLocalCancelResponseSchema,
+  LlmLocalOllamaListModelsResponseSchema,
   LlmChatListResponseSchema,
   LlmChatGetResponseSchema,
   LlmChatSendResponseSchema,
@@ -5701,12 +5705,16 @@ export type LlmLocalStatusRequest = z.infer<typeof LlmLocalStatusRequestSchema>;
 export type LlmLocalDownloadRequest = z.infer<typeof LlmLocalDownloadRequestSchema>;
 export type LlmLocalGenerateRequest = z.infer<typeof LlmLocalGenerateRequestSchema>;
 export type LlmLocalCancelRequest = z.infer<typeof LlmLocalCancelRequestSchema>;
+export type LlmLocalOllamaListModelsRequest = z.infer<typeof LlmLocalOllamaListModelsRequestSchema>;
 export type LlmLocalStatusResponse = z.infer<typeof LlmLocalStatusResponseSchema>;
 export type LlmLocalDownloadResponse = z.infer<typeof LlmLocalDownloadResponseSchema>;
 export type LlmLocalStatusUpdate = z.infer<typeof LlmLocalStatusUpdateSchema>;
 export type LlmLocalGenerateChunk = z.infer<typeof LlmLocalGenerateChunkSchema>;
 export type LlmLocalGenerateResponse = z.infer<typeof LlmLocalGenerateResponseSchema>;
 export type LlmLocalCancelResponse = z.infer<typeof LlmLocalCancelResponseSchema>;
+export type LlmLocalOllamaListModelsResponse = z.infer<
+  typeof LlmLocalOllamaListModelsResponseSchema
+>;
 
 // Type exports for payload types
 export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;

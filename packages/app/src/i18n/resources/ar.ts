@@ -1715,12 +1715,12 @@ export const ar: TranslationResources = {
     },
     hostSections: {
       connections: "اتصالات",
-      agents: "Agents",
-      workspaces: "Workspaces",
+      agents: "الوكلاء",
+      workspaces: "مساحات العمل",
       providers: "مقدمي الخدمات",
       integrations: "Jira & GitLab",
       usage: "الاستخدام",
-      terminals: "Terminals",
+      terminals: "الطرفيات",
       host: "نظرة عامة",
     },
     general: {
@@ -2018,6 +2018,9 @@ export const ar: TranslationResources = {
         apiKeyPlaceholder: "اتركه فارغًا للخوادم المحلية بدون مصادقة",
         model: "النموذج",
         modelPlaceholder: "qwen3.5:0.8b",
+        modelEmpty: "لا توجد نماذج — اجلب من Ollama",
+        modelSearchPlaceholder: "ابحث عن النماذج",
+        fetchModels: "اجلب من Ollama",
         save: "حفظ",
         test: "اختبار",
         testFailed: "فشل طلب الاختبار",
@@ -2063,12 +2066,33 @@ export const ar: TranslationResources = {
           save: "حفظ",
           saving: "جارٍ الحفظ...",
         },
+        browserTools: {
+          title: "أدوات المتصفح",
+          hint: "السماح للوكلاء بالوصول إلى علامات تبويب متصفح Paseo والتحكم فيها، بما في ذلك حالة تسجيل الدخول. فعّلها فقط للوكلاء الموثوق بهم.",
+          accessibilityLabel: "تمكين أدوات المتصفح",
+          updating: "جارٍ تحديث أدوات المتصفح…",
+        },
       },
       agents: {
-        unavailable: "Connect to this host to manage agents",
+        unavailable: "اتصل بهذا المضيف لإدارة الوكلاء",
       },
       workspaces: {
-        unavailable: "Connect to this host to manage workspaces",
+        unavailable: "اتصل بهذا المضيف لإدارة مساحات العمل",
+        autoArchive: {
+          title: "أرشفة مساحات عمل PR المدمجة",
+          hint: "أرشفة مساحات عمل Paseo النظيفة تلقائيًا بعد دمج طلب السحب الخاص بها",
+          accessibilityLabel: "أرشفة مساحات عمل PR المدمجة",
+          updateErrorTitle: "تعذر تحديث مساحات العمل",
+        },
+      },
+      terminalAgents: {
+        sectionTitle: "وكلاء الطرفية",
+        enableHooks: {
+          title: "تمكين hooks وكلاء الطرفية",
+          hint: "احصل على الإشعارات والحالة من وكلاء الطرفية. يثبت هذا hooks في ملفات إعداد الوكيل.",
+          accessibilityLabel: "تمكين hooks وكلاء الطرفية",
+          updateErrorTitle: "تعذر تحديث hooks وكلاء الطرفية",
+        },
       },
       terminalProfiles: {
         unavailable: "Connect to this host to manage terminal profiles",

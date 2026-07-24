@@ -1749,12 +1749,12 @@ export const ru: TranslationResources = {
     },
     hostSections: {
       connections: "Соединения",
-      agents: "Agents",
-      workspaces: "Workspaces",
+      agents: "Агенты",
+      workspaces: "Рабочие пространства",
       providers: "Провайдеры",
       integrations: "Jira & GitLab",
       usage: "Использование",
-      terminals: "Terminals",
+      terminals: "Терминалы",
       host: "Обзор",
     },
     general: {
@@ -2056,6 +2056,9 @@ export const ru: TranslationResources = {
         apiKeyPlaceholder: "Оставьте пустым для локальных серверов без авторизации",
         model: "Модель",
         modelPlaceholder: "qwen3.5:0.8b",
+        modelEmpty: "Нет моделей — загрузить из Ollama",
+        modelSearchPlaceholder: "Поиск моделей",
+        fetchModels: "Загрузить из Ollama",
         save: "Сохранить",
         test: "Проверить",
         testFailed: "Тестовый запрос не удался",
@@ -2102,12 +2105,33 @@ export const ru: TranslationResources = {
           save: "Сохранить",
           saving: "Сохранение...",
         },
+        browserTools: {
+          title: "Инструменты браузера",
+          hint: "Разрешить агентам получать доступ и управлять вкладками браузера Paseo, включая состояние входа. Включайте только для доверенных агентов.",
+          accessibilityLabel: "Включить инструменты браузера",
+          updating: "Обновление инструментов браузера…",
+        },
       },
       agents: {
-        unavailable: "Connect to this host to manage agents",
+        unavailable: "Подключитесь к этому хосту, чтобы управлять агентами",
       },
       workspaces: {
-        unavailable: "Connect to this host to manage workspaces",
+        unavailable: "Подключитесь к этому хосту, чтобы управлять рабочими пространствами",
+        autoArchive: {
+          title: "Архивировать рабочие пространства после merge PR",
+          hint: "Автоматически архивировать чистые рабочие пространства Paseo после слияния их pull request",
+          accessibilityLabel: "Архивировать рабочие пространства после merge PR",
+          updateErrorTitle: "Не удалось обновить рабочие пространства",
+        },
+      },
+      terminalAgents: {
+        sectionTitle: "Терминальные агенты",
+        enableHooks: {
+          title: "Включить hooks терминальных агентов",
+          hint: "Получайте уведомления и статус от терминальных агентов. Устанавливает hooks в файлы конфигурации агента.",
+          accessibilityLabel: "Включить hooks терминальных агентов",
+          updateErrorTitle: "Не удалось обновить hooks терминальных агентов",
+        },
       },
       terminalProfiles: {
         unavailable: "Connect to this host to manage terminal profiles",

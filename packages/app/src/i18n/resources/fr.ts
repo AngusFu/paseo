@@ -1763,11 +1763,11 @@ export const fr: TranslationResources = {
     hostSections: {
       connections: "Relations",
       agents: "Agents",
-      workspaces: "Workspaces",
+      workspaces: "Espaces de travail",
       providers: "Fournisseurs",
       integrations: "Jira & GitLab",
       usage: "Utilisation",
-      terminals: "Terminals",
+      terminals: "Terminaux",
       host: "Aperçu",
     },
     general: {
@@ -2071,6 +2071,9 @@ export const fr: TranslationResources = {
         apiKeyPlaceholder: "Laisser vide pour les serveurs locaux sans authentification",
         model: "Modèle",
         modelPlaceholder: "qwen3.5:0.8b",
+        modelEmpty: "Aucun modèle — récupérer depuis Ollama",
+        modelSearchPlaceholder: "Rechercher des modèles",
+        fetchModels: "Récupérer depuis Ollama",
         save: "Enregistrer",
         test: "Tester",
         testFailed: "Échec de la requête de test",
@@ -2116,12 +2119,33 @@ export const fr: TranslationResources = {
           save: "Sauvegarder",
           saving: "Sauvegarde...",
         },
+        browserTools: {
+          title: "Outils navigateur",
+          hint: "Autoriser les agents à accéder et contrôler les onglets navigateur Paseo, y compris l'état de connexion. Activez uniquement pour les agents de confiance.",
+          accessibilityLabel: "Activer les outils navigateur",
+          updating: "Mise à jour des outils navigateur…",
+        },
       },
       agents: {
-        unavailable: "Connect to this host to manage agents",
+        unavailable: "Connectez-vous à cet hôte pour gérer les agents",
       },
       workspaces: {
-        unavailable: "Connect to this host to manage workspaces",
+        unavailable: "Connectez-vous à cet hôte pour gérer les espaces de travail",
+        autoArchive: {
+          title: "Archiver les espaces de travail PR fusionnées",
+          hint: "Archiver automatiquement les espaces de travail Paseo propres après la fusion de leur pull request",
+          accessibilityLabel: "Archiver les espaces de travail PR fusionnées",
+          updateErrorTitle: "Impossible de mettre à jour les espaces de travail",
+        },
+      },
+      terminalAgents: {
+        sectionTitle: "Agents terminal",
+        enableHooks: {
+          title: "Activer les hooks d'agents terminal",
+          hint: "Recevoir notifications et statut des agents terminal. Installe des hooks dans vos fichiers de configuration d'agent.",
+          accessibilityLabel: "Activer les hooks d'agents terminal",
+          updateErrorTitle: "Impossible de mettre à jour les hooks d'agents terminal",
+        },
       },
       terminalProfiles: {
         unavailable: "Connect to this host to manage terminal profiles",

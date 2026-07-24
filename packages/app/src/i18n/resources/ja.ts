@@ -2039,6 +2039,9 @@ export const ja: TranslationResources = {
         apiKeyPlaceholder: "認証なしのローカルサーバーは空欄のまま",
         model: "モデル",
         modelPlaceholder: "qwen3.5:0.8b",
+        modelEmpty: "モデルがありません — Ollama から取得",
+        modelSearchPlaceholder: "モデルを検索",
+        fetchModels: "Ollama から取得",
         save: "保存",
         test: "テスト",
         testFailed: "テスト要求に失敗しました",
@@ -2084,12 +2087,33 @@ export const ja: TranslationResources = {
           save: "保存",
           saving: "保存中...",
         },
+        browserTools: {
+          title: "ブラウザツール",
+          hint: "エージェントが Paseo のブラウザタブ（ログイン状態を含む）にアクセス・操作できるようにします。信頼できるエージェントでのみ有効にしてください。",
+          accessibilityLabel: "ブラウザツールを有効にする",
+          updating: "ブラウザツールを更新中…",
+        },
       },
       agents: {
         unavailable: "エージェントを管理するにはこのホストに接続してください",
       },
       workspaces: {
         unavailable: "ワークスペースを管理するにはこのホストに接続してください",
+        autoArchive: {
+          title: "マージ済み PR のワークスペースをアーカイブ",
+          hint: "プルリクエストがマージされたあと、クリーンな Paseo ワークスペースを自動アーカイブします",
+          accessibilityLabel: "マージ済み PR のワークスペースをアーカイブ",
+          updateErrorTitle: "ワークスペース設定を更新できません",
+        },
+      },
+      terminalAgents: {
+        sectionTitle: "ターミナルエージェント",
+        enableHooks: {
+          title: "ターミナルエージェントの hooks を有効にする",
+          hint: "ターミナルエージェントからの通知とステータスを受け取ります。エージェント設定ファイルに hooks をインストールします。",
+          accessibilityLabel: "ターミナルエージェントの hooks を有効にする",
+          updateErrorTitle: "ターミナルエージェント hooks を更新できません",
+        },
       },
       terminalProfiles: {
         unavailable: "ターミナルプロファイルを管理するにはこのホストに接続してください",

@@ -1758,12 +1758,12 @@ export const es: TranslationResources = {
     },
     hostSections: {
       connections: "Conexiones",
-      agents: "Agents",
-      workspaces: "Workspaces",
+      agents: "Agentes",
+      workspaces: "Espacios de trabajo",
       providers: "Proveedores",
       integrations: "Jira & GitLab",
       usage: "Uso",
-      terminals: "Terminals",
+      terminals: "Terminales",
       host: "Resumen",
     },
     general: {
@@ -2067,6 +2067,9 @@ export const es: TranslationResources = {
         apiKeyPlaceholder: "Déjala en blanco para servidores locales sin autenticación",
         model: "Modelo",
         modelPlaceholder: "qwen3.5:0.8b",
+        modelEmpty: "Sin modelos — obtener de Ollama",
+        modelSearchPlaceholder: "Buscar modelos",
+        fetchModels: "Obtener de Ollama",
         save: "Guardar",
         test: "Probar",
         testFailed: "La solicitud de prueba falló",
@@ -2112,12 +2115,33 @@ export const es: TranslationResources = {
           save: "Guardar",
           saving: "Guardando...",
         },
+        browserTools: {
+          title: "Herramientas del navegador",
+          hint: "Permite que los agentes accedan y controlen las pestañas del navegador de Paseo, incluido el estado de inicio de sesión. Actívalo solo para agentes de confianza.",
+          accessibilityLabel: "Activar herramientas del navegador",
+          updating: "Actualizando herramientas del navegador…",
+        },
       },
       agents: {
-        unavailable: "Connect to this host to manage agents",
+        unavailable: "Conéctate a este host para gestionar agentes",
       },
       workspaces: {
-        unavailable: "Connect to this host to manage workspaces",
+        unavailable: "Conéctate a este host para gestionar espacios de trabajo",
+        autoArchive: {
+          title: "Archivar espacios de trabajo con PR fusionada",
+          hint: "Archivar automáticamente los espacios de trabajo limpios de Paseo cuando su pull request se fusiona",
+          accessibilityLabel: "Archivar espacios de trabajo con PR fusionada",
+          updateErrorTitle: "No se pudieron actualizar los espacios de trabajo",
+        },
+      },
+      terminalAgents: {
+        sectionTitle: "Agentes de terminal",
+        enableHooks: {
+          title: "Activar hooks de agentes de terminal",
+          hint: "Recibe notificaciones y estado de agentes de terminal. Instala hooks en tus archivos de configuración del agente.",
+          accessibilityLabel: "Activar hooks de agentes de terminal",
+          updateErrorTitle: "No se pudieron actualizar los hooks de agentes de terminal",
+        },
       },
       terminalProfiles: {
         unavailable: "Connect to this host to manage terminal profiles",

@@ -57,6 +57,16 @@ export const LlmLocalCancelRequestSchema = z.object({
   generateRequestId: z.string(),
 });
 
+// Detect the host `ollama` binary and list installed models. Optional baseUrl /
+// apiKey override the draft values from host settings (so the form can probe
+// before saving).
+export const LlmLocalOllamaListModelsRequestSchema = z.object({
+  type: z.literal("llm.local.ollama.list_models.request"),
+  requestId: z.string(),
+  baseUrl: z.string().optional(),
+  apiKey: z.string().optional(),
+});
+
 // ---------------------------------------------------------------------------
 // Responses / events (daemon → client)
 // ---------------------------------------------------------------------------
@@ -109,5 +119,16 @@ export const LlmLocalCancelResponseSchema = z.object({
   payload: z.object({
     requestId: z.string(),
     cancelled: z.boolean(),
+  }),
+});
+
+export const LlmLocalOllamaListModelsResponseSchema = z.object({
+  type: z.literal("llm.local.ollama.list_models.response"),
+  payload: z.object({
+    requestId: z.string(),
+    ollamaAvailable: z.boolean(),
+    ollamaPath: z.string().nullable(),
+    models: z.array(z.string()),
+    error: z.string().nullable(),
   }),
 });

@@ -30,21 +30,32 @@ import {
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 
-type ApprovalsBucket = "pending" | "resolved";
+type ApprovalsBucket = "pending" | "answered" | "closed";
 
 const STATUS_FILTER_OPTIONS: { value: ApprovalsBucket; labelKey: string; testID: string }[] = [
   { value: "pending", labelKey: "approvals.filter.pending", testID: "approvals-filter-pending" },
   {
-    value: "resolved",
-    labelKey: "approvals.filter.resolved",
-    testID: "approvals-filter-resolved",
+    value: "answered",
+    labelKey: "approvals.filter.answered",
+    testID: "approvals-filter-answered",
+  },
+  {
+    value: "closed",
+    labelKey: "approvals.filter.closed",
+    testID: "approvals-filter-closed",
   },
 ];
 
 const EMPTY_QUESTIONS: AggregatedQuestion[] = [];
 
-function isPendingStatus(status: InboxQuestionStatus): boolean {
-  return status === "pending";
+function matchesApprovalsBucket(status: InboxQuestionStatus, bucket: ApprovalsBucket): boolean {
+  if (bucket === "pending") {
+    return status === "pending";
+  }
+  if (bucket === "answered") {
+    return status === "answered";
+  }
+  return status === "dismissed" || status === "expired";
 }
 
 export function ApprovalsScreen(): ReactElement {
@@ -90,8 +101,7 @@ function ApprovalsScreenContent(): ReactElement {
       if (selectedHost !== ALL_HOSTS_OPTION_ID && question.serverId !== selectedHost) {
         return false;
       }
-      const pending = isPendingStatus(question.status);
-      return statusFilter === "pending" ? pending : !pending;
+      return matchesApprovalsBucket(question.status, statusFilter);
     });
   }, [questions, selectedHost, statusFilter]);
 
@@ -265,7 +275,7 @@ function ApprovalsQuestionRow({
     [permission.request.input],
   );
   const preview = question.title ?? question.questions[0]?.question ?? question.id;
-  const isPending = isPendingStatus(question.status);
+  const isPending = question.status === "pending";
   const resolvedCardStatus =
     question.status === "dismissed" || question.status === "expired"
       ? ("canceled" as const)
@@ -376,22 +386,37 @@ function ApprovalsQuestionRow({
   );
 }
 
+function emptyCopyKeys(bucket: ApprovalsBucket): {
+  titleKey: string;
+  descriptionKey: string;
+} {
+  if (bucket === "pending") {
+    return {
+      titleKey: "approvals.empty.pendingTitle",
+      descriptionKey: "approvals.empty.pendingDescription",
+    };
+  }
+  if (bucket === "answered") {
+    return {
+      titleKey: "approvals.empty.answeredTitle",
+      descriptionKey: "approvals.empty.answeredDescription",
+    };
+  }
+  return {
+    titleKey: "approvals.empty.closedTitle",
+    descriptionKey: "approvals.empty.closedDescription",
+  };
+}
+
 function ApprovalsEmptyState({ bucket }: { bucket: ApprovalsBucket }): ReactElement {
   const { t } = useTranslation();
+  const { titleKey, descriptionKey } = emptyCopyKeys(bucket);
   return (
     <View style={styles.emptyState} testID="approvals-empty">
       <Inbox size={styles.emptyIcon.width} color={styles.emptyIcon.color} />
       <View style={styles.emptyTextStack}>
-        <Text style={styles.emptyTitle}>
-          {bucket === "pending"
-            ? t("approvals.empty.pendingTitle")
-            : t("approvals.empty.resolvedTitle")}
-        </Text>
-        <Text style={styles.emptyDescription}>
-          {bucket === "pending"
-            ? t("approvals.empty.pendingDescription")
-            : t("approvals.empty.resolvedDescription")}
-        </Text>
+        <Text style={styles.emptyTitle}>{t(titleKey)}</Text>
+        <Text style={styles.emptyDescription}>{t(descriptionKey)}</Text>
       </View>
     </View>
   );

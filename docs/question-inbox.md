@@ -124,9 +124,25 @@ Architecture and policy only.
 
 ### P3 — Approvals page + extras ✅
 
-- Global Approvals UI at `/approvals` (sidebar entry) over inbox questions: pending/resolved filters, answer/dismiss via `question.answer`, open agent.
+- Global Approvals UI at `/approvals` (sidebar entry) over inbox questions: pending / answered / closed filters, answer/dismiss via `question.answer`, open agent.
 - Unix socket waiter at `$PASEO_HOME/question-wait.sock` (NDJSON wait; advertised as `features.questionWaitSocket` on non-Windows).
 - Native AskUserQuestion settlements are mirrored into the inbox as `source: native_mirror` **after settle** (audit only — no second answerable UI).
+
+### Lifecycle hygiene (anti-junk)
+
+| Event                                        | Inbox status                                  | Approvals tab                      |
+| -------------------------------------------- | --------------------------------------------- | ---------------------------------- |
+| MCP / skill / CLI create (still waiting)     | `pending`                                     | Pending                            |
+| MCP `tools/call` timeout                     | stays `pending`, sets `expiresAt` = now + 30m | Pending (skill may `wait` same id) |
+| Skill/CLI `question.create`                  | `pending` + `expiresAt` = now + 30m           | Pending                            |
+| Past `expiresAt` (swept on list/wait/answer) | `expired`                                     | Closed                             |
+| Turn interrupt / turn fail (system abandon)  | `expired`                                     | Closed                             |
+| User dismiss                                 | `dismissed`                                   | Closed                             |
+| User answer                                  | `answered`                                    | Answered                           |
+
+Interrupt resolves any still-blocking MCP waiter as **dismiss** (not `timedOut`) so skill timeout fallback does not fire. TTL expiry clears leftover permissions the same way.
+
+Closed rows (`dismissed` / `expired`) record `closedAt` and are **hard-deleted** after **7 days** (swept on list/wait/answer). Answered rows are kept.
 
 ## Risks
 

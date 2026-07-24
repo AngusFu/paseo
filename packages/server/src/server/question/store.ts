@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import {
   StoredInboxQuestionSchema,
@@ -9,6 +9,7 @@ import {
   type StoredInboxQuestion,
 } from "@getpaseo/protocol/question/types";
 import { writeJsonFileAtomic } from "../atomic-file.js";
+import { isInboxQuestionClosedPastRetention, isInboxQuestionPastExpiry } from "./ttl.js";
 
 function generateQuestionId(): string {
   return `qst_${randomBytes(4).toString("hex")}`;
@@ -175,12 +176,81 @@ export class QuestionStore {
 
   async markDismissed(id: string): Promise<StoredInboxQuestion | null> {
     return this.update(id, (current) => {
+      if (current.status !== "pending") {
+        return current;
+      }
       const { answers: _answers, ...rest } = current;
       return {
         ...rest,
         status: "dismissed",
+        closedAt: new Date().toISOString(),
       };
     });
+  }
+
+  async markExpired(id: string): Promise<StoredInboxQuestion | null> {
+    return this.update(id, (current) => {
+      if (current.status !== "pending") {
+        return current;
+      }
+      const { answers: _answers, ...rest } = current;
+      return {
+        ...rest,
+        status: "expired",
+        closedAt: new Date().toISOString(),
+      };
+    });
+  }
+
+  async delete(id: string): Promise<boolean> {
+    return this.serializeMutation(id, async () => {
+      try {
+        await unlink(this.filePath(id));
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          return false;
+        }
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Flip pending rows past `expiresAt` to `expired`. Returns newly expired rows.
+   */
+  async expireDuePending(nowMs: number = Date.now()): Promise<StoredInboxQuestion[]> {
+    const pending = await this.list({ status: "pending" });
+    const expired: StoredInboxQuestion[] = [];
+    for (const question of pending) {
+      if (!isInboxQuestionPastExpiry(question, nowMs)) {
+        continue;
+      }
+      const marked = await this.markExpired(question.id);
+      if (marked?.status === "expired") {
+        expired.push(marked);
+      }
+    }
+    return expired;
+  }
+
+  /**
+   * Hard-delete dismissed/expired rows past Closed retention. Returns deleted ids.
+   */
+  async pruneClosedPastRetention(nowMs: number = Date.now()): Promise<string[]> {
+    const closed = (await this.list()).filter(
+      (question) => question.status === "dismissed" || question.status === "expired",
+    );
+    const deleted: string[] = [];
+    for (const question of closed) {
+      if (!isInboxQuestionClosedPastRetention(question, nowMs)) {
+        continue;
+      }
+      if (await this.delete(question.id)) {
+        deleted.push(question.id);
+      }
+    }
+    return deleted;
   }
 
   private async write(question: StoredInboxQuestion): Promise<void> {

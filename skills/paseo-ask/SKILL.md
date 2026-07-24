@@ -25,7 +25,7 @@ Outcomes:
 | `dismissed: true`                        | User dismissed             | Treat as a real outcome; do **not** fallback |
 | `timedOut: true` + optional `questionId` | MCP wait aborted/timed out | Go to fallback below                         |
 
-**Clocks:** Cursor/ACP `tools/call` timeouts and daemon `question.wait` deadlines are separate. A tools/call timeout does **not** dismiss the inbox row — the card stays pending.
+**Clocks:** Cursor/ACP `tools/call` timeouts and daemon `question.wait` deadlines are separate. A tools/call timeout does **not** dismiss the inbox row — it stays `pending` and starts a **30m** `expiresAt` recovery window for `question.wait`. After that (or if the turn is interrupted), the row becomes `expired` and leaves Approvals Pending.
 
 ## Timeout / unavailable fallback
 
@@ -39,7 +39,7 @@ Only when MCP timed out or is unavailable (not on dismiss):
    paseo question wait <id> --timeout 30m
    ```
    `paseo question wait` prefers `$PASEO_HOME/question-wait.sock` when present, then falls back to WS.
-3. Read `status` / `answers` from wait output. `dismissed`/status `dismissed` is final.
+3. Read `status` / `answers` from wait output. `dismissed` / `expired` are final.
 
 ### Classify failures carefully
 
@@ -51,6 +51,7 @@ Treat as timeout/unavailable (fallback OK):
 Do **not** fallback when:
 
 - `dismissed: true`
+- status `expired` / `dismissed` from `question.wait`
 - user cancelled the form intentionally
 - you simply dislike the answer
 

@@ -2983,7 +2983,8 @@ export const zhCN: TranslationResources = {
     title: "审批",
     filter: {
       pending: "待处理",
-      resolved: "已处理",
+      answered: "已回答",
+      closed: "已关闭",
     },
     list: {
       loadError: "无法加载审批",
@@ -2994,8 +2995,10 @@ export const zhCN: TranslationResources = {
     empty: {
       pendingTitle: "暂无待处理问题",
       pendingDescription: "当 agent 需要你做决定时，会出现在这里。",
-      resolvedTitle: "暂无已处理问题",
-      resolvedDescription: "已回答或已忽略的问题会出现在这里。",
+      answeredTitle: "暂无已回答问题",
+      answeredDescription: "你回答过的问题会出现在这里。",
+      closedTitle: "暂无已关闭问题",
+      closedDescription: "已忽略或已过期的问题会出现在这里。",
     },
     row: {
       meta: "{{agent}} · {{host}} · {{source}}",

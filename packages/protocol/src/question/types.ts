@@ -29,6 +29,8 @@ export const StoredInboxQuestionSchema = z.object({
   workspaceId: z.string().min(1).optional(),
   createdAt: z.string().min(1),
   expiresAt: z.string().min(1).optional(),
+  /** When the row left `pending` via dismiss/expire (for Closed retention prune). */
+  closedAt: z.string().min(1).optional(),
   status: InboxQuestionStatusSchema,
   title: z.string().min(1).optional(),
   questions: z.array(InboxQuestionItemSchema),

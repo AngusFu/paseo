@@ -94,6 +94,7 @@ import {
   isNativeQuestionPermission,
 } from "../question/native-mirror.js";
 import type { QuestionStore } from "../question/store.js";
+import { inboxQuestionExpiresAt } from "../question/ttl.js";
 import type {
   InboxQuestionSource,
   InboxQuestionStatus,
@@ -671,6 +672,8 @@ export class AgentManager {
     string,
     Set<(question: StoredInboxQuestion) => void>
   >();
+  /** In-flight inbox persist jobs keyed by MCP/inbox permission request id. */
+  private readonly inboxQuestionPersistJobs = new Map<string, Promise<void>>();
   private readonly questionStore: QuestionStore | null;
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
@@ -2461,14 +2464,18 @@ export class AgentManager {
       // Persist after the live waiter/permission are registered so callers can
       // observe pending permissions synchronously. Settlement looks up by
       // mcpRequestId map once create finishes (or falls back to store scan).
-      void this.persistInboxQuestionRecord({
-        agentId: agent.id,
-        workspaceId: agent.workspaceId,
+      // Keep the promise so timeout TTL can await the same create.
+      this.trackInboxQuestionPersist(
         requestId,
-        questions: input.questions,
-        title: input.title,
-        source: "mcp",
-      });
+        this.persistInboxQuestionRecord({
+          agentId: agent.id,
+          workspaceId: agent.workspaceId,
+          requestId,
+          questions: input.questions,
+          title: input.title,
+          source: "mcp",
+        }),
+      );
     });
 
     const questionId = this.peekInboxQuestionIdForRequest(requestId);
@@ -2505,6 +2512,8 @@ export class AgentManager {
       ...(input.title ? { title: input.title } : {}),
       questions: input.questions,
       source,
+      // Skill/CLI creates are already past MCP timeout — start the recovery TTL.
+      expiresAt: inboxQuestionExpiresAt(),
     });
     const requestId = `inbox-question-${question.id}`;
     const withRequest = await this.questionStore.update(question.id, (current) => ({
@@ -2551,6 +2560,7 @@ export class AgentManager {
     if (!this.questionStore) {
       throw new Error("Question inbox is not configured on this daemon");
     }
+    await this.sweepExpiredInboxQuestions();
     const current = await this.questionStore.get(input.questionId);
     if (!current) {
       throw new Error(`Question not found: ${input.questionId}`);
@@ -2663,7 +2673,8 @@ export class AgentManager {
 
   /**
    * MCP tools/call timed out or aborted: resolve the tool waiter only.
-   * Leave the permission + inbox row pending so skill/CLI can wait the same id.
+   * Leave the permission + inbox row pending so skill/CLI can wait the same id,
+   * but start the recovery TTL so Approvals does not keep orphans forever.
    */
   private releaseMcpQuestionWaiterOnTimeout(requestId: string): void {
     const resolveWaiter = this.mcpQuestionResolvers.get(requestId);
@@ -2671,7 +2682,51 @@ export class AgentManager {
       return;
     }
     this.mcpQuestionResolvers.delete(requestId);
-    resolveWaiter(null);
+    // Await persist + TTL before resolving so callers see expiresAt immediately.
+    void this.beginInboxQuestionRecoveryTtl(requestId).finally(() => {
+      resolveWaiter(null);
+    });
+  }
+
+  private trackInboxQuestionPersist(requestId: string, job: Promise<void>): void {
+    this.inboxQuestionPersistJobs.set(requestId, job);
+    void job.finally(() => {
+      if (this.inboxQuestionPersistJobs.get(requestId) === job) {
+        this.inboxQuestionPersistJobs.delete(requestId);
+      }
+    });
+  }
+
+  private async beginInboxQuestionRecoveryTtl(requestId: string): Promise<void> {
+    if (!this.questionStore) {
+      return;
+    }
+    try {
+      await this.inboxQuestionPersistJobs.get(requestId);
+    } catch {
+      // Persist failure is already logged; TTL cannot apply without a row.
+    }
+    const questionId = await this.resolveInboxQuestionIdForMcpRequest(requestId);
+    if (!questionId) {
+      return;
+    }
+    const expiresAt = inboxQuestionExpiresAt();
+    try {
+      await this.questionStore.update(questionId, (current) => {
+        if (current.status !== "pending") {
+          return current;
+        }
+        if (current.expiresAt && Date.parse(current.expiresAt) <= Date.parse(expiresAt)) {
+          return current;
+        }
+        return { ...current, expiresAt };
+      });
+    } catch (error) {
+      this.logger.warn(
+        { err: error, requestId, questionId },
+        "Failed to set ask_question recovery TTL",
+      );
+    }
   }
 
   private notifyInboxQuestionWaiters(question: StoredInboxQuestion): void {
@@ -2698,7 +2753,25 @@ export class AgentManager {
     if (!this.questionStore) {
       return [];
     }
+    await this.sweepExpiredInboxQuestions();
     return this.questionStore.list(filter);
+  }
+
+  private async sweepExpiredInboxQuestions(): Promise<void> {
+    if (!this.questionStore) {
+      return;
+    }
+    const expired = await this.questionStore.expireDuePending();
+    for (const question of expired) {
+      this.notifyInboxQuestionWaiters(question);
+      if (question.mcpRequestId) {
+        this.settleMcpQuestion(question.agentId, question.mcpRequestId, null, {
+          persistInbox: false,
+        });
+      }
+    }
+    // Drop Closed junk past 7d retention so Approvals does not grow forever.
+    await this.questionStore.pruneClosedPastRetention();
   }
 
   /**
@@ -2714,6 +2787,7 @@ export class AgentManager {
     if (!this.questionStore) {
       throw new Error("Question inbox is not configured on this daemon");
     }
+    await this.sweepExpiredInboxQuestions();
     const question = await this.questionStore.get(input.questionId);
     if (!question) {
       throw new Error(`Question not found: ${input.questionId}`);
@@ -2810,9 +2884,18 @@ export class AgentManager {
         }
         return;
       }
-      const dismissed = await this.questionStore.markDismissed(questionId);
-      if (dismissed) {
-        this.notifyInboxQuestionWaiters(dismissed);
+      // Explicit user deny → dismissed. System abandon (null) → expired so
+      // Approvals Pending does not accumulate interrupt/turn-fail junk.
+      if (response?.behavior === "deny") {
+        const dismissed = await this.questionStore.markDismissed(questionId);
+        if (dismissed) {
+          this.notifyInboxQuestionWaiters(dismissed);
+        }
+        return;
+      }
+      const expired = await this.questionStore.markExpired(questionId);
+      if (expired) {
+        this.notifyInboxQuestionWaiters(expired);
       }
     } catch (error) {
       this.logger.warn(
@@ -2941,11 +3024,16 @@ export class AgentManager {
    * Settle a pending inbox/MCP question permission and any live MCP tool waiter.
    * Also handles orphaned rows after MCP timeout (permission still pending,
    * tool waiter already released).
+   *
+   * `response == null` means system abandon (interrupt / TTL): inbox → expired.
+   * Live MCP waiters still resolve as deny so tools/call does not look like a
+   * timeout (avoids false skill fallback).
    */
   private settleMcpQuestion(
     agentId: string,
     requestId: string,
     response: AgentPermissionResponse | null,
+    options?: { persistInbox?: boolean },
   ): boolean {
     const resolveWaiter = this.mcpQuestionResolvers.get(requestId);
     const agent = this.agents.get(agentId);
@@ -2956,20 +3044,35 @@ export class AgentManager {
     if (resolveWaiter) {
       this.mcpQuestionResolvers.delete(requestId);
     }
-    void this.persistInboxSettlement(requestId, response);
+    if (options?.persistInbox !== false) {
+      void this.persistInboxSettlement(requestId, response);
+    }
+    const resolution =
+      response ??
+      ({
+        behavior: "deny",
+        message: "Question expired",
+      } satisfies AgentPermissionResponse);
     const timelineBinding = this.clearMcpAskQuestionTimelineBinding(requestId);
     if (agent?.pendingPermissions.delete(requestId)) {
       this.dispatchStream(agentId, {
         type: "permission_resolved",
         provider: agent.provider,
         requestId,
-        resolution: response ?? { behavior: "deny", message: "Question dismissed" },
+        resolution,
       });
-      this.completeSyntheticAskQuestionTimeline(agentId, agent.provider, timelineBinding, response);
+      this.completeSyntheticAskQuestionTimeline(
+        agentId,
+        agent.provider,
+        timelineBinding,
+        resolution,
+      );
       this.touchUpdatedAt(agent);
       this.emitState(agent);
     }
-    resolveWaiter?.(response);
+    // Prefer deny over null so a still-blocking tools/call becomes dismissed,
+    // not timedOut (interrupt must not trigger skill timeout fallback).
+    resolveWaiter?.(resolution);
     return true;
   }
 

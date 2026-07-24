@@ -8656,6 +8656,7 @@ test("askAgentQuestion times out without dismissing the pending permission", asy
       expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(1);
     });
     const pending = await manager.listInboxQuestions({ status: "pending" });
+    expect(pending[0].expiresAt).toEqual(expect.any(String));
     const waited = manager.waitInboxQuestion({ questionId: pending[0].id });
     await manager.answerInboxQuestion({
       questionId: pending[0].id,
@@ -8665,6 +8666,83 @@ test("askAgentQuestion times out without dismissing the pending permission", asy
       status: "answered",
       answers: { Env: "staging" },
     });
+    expect(manager.getPendingPermissions(agentId)).toHaveLength(0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("askAgentQuestion interrupt expires the inbox row and dismisses the MCP waiter", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-ask-question-interrupt-"));
+  let session: TestAgentSession | null = null;
+  const client = new (class extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      this.createdConfigs.push(config);
+      session = new TestAgentSession(config);
+      return session;
+    }
+  })("codex");
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: new AgentStorage(join(workdir, "agents"), logger),
+    questionStore: new QuestionStore(join(workdir, "questions")),
+    logger,
+  });
+  try {
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    const questionPromise = manager.askAgentQuestion({
+      agentId: agent.id,
+      questions: ASK_QUESTION_QUESTIONS,
+    });
+    await vi.waitFor(async () => {
+      expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(1);
+    });
+
+    session!.pushEvent({
+      type: "turn_canceled",
+      provider: "codex",
+      reason: "Interrupted",
+    });
+
+    await expect(questionPromise).resolves.toMatchObject({
+      outcome: "dismissed",
+      response: { behavior: "deny", message: "Question expired" },
+    });
+    expect(manager.getPendingPermissions(agent.id)).toHaveLength(0);
+    await vi.waitFor(async () => {
+      expect(await manager.listInboxQuestions({ status: "expired" })).toHaveLength(1);
+    });
+    expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(0);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("listInboxQuestions expires past-TTL pending rows", async () => {
+  const { manager, agentId, workdir, cleanup } = await createAskQuestionFixture({
+    withQuestionStore: true,
+  });
+  try {
+    const created = await manager.createInboxQuestion({
+      agentId,
+      source: "cli",
+      questions: ASK_QUESTION_QUESTIONS,
+    });
+    expect(created.expiresAt).toEqual(expect.any(String));
+
+    // Force expiry timestamp into the past via the on-disk store.
+    const store = new QuestionStore(join(workdir, "questions"));
+    await store.update(created.id, (current) => ({
+      ...current,
+      expiresAt: "2020-01-01T00:00:00.000Z",
+    }));
+
+    const pending = await manager.listInboxQuestions({ status: "pending" });
+    expect(pending).toHaveLength(0);
+    const expired = await manager.listInboxQuestions({ status: "expired" });
+    expect(expired).toEqual([expect.objectContaining({ id: created.id, status: "expired" })]);
     expect(manager.getPendingPermissions(agentId)).toHaveLength(0);
   } finally {
     cleanup();

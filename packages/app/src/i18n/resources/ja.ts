@@ -3040,7 +3040,8 @@ export const ja: TranslationResources = {
     title: "Approvals",
     filter: {
       pending: "Pending",
-      resolved: "Resolved",
+      answered: "Answered",
+      closed: "Closed",
     },
     list: {
       loadError: "Unable to load approvals",
@@ -3051,8 +3052,10 @@ export const ja: TranslationResources = {
     empty: {
       pendingTitle: "No pending questions",
       pendingDescription: "When agents ask for a decision, it shows up here.",
-      resolvedTitle: "No resolved questions",
-      resolvedDescription: "Answered and dismissed questions appear here.",
+      answeredTitle: "No answered questions",
+      answeredDescription: "Questions you answer show up here.",
+      closedTitle: "No closed questions",
+      closedDescription: "Dismissed and expired questions appear here.",
     },
     row: {
       meta: "{{agent}} · {{host}} · {{source}}",

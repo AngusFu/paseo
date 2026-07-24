@@ -62,15 +62,71 @@ describe("QuestionStore", () => {
     ]);
   });
 
-  test("markDismissed clears answers", async () => {
+  test("markDismissed clears answers on pending rows", async () => {
     const created = await store.create({
       agentId: "agent-1",
       source: "mcp",
       questions: [{ question: "A?", header: "A" }],
     });
-    await store.markAnswered(created.id, { A: "x" });
     const dismissed = await store.markDismissed(created.id);
     expect(dismissed?.status).toBe("dismissed");
     expect(dismissed?.answers).toBeUndefined();
+  });
+
+  test("expireDuePending flips past-TTL pending rows", async () => {
+    const due = await store.create({
+      agentId: "agent-1",
+      source: "mcp",
+      expiresAt: "2020-01-01T00:00:00.000Z",
+      questions: [{ question: "Old?", header: "Old" }],
+    });
+    const fresh = await store.create({
+      agentId: "agent-1",
+      source: "cli",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      questions: [{ question: "New?", header: "New" }],
+    });
+
+    const expired = await store.expireDuePending(Date.parse("2024-01-01T00:00:00.000Z"));
+    expect(expired).toEqual([expect.objectContaining({ id: due.id, status: "expired" })]);
+    expect(await store.get(due.id)).toMatchObject({ status: "expired" });
+    expect(await store.get(fresh.id)).toMatchObject({ status: "pending" });
+  });
+
+  test("markExpired is a no-op for non-pending rows", async () => {
+    const created = await store.create({
+      agentId: "agent-1",
+      source: "mcp",
+      questions: [{ question: "A?", header: "A" }],
+    });
+    await store.markAnswered(created.id, { A: "yes" });
+    const again = await store.markExpired(created.id);
+    expect(again?.status).toBe("answered");
+  });
+
+  test("pruneClosedPastRetention hard-deletes old dismissed/expired rows", async () => {
+    const stale = await store.create({
+      agentId: "agent-1",
+      source: "mcp",
+      createdAt: "2020-01-01T00:00:00.000Z",
+      questions: [{ question: "Old?", header: "Old" }],
+    });
+    await store.markDismissed(stale.id);
+    await store.update(stale.id, (current) => ({
+      ...current,
+      closedAt: "2020-01-02T00:00:00.000Z",
+    }));
+
+    const fresh = await store.create({
+      agentId: "agent-1",
+      source: "cli",
+      questions: [{ question: "New?", header: "New" }],
+    });
+    await store.markExpired(fresh.id);
+
+    const deleted = await store.pruneClosedPastRetention(Date.parse("2020-01-20T00:00:00.000Z"));
+    expect(deleted).toEqual([stale.id]);
+    expect(await store.get(stale.id)).toBeNull();
+    expect(await store.get(fresh.id)).toMatchObject({ status: "expired" });
   });
 });

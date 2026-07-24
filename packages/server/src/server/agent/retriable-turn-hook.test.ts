@@ -19,6 +19,16 @@ describe("retriable-turn-hook", () => {
     expect(isRetriableProviderError("model overloaded, try again later")).toBe(true);
   });
 
+  it("matches Cursor transport PING / unavailable failures", () => {
+    expect(isRetriableProviderError("Error: RetriableError: [unavailable] PING timed out")).toBe(
+      true,
+    );
+    expect(isRetriableProviderError("ConnectError: [unavailable] PING timed out")).toBe(true);
+    expect(
+      isRetriableProviderError("RetriableError: [internal] HTTP/2 keepalive ping timed out"),
+    ).toBe(true);
+  });
+
   it("rejects ordinary model failures", () => {
     expect(isRetriableProviderError("invalid model id")).toBe(false);
     expect(isRetriableProviderError("permission denied")).toBe(false);

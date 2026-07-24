@@ -8,7 +8,7 @@ const RETRIABLE_TURN_BASE_DELAY_MS = 2_000;
 const RETRIABLE_TURN_MAX_DELAY_MS = 60_000;
 
 const RETRIABLE_ERROR_PATTERN =
-  /RetriableError|resource_exhausted|rate_limit(?:_exceeded)?|overloaded|temporarily unavailable|try again later/i;
+  /RetriableError|resource_exhausted|rate_limit(?:_exceeded)?|overloaded|temporarily unavailable|\bunavailable\b|PING timed out|keepalive ping timed out|ConnectError|try again later/i;
 
 export function isRetriableProviderError(message: string): boolean {
   return RETRIABLE_ERROR_PATTERN.test(message);

@@ -2145,6 +2145,7 @@ export const es: TranslationResources = {
         loadError: "No se pudieron cargar los modelos de dictado.",
         cloudProviderHint:
           "El dictado usa {{provider}}. Aplicar un modelo de abajo vuelve a STT local.",
+        languagesMany: "{{count}} idiomas",
         models: {
           senseVoice: "SenseVoice",
           parakeetV2: "Parakeet v2",

@@ -2073,6 +2073,7 @@ export const zhCN: TranslationResources = {
         unsupported: "请更新主机以使用此功能。",
         loadError: "无法加载听写模型。",
         cloudProviderHint: "当前听写使用 {{provider}}。应用下方模型会切回本地语音识别。",
+        languagesMany: "{{count}} 种语言",
         models: {
           senseVoice: "SenseVoice",
           parakeetV2: "Parakeet v2",

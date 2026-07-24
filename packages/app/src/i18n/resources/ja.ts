@@ -2117,6 +2117,7 @@ export const ja: TranslationResources = {
         loadError: "音声入力モデルを読み込めませんでした。",
         cloudProviderHint:
           "現在の音声入力は {{provider}} です。下のモデルを適用するとローカル STT に切り替わります。",
+        languagesMany: "{{count}} 言語",
         models: {
           senseVoice: "SenseVoice",
           parakeetV2: "Parakeet v2",

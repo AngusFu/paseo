@@ -43,7 +43,11 @@ function dictationModelTitle(t: TFunction, modelId: string, fallback: string): s
   return t(key);
 }
 
-function formatLanguages(languages: readonly string[]): string {
+function formatLanguages(t: TFunction, languages: readonly string[]): string {
+  // Long European catalogs read as noise in a settings row; summarize instead.
+  if (languages.length > 8) {
+    return t("settings.host.dictation.languagesMany", { count: languages.length });
+  }
   return languages.join(" · ");
 }
 
@@ -387,7 +391,7 @@ function DictationModelRow({
       });
     }
   } else {
-    hintText = formatLanguages(model.languages);
+    hintText = formatLanguages(t, model.languages);
   }
 
   let trailing: ReactNode = null;

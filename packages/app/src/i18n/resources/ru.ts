@@ -2135,6 +2135,7 @@ export const ru: TranslationResources = {
         loadError: "Не удалось загрузить модели диктовки.",
         cloudProviderHint:
           "Диктовка сейчас использует {{provider}}. Выбор модели ниже переключит STT на локальный.",
+        languagesMany: "{{count}} языков",
         models: {
           senseVoice: "SenseVoice",
           parakeetV2: "Parakeet v2",

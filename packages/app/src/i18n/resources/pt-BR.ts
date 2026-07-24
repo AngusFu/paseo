@@ -2129,6 +2129,7 @@ export const ptBR: TranslationResources = {
         loadError: "Não foi possível carregar os modelos de ditado.",
         cloudProviderHint:
           "O ditado está usando {{provider}}. Aplicar um modelo abaixo volta para STT local.",
+        languagesMany: "{{count}} idiomas",
         models: {
           senseVoice: "SenseVoice",
           parakeetV2: "Parakeet v2",

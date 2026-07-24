@@ -2149,6 +2149,7 @@ export const fr: TranslationResources = {
         loadError: "Impossible de charger les modèles de dictée.",
         cloudProviderHint:
           "La dictée utilise actuellement {{provider}}. Appliquer un modèle ci-dessous repasse en STT local.",
+        languagesMany: "{{count}} langues",
         models: {
           senseVoice: "SenseVoice",
           parakeetV2: "Parakeet v2",

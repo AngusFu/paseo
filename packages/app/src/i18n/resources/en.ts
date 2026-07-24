@@ -2107,6 +2107,7 @@ export const en = {
         loadError: "Couldn't load dictation models.",
         cloudProviderHint:
           "Dictation is currently using {{provider}}. Applying a model below switches STT back to local.",
+        languagesMany: "{{count}} languages",
         models: {
           senseVoice: "SenseVoice",
           parakeetV2: "Parakeet v2",

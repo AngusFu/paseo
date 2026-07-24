@@ -2096,6 +2096,7 @@ export const ar: TranslationResources = {
         loadError: "تعذّر تحميل نماذج الإملاء.",
         cloudProviderHint:
           "الإملاء يستخدم حاليًا {{provider}}. تطبيق نموذج أدناه يعيد STT إلى المحلي.",
+        languagesMany: "{{count}} لغة",
         models: {
           senseVoice: "SenseVoice",
           parakeetV2: "Parakeet v2",

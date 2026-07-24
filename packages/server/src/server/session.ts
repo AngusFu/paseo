@@ -2756,8 +2756,63 @@ export class Session {
         return this.handleLlmCancelRequest(msg);
       case "llm.local.ollama.list_models.request":
         return this.handleLlmOllamaListModelsRequest(msg);
+      // Question Inbox RPCs live here to keep dispatchInboundMessage under the
+      // complexity budget (same pattern as kanban column/jira splits).
+      case "question.list.request":
+        return this.handleQuestionListRequest(msg);
+      case "question.answer.request":
+        return this.handleQuestionAnswerRequest(msg);
       default:
         return undefined;
+    }
+  }
+
+  private async handleQuestionListRequest(
+    msg: Extract<SessionInboundMessage, { type: "question.list.request" }>,
+  ): Promise<void> {
+    try {
+      const questions = await this.agentManager.listInboxQuestions({
+        ...(msg.status ? { status: msg.status } : {}),
+        ...(msg.agentId ? { agentId: msg.agentId } : {}),
+      });
+      this.emit({
+        type: "question.list.response",
+        payload: { requestId: msg.requestId, questions, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "question.list.response",
+        payload: {
+          requestId: msg.requestId,
+          questions: [],
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleQuestionAnswerRequest(
+    msg: Extract<SessionInboundMessage, { type: "question.answer.request" }>,
+  ): Promise<void> {
+    try {
+      const question = await this.agentManager.answerInboxQuestion({
+        questionId: msg.questionId,
+        ...(msg.dismiss !== undefined ? { dismiss: msg.dismiss } : {}),
+        ...(msg.answers !== undefined ? { answers: msg.answers } : {}),
+      });
+      this.emit({
+        type: "question.answer.response",
+        payload: { requestId: msg.requestId, question, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "question.answer.response",
+        payload: {
+          requestId: msg.requestId,
+          question: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
     }
   }
 

@@ -644,6 +644,14 @@ type LlmLocalOllamaListModelsPayload = Extract<
   SessionOutboundMessage,
   { type: "llm.local.ollama.list_models.response" }
 >["payload"];
+type QuestionListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "question.list.response" }
+>["payload"];
+type QuestionAnswerPayload = Extract<
+  SessionOutboundMessage,
+  { type: "question.answer.response" }
+>["payload"];
 // Cold-start generation loads the model from disk first (tens of seconds).
 const LLM_GENERATE_TIMEOUT_MS = 120_000;
 interface LlmLocalGenerateOptions {
@@ -5568,6 +5576,40 @@ export class DaemonClient {
         type: "llm.local.ollama.list_models.request",
         ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
         ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
+      },
+    });
+  }
+
+  async questionList(
+    options: {
+      status?: "pending" | "answered" | "dismissed" | "expired";
+      agentId?: string;
+      requestId?: string;
+    } = {},
+  ): Promise<QuestionListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "question.list.request",
+        ...(options.status !== undefined ? { status: options.status } : {}),
+        ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
+      },
+    });
+  }
+
+  async questionAnswer(options: {
+    questionId: string;
+    answers?: Record<string, string>;
+    dismiss?: boolean;
+    requestId?: string;
+  }): Promise<QuestionAnswerPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "question.answer.request",
+        questionId: options.questionId,
+        ...(options.dismiss !== undefined ? { dismiss: options.dismiss } : {}),
+        ...(options.answers !== undefined ? { answers: options.answers } : {}),
       },
     });
   }

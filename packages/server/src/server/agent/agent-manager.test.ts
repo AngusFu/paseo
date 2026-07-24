@@ -14,6 +14,7 @@ import {
   type ManagedAgent,
 } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
+import { QuestionStore } from "../question/store.js";
 import { toAgentPayload } from "./agent-projections.js";
 import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { formatSystemNotificationPrompt } from "./agent-prompt.js";
@@ -8531,15 +8532,19 @@ test("onWorkspaceStateMayHaveChanged is not called for running shell tool calls"
   expect(onWorkspaceStateMayHaveChanged).not.toHaveBeenCalled();
 });
 
-async function createAskQuestionFixture(): Promise<{
+async function createAskQuestionFixture(options?: { withQuestionStore?: boolean }): Promise<{
   manager: AgentManager;
   agentId: string;
+  workdir: string;
   cleanup: () => void;
 }> {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-ask-question-"));
   const manager = new AgentManager({
     clients: { codex: new TestAgentClient("codex") },
     registry: new AgentStorage(join(workdir, "agents"), logger),
+    ...(options?.withQuestionStore
+      ? { questionStore: new QuestionStore(join(workdir, "questions")) }
+      : {}),
     logger,
   });
   const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
@@ -8548,6 +8553,7 @@ async function createAskQuestionFixture(): Promise<{
   return {
     manager,
     agentId: agent.id,
+    workdir,
     cleanup: () => rmSync(workdir, { recursive: true, force: true }),
   };
 }
@@ -8715,6 +8721,48 @@ test("askAgentQuestion rewrites opaque ACP MCP: tool timeline calls to AskUserQu
         output: { success: true },
       },
     });
+  } finally {
+    cleanup();
+  }
+});
+
+test("askAgentQuestion persists and settles the Question Inbox record", async () => {
+  const { manager, agentId, cleanup } = await createAskQuestionFixture({
+    withQuestionStore: true,
+  });
+  try {
+    const questionPromise = manager.askAgentQuestion({
+      agentId,
+      title: "Deploy target",
+      questions: ASK_QUESTION_QUESTIONS,
+    });
+
+    await vi.waitFor(async () => {
+      expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(1);
+    });
+    const pending = await manager.listInboxQuestions({ status: "pending" });
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({
+      agentId,
+      title: "Deploy target",
+      source: "mcp",
+      status: "pending",
+      mcpRequestId: manager.getPendingPermissions(agentId)[0].id,
+    });
+
+    const answered = await manager.answerInboxQuestion({
+      questionId: pending[0].id,
+      answers: { Env: "production" },
+    });
+    expect(answered.status).toBe("answered");
+    expect(answered.answers).toEqual({ Env: "production" });
+
+    await expect(questionPromise).resolves.toEqual({
+      behavior: "allow",
+      updatedInput: { answers: { Env: "production" } },
+    });
+    expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(0);
+    expect(await manager.listInboxQuestions({ status: "answered" })).toEqual([answered]);
   } finally {
     cleanup();
   }

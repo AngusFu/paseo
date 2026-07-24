@@ -48,6 +48,8 @@ $PASEO_HOME/
 │       └── {agentId}.json               # One file per agent
 ├── schedules/
 │   └── {scheduleId}.json                # One file per schedule
+├── questions/
+│   └── {questionId}.json                # Question Inbox rows (MCP ask_question + skill/CLI)
 ├── chat/
 │   └── rooms.json                       # All rooms + messages
 ├── loops/

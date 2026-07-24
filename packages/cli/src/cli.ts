@@ -7,6 +7,7 @@ import { createPermitCommand } from "./commands/permit/index.js";
 import { createProviderCommand } from "./commands/provider/index.js";
 import { createScheduleCommand } from "./commands/schedule/index.js";
 import { createKanbanCommand } from "./commands/kanban/index.js";
+import { createQuestionCommand } from "./commands/question/index.js";
 import { createSpeechCommand } from "./commands/speech/index.js";
 import { createTerminalCommand } from "./commands/terminal/index.js";
 import { createWorkflowCommand } from "./commands/workflow/index.js";
@@ -180,6 +181,9 @@ export function createCli(): Command {
 
   // Kanban commands
   program.addCommand(createKanbanCommand());
+
+  // Question Inbox commands
+  program.addCommand(createQuestionCommand());
 
   // Workflow commands
   program.addCommand(createWorkflowCommand());

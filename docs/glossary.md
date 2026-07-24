@@ -43,6 +43,8 @@ Authoritative terminology. UI label wins. Don't invent synonyms; use what's here
 - **Subagent** — User-facing term for an agent session related to a parent agent session. Use **subagents** in UI copy and docs. Internal daemon/provider plumbing may say "child agent" or `child_session`, especially for provider-managed imports; do not surface "child agent" as a product term.
 - **Attachment tray** — The selected-attachments row inside the composer input, above the text input. Code: `renderAttachmentTray` (`packages/app/src/composer/index.tsx`). Forbidden: "Attachment bar".
 - **Conflict** — Two distinct senses; do NOT use the bare word in UI copy without qualifying which: (a) **stale-write conflict** on `paseo.json` ("Config changed on disk", code `stale_project_config`, `packages/app/src/screens/project-settings-screen.tsx:593`); (b) **git merge conflict** (no current UI string).
+- **Question Inbox** — Durable store of decisions agents ask the user (`$PASEO_HOME/questions`). Primary path is MCP `ask_question`; on MCP timeout the `paseo-ask` skill falls back to create+wait on the same inbox. See [question-inbox.md](question-inbox.md). Forbidden as UI synonym soup: "prompt queue", "decision log" — say **Question Inbox** (or future **Approvals** for the page).
+- **ask_question** — Paseo MCP tool that blocks until the user answers in the Paseo UI. Not the same as provider-native AskUserQuestion; timeline may disguise MCP calls as that name for card rendering.
 
 ## Inconsistencies (documented, not papered over)
 

@@ -87,6 +87,8 @@ import {
   isOpaqueAcpMcpToolCall,
   isPaseoAskQuestionToolCall,
 } from "./ask-question-timeline.js";
+import type { QuestionStore } from "../question/store.js";
+import type { InboxQuestionStatus, StoredInboxQuestion } from "@getpaseo/protocol/question/types";
 
 /**
  * COMPAT(askQuestionAskUserQuestionDisguise): permission companion for the
@@ -286,6 +288,8 @@ export interface AgentManagerOptions {
   getLlamaService?: () => LlamaService | null;
   agentStreamCoalesceWindowMs?: number;
   rescueTimeouts?: AgentManagerRescueTimeouts;
+  /** Optional durable Question Inbox store (`$PASEO_HOME/questions`). */
+  questionStore?: QuestionStore;
   logger: Logger;
 }
 
@@ -644,6 +648,9 @@ export class AgentManager {
     { agentId: string; requestId: string; questions: unknown[]; synthetic: boolean }
   >();
   private readonly mcpAskQuestionCallIdByRequest = new Map<string, string>();
+  /** mcp permission request id → inbox question id */
+  private readonly inboxQuestionIdByMcpRequest = new Map<string, string>();
+  private readonly questionStore: QuestionStore | null;
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
   private readonly mcpAuthToken: string | null;
@@ -667,6 +674,7 @@ export class AgentManager {
     this.onWorkspaceStateMayHaveChanged = options?.onWorkspaceStateMayHaveChanged;
     this.mcpBaseUrl = options?.mcpBaseUrl ?? null;
     this.mcpAuthToken = options?.mcpAuthToken ?? null;
+    this.questionStore = options.questionStore ?? null;
     this.configurePaseoTools(options);
     this.appendSystemPrompt = options.appendSystemPrompt ?? "";
     this.configureProseStop(options);
@@ -2422,7 +2430,161 @@ export class AgentManager {
         provider: agent.provider,
         request,
       });
+      // Persist after the live waiter/permission are registered so callers can
+      // observe pending permissions synchronously. Settlement looks up by
+      // mcpRequestId map once create finishes (or falls back to store scan).
+      void this.persistMcpInboxQuestion({
+        agentId: agent.id,
+        workspaceId: agent.workspaceId,
+        requestId,
+        questions: input.questions,
+        title: input.title,
+      });
     });
+  }
+
+  private async persistMcpInboxQuestion(input: {
+    agentId: string;
+    workspaceId?: string;
+    requestId: string;
+    questions: unknown[];
+    title?: string;
+  }): Promise<void> {
+    if (!this.questionStore) {
+      return;
+    }
+    try {
+      const created = await this.questionStore.create({
+        agentId: input.agentId,
+        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+        ...(input.title ? { title: input.title } : {}),
+        questions: input.questions,
+        source: "mcp",
+        mcpRequestId: input.requestId,
+      });
+      this.inboxQuestionIdByMcpRequest.set(input.requestId, created.id);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, agentId: input.agentId, requestId: input.requestId },
+        "Failed to persist ask_question inbox record",
+      );
+    }
+  }
+
+  async listInboxQuestions(
+    filter: {
+      status?: InboxQuestionStatus;
+      agentId?: string;
+    } = {},
+  ): Promise<StoredInboxQuestion[]> {
+    if (!this.questionStore) {
+      return [];
+    }
+    return this.questionStore.list(filter);
+  }
+
+  /**
+   * Answer or dismiss a durable inbox question. When the question still has a
+   * live MCP waiter (`mcpRequestId`), settlement goes through the same
+   * permission path as the agent card so the tool call resolves once.
+   */
+  async answerInboxQuestion(input: {
+    questionId: string;
+    answers?: Record<string, string>;
+    dismiss?: boolean;
+  }): Promise<StoredInboxQuestion> {
+    if (!this.questionStore) {
+      throw new Error("Question inbox is not configured on this daemon");
+    }
+    const question = await this.questionStore.get(input.questionId);
+    if (!question) {
+      throw new Error(`Question not found: ${input.questionId}`);
+    }
+    if (question.status !== "pending") {
+      throw new Error(`Question is already ${question.status}: ${input.questionId}`);
+    }
+    const dismiss = input.dismiss === true;
+    const answers = input.answers ?? {};
+    if (!dismiss && Object.keys(answers).length === 0) {
+      throw new Error("question.answer requires answers or dismiss=true");
+    }
+    if (dismiss && Object.keys(answers).length > 0) {
+      throw new Error("question.answer cannot dismiss and include answers");
+    }
+
+    if (question.mcpRequestId && this.mcpQuestionResolvers.has(question.mcpRequestId)) {
+      const response: AgentPermissionResponse = dismiss
+        ? { behavior: "deny", message: "Question dismissed" }
+        : { behavior: "allow", updatedInput: { answers } };
+      await this.respondToPermission(question.agentId, question.mcpRequestId, response);
+    }
+
+    // MCP settle persists asynchronously; if the row is still pending, finish it here.
+    const current = await this.questionStore.get(input.questionId);
+    if (!current) {
+      throw new Error(`Question disappeared after settle: ${input.questionId}`);
+    }
+    if (current.status !== "pending") {
+      return current;
+    }
+    const updated = dismiss
+      ? await this.questionStore.markDismissed(input.questionId)
+      : await this.questionStore.markAnswered(input.questionId, answers);
+    if (!updated) {
+      throw new Error(`Question not found: ${input.questionId}`);
+    }
+    return updated;
+  }
+
+  private async resolveInboxQuestionIdForMcpRequest(requestId: string): Promise<string | null> {
+    const mapped = this.inboxQuestionIdByMcpRequest.get(requestId);
+    if (mapped) {
+      this.inboxQuestionIdByMcpRequest.delete(requestId);
+      return mapped;
+    }
+    if (!this.questionStore) {
+      return null;
+    }
+    const pending = await this.questionStore.list({ status: "pending" });
+    return pending.find((question) => question.mcpRequestId === requestId)?.id ?? null;
+  }
+
+  private async persistInboxSettlement(
+    requestId: string,
+    response: AgentPermissionResponse | null,
+  ): Promise<void> {
+    if (!this.questionStore) {
+      return;
+    }
+    const questionId = await this.resolveInboxQuestionIdForMcpRequest(requestId);
+    if (!questionId) {
+      return;
+    }
+    try {
+      if (
+        response?.behavior === "allow" &&
+        response.updatedInput &&
+        typeof response.updatedInput.answers === "object" &&
+        response.updatedInput.answers !== null
+      ) {
+        const answers: Record<string, string> = {};
+        for (const [key, value] of Object.entries(
+          response.updatedInput.answers as Record<string, unknown>,
+        )) {
+          if (typeof value === "string") {
+            answers[key] = value;
+          }
+        }
+        await this.questionStore.markAnswered(questionId, answers);
+        return;
+      }
+      await this.questionStore.markDismissed(questionId);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, requestId, questionId },
+        "Failed to persist ask_question inbox settlement",
+      );
+    }
   }
 
   /**
@@ -2555,6 +2717,7 @@ export class AgentManager {
       return false;
     }
     this.mcpQuestionResolvers.delete(requestId);
+    void this.persistInboxSettlement(requestId, response);
     const agent = this.agents.get(agentId);
     const timelineBinding = this.clearMcpAskQuestionTimelineBinding(requestId);
     if (agent?.pendingPermissions.delete(requestId)) {

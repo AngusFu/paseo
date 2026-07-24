@@ -182,6 +182,12 @@ import {
   LlmChatDeleteResponseSchema,
   LlmChatToolRespondResponseSchema,
 } from "./llm/chat-rpc-schemas.js";
+import {
+  QuestionListRequestSchema,
+  QuestionAnswerRequestSchema,
+  QuestionListResponseSchema,
+  QuestionAnswerResponseSchema,
+} from "./question/rpc-schemas.js";
 import { BrowserAutomationHostCapabilitySchema } from "./browser-automation/capabilities.js";
 import {
   PaseoConfigRawSchema,
@@ -2852,6 +2858,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   LlmChatCancelRequestSchema,
   LlmChatDeleteRequestSchema,
   LlmChatToolRespondRequestSchema,
+  QuestionListRequestSchema,
+  QuestionAnswerRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -5629,6 +5637,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   LlmChatCancelResponseSchema,
   LlmChatDeleteResponseSchema,
   LlmChatToolRespondResponseSchema,
+  QuestionListResponseSchema,
+  QuestionAnswerResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
   InstallDifftasticProgressMessageSchema,
@@ -5812,6 +5822,10 @@ export type LlmLocalCancelResponse = z.infer<typeof LlmLocalCancelResponseSchema
 export type LlmLocalOllamaListModelsResponse = z.infer<
   typeof LlmLocalOllamaListModelsResponseSchema
 >;
+export type QuestionListRequest = z.infer<typeof QuestionListRequestSchema>;
+export type QuestionAnswerRequest = z.infer<typeof QuestionAnswerRequestSchema>;
+export type QuestionListResponse = z.infer<typeof QuestionListResponseSchema>;
+export type QuestionAnswerResponse = z.infer<typeof QuestionAnswerResponseSchema>;
 
 // Type exports for payload types
 export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;

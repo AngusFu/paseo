@@ -2064,7 +2064,7 @@ export const fr: TranslationResources = {
       },
       localLlm: {
         title: "Modèle d'IA local",
-        hint: "Connectez un backend compatible OpenAI sur cet hôte (par exemple Ollama) pour alimenter les fonctions d'IA locales comme la génération de cron en langage naturel.",
+        hint: "Backend compatible OpenAI sur cet hôte (par exemple Ollama)",
         baseUrl: "Base URL",
         baseUrlPlaceholder: "http://127.0.0.1:11434/v1",
         apiKey: "Clé API (facultatif)",
@@ -2073,7 +2073,7 @@ export const fr: TranslationResources = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "Aucun modèle — récupérer depuis Ollama",
         modelSearchPlaceholder: "Rechercher des modèles",
-        fetchModels: "Récupérer depuis Ollama",
+        fetchModels: "Récupérer les modèles",
         save: "Enregistrer",
         test: "Tester",
         testFailed: "Échec de la requête de test",
@@ -2131,7 +2131,7 @@ export const fr: TranslationResources = {
       },
       dictation: {
         title: "Modèle de dictée",
-        hint: "Modèle de reconnaissance vocale pour le bouton du microphone. SenseVoice ajoute le chinois, le cantonais, le japonais et le coréen.",
+        hint: "Modèle de dictée du micro. SenseVoice couvre le chinois et le cantonais",
         loading: "Chargement des modèles…",
         notInstalled: "Pas encore téléchargé",
         downloading: "Téléchargement…",
@@ -2149,6 +2149,11 @@ export const fr: TranslationResources = {
         loadError: "Impossible de charger les modèles de dictée.",
         cloudProviderHint:
           "La dictée utilise actuellement {{provider}}. Appliquer un modèle ci-dessous repasse en STT local.",
+        models: {
+          senseVoice: "SenseVoice",
+          parakeetV2: "Parakeet v2",
+          parakeetV3: "Parakeet v3",
+        },
         selectErrorTitle: "Impossible de changer le modèle de dictée",
       },
       workspaces: {

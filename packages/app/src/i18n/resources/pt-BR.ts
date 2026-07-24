@@ -2044,7 +2044,7 @@ export const ptBR: TranslationResources = {
       },
       localLlm: {
         title: "Modelo de IA local",
-        hint: "Conecte um backend compatível com OpenAI neste host (por exemplo Ollama) para recursos de IA locais como geração de cron em linguagem natural.",
+        hint: "Backend compatível com OpenAI neste host (por exemplo Ollama)",
         baseUrl: "Base URL",
         baseUrlPlaceholder: "http://127.0.0.1:11434/v1",
         apiKey: "Chave de API (opcional)",
@@ -2053,7 +2053,7 @@ export const ptBR: TranslationResources = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "Nenhum modelo — buscar no Ollama",
         modelSearchPlaceholder: "Buscar modelos",
-        fetchModels: "Buscar no Ollama",
+        fetchModels: "Buscar modelos",
         save: "Salvar",
         test: "Testar",
         testFailed: "Falha na solicitação de teste",
@@ -2111,7 +2111,7 @@ export const ptBR: TranslationResources = {
       },
       dictation: {
         title: "Dictation model",
-        hint: "Speech-to-text model for the microphone button. SenseVoice adds Chinese, Cantonese, Japanese and Korean.",
+        hint: "Modelo de ditado do microfone. SenseVoice cobre chinês e cantonês",
         loading: "Loading models…",
         notInstalled: "Not downloaded yet",
         downloading: "Downloading…",
@@ -2129,6 +2129,11 @@ export const ptBR: TranslationResources = {
         loadError: "Não foi possível carregar os modelos de ditado.",
         cloudProviderHint:
           "O ditado está usando {{provider}}. Aplicar um modelo abaixo volta para STT local.",
+        models: {
+          senseVoice: "SenseVoice",
+          parakeetV2: "Parakeet v2",
+          parakeetV3: "Parakeet v3",
+        },
         selectErrorTitle: "Couldn't switch dictation model",
       },
       workspaces: {

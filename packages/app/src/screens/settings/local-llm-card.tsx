@@ -73,29 +73,27 @@ function LocalLlmModelField(props: {
 
   return (
     <Field label={t("settings.host.localLlm.model")} testID="host-page-local-llm-model">
-      <View style={styles.modelRow}>
-        <View style={styles.modelSelect}>
-          <SelectField
-            field={false}
-            label={t("settings.host.localLlm.model")}
-            value={props.draft.model.trim() || null}
-            selectedDisplay={props.selectedDisplay}
-            options={props.selectOptions}
-            onChange={props.onModelSelect}
-            placeholder={t("settings.host.localLlm.modelPlaceholder")}
-            emptyText={t("settings.host.localLlm.modelEmpty")}
-            searchable
-            searchPlaceholder={t("settings.host.localLlm.modelSearchPlaceholder")}
-            loading={props.fetchPending}
-            disabled={props.isBusy}
-            size="sm"
-            testID="host-page-local-llm-model-select"
-            triggerTestID="host-page-local-llm-model-trigger"
-          />
-        </View>
+      <SelectField
+        field={false}
+        label={t("settings.host.localLlm.model")}
+        value={props.draft.model.trim() || null}
+        selectedDisplay={props.selectedDisplay}
+        options={props.selectOptions}
+        onChange={props.onModelSelect}
+        placeholder={t("settings.host.localLlm.modelPlaceholder")}
+        emptyText={t("settings.host.localLlm.modelEmpty")}
+        searchable
+        searchPlaceholder={t("settings.host.localLlm.modelSearchPlaceholder")}
+        loading={props.fetchPending}
+        disabled={props.isBusy}
+        size="sm"
+        testID="host-page-local-llm-model-select"
+        triggerTestID="host-page-local-llm-model-trigger"
+      />
+      <View style={styles.fetchRow}>
         <Button
           size="sm"
-          variant="outline"
+          variant="ghost"
           disabled={props.isBusy}
           loading={props.fetchPending}
           onPress={props.onFetchModels}
@@ -347,6 +345,7 @@ export function LocalLlmCard({ serverId }: { serverId: string }) {
           </Button>
           <Button
             size="sm"
+            variant="secondary"
             disabled={isBusy || !draft.baseUrl.trim() || !draft.model.trim()}
             loading={testMutation.isPending}
             onPress={handleTest}
@@ -371,14 +370,9 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing[4],
     paddingVertical: theme.spacing[4],
   },
-  modelRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing[2],
-  },
-  modelSelect: {
-    flex: 1,
-    minWidth: 0,
+  fetchRow: {
+    alignItems: "flex-start",
+    marginTop: theme.spacing[1],
   },
   footerRow: {
     borderTopWidth: 1,

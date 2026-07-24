@@ -22,20 +22,30 @@ const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
-/** Strip parenthetical notes (and any trailing period) from a model description for display. */
-function cleanDictationLabel(description: string): string {
-  return description
-    .replace(/\s*\([^)]*\)/g, "")
-    .replace(/[.\s]+$/, "")
-    .trim();
-}
-
 const DICTATION_DOWNLOAD_POLL_MS = 500;
 const EMPTY_DICTATION_MODELS: DictationModelInfo[] = [];
 const ACCESSIBILITY_STATE_SELECTED = { selected: true } as const;
 const ACCESSIBILITY_STATE_UNSELECTED = { selected: false } as const;
 
+const DICTATION_MODEL_TITLE_KEYS = {
+  "sense-voice-zh-en-ja-ko-yue-int8": "settings.host.dictation.models.senseVoice",
+  "parakeet-tdt-0.6b-v2-int8": "settings.host.dictation.models.parakeetV2",
+  "parakeet-tdt-0.6b-v3-int8": "settings.host.dictation.models.parakeetV3",
+} as const;
+
 type DictationRunState = "running" | "starting" | "stopped";
+
+function dictationModelTitle(t: TFunction, modelId: string, fallback: string): string {
+  const key = DICTATION_MODEL_TITLE_KEYS[modelId as keyof typeof DICTATION_MODEL_TITLE_KEYS];
+  if (!key) {
+    return fallback;
+  }
+  return t(key);
+}
+
+function formatLanguages(languages: readonly string[]): string {
+  return languages.join(" · ");
+}
 
 function resolveDictationRunState(
   selected: boolean,
@@ -283,79 +293,53 @@ export function DictationModelCard({ serverId }: { serverId: string }) {
             ) : null}
           </View>
         </View>
-        <View style={styles.dictationList}>
-          {query.isLoading && models.length === 0 ? (
-            <Text style={styles.dictationOptionStatus}>{t("settings.host.dictation.loading")}</Text>
-          ) : (
-            models.map((model) => {
-              const selected = model.id === currentModel && !usingNonLocalProvider;
-              const optimistic = trackingModelIds.has(model.id) && model.installed !== true;
-              const downloading = isDictationModelDownloading({
-                model,
-                selected: model.id === currentModel,
-                readinessDownloading: readiness?.downloading === true,
-                missingModelIds: readiness?.missingModelIds ?? [],
-                readinessAvailable: readiness?.available === true,
-                optimistic,
-              });
-              const progress = resolveDictationDownloadProgress({
-                model,
-                selected: model.id === currentModel,
-                downloading,
-                readinessProgress: readiness?.downloadProgress,
-                optimistic,
-              });
-              const speed = resolveDictationDownloadSpeed({
-                model,
-                selected: model.id === currentModel,
-                readinessSpeed: readiness?.downloadBytesPerSecond,
-              });
 
-              return (
-                <DictationModelRow
-                  key={model.id}
-                  model={model}
-                  selected={selected}
-                  pending={pendingModel === model.id}
-                  downloading={downloading}
-                  downloadProgress={progress}
-                  downloadBytesPerSecond={speed}
-                  readinessAvailable={readiness?.available === true}
-                  onApply={handleApply}
-                />
-              );
-            })
-          )}
-        </View>
+        {query.isLoading && models.length === 0 ? (
+          <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+            <Text style={settingsStyles.rowHint}>{t("settings.host.dictation.loading")}</Text>
+          </View>
+        ) : (
+          models.map((model) => {
+            const selected = model.id === currentModel && !usingNonLocalProvider;
+            const optimistic = trackingModelIds.has(model.id) && model.installed !== true;
+            const downloading = isDictationModelDownloading({
+              model,
+              selected: model.id === currentModel,
+              readinessDownloading: readiness?.downloading === true,
+              missingModelIds: readiness?.missingModelIds ?? [],
+              readinessAvailable: readiness?.available === true,
+              optimistic,
+            });
+            const progress = resolveDictationDownloadProgress({
+              model,
+              selected: model.id === currentModel,
+              downloading,
+              readinessProgress: readiness?.downloadProgress,
+              optimistic,
+            });
+            const speed = resolveDictationDownloadSpeed({
+              model,
+              selected: model.id === currentModel,
+              readinessSpeed: readiness?.downloadBytesPerSecond,
+            });
+
+            return (
+              <DictationModelRow
+                key={model.id}
+                model={model}
+                selected={selected}
+                pending={pendingModel === model.id}
+                downloading={downloading}
+                downloadProgress={progress}
+                downloadBytesPerSecond={speed}
+                readinessAvailable={readiness?.available === true}
+                onApply={handleApply}
+              />
+            );
+          })
+        )}
       </View>
     </SettingsSection>
-  );
-}
-
-function DictationDownloadProgress({
-  modelId,
-  percent,
-  bytesPerSecond,
-}: {
-  modelId: string;
-  percent: number;
-  bytesPerSecond: number;
-}) {
-  const { t } = useTranslation();
-  const speedLabel = formatDictationDownloadSpeed(bytesPerSecond);
-
-  return (
-    <View style={styles.dictationProgressWrap} testID={`dictation-model-progress-${modelId}`}>
-      <View style={styles.dictationProgressTrack}>
-        <View style={[styles.dictationProgressFill, { width: `${percent}%` as `${number}%` }]} />
-      </View>
-      <View style={styles.dictationProgressMeta}>
-        <Text style={styles.dictationProgressLabel}>{`${percent}%`}</Text>
-        <Text style={styles.dictationProgressSpeed} numberOfLines={1}>
-          {t("settings.host.dictation.downloadSpeed", { speed: speedLabel })}
-        </Text>
-      </View>
-    </View>
   );
 }
 
@@ -389,32 +373,30 @@ function DictationModelRow({
     downloadProgress === null ? null : Math.max(0, Math.min(100, Math.round(downloadProgress)));
   const showProgress = downloading || percent !== null;
   const runState = resolveDictationRunState(selected, readinessAvailable);
+  const title = dictationModelTitle(t, model.id, model.description);
+  const speedLabel = formatDictationDownloadSpeed(downloadBytesPerSecond);
 
-  let statusText: string;
+  let hintText: string;
   if (showProgress) {
-    // Percent + speed live on the progress bar; keep the line quiet.
-    statusText = t("settings.host.dictation.downloading");
-  } else if (!installed) {
-    statusText = t("settings.host.dictation.notInstalled");
-  } else if (selected) {
-    statusText = dictationRunStateLabel(t, runState);
+    if (percent === null) {
+      hintText = t("settings.host.dictation.downloading");
+    } else {
+      hintText = t("settings.host.dictation.downloadingPercentWithSpeed", {
+        percent,
+        speed: speedLabel,
+      });
+    }
   } else {
-    statusText = t("settings.host.dictation.available");
+    hintText = formatLanguages(model.languages);
   }
 
-  let action: ReactNode = null;
+  let trailing: ReactNode = null;
   if (pending) {
-    action = <ThemedActivityIndicator uniProps={mutedColorMapping} />;
+    trailing = <ThemedActivityIndicator uniProps={mutedColorMapping} />;
   } else if (showProgress) {
-    action = (
-      <DictationDownloadProgress
-        modelId={model.id}
-        percent={percent ?? 0}
-        bytesPerSecond={downloadBytesPerSecond}
-      />
-    );
+    trailing = null;
   } else if (!installed) {
-    action = (
+    trailing = (
       <Button
         size="sm"
         variant="secondary"
@@ -426,20 +408,20 @@ function DictationModelRow({
       </Button>
     );
   } else if (selected) {
-    action = (
-      <View style={styles.dictationTrailingActions}>
+    trailing = (
+      <View style={styles.trailingSelected}>
         <StatusBadge
           label={dictationRunStateLabel(t, runState)}
           variant={runState === "running" ? "success" : "muted"}
         />
-        <View style={styles.dictationAppliedBadge} accessibilityRole="text">
+        <View style={styles.appliedBadge} accessibilityRole="text">
           <ThemedCheck size={ICON_SIZE.sm} uniProps={foregroundColorMapping} />
-          <Text style={styles.dictationAppliedText}>{t("settings.host.dictation.applied")}</Text>
+          <Text style={styles.appliedText}>{t("settings.host.dictation.applied")}</Text>
         </View>
       </View>
     );
   } else {
-    action = (
+    trailing = (
       <Button
         size="sm"
         variant="secondary"
@@ -454,135 +436,54 @@ function DictationModelRow({
 
   return (
     <View
-      style={[styles.dictationOption, selected && styles.dictationOptionSelected]}
+      style={[settingsStyles.row, settingsStyles.rowBorder, styles.modelRow]}
       accessibilityState={accessibilityState}
       testID={`dictation-model-row-${model.id}`}
     >
-      <View style={styles.dictationOptionTop}>
-        <View style={styles.dictationOptionContent}>
-          <Text style={styles.dictationOptionTitle}>{cleanDictationLabel(model.description)}</Text>
-          <View style={styles.dictationLangRow}>
-            {model.languages.map((lang) => (
-              <View key={lang} style={styles.dictationLangBadge}>
-                <Text style={styles.dictationLangBadgeText}>{lang}</Text>
-              </View>
-            ))}
+      <View style={settingsStyles.rowContent}>
+        <Text style={settingsStyles.rowTitle}>{title}</Text>
+        <Text style={settingsStyles.rowHint}>{hintText}</Text>
+        {showProgress ? (
+          <View style={styles.progressTrack} testID={`dictation-model-progress-${model.id}`}>
+            <View style={[styles.progressFill, { width: `${percent ?? 0}%` as `${number}%` }]} />
           </View>
-          <Text style={styles.dictationOptionStatus}>{statusText}</Text>
-        </View>
-        {!showProgress ? <View style={styles.dictationActionSlot}>{action}</View> : null}
+        ) : null}
       </View>
-      {showProgress ? action : null}
+      {trailing}
     </View>
   );
 }
 
 const styles = StyleSheet.create((theme) => ({
-  dictationList: {
-    gap: theme.spacing[2],
-    paddingHorizontal: theme.spacing[4],
-    paddingTop: theme.spacing[1],
-    paddingBottom: theme.spacing[4],
+  modelRow: {
+    alignItems: "center",
   },
-  dictationOption: {
-    gap: theme.spacing[2],
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.md,
-    paddingVertical: theme.spacing[3],
-    paddingHorizontal: theme.spacing[3],
-    backgroundColor: theme.colors.surface1,
-  },
-  dictationOptionSelected: {
-    borderColor: theme.colors.foreground,
-    backgroundColor: theme.colors.surface3,
-  },
-  dictationOptionTop: {
+  trailingSelected: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.spacing[3],
+    gap: theme.spacing[2],
+    flexShrink: 0,
   },
-  dictationOptionContent: {
-    flex: 1,
+  appliedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: theme.spacing[1],
-    minWidth: 0,
   },
-  dictationOptionTitle: {
+  appliedText: {
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.base,
-    fontWeight: theme.fontWeight.normal,
-  },
-  dictationLangRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: theme.spacing[1],
-  },
-  dictationLangBadge: {
-    paddingHorizontal: theme.spacing[2],
-    paddingVertical: 2,
-    borderRadius: theme.borderRadius.full,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface3,
-  },
-  dictationLangBadgeText: {
     fontSize: theme.fontSize.xs,
-    color: theme.colors.foregroundMuted,
+    fontWeight: theme.fontWeight.medium,
   },
-  dictationOptionStatus: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.xs,
-  },
-  dictationActionSlot: {
-    flexShrink: 0,
-  },
-  dictationTrailingActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-    flexShrink: 0,
-  },
-  dictationProgressWrap: {
-    width: "100%",
-    gap: theme.spacing[1],
-  },
-  dictationProgressTrack: {
-    height: 6,
+  progressTrack: {
+    marginTop: theme.spacing[2],
+    height: 3,
     borderRadius: theme.borderRadius.full,
     backgroundColor: theme.colors.surface3,
     overflow: "hidden",
   },
-  dictationProgressFill: {
+  progressFill: {
     height: "100%",
     borderRadius: theme.borderRadius.full,
     backgroundColor: theme.colors.foreground,
-  },
-  dictationProgressMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.spacing[1],
-  },
-  dictationProgressLabel: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.xs,
-    fontVariant: ["tabular-nums"],
-  },
-  dictationProgressSpeed: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.xs,
-    fontVariant: ["tabular-nums"],
-    flexShrink: 1,
-  },
-  dictationAppliedBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[1],
-  },
-  dictationAppliedText: {
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.xs,
-    fontWeight: theme.fontWeight.medium,
   },
 }));

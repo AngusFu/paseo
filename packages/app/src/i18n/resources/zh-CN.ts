@@ -1989,7 +1989,7 @@ export const zhCN: TranslationResources = {
       },
       localLlm: {
         title: "本地 AI 模型",
-        hint: "连接此主机上的 OpenAI 兼容后端（例如 Ollama），为自然语言生成 cron 等本地 AI 功能提供支持。",
+        hint: "本机 OpenAI 兼容后端（例如 Ollama）",
         baseUrl: "Base URL",
         baseUrlPlaceholder: "http://127.0.0.1:11434/v1",
         apiKey: "API key（可选）",
@@ -1998,7 +1998,7 @@ export const zhCN: TranslationResources = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "还没有模型 — 从 Ollama 拉取",
         modelSearchPlaceholder: "搜索模型",
-        fetchModels: "从 Ollama 拉取",
+        fetchModels: "拉取模型",
         save: "保存",
         test: "测试",
         testFailed: "测试请求失败",
@@ -2056,7 +2056,7 @@ export const zhCN: TranslationResources = {
       },
       dictation: {
         title: "听写模型",
-        hint: "麦克风按钮使用的语音转写模型。SenseVoice 支持中文、粤语、日语和韩语。",
+        hint: "麦克风听写模型。SenseVoice 支持中文和粤语",
         loading: "正在加载模型…",
         notInstalled: "尚未下载",
         downloading: "下载中…",
@@ -2073,6 +2073,11 @@ export const zhCN: TranslationResources = {
         unsupported: "请更新主机以使用此功能。",
         loadError: "无法加载听写模型。",
         cloudProviderHint: "当前听写使用 {{provider}}。应用下方模型会切回本地语音识别。",
+        models: {
+          senseVoice: "SenseVoice",
+          parakeetV2: "Parakeet v2",
+          parakeetV3: "Parakeet v3",
+        },
         selectErrorTitle: "无法切换听写模型",
       },
       workspaces: {

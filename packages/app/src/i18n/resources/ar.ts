@@ -2011,7 +2011,7 @@ export const ar: TranslationResources = {
       },
       localLlm: {
         title: "نموذج ذكاء اصطناعي محلي",
-        hint: "اربط خادمًا متوافقًا مع OpenAI على هذا المضيف (مثل Ollama) لتشغيل ميزات الذكاء الاصطناعي المحلية مثل إنشاء cron باللغة الطبيعية.",
+        hint: "خلفية متوافقة مع OpenAI على هذا المضيف (مثل Ollama)",
         baseUrl: "Base URL",
         baseUrlPlaceholder: "http://127.0.0.1:11434/v1",
         apiKey: "مفتاح API (اختياري)",
@@ -2020,7 +2020,7 @@ export const ar: TranslationResources = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "لا توجد نماذج — اجلب من Ollama",
         modelSearchPlaceholder: "ابحث عن النماذج",
-        fetchModels: "اجلب من Ollama",
+        fetchModels: "جلب النماذج",
         save: "حفظ",
         test: "اختبار",
         testFailed: "فشل طلب الاختبار",
@@ -2078,7 +2078,7 @@ export const ar: TranslationResources = {
       },
       dictation: {
         title: "نموذج الإملاء",
-        hint: "نموذج تحويل الكلام إلى نص لزر الميكروفون. يضيف SenseVoice الصينية والكانتونية واليابانية والكورية.",
+        hint: "نموذج إملاء الميكروفون. SenseVoice يغطي الصينية والكانتونية",
         loading: "جارٍ تحميل النماذج…",
         notInstalled: "لم يتم التنزيل بعد",
         downloading: "جارٍ التنزيل…",
@@ -2096,6 +2096,11 @@ export const ar: TranslationResources = {
         loadError: "تعذّر تحميل نماذج الإملاء.",
         cloudProviderHint:
           "الإملاء يستخدم حاليًا {{provider}}. تطبيق نموذج أدناه يعيد STT إلى المحلي.",
+        models: {
+          senseVoice: "SenseVoice",
+          parakeetV2: "Parakeet v2",
+          parakeetV3: "Parakeet v3",
+        },
         selectErrorTitle: "تعذّر تبديل نموذج الإملاء",
       },
       workspaces: {

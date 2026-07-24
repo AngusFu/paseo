@@ -2022,7 +2022,7 @@ export const en = {
       },
       localLlm: {
         title: "Local AI model",
-        hint: "Connect an OpenAI-compatible backend on this host (for example Ollama) to power lightweight AI features like natural-language cron generation.",
+        hint: "OpenAI-compatible backend on this host (for example Ollama)",
         baseUrl: "Base URL",
         baseUrlPlaceholder: "http://127.0.0.1:11434/v1",
         apiKey: "API key (optional)",
@@ -2031,7 +2031,7 @@ export const en = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "No models yet — fetch from Ollama",
         modelSearchPlaceholder: "Search models",
-        fetchModels: "Fetch from Ollama",
+        fetchModels: "Fetch models",
         save: "Save",
         test: "Test",
         testFailed: "Test request failed",
@@ -2089,7 +2089,7 @@ export const en = {
       },
       dictation: {
         title: "Dictation model",
-        hint: "Speech-to-text model for the microphone button. SenseVoice adds Chinese, Cantonese, Japanese and Korean.",
+        hint: "Microphone speech-to-text. SenseVoice covers Chinese and Cantonese",
         loading: "Loading models…",
         notInstalled: "Not downloaded yet",
         downloading: "Downloading…",
@@ -2107,6 +2107,11 @@ export const en = {
         loadError: "Couldn't load dictation models.",
         cloudProviderHint:
           "Dictation is currently using {{provider}}. Applying a model below switches STT back to local.",
+        models: {
+          senseVoice: "SenseVoice",
+          parakeetV2: "Parakeet v2",
+          parakeetV3: "Parakeet v3",
+        },
         selectErrorTitle: "Couldn't switch dictation model",
       },
       workspaces: {

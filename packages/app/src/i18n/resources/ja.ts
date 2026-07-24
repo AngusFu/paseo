@@ -2032,7 +2032,7 @@ export const ja: TranslationResources = {
       },
       localLlm: {
         title: "ローカル AI モデル",
-        hint: "このホスト上の OpenAI 互換バックエンド（例: Ollama）を接続し、自然言語からの cron 生成などのローカル AI 機能を有効にします。",
+        hint: "このホスト上の OpenAI 互換バックエンド（例: Ollama）",
         baseUrl: "Base URL",
         baseUrlPlaceholder: "http://127.0.0.1:11434/v1",
         apiKey: "API key（任意）",
@@ -2041,7 +2041,7 @@ export const ja: TranslationResources = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "モデルがありません — Ollama から取得",
         modelSearchPlaceholder: "モデルを検索",
-        fetchModels: "Ollama から取得",
+        fetchModels: "モデルを取得",
         save: "保存",
         test: "テスト",
         testFailed: "テスト要求に失敗しました",
@@ -2099,7 +2099,7 @@ export const ja: TranslationResources = {
       },
       dictation: {
         title: "ディクテーションモデル",
-        hint: "マイクボタンで使う音声テキスト変換モデル。SenseVoice は中国語、広東語、日本語、韓国語に対応します。",
+        hint: "マイク音声入力モデル。SenseVoice は中国語と広東語に対応",
         loading: "モデルを読み込み中…",
         notInstalled: "未ダウンロード",
         downloading: "ダウンロード中…",
@@ -2117,6 +2117,11 @@ export const ja: TranslationResources = {
         loadError: "音声入力モデルを読み込めませんでした。",
         cloudProviderHint:
           "現在の音声入力は {{provider}} です。下のモデルを適用するとローカル STT に切り替わります。",
+        models: {
+          senseVoice: "SenseVoice",
+          parakeetV2: "Parakeet v2",
+          parakeetV3: "Parakeet v3",
+        },
         selectErrorTitle: "ディクテーションモデルを切り替えできませんでした",
       },
       workspaces: {

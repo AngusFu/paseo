@@ -2049,7 +2049,7 @@ export const ru: TranslationResources = {
       },
       localLlm: {
         title: "Локальная ИИ-модель",
-        hint: "Подключите OpenAI-совместимый бэкенд на этом хосте (например Ollama) для локальных ИИ-функций, таких как генерация cron из естественного языка.",
+        hint: "OpenAI-совместимый бэкенд на этом хосте (например Ollama)",
         baseUrl: "Base URL",
         baseUrlPlaceholder: "http://127.0.0.1:11434/v1",
         apiKey: "API key (необязательно)",
@@ -2058,7 +2058,7 @@ export const ru: TranslationResources = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "Нет моделей — загрузить из Ollama",
         modelSearchPlaceholder: "Поиск моделей",
-        fetchModels: "Загрузить из Ollama",
+        fetchModels: "Загрузить модели",
         save: "Сохранить",
         test: "Проверить",
         testFailed: "Тестовый запрос не удался",
@@ -2117,7 +2117,7 @@ export const ru: TranslationResources = {
       },
       dictation: {
         title: "Модель диктовки",
-        hint: "Модель распознавания речи для кнопки микрофона. SenseVoice добавляет китайский, кантонский, японский и корейский.",
+        hint: "Модель диктовки с микрофона. SenseVoice поддерживает китайский и кантонский",
         loading: "Загрузка моделей…",
         notInstalled: "Ещё не загружено",
         downloading: "Загрузка…",
@@ -2135,6 +2135,11 @@ export const ru: TranslationResources = {
         loadError: "Не удалось загрузить модели диктовки.",
         cloudProviderHint:
           "Диктовка сейчас использует {{provider}}. Выбор модели ниже переключит STT на локальный.",
+        models: {
+          senseVoice: "SenseVoice",
+          parakeetV2: "Parakeet v2",
+          parakeetV3: "Parakeet v3",
+        },
         selectErrorTitle: "Не удалось переключить модель диктовки",
       },
       workspaces: {

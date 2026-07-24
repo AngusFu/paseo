@@ -2112,6 +2112,11 @@ export const ja: TranslationResources = {
         running: "起動中",
         starting: "起動しています…",
         stopped: "未起動",
+        available: "利用可能",
+        unsupported: "この機能を使うにはホストを更新してください。",
+        loadError: "音声入力モデルを読み込めませんでした。",
+        cloudProviderHint:
+          "現在の音声入力は {{provider}} です。下のモデルを適用するとローカル STT に切り替わります。",
         selectErrorTitle: "ディクテーションモデルを切り替えできませんでした",
       },
       workspaces: {

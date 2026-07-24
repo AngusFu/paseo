@@ -168,6 +168,10 @@ export function createDictationSettingsController(params: {
             ...persisted.features?.dictation,
             stt: {
               ...persisted.features?.dictation?.stt,
+              // Selecting a catalog model always means local STT — otherwise an
+              // OpenAI (or other) provider would keep winning and the UI choice
+              // would appear to do nothing.
+              provider: "local",
               model: parsed,
             },
           },

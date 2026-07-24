@@ -2102,6 +2102,11 @@ export const en = {
         running: "Running",
         starting: "Starting…",
         stopped: "Not started",
+        available: "Available",
+        unsupported: "Update the host to use this.",
+        loadError: "Couldn't load dictation models.",
+        cloudProviderHint:
+          "Dictation is currently using {{provider}}. Applying a model below switches STT back to local.",
         selectErrorTitle: "Couldn't switch dictation model",
       },
       workspaces: {

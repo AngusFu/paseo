@@ -2124,6 +2124,11 @@ export const ptBR: TranslationResources = {
         running: "Running",
         starting: "Starting…",
         stopped: "Not started",
+        available: "Disponível",
+        unsupported: "Atualize o host para usar isto.",
+        loadError: "Não foi possível carregar os modelos de ditado.",
+        cloudProviderHint:
+          "O ditado está usando {{provider}}. Aplicar um modelo abaixo volta para STT local.",
         selectErrorTitle: "Couldn't switch dictation model",
       },
       workspaces: {

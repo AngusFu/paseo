@@ -2091,6 +2091,11 @@ export const ar: TranslationResources = {
         running: "قيد التشغيل",
         starting: "جارٍ التشغيل…",
         stopped: "غير مُشغَّل",
+        available: "متاح",
+        unsupported: "حدّث المضيف لاستخدام هذه الميزة.",
+        loadError: "تعذّر تحميل نماذج الإملاء.",
+        cloudProviderHint:
+          "الإملاء يستخدم حاليًا {{provider}}. تطبيق نموذج أدناه يعيد STT إلى المحلي.",
         selectErrorTitle: "تعذّر تبديل نموذج الإملاء",
       },
       workspaces: {

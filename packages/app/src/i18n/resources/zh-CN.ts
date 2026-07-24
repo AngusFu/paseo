@@ -2069,6 +2069,10 @@ export const zhCN: TranslationResources = {
         running: "运行中",
         starting: "启动中…",
         stopped: "未启动",
+        available: "可用",
+        unsupported: "请更新主机以使用此功能。",
+        loadError: "无法加载听写模型。",
+        cloudProviderHint: "当前听写使用 {{provider}}。应用下方模型会切回本地语音识别。",
         selectErrorTitle: "无法切换听写模型",
       },
       workspaces: {

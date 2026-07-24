@@ -2140,6 +2140,11 @@ export const es: TranslationResources = {
         running: "En ejecución",
         starting: "Iniciando…",
         stopped: "No iniciado",
+        available: "Disponible",
+        unsupported: "Actualiza el host para usar esto.",
+        loadError: "No se pudieron cargar los modelos de dictado.",
+        cloudProviderHint:
+          "El dictado usa {{provider}}. Aplicar un modelo de abajo vuelve a STT local.",
         selectErrorTitle: "No se pudo cambiar el modelo de dictado",
       },
       workspaces: {

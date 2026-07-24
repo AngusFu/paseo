@@ -2130,6 +2130,11 @@ export const ru: TranslationResources = {
         running: "Запущена",
         starting: "Запуск…",
         stopped: "Не запущена",
+        available: "Доступно",
+        unsupported: "Обновите хост, чтобы использовать это.",
+        loadError: "Не удалось загрузить модели диктовки.",
+        cloudProviderHint:
+          "Диктовка сейчас использует {{provider}}. Выбор модели ниже переключит STT на локальный.",
         selectErrorTitle: "Не удалось переключить модель диктовки",
       },
       workspaces: {

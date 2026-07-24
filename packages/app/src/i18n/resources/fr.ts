@@ -2144,6 +2144,11 @@ export const fr: TranslationResources = {
         running: "Actif",
         starting: "Démarrage…",
         stopped: "Non démarré",
+        available: "Disponible",
+        unsupported: "Mettez à jour l’hôte pour utiliser cette fonction.",
+        loadError: "Impossible de charger les modèles de dictée.",
+        cloudProviderHint:
+          "La dictée utilise actuellement {{provider}}. Appliquer un modèle ci-dessous repasse en STT local.",
         selectErrorTitle: "Impossible de changer le modèle de dictée",
       },
       workspaces: {

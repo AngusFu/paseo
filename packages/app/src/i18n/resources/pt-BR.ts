@@ -2049,6 +2049,12 @@ export const ptBR: TranslationResources = {
         downloading: "Baixando… {{received}} / {{total}} GB ({{percent}}%)",
         ready: "Pronto",
       },
+      proseStop: {
+        title: "Prose stop",
+        label: "Nudge agents that wait in chat prose",
+        hint: "When an agent ends a turn waiting for you in chat (for example “let me know” or “要 push 即可”), automatically ask it to re-ask via ask_question. Uses regex; with Local AI ready it also classifies. On by default.",
+        updateErrorTitle: "Unable to update prose stop",
+      },
       connections: {
         title: "Conexões",
         removeTitle: "Remover conexão",

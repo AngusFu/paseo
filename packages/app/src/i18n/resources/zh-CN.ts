@@ -1994,6 +1994,12 @@ export const zhCN: TranslationResources = {
         downloading: "下载中… {{received}} / {{total}} GB（{{percent}}%）",
         ready: "已就绪",
       },
+      proseStop: {
+        title: "散文停候门禁",
+        label: "拦截用聊天散文等用户的回合",
+        hint: "当 agent 用「let me know」「要 push 即可」等散文结尾等待你时，自动 nudge 它改用 ask_question。默认开启；有本地 AI 时在正则之外还会做分类。",
+        updateErrorTitle: "无法更新散文停候设置",
+      },
       connections: {
         title: "连接",
         removeTitle: "移除连接",

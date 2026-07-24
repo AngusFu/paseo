@@ -280,6 +280,13 @@ export const MutableDaemonConfigSchema = z
     enableTerminalAgentHooks: z.boolean().default(false),
     appendSystemPrompt: z.string().default(""),
     terminalProfiles: z.array(TerminalProfileSchema).optional(),
+    // When enabled, foreground turn_completed messages that wait for the user
+    // in chat prose are auto-nudged to re-ask via ask_question.
+    proseStop: z
+      .object({
+        enabled: z.boolean().default(true),
+      })
+      .default({ enabled: true }),
     // Built-in local model override. Both fields must be set together: the
     // download URLs must serve exactly `modelFilename`. Absent → the daemon's
     // built-in default model.
@@ -306,6 +313,11 @@ export const MutableDaemonConfigPatchSchema = z
     enableTerminalAgentHooks: z.boolean().optional(),
     appendSystemPrompt: z.string().optional(),
     terminalProfiles: z.array(TerminalProfileSchema).optional(),
+    proseStop: z
+      .object({
+        enabled: z.boolean().optional(),
+      })
+      .optional(),
     localLlm: z
       .object({
         modelFilename: z.string().optional(),

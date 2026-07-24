@@ -8572,8 +8572,15 @@ test("askAgentQuestion surfaces a question permission and returns the user's ans
     const pending = manager.getPendingPermissions(agentId);
     expect(pending).toHaveLength(1);
     expect(pending[0].kind).toBe("question");
-    expect(pending[0].name).toBe("ask_question");
-    expect(pending[0].input).toEqual({ questions: ASK_QUESTION_QUESTIONS });
+    // COMPAT(askQuestionAskUserQuestionDisguise): wire name matches Claude so
+    // older official apps render the question form.
+    expect(pending[0].name).toBe("AskUserQuestion");
+    expect(pending[0].input).toEqual({
+      questions: ASK_QUESTION_QUESTIONS.map((question) => ({
+        ...question,
+        allowOther: true,
+      })),
+    });
 
     await manager.respondToPermission(agentId, pending[0].id, {
       behavior: "allow",
@@ -8629,6 +8636,85 @@ test("askAgentQuestion resolves null and withdraws the question when the caller 
 
     await expect(questionPromise).resolves.toBeNull();
     expect(manager.getPendingPermissions(agentId)).toHaveLength(0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("askAgentQuestion rewrites opaque ACP MCP: tool timeline calls to AskUserQuestion", async () => {
+  const { manager, agentId, cleanup } = await createAskQuestionFixture();
+  const expectedQuestions = [
+    {
+      question: "Which environment should I deploy to?",
+      header: "Env",
+      options: [{ label: "staging" }, { label: "production" }],
+      allowOther: true,
+    },
+  ];
+  const latestOpaqueCall = () => {
+    let latest: Extract<
+      ReturnType<typeof manager.getTimeline>[number],
+      { type: "tool_call" }
+    > | null = null;
+    for (const item of manager.getTimeline(agentId)) {
+      if (item.type === "tool_call" && item.callId === "opaque-mcp-call") {
+        latest = item;
+      }
+    }
+    return latest;
+  };
+  try {
+    await manager.appendTimelineItem(agentId, {
+      type: "tool_call",
+      callId: "opaque-mcp-call",
+      name: "other",
+      status: "running",
+      error: null,
+      detail: { type: "unknown", input: {}, output: null },
+      metadata: { kind: "other", title: "MCP: tool" },
+    });
+
+    const questionPromise = manager.askAgentQuestion({
+      agentId,
+      questions: ASK_QUESTION_QUESTIONS,
+    });
+
+    expect(latestOpaqueCall()).toMatchObject({
+      name: "AskUserQuestion",
+      status: "running",
+      detail: {
+        type: "unknown",
+        input: { questions: expectedQuestions },
+      },
+    });
+
+    const requestId = manager.getPendingPermissions(agentId)[0].id;
+    await manager.respondToPermission(agentId, requestId, {
+      behavior: "allow",
+      updatedInput: { answers: { Env: "staging" } },
+    });
+    await expect(questionPromise).resolves.toMatchObject({ behavior: "allow" });
+
+    // Provider completion for the same callId must keep the AskUserQuestion disguise.
+    await manager.appendTimelineItem(agentId, {
+      type: "tool_call",
+      callId: "opaque-mcp-call",
+      name: "other",
+      status: "completed",
+      error: null,
+      detail: { type: "unknown", input: {}, output: { success: true } },
+      metadata: { kind: "other", title: "MCP: tool" },
+    });
+
+    expect(latestOpaqueCall()).toMatchObject({
+      name: "AskUserQuestion",
+      status: "completed",
+      detail: {
+        type: "unknown",
+        input: { questions: expectedQuestions },
+        output: { success: true },
+      },
+    });
   } finally {
     cleanup();
   }

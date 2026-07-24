@@ -251,6 +251,11 @@ export const PersistedConfigSchema = z
         autoArchiveAfterMerge: z.boolean().optional(),
         enableTerminalAgentHooks: z.boolean().optional(),
         appendSystemPrompt: z.string().optional(),
+        proseStop: z
+          .object({
+            enabled: z.boolean().optional(),
+          })
+          .optional(),
         terminalProfiles: z.array(TerminalProfileSchema).optional(),
         cors: z
           .object({

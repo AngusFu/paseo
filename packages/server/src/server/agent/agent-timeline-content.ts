@@ -1,4 +1,5 @@
 import type { AgentTimelineItem } from "./agent-sdk-types.js";
+import { projectAskQuestionTimelineToolCall } from "./ask-question-timeline.js";
 
 const TOOL_CALL_CONTENT_MAX_LENGTH = 64 * 1024;
 
@@ -43,6 +44,9 @@ function limitPlainText(item: AgentTimelineItem): AgentTimelineItem {
 }
 
 export function limitAgentTimelineItemContent(item: AgentTimelineItem): AgentTimelineItem {
+  // COMPAT(askQuestionAskUserQuestionDisguise): project MCP ask_question tool
+  // calls to Claude AskUserQuestion before content limits / persistence.
+  item = projectAskQuestionTimelineToolCall(item);
   item = limitFailedShellError(item);
   item = limitPlainText(item);
   if (

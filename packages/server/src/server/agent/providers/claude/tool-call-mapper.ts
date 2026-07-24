@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 import type { ToolCallTimelineItem } from "../../agent-sdk-types.js";
-import { isSpeakToolName } from "@getpaseo/protocol/tool-name-normalization";
+import { getPaseoToolLeafName, isSpeakToolName } from "@getpaseo/protocol/tool-name-normalization";
+import { CLAUDE_ASK_USER_QUESTION_TOOL_NAME } from "../../ask-question-timeline.js";
 import { deriveClaudeToolDetail } from "./tool-call-detail-parser.js";
 
 interface MapperParams {
@@ -114,7 +115,14 @@ function mapClaudeToolCall(
 
   const trimmedName = raw.name.trim();
   const toolKind = resolveClaudeToolKind(trimmedName);
-  const name = toolKind === "speak" ? "speak" : trimmedName;
+  // COMPAT(askQuestionAskUserQuestionDisguise): same idea as speak — rewrite the
+  // MCP leaf before detail derivation so timeline clients see AskUserQuestion.
+  let name = trimmedName;
+  if (toolKind === "speak") {
+    name = "speak";
+  } else if (getPaseoToolLeafName(trimmedName) === "ask_question") {
+    name = CLAUDE_ASK_USER_QUESTION_TOOL_NAME;
+  }
   const input = raw.input ?? null;
   const output = raw.output ?? null;
   const detail = deriveClaudeToolDetail(resolveDetailName(toolKind, name), input, output);

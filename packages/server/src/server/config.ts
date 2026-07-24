@@ -499,6 +499,9 @@ export function loadConfig(
     autoArchiveAfterMerge,
     enableTerminalAgentHooks: persisted.daemon?.enableTerminalAgentHooks ?? false,
     appendSystemPrompt,
+    proseStop: {
+      enabled: persisted.daemon?.proseStop?.enabled ?? true,
+    },
     terminalProfiles,
     mcpDebug: env.MCP_DEBUG === "1",
     isDev: resolvePaseoNodeEnv(env) === "development",

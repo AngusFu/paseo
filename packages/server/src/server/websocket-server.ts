@@ -856,6 +856,10 @@ export class VoiceAssistantWebSocketServer {
     this.acceptingConnections = false;
   }
 
+  public getLlamaService(): LlamaService {
+    return this.llamaService;
+  }
+
   public async close(): Promise<void> {
     this.prepareForShutdown();
     this.llamaService.stop();

@@ -386,6 +386,7 @@ export function HostSettingsPage({
       {!isLocalDaemon ? <UpdateDaemonCard key={host.serverId} host={host} /> : null}
 
       <LocalLlmCard serverId={serverId} />
+      <ProseStopCard serverId={serverId} />
 
       <RemoveHostSection host={host} isLocalDaemon={isLocalDaemon} onRemoved={onHostRemoved} />
     </View>
@@ -1141,6 +1142,46 @@ function EnableTerminalAgentHooksCard({ serverId }: { serverId: string }) {
         />
       </View>
     </View>
+  );
+}
+
+function ProseStopCard({ serverId }: { serverId: string }) {
+  const { t } = useTranslation();
+  const isConnected = useHostRuntimeIsConnected(serverId);
+  const { config, patchConfig } = useDaemonConfig(serverId);
+
+  const handleValueChange = useCallback(
+    (next: boolean) => {
+      void patchConfig({ proseStop: { enabled: next } }).catch((error) => {
+        console.error("[HostPage] Failed to update prose-stop", error);
+        Alert.alert(
+          t("settings.host.proseStop.updateErrorTitle"),
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+    },
+    [patchConfig, t],
+  );
+
+  if (!isConnected) return null;
+
+  return (
+    <SettingsSection title={t("settings.host.proseStop.title")} testID="host-page-prose-stop-card">
+      <View style={settingsStyles.card}>
+        <View style={settingsStyles.row}>
+          <View style={settingsStyles.rowContent}>
+            <Text style={settingsStyles.rowTitle}>{t("settings.host.proseStop.label")}</Text>
+            <Text style={settingsStyles.rowHint}>{t("settings.host.proseStop.hint")}</Text>
+          </View>
+          <Switch
+            value={config?.proseStop?.enabled !== false}
+            onValueChange={handleValueChange}
+            accessibilityLabel={t("settings.host.proseStop.label")}
+            testID="host-page-prose-stop-switch"
+          />
+        </View>
+      </View>
+    </SettingsSection>
   );
 }
 

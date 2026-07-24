@@ -519,6 +519,16 @@ npx expo-doctor
 
 Diagnoses version mismatches and native module issues.
 
+## Prose stop (daemon)
+
+Foreground `turn_completed` runs a turn-end gate that detects waiting-for-user chat prose
+(e.g. “let me know”, “要 push 即可”) and auto-nudges the agent to re-ask via `ask_question`.
+
+- **Default on** — `MutableDaemonConfig.proseStop.enabled` (Host settings toggle near Local AI).
+- **No local LLM** — regex only; never fails the turn for a missing model.
+- **Local AI ready** — regex-first, then a WAIT/DONE classifier via `LlamaService`.
+- **Re-entry guard** — one automatic nudge per cycle; a second consecutive WAIT is allowed through.
+
 ## Typecheck
 
 Always run typecheck after changes:

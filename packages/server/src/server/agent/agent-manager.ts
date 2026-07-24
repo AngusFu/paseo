@@ -22,6 +22,7 @@ import {
   type AgentFeature,
   type AgentLaunchContext,
   type AgentSlashCommand,
+  type AgentMetadata,
   type AgentMode,
   type AgentPermissionRequest,
   type AgentPermissionResponse,
@@ -41,6 +42,7 @@ import {
   type ImportedTimelineEntry,
   type ImportableProviderSession,
   type ListImportableSessionsOptions,
+  type ToolCallTimelineItem,
 } from "./agent-sdk-types.js";
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
 import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
@@ -62,7 +64,7 @@ import { limitAgentTimelineItemContent } from "./agent-timeline-content.js";
 import { AgentRunState, type ForegroundTurnWaiter } from "./agent-run-state.js";
 import { getAgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
 import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
-import { isSystemInjectedEnvelope } from "./agent-prompt.js";
+import { formatSystemNotificationPrompt, isSystemInjectedEnvelope } from "./agent-prompt.js";
 import { stripInternalPaseoMcpServer, withRuntimePaseoMcpServer } from "./runtime-mcp-config.js";
 import { resolveCreateAgentTitles } from "./create-agent-title.js";
 import type { PaseoToolCatalogFactory } from "./tools/types.js";
@@ -71,6 +73,36 @@ import {
   type ProviderSubagentDescriptor,
   type ProviderSubagentStoreEvent,
 } from "./provider-subagents/store.js";
+import {
+  formatRetriableContinuePrompt,
+  retriableTurnBackoffMs,
+  shouldRetryRetriableTurn,
+} from "./retriable-turn-hook.js";
+import { checkProseStopWithLlama } from "./prose-stop/check.js";
+import { formatProseStopNudgePrompt } from "./prose-stop/nudge-prompt.js";
+import type { LlamaService } from "../llm/llama-service.js";
+import {
+  buildAskUserQuestionToolCall,
+  CLAUDE_ASK_USER_QUESTION_TOOL_NAME,
+  isOpaqueAcpMcpToolCall,
+  isPaseoAskQuestionToolCall,
+} from "./ask-question-timeline.js";
+
+/**
+ * COMPAT(askQuestionAskUserQuestionDisguise): permission companion for the
+ * timeline projection of MCP ask_question → AskUserQuestion. Mirrors Claude's
+ * allowOther: true so QuestionFormCard matches native AskUserQuestion.
+ */
+function disguiseAskQuestionAsClaudeAskUserQuestion(questions: unknown[]): AgentMetadata {
+  return {
+    questions: questions.map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return item;
+      }
+      return { ...(item as AgentMetadata), allowOther: true };
+    }),
+  };
+}
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
@@ -249,6 +281,9 @@ export interface AgentManagerOptions {
   paseoToolsEnabled?: boolean;
   paseoToolCatalogFactory?: PaseoToolCatalogFactory;
   appendSystemPrompt?: string;
+  /** When false, skip the prose-stop turn-end gate. Default true. */
+  getProseStopEnabled?: () => boolean;
+  getLlamaService?: () => LlamaService | null;
   agentStreamCoalesceWindowMs?: number;
   rescueTimeouts?: AgentManagerRescueTimeouts;
   logger: Logger;
@@ -582,6 +617,18 @@ export class AgentManager {
   private readonly backgroundTasks = new Set<Promise<void>>();
   private readonly agentRegistrationTasks = new Set<Promise<void>>();
   private readonly inFlightAgentCloses = new Map<string, Promise<void>>();
+  // Auto-continue after retriable provider turn failures (resource_exhausted, etc.).
+  private readonly retriableTurnRetries = new Map<
+    string,
+    { attempt: number; timer: ReturnType<typeof setTimeout> | null }
+  >();
+  // prose-stop: already nudged once this cycle (like Claude stop_hook_active).
+  private readonly proseStopActive = new Set<string>();
+  // Hold busy between turn_completed and the scheduled ask_question nudge turn.
+  private readonly proseStopPendingNudges = new Map<
+    string,
+    { timer: ReturnType<typeof setTimeout> | null }
+  >();
   // Pending questions raised by the in-daemon `ask_question` MCP tool. These are
   // surfaced as `kind:"question"` permission requests but have no provider session
   // to respond to — the tool call itself is the waiter, so we resolve it here.
@@ -589,12 +636,22 @@ export class AgentManager {
     string,
     (response: AgentPermissionResponse | null) => void
   >();
+  // COMPAT(askQuestionAskUserQuestionDisguise): bind opaque ACP "MCP: tool"
+  // callIds to the ask_question payload so later running/completed updates keep
+  // the AskUserQuestion name + questions on the timeline.
+  private readonly mcpAskQuestionToolCalls = new Map<
+    string,
+    { agentId: string; requestId: string; questions: unknown[]; synthetic: boolean }
+  >();
+  private readonly mcpAskQuestionCallIdByRequest = new Map<string, string>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
   private readonly mcpAuthToken: string | null;
   private paseoToolsEnabled = true;
   private paseoToolCatalogFactory: PaseoToolCatalogFactory | null = null;
   private appendSystemPrompt: string;
+  private getProseStopEnabled: () => boolean = () => true;
+  private getLlamaService: () => LlamaService | null = () => null;
   private onAgentAttention?: AgentAttentionCallback;
   private onAgentArchived?: AgentArchivedCallback;
   private onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
@@ -612,6 +669,7 @@ export class AgentManager {
     this.mcpAuthToken = options?.mcpAuthToken ?? null;
     this.configurePaseoTools(options);
     this.appendSystemPrompt = options.appendSystemPrompt ?? "";
+    this.configureProseStop(options);
     this.logger = options.logger.child({ module: "agent", component: "agent-manager" });
     this.rescueTimeouts = {
       reloadSessionCloseMs:
@@ -701,6 +759,19 @@ export class AgentManager {
 
   setAppendSystemPrompt(prompt: string | null | undefined): void {
     this.appendSystemPrompt = prompt ?? "";
+  }
+
+  /** Wire prose-stop deps after LlamaService / daemon config exist (bootstrap). */
+  configureProseStop(options: {
+    getProseStopEnabled?: () => boolean;
+    getLlamaService?: () => LlamaService | null;
+  }): void {
+    if (options.getProseStopEnabled) {
+      this.getProseStopEnabled = options.getProseStopEnabled;
+    }
+    if (options.getLlamaService) {
+      this.getLlamaService = options.getLlamaService;
+    }
   }
 
   public getMetricsSnapshot(): AgentMetricsSnapshot {
@@ -2103,8 +2174,16 @@ export class AgentManager {
     mutableAgent.activeForegroundTurnId = null;
     const terminalError = mutableAgent.lastError;
     const shouldHoldBusyForReplacement = mutableAgent.pendingReplacement && !terminalError;
+    const shouldHoldBusyForRetriableRetry =
+      !terminalError && this.retriableTurnRetries.has(mutableAgent.id);
+    const shouldHoldBusyForProseStopNudge =
+      !terminalError && this.proseStopPendingNudges.has(mutableAgent.id);
     let nextLifecycle: "running" | "error" | "idle";
-    if (shouldHoldBusyForReplacement) {
+    if (
+      shouldHoldBusyForReplacement ||
+      shouldHoldBusyForRetriableRetry ||
+      shouldHoldBusyForProseStopNudge
+    ) {
       nextLifecycle = "running";
     } else if (terminalError) {
       nextLifecycle = "error";
@@ -2282,6 +2361,13 @@ export class AgentManager {
    * `kind:"question"` permission request so it renders in the existing question
    * form UI. Resolves with the user's response, or `null` if the wait was
    * withdrawn (agent interrupted, or the caller's request was aborted).
+   *
+   * Settlement stays MCP-owned via the `mcp-question-` request id prefix.
+   *
+   * COMPAT(askQuestionAskUserQuestionDisguise): the live MCP tool_call is
+   * projected to Claude's `AskUserQuestion` on the timeline (see
+   * projectAskQuestionTimelineToolCall). The permission request uses the same
+   * name/input conventions so QuestionFormCard stays consistent.
    */
   async askAgentQuestion(input: {
     agentId: string;
@@ -2294,13 +2380,16 @@ export class AgentManager {
       throw new Error("ask_question is not available to internal agents");
     }
     const requestId = `mcp-question-${this.idFactory()}`;
+    // COMPAT(askQuestionAskUserQuestionDisguise): added in v0.1.105, remove after
+    // 2027-01-24 once floor clients render generic ask_question tool names /
+    // kind:"question" without relying on Claude's AskUserQuestion tool name.
     const request: AgentPermissionRequest = {
       id: requestId,
       provider: agent.provider,
-      name: "ask_question",
+      name: CLAUDE_ASK_USER_QUESTION_TOOL_NAME,
       kind: "question",
       ...(input.title ? { title: input.title } : {}),
-      input: { questions: input.questions },
+      input: disguiseAskQuestionAsClaudeAskUserQuestion(input.questions),
     };
     return await new Promise<AgentPermissionResponse | null>((resolveWaiter) => {
       this.mcpQuestionResolvers.set(requestId, resolveWaiter);
@@ -2320,9 +2409,135 @@ export class AgentManager {
       if (!hadPendingPermissions) {
         this.broadcastAgentAttention(agent, "permission");
       }
+      this.bindAndProjectMcpAskQuestionTimeline({
+        agentId: agent.id,
+        requestId,
+        questions: input.questions,
+        provider: agent.provider,
+      });
       this.touchUpdatedAt(agent);
       this.emitState(agent);
+      this.dispatchStream(agent.id, {
+        type: "permission_requested",
+        provider: agent.provider,
+        request,
+      });
     });
+  }
+
+  /**
+   * COMPAT(askQuestionAskUserQuestionDisguise): rewrite the in-flight MCP tool
+   * call (including Cursor ACP's opaque `MCP: tool` shell) to AskUserQuestion
+   * with the real questions payload, so timeline cards match Claude.
+   */
+  private bindAndProjectMcpAskQuestionTimeline(input: {
+    agentId: string;
+    requestId: string;
+    questions: unknown[];
+    provider: AgentProvider;
+  }): void {
+    const running = this.findRunningToolCallForMcpAskQuestion(input.agentId);
+    const callId = running?.callId ?? input.requestId;
+    const synthetic = running == null;
+    this.mcpAskQuestionToolCalls.set(callId, {
+      agentId: input.agentId,
+      requestId: input.requestId,
+      questions: input.questions,
+      synthetic,
+    });
+    this.mcpAskQuestionCallIdByRequest.set(input.requestId, callId);
+
+    const disguisedQuestions = disguiseAskQuestionAsClaudeAskUserQuestion(input.questions)
+      .questions as unknown[];
+    this.recordAndDispatchTimelineItem(
+      input.agentId,
+      buildAskUserQuestionToolCall({
+        callId,
+        questions: disguisedQuestions,
+        status: "running",
+        ...(running?.metadata ? { metadata: running.metadata } : {}),
+      }),
+      input.provider,
+    );
+  }
+
+  private findRunningToolCallForMcpAskQuestion(agentId: string): ToolCallTimelineItem | null {
+    const items = this.timelineStore.getItems(agentId);
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index];
+      if (item?.type !== "tool_call" || item.status !== "running") {
+        continue;
+      }
+      if (
+        isOpaqueAcpMcpToolCall(item) ||
+        isPaseoAskQuestionToolCall(item) ||
+        item.name === CLAUDE_ASK_USER_QUESTION_TOOL_NAME
+      ) {
+        return item;
+      }
+    }
+    // Fallback: newest running tool call — ask_question blocks the MCP turn, so
+    // the active tool_call is almost always the ask itself.
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index];
+      if (item?.type === "tool_call" && item.status === "running") {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  private applyMcpAskQuestionTimelineDisguise(
+    agentId: string,
+    item: AgentTimelineItem,
+  ): AgentTimelineItem {
+    if (item.type !== "tool_call") {
+      return item;
+    }
+    const bound = this.mcpAskQuestionToolCalls.get(item.callId);
+    if (!bound || bound.agentId !== agentId) {
+      return item;
+    }
+    const disguisedQuestions = disguiseAskQuestionAsClaudeAskUserQuestion(bound.questions)
+      .questions as unknown[];
+    const output = item.detail.type === "unknown" ? item.detail.output : null;
+    const projected = buildAskUserQuestionToolCall({
+      callId: item.callId,
+      questions: disguisedQuestions,
+      status: item.status,
+      output,
+      error: item.status === "failed" ? item.error : undefined,
+      ...(item.metadata ? { metadata: item.metadata } : {}),
+    });
+    if (item.status !== "running") {
+      this.mcpAskQuestionToolCalls.delete(item.callId);
+      this.mcpAskQuestionCallIdByRequest.delete(bound.requestId);
+    }
+    return projected;
+  }
+
+  private clearMcpAskQuestionTimelineBinding(requestId: string): {
+    callId: string;
+    synthetic: boolean;
+    questions: unknown[];
+  } | null {
+    const callId = this.mcpAskQuestionCallIdByRequest.get(requestId);
+    if (!callId) {
+      return null;
+    }
+    const bound = this.mcpAskQuestionToolCalls.get(callId);
+    this.mcpAskQuestionCallIdByRequest.delete(requestId);
+    if (!bound) {
+      return null;
+    }
+    if (bound.synthetic) {
+      this.mcpAskQuestionToolCalls.delete(callId);
+    }
+    return {
+      callId,
+      synthetic: bound.synthetic,
+      questions: bound.questions,
+    };
   }
 
   /**
@@ -2341,6 +2556,7 @@ export class AgentManager {
     }
     this.mcpQuestionResolvers.delete(requestId);
     const agent = this.agents.get(agentId);
+    const timelineBinding = this.clearMcpAskQuestionTimelineBinding(requestId);
     if (agent?.pendingPermissions.delete(requestId)) {
       this.dispatchStream(agentId, {
         type: "permission_resolved",
@@ -2348,6 +2564,31 @@ export class AgentManager {
         requestId,
         resolution: response ?? { behavior: "deny", message: "Question dismissed" },
       });
+      if (timelineBinding?.synthetic) {
+        const disguisedQuestions = disguiseAskQuestionAsClaudeAskUserQuestion(
+          timelineBinding.questions,
+        ).questions as unknown[];
+        const answers =
+          response?.behavior === "allow" &&
+          response.updatedInput &&
+          typeof response.updatedInput.answers === "object"
+            ? response.updatedInput.answers
+            : null;
+        this.recordAndDispatchTimelineItem(
+          agentId,
+          buildAskUserQuestionToolCall({
+            callId: timelineBinding.callId,
+            questions: disguisedQuestions,
+            status: response?.behavior === "allow" ? "completed" : "failed",
+            output: answers ?? { success: response?.behavior === "allow" },
+            error:
+              response?.behavior === "allow"
+                ? undefined
+                : { message: response?.message ?? "Question dismissed" },
+          }),
+          agent.provider,
+        );
+      }
       this.touchUpdatedAt(agent);
       this.emitState(agent);
     }
@@ -2774,7 +3015,12 @@ export class AgentManager {
             }
             if (event.event.type === "turn_failed") {
               hasStarted = true;
-              terminalStatusOverride = "error";
+              // Retriable provider failures (resource_exhausted, etc.) schedule an
+              // automatic continue turn — don't freeze waiters on error until retries
+              // are exhausted (map entry cleared).
+              if (!this.retriableTurnRetries.has(agentId)) {
+                terminalStatusOverride = "error";
+              }
               return;
             }
             if (event.event.type === "turn_completed") {
@@ -3036,6 +3282,7 @@ export class AgentManager {
   }
 
   private discardRetainedAgentState(agentId: string): void {
+    this.clearRetriableTurnRetry(agentId);
     this.timelineStore.delete(agentId);
     for (const event of this.providerSubagents.deleteParent(agentId)) {
       this.dispatch({ type: "provider_subagent", event });
@@ -3602,8 +3849,12 @@ export class AgentManager {
       case "timeline":
         return this.onStreamTimelineEvent({ agent, event, options, isForegroundEvent, flags });
       case "turn_completed":
-        this.onStreamTurnCompleted({ agent, event, eventTurnId, isForegroundEvent });
-        return undefined;
+        // Only return a Promise when foreground prose-stop must run before
+        // finalizeForegroundTurn. Autonomous turns stay sync so emitState(idle)
+        // and dispatchStream(turn_completed) remain in the same turn — an
+        // unconditional async + await would yield and race subscribers that
+        // resolve on idle before turn_completed is broadcast.
+        return this.onStreamTurnCompleted({ agent, event, eventTurnId, isForegroundEvent });
       case "turn_failed":
         return this.onStreamTurnFailed({
           agent,
@@ -3669,6 +3920,8 @@ export class AgentManager {
 
     this.recordAndDispatchTimelineItem(agent.id, event.item, event.provider, event.turnId);
     if (event.item.type === "user_message") {
+      // Real user turns clear the prose-stop re-entry guard (nudge uses system envelope).
+      this.proseStopActive.delete(agent.id);
       agent.lastUserMessageAt = new Date();
       this.emitState(agent);
     }
@@ -3681,7 +3934,7 @@ export class AgentManager {
     event: Extract<AgentStreamEvent, { type: "turn_completed" }>;
     eventTurnId: string | undefined;
     isForegroundEvent: boolean;
-  }): void {
+  }): Promise<void> | undefined {
     const { agent, event, eventTurnId, isForegroundEvent } = params;
     this.logger.trace(
       {
@@ -3696,11 +3949,18 @@ export class AgentManager {
     );
     agent.lastUsage = event.usage;
     agent.lastError = undefined;
-    if (!isForegroundEvent && agent.lifecycle !== "idle" && !agent.pendingReplacement) {
+    this.clearRetriableTurnRetry(agent.id);
+    if (isForegroundEvent) {
+      return this.maybeScheduleProseStopNudge(agent).finally(() => {
+        void this.refreshRuntimeInfo(agent);
+      });
+    }
+    if (agent.lifecycle !== "idle" && !agent.pendingReplacement) {
       (agent as ActiveManagedAgent).lifecycle = "idle";
       this.emitState(agent);
     }
     void this.refreshRuntimeInfo(agent);
+    return undefined;
   }
 
   private async onStreamTurnFailed(params: {
@@ -3726,6 +3986,35 @@ export class AgentManager {
       },
       "handleStreamEvent: turn_failed",
     );
+
+    const previousAttempts = this.retriableTurnRetries.get(agent.id)?.attempt ?? 0;
+    const willRetry =
+      isForegroundEvent &&
+      !options?.fromHistory &&
+      shouldRetryRetriableTurn({
+        error: this.formatTurnFailedMessage(event),
+        attemptCount: previousAttempts,
+      });
+
+    if (willRetry) {
+      const attempt = previousAttempts + 1;
+      const delayMs = retriableTurnBackoffMs(attempt);
+      await this.appendSystemErrorTimelineMessage(
+        agent,
+        event.provider,
+        `${this.formatTurnFailedMessage(event)}\n\nRetriable provider error — retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt}).`,
+        options,
+      );
+      this.resolvePendingPermissionsForAgent(agent, event.provider, options, "Turn failed");
+      // Clear lastError so finalizeForegroundTurn keeps the agent busy for waiters
+      // instead of settling into a terminal error before the retry fires.
+      agent.lastError = undefined;
+      this.scheduleRetriableTurnRetry(agent.id, attempt, delayMs, event.error);
+      return;
+    }
+
+    this.clearRetriableTurnRetry(agent.id);
+    this.clearProseStopPendingNudge(agent.id);
     if (!isForegroundEvent) {
       agent.lifecycle = "error";
     }
@@ -3740,6 +4029,148 @@ export class AgentManager {
     if (!isForegroundEvent) {
       this.emitState(agent);
     }
+  }
+
+  private clearRetriableTurnRetry(agentId: string): void {
+    const pending = this.retriableTurnRetries.get(agentId);
+    if (!pending) {
+      return;
+    }
+    if (pending.timer) {
+      clearTimeout(pending.timer);
+    }
+    this.retriableTurnRetries.delete(agentId);
+  }
+
+  private clearProseStopPendingNudge(agentId: string): void {
+    const pending = this.proseStopPendingNudges.get(agentId);
+    if (!pending) {
+      return;
+    }
+    if (pending.timer) {
+      clearTimeout(pending.timer);
+    }
+    this.proseStopPendingNudges.delete(agentId);
+  }
+
+  private async maybeScheduleProseStopNudge(agent: ActiveManagedAgent): Promise<void> {
+    this.clearProseStopPendingNudge(agent.id);
+
+    if (!this.getProseStopEnabled()) {
+      this.proseStopActive.delete(agent.id);
+      return;
+    }
+
+    const lastText = await this.getLastAssistantMessageFromStores(agent.id);
+    if (!lastText?.trim()) {
+      this.proseStopActive.delete(agent.id);
+      return;
+    }
+
+    const stopHookActive = this.proseStopActive.has(agent.id);
+    let result;
+    try {
+      result = await checkProseStopWithLlama({
+        text: lastText,
+        stopHookActive,
+        llamaService: this.getLlamaService(),
+      });
+    } catch (error) {
+      this.logger.warn({ err: error, agentId: agent.id }, "agent.manager.prose_stop.check_failed");
+      this.proseStopActive.delete(agent.id);
+      return;
+    }
+
+    if (result.decision !== "block") {
+      if (result.source === "reentry") {
+        this.logger.info({ agentId: agent.id }, "agent.manager.prose_stop.reentry_allow");
+      }
+      this.proseStopActive.delete(agent.id);
+      return;
+    }
+
+    this.proseStopActive.add(agent.id);
+    this.scheduleProseStopNudge(agent.id, {
+      pattern: result.pattern,
+      source: result.source,
+    });
+    this.logger.info(
+      {
+        agentId: agent.id,
+        source: result.source,
+        pattern: result.pattern,
+        llmVerdict: result.llmVerdict,
+      },
+      "agent.manager.prose_stop.nudge_scheduled",
+    );
+  }
+
+  private scheduleProseStopNudge(
+    agentId: string,
+    detail: { pattern?: string; source?: string },
+  ): void {
+    const existing = this.proseStopPendingNudges.get(agentId);
+    if (existing?.timer) {
+      clearTimeout(existing.timer);
+    }
+    this.proseStopPendingNudges.set(agentId, { timer: null });
+    const timer = setTimeout(() => {
+      const pending = this.proseStopPendingNudges.get(agentId);
+      if (!pending) {
+        return;
+      }
+      pending.timer = null;
+      this.proseStopPendingNudges.delete(agentId);
+      const prompt = formatSystemNotificationPrompt(formatProseStopNudgePrompt(detail));
+      void (async () => {
+        try {
+          for await (const _event of this.streamAgent(agentId, prompt)) {
+            // Drain until the nudge turn settles; events broadcast via subscribers.
+          }
+        } catch (nudgeError) {
+          this.proseStopActive.delete(agentId);
+          this.logger.warn({ err: nudgeError, agentId }, "agent.manager.prose_stop.nudge_failed");
+        }
+      })();
+    }, 0);
+    this.proseStopPendingNudges.set(agentId, { timer });
+  }
+
+  private scheduleRetriableTurnRetry(
+    agentId: string,
+    attempt: number,
+    delayMs: number,
+    error: string,
+  ): void {
+    const existing = this.retriableTurnRetries.get(agentId);
+    if (existing?.timer) {
+      clearTimeout(existing.timer);
+    }
+    this.retriableTurnRetries.set(agentId, { attempt, timer: null });
+    const timer = setTimeout(() => {
+      const pending = this.retriableTurnRetries.get(agentId);
+      if (!pending || pending.attempt !== attempt) {
+        return;
+      }
+      pending.timer = null;
+      this.logger.info({ agentId, attempt, delayMs, error }, "agent.manager.retriable_turn.retry");
+      const prompt = formatSystemNotificationPrompt(
+        formatRetriableContinuePrompt({ error, attempt }),
+      );
+      void (async () => {
+        try {
+          for await (const _event of this.streamAgent(agentId, prompt)) {
+            // Events broadcast via subscribers; drain until the continue turn settles.
+          }
+        } catch (retryError) {
+          this.logger.warn(
+            { err: retryError, agentId, attempt },
+            "agent.manager.retriable_turn.retry_failed",
+          );
+        }
+      })();
+    }, delayMs);
+    this.retriableTurnRetries.set(agentId, { attempt, timer });
   }
 
   private onStreamTurnCanceled(params: {
@@ -3766,6 +4197,8 @@ export class AgentManager {
       },
       "agent.manager.turn.canceled",
     );
+    this.clearRetriableTurnRetry(agent.id);
+    this.clearProseStopPendingNudge(agent.id);
     if (!isForegroundEvent && !agent.pendingReplacement) {
       agent.lifecycle = "idle";
     }
@@ -3945,6 +4378,7 @@ export class AgentManager {
     options?: { timestamp?: string },
   ): AgentTimelineRow {
     item = limitAgentTimelineItemContent(item);
+    item = this.applyMcpAskQuestionTimelineDisguise(agentId, item);
     const row = this.timelineStore.append(agentId, item, options);
     this.enqueueDurableTimelineAppend(agentId, row);
     return row;

@@ -384,6 +384,7 @@ export interface PaseoDaemonConfig {
   autoArchiveAfterMerge?: boolean;
   enableTerminalAgentHooks?: boolean;
   appendSystemPrompt?: string;
+  proseStop?: { enabled: boolean };
   terminalProfiles?: TerminalProfile[];
   staticDir: string;
   mcpDebug: boolean;
@@ -505,6 +506,7 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
     autoArchiveAfterMerge: config.autoArchiveAfterMerge ?? false,
     enableTerminalAgentHooks: config.enableTerminalAgentHooks ?? false,
     appendSystemPrompt: config.appendSystemPrompt ?? "",
+    proseStop: { enabled: config.proseStop?.enabled ?? true },
   };
 
   if (config.terminalProfiles !== undefined) {
@@ -1626,6 +1628,10 @@ export async function createPaseoDaemon(
               kanbanService,
               workflowService,
             );
+            agentManager.configureProseStop({
+              getProseStopEnabled: () => daemonConfigStore.get().proseStop.enabled !== false,
+              getLlamaService: () => wsServer?.getLlamaService() ?? null,
+            });
             if (relayEnabled) {
               const offer = await createConnectionOfferV2({
                 serverId,

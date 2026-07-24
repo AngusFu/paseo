@@ -582,6 +582,13 @@ export class AgentManager {
   private readonly backgroundTasks = new Set<Promise<void>>();
   private readonly agentRegistrationTasks = new Set<Promise<void>>();
   private readonly inFlightAgentCloses = new Map<string, Promise<void>>();
+  // Pending questions raised by the in-daemon `ask_question` MCP tool. These are
+  // surfaced as `kind:"question"` permission requests but have no provider session
+  // to respond to — the tool call itself is the waiter, so we resolve it here.
+  private readonly mcpQuestionResolvers = new Map<
+    string,
+    (response: AgentPermissionResponse | null) => void
+  >();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
   private readonly mcpAuthToken: string | null;
@@ -2269,11 +2276,93 @@ export class AgentManager {
     });
   }
 
+  /**
+   * Raise a question to the user from the in-daemon `ask_question` MCP tool and
+   * block until the user answers or dismisses it. The question is surfaced as a
+   * `kind:"question"` permission request so it renders in the existing question
+   * form UI. Resolves with the user's response, or `null` if the wait was
+   * withdrawn (agent interrupted, or the caller's request was aborted).
+   */
+  async askAgentQuestion(input: {
+    agentId: string;
+    questions: unknown[];
+    title?: string;
+    signal?: AbortSignal;
+  }): Promise<AgentPermissionResponse | null> {
+    const agent = this.requireAgent(input.agentId);
+    if (agent.internal) {
+      throw new Error("ask_question is not available to internal agents");
+    }
+    const requestId = `mcp-question-${this.idFactory()}`;
+    const request: AgentPermissionRequest = {
+      id: requestId,
+      provider: agent.provider,
+      name: "ask_question",
+      kind: "question",
+      ...(input.title ? { title: input.title } : {}),
+      input: { questions: input.questions },
+    };
+    return await new Promise<AgentPermissionResponse | null>((resolveWaiter) => {
+      this.mcpQuestionResolvers.set(requestId, resolveWaiter);
+      if (input.signal) {
+        if (input.signal.aborted) {
+          this.settleMcpQuestion(input.agentId, requestId, null);
+          return;
+        }
+        input.signal.addEventListener(
+          "abort",
+          () => this.settleMcpQuestion(input.agentId, requestId, null),
+          { once: true },
+        );
+      }
+      const hadPendingPermissions = agent.pendingPermissions.size > 0;
+      agent.pendingPermissions.set(requestId, request);
+      if (!hadPendingPermissions) {
+        this.broadcastAgentAttention(agent, "permission");
+      }
+      this.touchUpdatedAt(agent);
+      this.emitState(agent);
+    });
+  }
+
+  /**
+   * Settle a pending `ask_question` waiter and clear its permission request.
+   * No-op (returns false) when the request id is not an MCP-owned question, so
+   * callers can safely probe before falling through to provider handling.
+   */
+  private settleMcpQuestion(
+    agentId: string,
+    requestId: string,
+    response: AgentPermissionResponse | null,
+  ): boolean {
+    const resolveWaiter = this.mcpQuestionResolvers.get(requestId);
+    if (!resolveWaiter) {
+      return false;
+    }
+    this.mcpQuestionResolvers.delete(requestId);
+    const agent = this.agents.get(agentId);
+    if (agent?.pendingPermissions.delete(requestId)) {
+      this.dispatchStream(agentId, {
+        type: "permission_resolved",
+        provider: agent.provider,
+        requestId,
+        resolution: response ?? { behavior: "deny", message: "Question dismissed" },
+      });
+      this.touchUpdatedAt(agent);
+      this.emitState(agent);
+    }
+    resolveWaiter(response);
+    return true;
+  }
+
   async respondToPermission(
     agentId: string,
     requestId: string,
     response: AgentPermissionResponse,
   ): Promise<AgentPermissionResult | void> {
+    if (this.settleMcpQuestion(agentId, requestId, response)) {
+      return;
+    }
     const agent = this.requireAgent(agentId);
     agent.inFlightPermissionResponses.add(requestId);
 
@@ -3746,6 +3835,10 @@ export class AgentManager {
     message: string,
   ): void {
     for (const [requestId] of agent.pendingPermissions) {
+      // MCP `ask_question` waiters own their own resolution/dispatch.
+      if (this.settleMcpQuestion(agent.id, requestId, null)) {
+        continue;
+      }
       agent.pendingPermissions.delete(requestId);
       if (!options?.fromHistory) {
         this.dispatchStream(agent.id, {

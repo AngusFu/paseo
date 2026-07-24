@@ -1247,6 +1247,98 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     });
   }
 
+  const AskQuestionOptionSchema = z.object({
+    label: z.string().min(1).describe("Option label shown to the user."),
+    description: z
+      .string()
+      .optional()
+      .describe("Optional one-line explanation of what choosing this option means."),
+  });
+  const AskQuestionItemSchema = z.object({
+    question: z.string().min(1).describe("The full question to ask the user."),
+    header: z
+      .string()
+      .min(1)
+      .describe(
+        "Short label/category for this question. Also the key in the returned answers map.",
+      ),
+    options: z
+      .array(AskQuestionOptionSchema)
+      .default([])
+      .describe("Selectable options. Leave empty for a free-text answer."),
+    multiSelect: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe("Allow selecting more than one option."),
+    allowOther: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe("Allow a free-text 'Other' answer in addition to the options."),
+    allowEmpty: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe("Allow submitting without an answer for this question."),
+    placeholder: z.string().optional().describe("Placeholder for the free-text input."),
+  });
+  registerTool(
+    "ask_question",
+    {
+      title: "Ask the user a question",
+      description:
+        "Ask the user one or more multiple-choice (or free-text) questions and block until they answer in the Paseo app/web/desktop UI. Use this when you need a decision or clarification and your own environment has no question tool. Returns the user's answers keyed by each question's header, or dismissed=true if the user dismissed it.",
+      inputSchema: {
+        title: z.string().optional().describe("Optional short title shown above the questions."),
+        questions: z
+          .array(AskQuestionItemSchema)
+          .min(1, "at least one question is required")
+          .describe("Questions to ask. Prefer 1-4 questions with 2-4 options each."),
+      },
+      outputSchema: {
+        answers: z
+          .record(z.string(), z.string())
+          .describe(
+            "Answers keyed by each question's header. Multi-select joins labels with ', '.",
+          ),
+        dismissed: z
+          .boolean()
+          .describe("True if the user dismissed the question without answering."),
+      },
+    },
+    async (args, context) => {
+      if (!callerAgentId) {
+        throw new Error("ask_question requires an agent-scoped tool session");
+      }
+      const response = await agentManager.askAgentQuestion({
+        agentId: callerAgentId,
+        questions: args.questions,
+        ...(args.title ? { title: args.title } : {}),
+        ...(context?.signal ? { signal: context.signal } : {}),
+      });
+      if (!response || response.behavior === "deny") {
+        return {
+          content: [],
+          structuredContent: ensureValidJson({ answers: {}, dismissed: true }),
+        };
+      }
+      const rawAnswers = response.updatedInput?.answers;
+      const answers: Record<string, string> = {};
+      if (rawAnswers && typeof rawAnswers === "object") {
+        for (const [key, value] of Object.entries(rawAnswers as Record<string, unknown>)) {
+          if (typeof value === "string") {
+            answers[key] = value;
+          }
+        }
+      }
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ answers, dismissed: false }),
+      };
+    },
+  );
+
   registerTool(
     "create_workspace",
     {

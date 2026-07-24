@@ -8530,3 +8530,106 @@ test("onWorkspaceStateMayHaveChanged is not called for running shell tool calls"
 
   expect(onWorkspaceStateMayHaveChanged).not.toHaveBeenCalled();
 });
+
+async function createAskQuestionFixture(): Promise<{
+  manager: AgentManager;
+  agentId: string;
+  cleanup: () => void;
+}> {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-ask-question-"));
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient("codex") },
+    registry: new AgentStorage(join(workdir, "agents"), logger),
+    logger,
+  });
+  const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  return {
+    manager,
+    agentId: agent.id,
+    cleanup: () => rmSync(workdir, { recursive: true, force: true }),
+  };
+}
+
+const ASK_QUESTION_QUESTIONS = [
+  {
+    question: "Which environment should I deploy to?",
+    header: "Env",
+    options: [{ label: "staging" }, { label: "production" }],
+  },
+];
+
+test("askAgentQuestion surfaces a question permission and returns the user's answer", async () => {
+  const { manager, agentId, cleanup } = await createAskQuestionFixture();
+  try {
+    const questionPromise = manager.askAgentQuestion({
+      agentId,
+      title: "Deploy target",
+      questions: ASK_QUESTION_QUESTIONS,
+    });
+
+    const pending = manager.getPendingPermissions(agentId);
+    expect(pending).toHaveLength(1);
+    expect(pending[0].kind).toBe("question");
+    expect(pending[0].name).toBe("ask_question");
+    expect(pending[0].input).toEqual({ questions: ASK_QUESTION_QUESTIONS });
+
+    await manager.respondToPermission(agentId, pending[0].id, {
+      behavior: "allow",
+      updatedInput: { answers: { Env: "production" } },
+    });
+
+    await expect(questionPromise).resolves.toEqual({
+      behavior: "allow",
+      updatedInput: { answers: { Env: "production" } },
+    });
+    expect(manager.getPendingPermissions(agentId)).toHaveLength(0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("askAgentQuestion returns the deny response when the user dismisses", async () => {
+  const { manager, agentId, cleanup } = await createAskQuestionFixture();
+  try {
+    const questionPromise = manager.askAgentQuestion({
+      agentId,
+      questions: ASK_QUESTION_QUESTIONS,
+    });
+    const requestId = manager.getPendingPermissions(agentId)[0].id;
+
+    await manager.respondToPermission(agentId, requestId, {
+      behavior: "deny",
+      message: "Question dismissed",
+    });
+
+    await expect(questionPromise).resolves.toEqual({
+      behavior: "deny",
+      message: "Question dismissed",
+    });
+    expect(manager.getPendingPermissions(agentId)).toHaveLength(0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("askAgentQuestion resolves null and withdraws the question when the caller aborts", async () => {
+  const { manager, agentId, cleanup } = await createAskQuestionFixture();
+  try {
+    const controller = new AbortController();
+    const questionPromise = manager.askAgentQuestion({
+      agentId,
+      questions: ASK_QUESTION_QUESTIONS,
+      signal: controller.signal,
+    });
+    expect(manager.getPendingPermissions(agentId)).toHaveLength(1);
+
+    controller.abort();
+
+    await expect(questionPromise).resolves.toBeNull();
+    expect(manager.getPendingPermissions(agentId)).toHaveLength(0);
+  } finally {
+    cleanup();
+  }
+});

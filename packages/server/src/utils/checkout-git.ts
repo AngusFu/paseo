@@ -1242,6 +1242,12 @@ async function resolveBaseRefForCwd(
   };
 }
 
+// Names both refs rather than labelling either one correct: a caller's ref can be stale, but the
+// stored ref can equally be wrong, so the message states the two facts and leaves the diagnosis open.
+function baseRefMismatchError(refs: { stored: string; requested: string }): Error {
+  return new Error(`Base ref mismatch: stored ${refs.stored}, requested ${refs.requested}`);
+}
+
 // The stored base ref is the source of truth; a caller-supplied base ref is only an echo of a
 // previously reported status, so a divergence means the caller is working from a stale view.
 // Both sides are quoted because the values can differ only by surrounding whitespace, and the
@@ -1261,9 +1267,7 @@ function assertRequestedBaseRefMatchesStored(input: {
     { cwd, storedBaseRef, requestedBaseRef },
     "Requested base ref does not match the base ref stored for this worktree",
   );
-  throw new Error(
-    `Base ref mismatch: expected ${JSON.stringify(storedBaseRef)}, got ${JSON.stringify(requestedBaseRef)}`,
-  );
+  throw baseRefMismatchError({ stored: storedBaseRef, requested: requestedBaseRef });
 }
 
 async function isWorkingTreeDirty(cwd: string, context?: CheckoutContext): Promise<boolean> {

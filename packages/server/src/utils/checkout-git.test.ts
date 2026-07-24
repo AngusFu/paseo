@@ -3026,7 +3026,7 @@ const x = 1;
     expect(baseDiff.diff).not.toContain("file.txt");
   });
 
-  it("names both sides when the requested base ref differs from the stored one", async () => {
+  it("names both refs when the requested base ref differs from the stored one", async () => {
     const worktree = await createLegacyWorktreeForTest({
       branchName: "feature",
       cwd: repoDir,
@@ -3037,23 +3037,23 @@ const x = 1;
 
     // "origin/main" normalizes to "main" on write, so the stored ref is the bare name and a
     // caller echoing the remote-qualified form is a genuine mismatch. The message has to name
-    // the stored ref on the "expected" side — it previously printed the requested ref twice,
-    // rendering as "expected origin/main, got origin/main".
+    // both refs — it previously printed the requested ref twice, rendering as
+    // "expected origin/main, got origin/main".
     await expect(
       getCheckoutDiff(
         worktree.worktreePath,
         { mode: "base", baseRef: "origin/main" },
         { paseoHome },
       ),
-    ).rejects.toThrow('Base ref mismatch: expected "main", got "origin/main"');
+    ).rejects.toThrow("Base ref mismatch: stored main, requested origin/main");
 
     await expect(
       mergeToBase(worktree.worktreePath, { baseRef: "develop" }, { paseoHome }),
-    ).rejects.toThrow('Base ref mismatch: expected "main", got "develop"');
+    ).rejects.toThrow("Base ref mismatch: stored main, requested develop");
 
     await expect(
       mergeFromBase(worktree.worktreePath, { baseRef: "develop" }, { paseoHome }),
-    ).rejects.toThrow('Base ref mismatch: expected "main", got "develop"');
+    ).rejects.toThrow("Base ref mismatch: stored main, requested develop");
   });
 
   it("reports a removed worktree directory as missing rather than merely non-git", async () => {

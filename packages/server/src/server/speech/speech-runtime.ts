@@ -40,6 +40,14 @@ export interface SpeechReadinessState {
   missingModelIds: LocalSpeechModelId[];
 }
 
+export interface SpeechDownloadModelProgress {
+  percent: number;
+  bytesPerSecond: number;
+  receivedBytes: number;
+  totalBytes: number | null;
+  phase: "download" | "extract" | "complete";
+}
+
 export interface SpeechReadinessSnapshot {
   generatedAt: string;
   requiredLocalModelIds: LocalSpeechModelId[];
@@ -47,6 +55,8 @@ export interface SpeechReadinessSnapshot {
   download: {
     inProgress: boolean;
     error: string | null;
+    /** Per-model download progress. Only present while a download is active. */
+    progressByModelId: Partial<Record<LocalSpeechModelId, SpeechDownloadModelProgress>>;
   };
   realtimeVoice: SpeechReadinessState;
   dictation: SpeechReadinessState;
@@ -349,6 +359,16 @@ export interface SpeechService {
   resolveDictationSttLanguage: () => string;
   getReadiness: () => SpeechReadinessSnapshot;
   onReadinessChange: (listener: (snapshot: SpeechReadinessSnapshot) => void) => () => void;
+  /**
+   * Swap the active speech configuration at runtime (e.g. after the user picks a
+   * different dictation STT model) and re-reconcile providers in place. Resolvers
+   * read the live config lazily, so callers holding `resolveDictationStt` keep working.
+   * Missing models trigger the existing background-download + readiness flow.
+   */
+  reconfigure: (next: {
+    speechConfig: PaseoSpeechConfig | null;
+    openaiConfig?: PaseoOpenAIConfig;
+  }) => void;
   start: () => void;
   stop: () => void;
   ready: Promise<void>;
@@ -360,10 +380,11 @@ export function createSpeechService(params: {
   speechConfig?: PaseoSpeechConfig;
 }): SpeechService {
   const logger = params.logger.child({ module: "speech-runtime" });
-  const speechConfig = params.speechConfig ?? null;
-  const openaiConfig = params.openaiConfig;
-  const providers = resolveRequestedSpeechProviders(speechConfig);
-  const requestedProviders = describeRequestedProviders(providers);
+  // Mutable so reconfigure() can swap the active config at runtime; resolvers read these live.
+  let speechConfig = params.speechConfig ?? null;
+  let openaiConfig = params.openaiConfig;
+  let providers = resolveRequestedSpeechProviders(speechConfig);
+  let requestedProviders = describeRequestedProviders(providers);
 
   validateOpenAiCredentialRequirements({
     providers,
@@ -395,6 +416,9 @@ export function createSpeechService(params: {
   let missingLocalModelIds: LocalSpeechModelId[] = [];
   let backgroundDownloadInProgress = false;
   let backgroundDownloadError: string | null = null;
+  /** Live per-model download progress while background downloads run. */
+  let downloadProgressByModelId: Partial<Record<LocalSpeechModelId, SpeechDownloadModelProgress>> =
+    {};
   let stopped = false;
   let monitorTimeout: ReturnType<typeof setTimeout> | null = null;
   let reconcileInFlight: Promise<void> | null = null;
@@ -435,6 +459,7 @@ export function createSpeechService(params: {
       download: {
         inProgress: backgroundDownloadInProgress,
         error: backgroundDownloadError,
+        progressByModelId: { ...downloadProgressByModelId },
       },
       realtimeVoice: {
         ...realtimeVoice,
@@ -599,6 +624,19 @@ export function createSpeechService(params: {
 
     backgroundDownloadInProgress = true;
     backgroundDownloadError = null;
+    downloadProgressByModelId = Object.fromEntries(
+      modelIds.map((id) => [
+        id,
+        {
+          percent: 0,
+          bytesPerSecond: 0,
+          receivedBytes: 0,
+          totalBytes: null,
+          phase: "download" as const,
+        },
+      ]),
+    );
+    // Always recompute so list_models sees live progress immediately.
     publishReadinessIfChanged();
 
     logger.info(
@@ -609,17 +647,74 @@ export function createSpeechService(params: {
       "Starting background download for missing local speech models",
     );
 
+    // Throttle readiness publishes so high-frequency byte callbacks don't flood listeners.
+    let lastProgressPublishAt = 0;
+    const reportProgress = (
+      modelId: LocalSpeechModelId,
+      next: SpeechDownloadModelProgress,
+    ): void => {
+      const previous = downloadProgressByModelId[modelId];
+      const percentUnchanged =
+        previous !== undefined &&
+        next.percent <= previous.percent &&
+        next.phase === previous.phase &&
+        next.percent < 100;
+      // Still update speed even when percent stalls briefly.
+      const speedChanged =
+        previous === undefined ||
+        Math.abs(next.bytesPerSecond - previous.bytesPerSecond) > 1024 ||
+        next.receivedBytes !== previous.receivedBytes;
+      if (percentUnchanged && !speedChanged) {
+        return;
+      }
+      downloadProgressByModelId = {
+        ...downloadProgressByModelId,
+        [modelId]: next,
+      };
+      const now = Date.now();
+      if (next.percent >= 100 || now - lastProgressPublishAt >= 200) {
+        lastProgressPublishAt = now;
+        // Force fingerprint change: progress lives inside download.progressByModelId.
+        lastReadinessFingerprint = null;
+        publishReadinessIfChanged();
+      }
+    };
+
     void (async () => {
       try {
         await ensureLocalSpeechModels({
           modelsDir,
           modelIds,
           logger,
+          onProgress: (progress) => {
+            reportProgress(progress.modelId, {
+              percent: progress.percent,
+              bytesPerSecond: progress.bytesPerSecond,
+              receivedBytes: progress.receivedBytes,
+              totalBytes: progress.totalBytes,
+              phase: progress.phase,
+            });
+          },
         });
         await runReconcile();
         backgroundDownloadError = null;
+        downloadProgressByModelId = Object.fromEntries(
+          modelIds.map((id) => [
+            id,
+            {
+              percent: 100,
+              bytesPerSecond: 0,
+              receivedBytes: downloadProgressByModelId[id]?.receivedBytes ?? 0,
+              totalBytes: downloadProgressByModelId[id]?.totalBytes ?? null,
+              phase: "complete" as const,
+            },
+          ]),
+        );
+        lastReadinessFingerprint = null;
+        publishReadinessIfChanged();
       } catch (error) {
         backgroundDownloadError = error instanceof Error ? error.message : String(error);
+        lastReadinessFingerprint = null;
         publishReadinessIfChanged();
         logger.error(
           {
@@ -633,6 +728,11 @@ export function createSpeechService(params: {
         await refreshMissingLocalModels().catch((error) => {
           logger.warn({ err: error }, "Failed to refresh local speech model status after download");
         });
+        // Drop completed progress so the next download starts clean.
+        if (!backgroundDownloadError) {
+          downloadProgressByModelId = {};
+        }
+        lastReadinessFingerprint = null;
         publishReadinessIfChanged();
         scheduleMonitor();
       }
@@ -708,6 +808,39 @@ export function createSpeechService(params: {
     localCleanup();
   };
 
+  const reconfigure = (next: {
+    speechConfig: PaseoSpeechConfig | null;
+    openaiConfig?: PaseoOpenAIConfig;
+  }): void => {
+    if (stopped) {
+      return;
+    }
+    speechConfig = next.speechConfig;
+    if (next.openaiConfig !== undefined) {
+      openaiConfig = next.openaiConfig;
+    }
+    providers = resolveRequestedSpeechProviders(speechConfig);
+    requestedProviders = describeRequestedProviders(providers);
+    validateOpenAiCredentialRequirements({ providers, openaiConfig, logger });
+    logger.info({ requestedProviders }, "Speech provider reconfiguration requested");
+
+    void (async () => {
+      try {
+        await runReconcile();
+        // Mirror start(): kick off background downloads for any newly required models.
+        const snapshot = computeReadinessSnapshot();
+        if (snapshot.voiceFeature.enabled && !snapshot.voiceFeature.available) {
+          if (missingLocalModelIds.length > 0) {
+            startBackgroundDownload();
+          }
+          scheduleMonitor();
+        }
+      } catch (error) {
+        logger.error({ err: error }, "Speech reconfigure reconcile failed");
+      }
+    })();
+  };
+
   return {
     resolveTurnDetection: () => turnDetectionService,
     resolveStt: () => sttService,
@@ -715,8 +848,16 @@ export function createSpeechService(params: {
     resolveTts: () => ttsService,
     resolveDictationStt: () => dictationSttService,
     resolveDictationSttLanguage: () => speechConfig?.sttLanguages?.dictation ?? "en",
-    getReadiness: () => lastPublishedReadinessSnapshot ?? computeReadinessSnapshot(),
+    getReadiness: () => {
+      // During downloads, always recompute so list_models sees live percent/speed
+      // even when readiness-publish is throttled.
+      if (backgroundDownloadInProgress) {
+        return computeReadinessSnapshot();
+      }
+      return lastPublishedReadinessSnapshot ?? computeReadinessSnapshot();
+    },
     onReadinessChange: subscribeSpeechReadiness,
+    reconfigure,
     start,
     stop,
     ready,

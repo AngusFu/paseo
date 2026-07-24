@@ -2045,6 +2045,23 @@ export const zhCN: TranslationResources = {
       agents: {
         unavailable: "连接到这个 Host 以管理 Agent",
       },
+      dictation: {
+        title: "听写模型",
+        hint: "麦克风按钮使用的语音转写模型。SenseVoice 支持中文、粤语、日语和韩语。",
+        loading: "正在加载模型…",
+        notInstalled: "尚未下载",
+        downloading: "下载中…",
+        downloadingPercent: "下载中 {{percent}}%",
+        downloadingPercentWithSpeed: "下载中 {{percent}}% · {{speed}}",
+        downloadSpeed: "{{speed}}",
+        download: "下载",
+        apply: "应用",
+        applied: "已应用",
+        running: "运行中",
+        starting: "启动中…",
+        stopped: "未启动",
+        selectErrorTitle: "无法切换听写模型",
+      },
       workspaces: {
         unavailable: "连接到这个 Host 以管理 Workspace",
       },

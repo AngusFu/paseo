@@ -2116,6 +2116,23 @@ export const es: TranslationResources = {
       agents: {
         unavailable: "Connect to this host to manage agents",
       },
+      dictation: {
+        title: "Modelo de dictado",
+        hint: "Modelo de voz a texto para el botón del micrófono. SenseVoice añade chino, cantonés, japonés y coreano.",
+        loading: "Cargando modelos…",
+        notInstalled: "Aún no descargado",
+        downloading: "Descargando…",
+        downloadingPercent: "Descargando {{percent}}%",
+        downloadingPercentWithSpeed: "Descargando {{percent}}% · {{speed}}",
+        downloadSpeed: "{{speed}}",
+        download: "Descargar",
+        apply: "Aplicar",
+        applied: "Aplicado",
+        running: "En ejecución",
+        starting: "Iniciando…",
+        stopped: "No iniciado",
+        selectErrorTitle: "No se pudo cambiar el modelo de dictado",
+      },
       workspaces: {
         unavailable: "Connect to this host to manage workspaces",
       },

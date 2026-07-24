@@ -2106,6 +2106,23 @@ export const ru: TranslationResources = {
       agents: {
         unavailable: "Connect to this host to manage agents",
       },
+      dictation: {
+        title: "Модель диктовки",
+        hint: "Модель распознавания речи для кнопки микрофона. SenseVoice добавляет китайский, кантонский, японский и корейский.",
+        loading: "Загрузка моделей…",
+        notInstalled: "Ещё не загружено",
+        downloading: "Загрузка…",
+        downloadingPercent: "Загрузка {{percent}}%",
+        downloadingPercentWithSpeed: "Загрузка {{percent}}% · {{speed}}",
+        downloadSpeed: "{{speed}}",
+        download: "Скачать",
+        apply: "Применить",
+        applied: "Применено",
+        running: "Запущена",
+        starting: "Запуск…",
+        stopped: "Не запущена",
+        selectErrorTitle: "Не удалось переключить модель диктовки",
+      },
       workspaces: {
         unavailable: "Connect to this host to manage workspaces",
       },

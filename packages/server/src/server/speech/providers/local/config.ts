@@ -5,10 +5,10 @@ import { z } from "zod";
 import type { PersistedConfig } from "../../../persisted-config.js";
 import type { RequestedSpeechProviders } from "../../speech-types.js";
 import {
-  DEFAULT_LOCAL_STT_MODEL,
   DEFAULT_LOCAL_TTS_MODEL,
   LocalSttModelIdSchema,
   LocalTtsModelIdSchema,
+  resolveDefaultLocalSttModel,
   type LocalSpeechModelId,
   type LocalSttModelId,
   type LocalTtsModelId,
@@ -35,7 +35,10 @@ export interface ResolvedLocalSpeechConfig {
 export type { LocalSpeechModelId, LocalSttModelId, LocalTtsModelId };
 
 const DEFAULT_LOCAL_MODELS_SUBDIR = path.join("models", "local-speech");
-const DEFAULT_STT_LANGUAGE = "en";
+// FORK: 默认语音转写语言改为中文（上游默认为 "en"）。dictation / voice 的默认本地模型会
+// 经 resolveDefaultLocalSttModel 自动选用多语言的 SenseVoice（中/粤/英/日/韩），从而开箱即可
+// 识别中文。用户仍可通过设置、env 或 persisted config 覆盖。合并上游时请勿还原为 "en"。
+const DEFAULT_STT_LANGUAGE = "zh";
 
 export interface LocalSpeechSttLanguageConfig {
   dictation: string;
@@ -56,8 +59,8 @@ const OptionalIntegerSchema = NumberLikeSchema.pipe(
 const LocalSpeechResolutionSchema = z.object({
   includeProviderConfig: z.boolean(),
   modelsDir: z.string().trim().min(1),
-  dictationLocalSttModel: LocalSttModelIdSchema.default(DEFAULT_LOCAL_STT_MODEL),
-  voiceLocalSttModel: LocalSttModelIdSchema.default(DEFAULT_LOCAL_STT_MODEL),
+  dictationLocalSttModel: LocalSttModelIdSchema.optional(),
+  voiceLocalSttModel: LocalSttModelIdSchema.optional(),
   voiceLocalTtsModel: LocalTtsModelIdSchema.default(DEFAULT_LOCAL_TTS_MODEL),
   dictationLanguage: LanguageSchema,
   voiceLanguage: LanguageSchema,
@@ -157,7 +160,6 @@ function buildLocalSpeechResolutionInput(params: {
         providers.dictationStt.enabled,
         persisted.features?.dictation?.stt?.model,
       ),
-      DEFAULT_LOCAL_STT_MODEL,
     ]),
     voiceLocalSttModel: firstDefinedValue<string>([
       env.PASEO_VOICE_LOCAL_STT_MODEL,
@@ -166,7 +168,6 @@ function buildLocalSpeechResolutionInput(params: {
         providers.voiceStt.enabled,
         persisted.features?.voiceMode?.stt?.model,
       ),
-      DEFAULT_LOCAL_STT_MODEL,
     ]),
     voiceLocalTtsModel: firstDefinedValue<string>([
       env.PASEO_VOICE_LOCAL_TTS_MODEL,
@@ -213,8 +214,11 @@ export function resolveLocalSpeechConfig(params: {
       ? {
           modelsDir: parsed.modelsDir,
           models: {
-            dictationStt: parsed.dictationLocalSttModel,
-            voiceStt: parsed.voiceLocalSttModel,
+            dictationStt:
+              parsed.dictationLocalSttModel ??
+              resolveDefaultLocalSttModel(parsed.dictationLanguage),
+            voiceStt:
+              parsed.voiceLocalSttModel ?? resolveDefaultLocalSttModel(parsed.voiceLanguage),
             voiceTts: parsed.voiceLocalTtsModel,
             ...(resolvedVoiceTtsSpeakerId !== undefined
               ? { voiceTtsSpeakerId: resolvedVoiceTtsSpeakerId }

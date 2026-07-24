@@ -135,6 +135,7 @@ import { createSpeechService } from "./speech/speech-runtime.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { QuestionStore } from "./question/store.js";
+import { createQuestionWaitSocket } from "./question/wait-socket.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
 import { createAgentMcpServer } from "./agent/mcp-server.js";
 import {
@@ -926,6 +927,11 @@ export async function createPaseoDaemon(
     questionStore,
     logger,
   });
+  const questionWaitSocket = createQuestionWaitSocket({
+    paseoHome: config.paseoHome,
+    waitInboxQuestion: (input) => agentManager.waitInboxQuestion(input),
+    logger: logger.child({ module: "question-wait-socket" }),
+  });
 
   const detachAgentStoragePersistence = attachAgentStoragePersistence(
     logger,
@@ -1694,6 +1700,7 @@ export async function createPaseoDaemon(
       // model loading doesn't block the server from accepting connections.
       speechService.start();
       scriptHealthMonitor.start();
+      await questionWaitSocket?.start();
     } catch (error) {
       await serviceProxy.stopStandalone().catch(() => undefined);
       if (mainStarted) {
@@ -1725,6 +1732,7 @@ export async function createPaseoDaemon(
     if (wsServer) {
       await wsServer.close();
     }
+    await questionWaitSocket?.stop().catch(() => undefined);
     await serviceProxy.stopStandalone();
     // Force-drop remaining sockets so httpServer.close() resolves promptly.
     // We've already closed wsServer (which sent ws-layer close frames) and

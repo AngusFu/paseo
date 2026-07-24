@@ -1385,6 +1385,9 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(diffContextExpand): added in v0.1.106, drop the gate when floor >= v0.1.106.
         diffContextExpand: true,
         localLlm: true,
+        // COMPAT(questionWaitSocket): added in v0.1.114, remove gate after 2027-01-25.
+        // Local NDJSON wait socket at $PASEO_HOME/question-wait.sock (unix only).
+        questionWaitSocket: process.platform !== "win32",
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: true,
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.

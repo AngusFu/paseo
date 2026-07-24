@@ -88,6 +88,11 @@ import {
   isPaseoAskQuestionToolCall,
 } from "./ask-question-timeline.js";
 import { isPlanExecuteQuestionRequestId } from "./plan-execute-question.js";
+import {
+  extractInboxQuestionsFromPermission,
+  headerKeyedAnswersFromPermissionResponse,
+  isNativeQuestionPermission,
+} from "../question/native-mirror.js";
 import type { QuestionStore } from "../question/store.js";
 import type {
   InboxQuestionSource,
@@ -3010,6 +3015,7 @@ export class AgentManager {
       return;
     }
     const agent = this.requireAgent(agentId);
+    const pendingRequest = agent.pendingPermissions.get(requestId) ?? null;
     agent.inFlightPermissionResponses.add(requestId);
 
     try {
@@ -3032,10 +3038,68 @@ export class AgentManager {
         this.dispatchStream(agent.id, bufferedResolution, { timestamp: new Date().toISOString() });
       }
 
+      if (pendingRequest && isNativeQuestionPermission(pendingRequest)) {
+        void this.mirrorNativeQuestionSettlement({
+          agentId: agent.id,
+          workspaceId: agent.workspaceId,
+          request: pendingRequest,
+          response,
+        });
+      }
+
       return result;
     } finally {
       agent.inFlightPermissionResponses.delete(requestId);
       agent.bufferedPermissionResolutions.delete(requestId);
+    }
+  }
+
+  /**
+   * Audit-only: persist a settled native AskUserQuestion into the inbox so
+   * Approvals can show it under Resolved. Never creates a second answerable UI.
+   */
+  private async mirrorNativeQuestionSettlement(input: {
+    agentId: string;
+    workspaceId?: string;
+    request: AgentPermissionRequest;
+    response: AgentPermissionResponse;
+  }): Promise<void> {
+    if (!this.questionStore) {
+      return;
+    }
+    const questions = extractInboxQuestionsFromPermission(input.request);
+    if (!questions) {
+      return;
+    }
+    try {
+      const created = await this.questionStore.create({
+        agentId: input.agentId,
+        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+        ...(typeof input.request.title === "string" && input.request.title.trim().length > 0
+          ? { title: input.request.title.trim() }
+          : {}),
+        questions,
+        source: "native_mirror",
+        mcpRequestId: input.request.id,
+      });
+      if (input.response.behavior === "deny") {
+        await this.questionStore.markDismissed(created.id);
+        return;
+      }
+      const answers = headerKeyedAnswersFromPermissionResponse({
+        questions,
+        response: input.response,
+      });
+      if (!answers) {
+        await this.questionStore.markDismissed(created.id);
+        return;
+      }
+      await this.questionStore.markAnswered(created.id, answers);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, agentId: input.agentId, requestId: input.request.id },
+        "Failed to mirror native question into inbox",
+      );
     }
   }
 

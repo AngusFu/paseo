@@ -8797,3 +8797,78 @@ test("askAgentQuestion persists and settles the Question Inbox record", async ()
     cleanup();
   }
 });
+
+test("respondToPermission mirrors settled native AskUserQuestion into the inbox", async () => {
+  const { manager, agentId, cleanup } = await createAskQuestionFixture({
+    withQuestionStore: true,
+  });
+  try {
+    const agent = manager.getAgent(agentId)!;
+    agent.pendingPermissions.set("permission-native-1", {
+      id: "permission-native-1",
+      provider: "claude",
+      name: "AskUserQuestion",
+      kind: "question",
+      title: "Deploy",
+      input: {
+        questions: ASK_QUESTION_QUESTIONS.map((question) => ({
+          ...question,
+          allowOther: true,
+        })),
+      },
+    });
+
+    await manager.respondToPermission(agentId, "permission-native-1", {
+      behavior: "allow",
+      updatedInput: { answers: { "Which environment should I deploy to?": "staging" } },
+    });
+
+    await vi.waitFor(async () => {
+      expect(await manager.listInboxQuestions({ status: "answered" })).toHaveLength(1);
+    });
+    const mirrored = await manager.listInboxQuestions({ status: "answered" });
+    expect(mirrored[0]).toMatchObject({
+      source: "native_mirror",
+      mcpRequestId: "permission-native-1",
+      title: "Deploy",
+      answers: { Env: "staging" },
+    });
+    expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("respondToPermission does not native-mirror MCP ask_question settlements", async () => {
+  const { manager, agentId, cleanup } = await createAskQuestionFixture({
+    withQuestionStore: true,
+  });
+  try {
+    const questionPromise = manager.askAgentQuestion({
+      agentId,
+      questions: ASK_QUESTION_QUESTIONS,
+    });
+    const requestId = manager.getPendingPermissions(agentId)[0].id;
+    expect(requestId.startsWith("mcp-question-")).toBe(true);
+
+    await vi.waitFor(async () => {
+      expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(1);
+    });
+    expect((await manager.listInboxQuestions({ status: "pending" }))[0]?.source).toBe("mcp");
+
+    await manager.respondToPermission(agentId, requestId, {
+      behavior: "allow",
+      updatedInput: { answers: { Env: "production" } },
+    });
+    await questionPromise;
+
+    await vi.waitFor(async () => {
+      expect(await manager.listInboxQuestions({ status: "answered" })).toHaveLength(1);
+    });
+    const answered = await manager.listInboxQuestions({ status: "answered" });
+    expect(answered[0]?.source).toBe("mcp");
+    expect(answered.every((question) => question.source !== "native_mirror")).toBe(true);
+  } finally {
+    cleanup();
+  }
+});

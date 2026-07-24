@@ -38,6 +38,7 @@ Only when MCP timed out or is unavailable (not on dismiss):
    paseo question create --agent "$PASEO_AGENT_ID" --source skill --title "…" --questions '[…]'
    paseo question wait <id> --timeout 30m
    ```
+   `paseo question wait` prefers `$PASEO_HOME/question-wait.sock` when present, then falls back to WS.
 3. Read `status` / `answers` from wait output. `dismissed`/status `dismissed` is final.
 
 ### Classify failures carefully

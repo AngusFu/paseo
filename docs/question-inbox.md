@@ -59,9 +59,11 @@ sequenceDiagram
 | Timeline disguise [`ask-question-timeline.ts`](../packages/server/src/server/agent/ask-question-timeline.ts) | Project MCP calls as Claude `AskUserQuestion` for consistent cards                                      |
 | UI [`ask-question-card.tsx`](../packages/app/src/components/ask-question-card.tsx)                           | Renders question + answers on the timeline                                                              |
 | Approvals page [`approvals-screen.tsx`](../packages/app/src/screens/approvals-screen.tsx)                    | Global inbox UI at `/approvals` — list/answer/dismiss without opening each agent tab                    |
+| Wait socket [`wait-socket.ts`](../packages/server/src/server/question/wait-socket.ts)                        | Local NDJSON waiter at `$PASEO_HOME/question-wait.sock`                                                 |
+| Native mirror [`native-mirror.ts`](../packages/server/src/server/question/native-mirror.ts)                  | Audit-write settled native AskUserQuestion into inbox (`source: native_mirror`)                         |
 | Prose-stop nudge [`nudge-prompt.ts`](../packages/server/src/server/agent/prose-stop/nudge-prompt.ts)         | Pushes agents away from prose and toward ask_question                                                   |
 
-**P1–P3 landed:** durable inbox + MCP persistence + `question.list/answer/create/wait` + CLI + `paseo-ask` skill + global Approvals page (`/approvals`). Optional unix-socket waiter and native AskUserQuestion mirroring are still open.
+**P1–P3 landed:** durable inbox + MCP persistence + `question.list/answer/create/wait` + CLI + `paseo-ask` skill + Approvals page + wait socket + native_mirror audit.
 
 ## Target shape
 
@@ -83,9 +85,9 @@ MCP `ask_question` and skill/CLI create **the same records**. Answering from the
 | Channel                                             | When                                                                                    |
 | --------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | MCP `ask_question`                                  | Happy path; create inbox row + wait (same as today’s permission wait, plus persistence) |
-| CLI `paseo question create \| wait \| answer \| ls` | Skill fallback and scripting; `wait` long-polls the daemon                              |
-| WS RPCs `question.*`                                | App UI (agent card + future Approvals); follow [rpc-namespacing.md](rpc-namespacing.md) |
-| Unix socket                                         | Phase 3 — optional low-latency waiter for hooks / non-CLI clients                       |
+| CLI `paseo question create \| wait \| answer \| ls` | Skill fallback and scripting; `wait` prefers `$PASEO_HOME/question-wait.sock` then WS   |
+| WS RPCs `question.*`                                | App UI (agent card + Approvals); follow [rpc-namespacing.md](rpc-namespacing.md)        |
+| Unix socket                                         | `$PASEO_HOME/question-wait.sock` — NDJSON `{"op":"wait",…}` (unix only; mode 0600)      |
 
 ### Skill (`paseo-ask`)
 
@@ -120,11 +122,11 @@ Architecture and policy only.
 - Timeout classifier in `packages/server/src/server/question/timeout.ts`; prose-stop nudge teaches the ladder.
 - User dismiss stays `dismissed=true` and must not trigger fallback.
 
-### P3 — Approvals page + extras ✅ (page) / open (extras)
+### P3 — Approvals page + extras ✅
 
 - Global Approvals UI at `/approvals` (sidebar entry) over inbox questions: pending/resolved filters, answer/dismiss via `question.answer`, open agent.
-- Optional unix socket waiter — not implemented.
-- Optional mirror of native AskUserQuestion answers into the inbox for audit — not implemented.
+- Unix socket waiter at `$PASEO_HOME/question-wait.sock` (NDJSON wait; advertised as `features.questionWaitSocket` on non-Windows).
+- Native AskUserQuestion settlements are mirrored into the inbox as `source: native_mirror` **after settle** (audit only — no second answerable UI).
 
 ## Risks
 

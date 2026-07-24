@@ -14,6 +14,9 @@ const DEFAULT_PINNED_TARGETS: PinnedTabTarget[] = [{ kind: "terminal" }, { kind:
 function applyDefaultPinnedTargets(pinned: PinnedTabTarget[]): PinnedTabTarget[] {
   const next = [...DEFAULT_PINNED_TARGETS];
   for (const target of pinned) {
+    // Per-definition workflow pins used to live in the new-tab menu; that list
+    // was replaced by a fixed header button, so keep them out of the pin row.
+    if (target.kind === "workflow") continue;
     if (!isTargetPinned(next, target)) {
       next.push(target);
     }
@@ -33,10 +36,11 @@ export const usePinnedTargetsStore = create<PinnedTargetsState>()(
       version: 1,
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<PinnedTargetsState> | null;
+        const pinned = persisted?.pinned ?? applyDefaultPinnedTargets([]);
         return {
           ...currentState,
           ...persisted,
-          pinned: persisted?.pinned ?? applyDefaultPinnedTargets([]),
+          pinned: pinned.filter((target) => target.kind !== "workflow"),
         };
       },
       storage: createJSONStorage(() => AsyncStorage),

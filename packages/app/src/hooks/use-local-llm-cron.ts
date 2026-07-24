@@ -152,5 +152,13 @@ export function useLocalLlmCron(serverId: string | null | undefined): UseLocalLl
     [client, languageCode, refreshStatus],
   );
 
-  return { supported, model, startDownload, generate, explain, isGenerating, isExplaining };
+  return {
+    supported: supported && model?.status === "ready",
+    model,
+    startDownload,
+    generate,
+    explain,
+    isGenerating,
+    isExplaining,
+  };
 }

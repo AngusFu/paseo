@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-// Local LLM service RPCs (docs/rpc-namespacing.md). The daemon runs a small
-// on-device model (node-llama-cpp sidecar) exposed as a lightweight generate
-// API — independent from agents. First consumer: natural-language → cron in
+// Local LLM service RPCs (docs/rpc-namespacing.md). The daemon proxies a
+// user-configured OpenAI-compatible HTTP backend for lightweight generate
+// calls — independent from agents. First consumer: natural-language → cron in
 // the schedule form.
 
 // ---------------------------------------------------------------------------
@@ -16,7 +16,7 @@ export const LlmLocalModelStateSchema = z.discriminatedUnion("status", [
     receivedBytes: z.number(),
     totalBytes: z.number().nullable(),
   }),
-  // Model file present on disk; loaded=true once the worker has it in memory.
+  // Backend configured and usable; loaded=true when the daemon can generate.
   z.object({ status: z.literal("ready"), loaded: z.boolean() }),
   z.object({ status: z.literal("error"), message: z.string() }),
 ]);

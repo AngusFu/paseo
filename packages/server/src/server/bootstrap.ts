@@ -385,6 +385,13 @@ export interface PaseoDaemonConfig {
   enableTerminalAgentHooks?: boolean;
   appendSystemPrompt?: string;
   proseStop?: { enabled: boolean };
+  localLlm?: {
+    baseUrl?: string;
+    apiKey?: string;
+    model?: string;
+    modelFilename?: string;
+    modelUrls?: string[];
+  };
   terminalProfiles?: TerminalProfile[];
   staticDir: string;
   mcpDebug: boolean;
@@ -508,6 +515,10 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
     appendSystemPrompt: config.appendSystemPrompt ?? "",
     proseStop: { enabled: config.proseStop?.enabled ?? true },
   };
+
+  if (config.localLlm !== undefined) {
+    initialConfig.localLlm = config.localLlm;
+  }
 
   if (config.terminalProfiles !== undefined) {
     initialConfig.terminalProfiles = config.terminalProfiles;

@@ -1,55 +1,46 @@
-import { fork, type ChildProcess } from "node:child_process";
-import { createWriteStream } from "node:fs";
-import fs from "node:fs/promises";
-import path from "node:path";
-import { Readable } from "node:stream";
-import { finished } from "node:stream/promises";
-import { fileURLToPath } from "node:url";
 import type { LlmLocalModelState } from "@getpaseo/protocol/llm/rpc-schemas";
 import type pino from "pino";
-import type {
-  LlmWorkerHistoryItem,
-  LlmWorkerParentToWorkerMessage,
-  LlmWorkerToParentMessage,
-} from "./worker-protocol.js";
 
-// The daemon's built-in local model: a 12B agentic Gemma fine-tune (Q4_K_M,
-// ~6.9GB) — noticeably better tool routing than the earlier 4B E4B build.
-// Sources are tried in order; the sufy CDN mirror first since it is fast from
-// networks where huggingface.co crawls. Overridable via the daemon config's
-// localLlm block (modelFilename + modelUrls, set together).
-const DEFAULT_MODEL_FILENAME = "gemma4-v2-Q4_K_M.gguf";
-const DEFAULT_MODEL_REPO_PATH = "yuxinlu1/gemma-4-12B-agentic-fable5-composer2.5-v2-3.5x-tau2-GGUF";
-const DEFAULT_MODEL_URLS = [
-  `https://hf-cdn.sufy.com/${DEFAULT_MODEL_REPO_PATH}/resolve/main/${DEFAULT_MODEL_FILENAME}`,
-  `https://huggingface.co/${DEFAULT_MODEL_REPO_PATH}/resolve/main/${DEFAULT_MODEL_FILENAME}`,
-  `https://hf-mirror.com/${DEFAULT_MODEL_REPO_PATH}/resolve/main/${DEFAULT_MODEL_FILENAME}`,
-];
+const DOWNLOAD_STUB_MESSAGE =
+  "Configure Local AI in host settings (base URL and model). Built-in model download is no longer available.";
 
-export interface LlmModelConfig {
+export interface LocalLlmConfig {
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  // COMPAT(localLlmGguf): added in v0.1.110, remove after 2027-01-16.
   modelFilename?: string;
+  // COMPAT(localLlmGguf): added in v0.1.110, remove after 2027-01-16.
   modelUrls?: string[];
 }
 
-interface ResolvedModelConfig {
-  filename: string;
-  urls: string[];
+export type LlmModelConfig = LocalLlmConfig;
+
+// Prior turns replayed before prompting. Callers resend the full history each
+// request because the backend is stateless.
+export interface LlmChatHistoryItem {
+  role: "user" | "model";
+  text: string;
 }
 
-// A custom filename without matching URLs cannot be downloaded (we cannot
-// guess where it lives), but a file already on disk still loads fine.
-export function resolveModelConfig(config: LlmModelConfig | null | undefined): ResolvedModelConfig {
-  const filename = config?.modelFilename?.trim();
-  if (!filename) {
-    return { filename: DEFAULT_MODEL_FILENAME, urls: DEFAULT_MODEL_URLS };
+export function normalizeLocalLlmBaseUrl(raw: string): string {
+  let url = raw.trim().replace(/\/+$/, "");
+  if (!url.endsWith("/v1")) {
+    url = `${url}/v1`;
   }
-  const urls = (config?.modelUrls ?? []).map((url) => url.trim()).filter((url) => url.length > 0);
-  return { filename, urls };
+  return url;
 }
-const CONTEXT_SIZE = 4096;
-// Unload the worker (freeing ~4.5GB) after this long without a request.
-const IDLE_UNLOAD_MS = 5 * 60 * 1000;
-const GGUF_MAGIC = Buffer.from("GGUF");
+
+export function resolveLocalLlmConfig(config: LocalLlmConfig | null | undefined): {
+  baseUrl: string | null;
+  apiKey: string | null;
+  model: string | null;
+} {
+  const baseUrl = config?.baseUrl?.trim() || null;
+  const apiKey = config?.apiKey?.trim() || null;
+  const model = config?.model?.trim() || null;
+  return { baseUrl, apiKey, model };
+}
 
 export class LlmGenerateError extends Error {
   constructor(message: string) {
@@ -59,22 +50,19 @@ export class LlmGenerateError extends Error {
 }
 
 interface LlamaServiceOptions {
-  paseoHome: string;
   logger: pino.Logger;
-  // Invoked on download progress and load/unload so the daemon can broadcast
-  // llm.local.status.update to connected clients.
+  // Invoked when status changes so the daemon can broadcast llm.local.status.update.
   onStatusUpdate?: (state: LlmLocalModelState) => void;
-  // Read per access so daemon-config edits apply without a restart (an
-  // already-loaded worker keeps its model until the next idle unload).
-  getModelConfig?: () => LlmModelConfig | null | undefined;
+  // Read per access so daemon-config edits apply without a restart.
+  getConfig?: () => LocalLlmConfig | null | undefined;
+  fetch?: typeof fetch;
 }
 
 export interface GenerateParams {
   requestId: string;
   prompt: string;
   systemPrompt?: string;
-  // Prior turns replayed before prompting; the worker is stateless.
-  history?: LlmWorkerHistoryItem[];
+  history?: LlmChatHistoryItem[];
   jsonSchema?: Record<string, unknown>;
   maxTokens?: number;
   stream?: boolean;
@@ -82,461 +70,321 @@ export interface GenerateParams {
   onChunk?: (text: string) => void;
 }
 
-interface PendingGenerate {
-  params: GenerateParams;
-  resolve: (text: string) => void;
-  reject: (error: Error) => void;
-  started: boolean;
+interface OpenAiChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
 }
 
-function resolveWorkerUrl(): URL {
-  const currentUrl = import.meta.url;
-  if (currentUrl.endsWith(".ts")) {
-    return new URL("./llm-worker.ts", currentUrl);
-  }
-  return new URL("./llm-worker.js", currentUrl);
-}
-
-function resolveWorkerExecArgv(): string[] {
-  if (!import.meta.url.endsWith(".ts")) {
-    return [];
-  }
-  const loaderUrl = new URL("../../terminal/terminal-ts-loader.mjs", import.meta.url).href;
-  const importSource = [
-    'import { register } from "node:module";',
-    'import { pathToFileURL } from "node:url";',
-    `register(${JSON.stringify(loaderUrl)}, pathToFileURL("./"));`,
-  ].join(" ");
-  return [
-    "--experimental-strip-types",
-    "--import",
-    `data:text/javascript,${encodeURIComponent(importSource)}`,
-  ];
-}
+type FetchFn = typeof fetch;
 
 export class LlamaService {
-  private readonly paseoHome: string;
   private readonly logger: pino.Logger;
   private readonly onStatusUpdate?: (state: LlmLocalModelState) => void;
-  private readonly getModelConfig?: () => LlmModelConfig | null | undefined;
+  private readonly getConfig?: () => LocalLlmConfig | null | undefined;
+  private readonly fetchFn: FetchFn;
 
-  private worker: ChildProcess | null = null;
-  private workerLoaded = false;
-  private loadPromise: Promise<void> | null = null;
-  private readonly queue: PendingGenerate[] = [];
-  private active: PendingGenerate | null = null;
-  private idleTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // Set by probeModelFile: the model actually loaded, which is the configured
-  // one unless that is missing and another usable model is present.
-  private activeModelPath: string | null = null;
-
-  private downloading: { receivedBytes: number; totalBytes: number | null } | null = null;
-  private downloadError: string | null = null;
+  private lastError: string | null = null;
+  private readonly abortControllers = new Map<string, AbortController>();
 
   constructor(options: LlamaServiceOptions) {
-    this.paseoHome = options.paseoHome;
     this.logger = options.logger.child({ module: "llama-service" });
     this.onStatusUpdate = options.onStatusUpdate;
-    this.getModelConfig = options.getModelConfig;
+    this.getConfig = options.getConfig;
+    this.fetchFn = options.fetch ?? fetch;
   }
 
-  private get resolvedModel(): ResolvedModelConfig {
-    return resolveModelConfig(this.getModelConfig?.());
+  private resolvedConfig(): ReturnType<typeof resolveLocalLlmConfig> {
+    return resolveLocalLlmConfig(this.getConfig?.());
   }
 
-  private get modelPath(): string {
-    return path.join(this.paseoHome, "models", this.resolvedModel.filename);
-  }
-
-  // A valid model file starts with the GGUF magic; a partial download (daemon
-  // killed mid-write) won't have been renamed into place.
-  private async isUsableModelFile(filePath: string): Promise<boolean> {
-    try {
-      const handle = await fs.open(filePath, "r");
-      try {
-        const { buffer } = await handle.read(Buffer.alloc(4), 0, 4, 0);
-        return buffer.equals(GGUF_MAGIC);
-      } finally {
-        await handle.close();
-      }
-    } catch {
-      return false;
-    }
-  }
-
-  // Any other model already sitting in the models directory. The configured
-  // filename changes — a new default ships, the user picks a different build —
-  // and a model that took an hour to download should not become invisible
-  // because it no longer matches the name we now expect. Companion files
-  // (mmproj projectors) are GGUF too but cannot answer on their own.
-  private async findAlternateModel(): Promise<string | null> {
-    const dir = path.dirname(this.modelPath);
-    let entries: string[];
-    try {
-      entries = await fs.readdir(dir);
-    } catch {
-      return null;
-    }
-    const candidates = entries
-      .filter((name) => name.endsWith(".gguf") && !name.includes("mmproj"))
-      .sort();
-    for (const name of candidates) {
-      const candidate = path.join(dir, name);
-      if (await this.isUsableModelFile(candidate)) {
-        return candidate;
-      }
-    }
-    return null;
-  }
-
-  // What is actually on disk right now, independent of anything this process
-  // remembers or expects to be named.
-  private async probeModelFile(): Promise<"ready" | "corrupt" | "absent"> {
-    if (await this.isUsableModelFile(this.modelPath)) {
-      this.activeModelPath = this.modelPath;
-      return "ready";
-    }
-    const alternate = await this.findAlternateModel();
-    if (alternate) {
-      this.activeModelPath = alternate;
-      return "ready";
-    }
-    this.activeModelPath = null;
-    // The configured file exists but isn't a GGUF: a truncated or wrong
-    // download, worth reporting rather than silently treating as missing.
-    try {
-      await fs.stat(this.modelPath);
-      return "corrupt";
-    } catch {
-      return "absent";
-    }
+  private isConfigured(): boolean {
+    const { baseUrl, model } = this.resolvedConfig();
+    return Boolean(baseUrl && model);
   }
 
   async getStatus(): Promise<LlmLocalModelState> {
-    if (this.downloading) {
-      return { status: "downloading", ...this.downloading };
+    if (!this.isConfigured()) {
+      return { status: "absent" };
     }
-    // The file wins over remembered failure. A usable model can appear without
-    // this process downloading it — copied in by hand, restored from a backup,
-    // fetched by an earlier run, or simply a different file after the model
-    // config changed — and a download error kept from an earlier attempt would
-    // otherwise hide a model that is sitting right there.
-    const probe = await this.probeModelFile();
-    if (probe === "ready") {
-      this.downloadError = null;
-      return { status: "ready", loaded: this.workerLoaded };
+    if (this.lastError) {
+      return { status: "error", message: this.lastError };
     }
-    if (this.downloadError) {
-      return { status: "error", message: this.downloadError };
-    }
-    if (probe === "corrupt") {
-      return { status: "error", message: "model file is corrupt (bad GGUF header)" };
-    }
-    return { status: "absent" };
+    return { status: "ready", loaded: true };
   }
 
   private emitStatus(state: LlmLocalModelState): void {
     this.onStatusUpdate?.(state);
   }
 
-  // Starts the model download unless it is already running or done.
+  private setLastError(message: string): void {
+    this.lastError = message;
+    this.emitStatus({ status: "error", message });
+  }
+
+  private clearLastError(): void {
+    if (!this.lastError) {
+      return;
+    }
+    this.lastError = null;
+    if (this.isConfigured()) {
+      this.emitStatus({ status: "ready", loaded: true });
+    }
+  }
+
+  // COMPAT(localLlmGguf): download RPC stub — tell clients to configure settings.
   async startDownload(): Promise<LlmLocalModelState> {
-    const current = await this.getStatus();
-    if (current.status === "downloading" || current.status === "ready") {
-      return current;
-    }
-    this.downloadError = null;
-    this.downloading = { receivedBytes: 0, totalBytes: null };
-    void this.runDownload().catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error({ err: error }, "Model download failed");
-      this.downloading = null;
-      this.downloadError = message;
-      this.emitStatus({ status: "error", message });
-    });
-    return { status: "downloading", receivedBytes: 0, totalBytes: null };
-  }
-
-  private async runDownload(): Promise<void> {
-    const dir = path.dirname(this.modelPath);
-    await fs.mkdir(dir, { recursive: true });
-    const partPath = `${this.modelPath}.part`;
-
-    const { urls } = this.resolvedModel;
-    if (urls.length === 0) {
-      throw new Error(
-        "no download sources for the configured model — set localLlm.modelUrls alongside localLlm.modelFilename",
-      );
-    }
-    let lastError: Error | null = null;
-    for (const url of urls) {
-      try {
-        await this.downloadFrom(url, partPath);
-        await fs.rename(partPath, this.modelPath);
-        this.downloading = null;
-        this.emitStatus({ status: "ready", loaded: this.workerLoaded });
-        this.logger.info({ modelPath: this.modelPath }, "Model download complete");
-        return;
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        this.logger.warn({ err: lastError, url }, "Model download source failed, trying next");
-      }
-    }
-    throw lastError ?? new Error("model download failed");
-  }
-
-  private async downloadFrom(url: string, partPath: string): Promise<void> {
-    let existing = 0;
-    try {
-      existing = (await fs.stat(partPath)).size;
-    } catch {
-      // no partial file yet
-    }
-    const response = await fetch(url, {
-      headers: existing > 0 ? { Range: `bytes=${existing}-` } : {},
-    });
-    if (!response.ok || !response.body) {
-      throw new Error(`download failed: HTTP ${response.status}`);
-    }
-    const resumed = response.status === 206;
-    if (!resumed) {
-      existing = 0;
-    }
-    const contentLength = Number(response.headers.get("content-length") ?? 0);
-    const totalBytes = contentLength > 0 ? existing + contentLength : null;
-    let receivedBytes = existing;
-    this.downloading = { receivedBytes, totalBytes };
-
-    const stream = createWriteStream(partPath, { flags: resumed ? "a" : "w" });
-    let lastEmit = 0;
-    // The fetch ReadableStream type is slightly different from what Readable.fromWeb expects
-    // oxlint-disable-next-line typescript-eslint/no-explicit-any
-    const body = Readable.fromWeb(response.body as any);
-    try {
-      for await (const chunk of body) {
-        const buffer = Buffer.from(chunk);
-        if (!stream.write(buffer)) {
-          await new Promise<void>((resolve) => stream.once("drain", resolve));
-        }
-        receivedBytes += buffer.length;
-        this.downloading = { receivedBytes, totalBytes };
-        const now = Date.now();
-        if (now - lastEmit > 1000) {
-          lastEmit = now;
-          this.emitStatus({ status: "downloading", receivedBytes, totalBytes });
-        }
-      }
-    } finally {
-      stream.end();
-      await finished(stream);
-    }
+    this.setLastError(DOWNLOAD_STUB_MESSAGE);
+    throw new LlmGenerateError(DOWNLOAD_STUB_MESSAGE);
   }
 
   async generate(params: GenerateParams): Promise<string> {
     const status = await this.getStatus();
-    if (status.status !== "ready") {
-      throw new LlmGenerateError(`model is not ready (status: ${status.status})`);
+    if (status.status === "absent") {
+      throw new LlmGenerateError("local LLM is not configured (missing base URL or model)");
     }
-    return new Promise<string>((resolve, reject) => {
-      this.queue.push({ params, resolve, reject, started: false });
-      void this.pump();
-    });
+
+    const { baseUrl, apiKey, model } = this.resolvedConfig();
+    if (!baseUrl || !model) {
+      throw new LlmGenerateError("local LLM is not configured (missing base URL or model)");
+    }
+
+    const controller = new AbortController();
+    this.abortControllers.set(params.requestId, controller);
+
+    try {
+      const text = await this.callChatCompletions({
+        baseUrl: normalizeLocalLlmBaseUrl(baseUrl),
+        apiKey,
+        model,
+        messages: buildOpenAiMessages(params),
+        maxTokens: params.maxTokens,
+        stream: params.stream,
+        jsonSchema: params.jsonSchema,
+        stop: params.stopTriggers,
+        signal: controller.signal,
+        onChunk: params.onChunk,
+      });
+
+      if (params.jsonSchema) {
+        try {
+          JSON.parse(text);
+        } catch {
+          const message = "model response is not valid JSON";
+          this.setLastError(message);
+          throw new LlmGenerateError(message);
+        }
+      }
+
+      this.clearLastError();
+      return text;
+    } catch (error) {
+      if (isAbortError(error) || (error instanceof Error && error.message === "cancelled")) {
+        throw new LlmGenerateError("cancelled");
+      }
+      if (error instanceof LlmGenerateError) {
+        if (error.message !== "cancelled") {
+          this.setLastError(error.message);
+        }
+        throw error;
+      }
+      const message =
+        error instanceof Error ? `generation failed: ${error.message}` : String(error);
+      this.setLastError(message);
+      throw new LlmGenerateError(message);
+    } finally {
+      this.abortControllers.delete(params.requestId);
+    }
   }
 
   cancel(generateRequestId: string): boolean {
-    const queued = this.queue.findIndex((p) => p.params.requestId === generateRequestId);
-    if (queued >= 0) {
-      const [pending] = this.queue.splice(queued, 1);
-      pending.reject(new LlmGenerateError("cancelled"));
-      return true;
+    const controller = this.abortControllers.get(generateRequestId);
+    if (!controller) {
+      return false;
     }
-    if (this.active?.params.requestId === generateRequestId && this.worker) {
-      this.sendToWorker({ type: "cancel", id: generateRequestId });
-      return true;
-    }
-    return false;
-  }
-
-  private async pump(): Promise<void> {
-    if (this.active) {
-      return;
-    }
-    const next = this.queue.shift();
-    if (!next) {
-      this.scheduleIdleUnload();
-      return;
-    }
-    this.clearIdleTimer();
-    this.active = next;
-    try {
-      await this.ensureWorkerLoaded();
-      next.started = true;
-      this.sendToWorker({
-        type: "generate",
-        id: next.params.requestId,
-        prompt: next.params.prompt,
-        systemPrompt: next.params.systemPrompt,
-        history: next.params.history,
-        jsonSchema: next.params.jsonSchema,
-        stopTriggers: next.params.stopTriggers,
-        maxTokens: next.params.maxTokens,
-        stream: next.params.stream,
-      });
-    } catch (error) {
-      this.active = null;
-      next.reject(error instanceof Error ? error : new Error(String(error)));
-      void this.pump();
-    }
-  }
-
-  private async ensureWorkerLoaded(): Promise<void> {
-    if (this.worker && this.workerLoaded) {
-      return;
-    }
-    if (!this.loadPromise) {
-      this.loadPromise = this.spawnAndLoad().catch((error) => {
-        this.loadPromise = null;
-        throw error;
-      });
-    }
-    await this.loadPromise;
-  }
-
-  private spawnAndLoad(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      this.logger.info("Spawning llm worker");
-      const worker = fork(fileURLToPath(resolveWorkerUrl()), [], {
-        execArgv: resolveWorkerExecArgv(),
-        stdio: ["ignore", "ignore", "pipe", "ipc"],
-      });
-      this.worker = worker;
-      this.workerLoaded = false;
-
-      let stderrTail = "";
-      worker.stderr?.on("data", (chunk: Buffer) => {
-        stderrTail = (stderrTail + chunk.toString()).slice(-2000);
-      });
-
-      let settled = false;
-      worker.on("message", (message: LlmWorkerToParentMessage) => {
-        if (message.type === "loaded") {
-          this.logger.info({ gpu: message.gpu, ms: message.ms }, "llm worker loaded model");
-          this.workerLoaded = true;
-          this.emitStatus({ status: "ready", loaded: true });
-          if (!settled) {
-            settled = true;
-            resolve();
-          }
-          return;
-        }
-        this.handleWorkerMessage(message);
-        // A load-phase error (no id) fails the spawn.
-        if (message.type === "error" && message.id === undefined && !settled) {
-          settled = true;
-          reject(new LlmGenerateError(message.message));
-        }
-      });
-
-      worker.on("exit", (code, signal) => {
-        const wasLoaded = this.workerLoaded;
-        this.worker = null;
-        this.workerLoaded = false;
-        this.loadPromise = null;
-        this.clearIdleTimer();
-        const message = `llm worker exited (code ${code}, signal ${signal}). ${stderrTail ? `Last stderr: ${stderrTail.slice(-500)}` : ""}`;
-        this.logger.warn({ code, signal, wasLoaded }, "llm worker exited");
-        if (!settled) {
-          settled = true;
-          reject(new LlmGenerateError(message));
-        }
-        const active = this.active;
-        if (active) {
-          this.active = null;
-          active.reject(new LlmGenerateError(message));
-        }
-        this.emitStatus({ status: "ready", loaded: false });
-        void this.pump();
-      });
-
-      this.sendToWorker({
-        type: "load",
-        // getStatus ran before generate() got here, so this points at whichever
-        // model the probe accepted.
-        modelPath: this.activeModelPath ?? this.modelPath,
-        contextSize: CONTEXT_SIZE,
-      });
-    });
-  }
-
-  private handleWorkerMessage(message: LlmWorkerToParentMessage): void {
-    if (message.type === "chunk") {
-      if (this.active?.params.requestId === message.id) {
-        this.active.params.onChunk?.(message.text);
-      }
-      return;
-    }
-    if (message.type === "done") {
-      if (this.active?.params.requestId === message.id) {
-        const active = this.active;
-        this.active = null;
-        active.resolve(message.text);
-        void this.pump();
-      }
-      return;
-    }
-    if (message.type === "error" && message.id !== undefined) {
-      if (this.active?.params.requestId === message.id) {
-        const active = this.active;
-        this.active = null;
-        active.reject(new LlmGenerateError(message.message));
-        void this.pump();
-      }
-    }
-  }
-
-  private sendToWorker(message: LlmWorkerParentToWorkerMessage): void {
-    this.worker?.send(message);
-  }
-
-  private scheduleIdleUnload(): void {
-    if (!this.worker || this.idleTimer) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      this.idleTimer = null;
-      if (this.active || this.queue.length > 0) {
-        return;
-      }
-      this.logger.info("Unloading idle llm worker");
-      this.stopWorker();
-    }, IDLE_UNLOAD_MS);
-    timer.unref();
-    this.idleTimer = timer;
-  }
-
-  private clearIdleTimer(): void {
-    if (this.idleTimer) {
-      clearTimeout(this.idleTimer);
-      this.idleTimer = null;
-    }
-  }
-
-  private stopWorker(): void {
-    const worker = this.worker;
-    this.worker = null;
-    this.workerLoaded = false;
-    this.loadPromise = null;
-    worker?.kill();
+    controller.abort();
+    this.abortControllers.delete(generateRequestId);
+    return true;
   }
 
   stop(): void {
-    this.clearIdleTimer();
-    for (const pending of this.queue.splice(0)) {
-      pending.reject(new LlmGenerateError("daemon shutting down"));
+    for (const controller of this.abortControllers.values()) {
+      controller.abort();
     }
-    this.active?.reject(new LlmGenerateError("daemon shutting down"));
-    this.active = null;
-    this.stopWorker();
+    this.abortControllers.clear();
   }
+
+  private async callChatCompletions(args: {
+    baseUrl: string;
+    apiKey: string | null;
+    model: string;
+    messages: OpenAiChatMessage[];
+    maxTokens?: number;
+    stream?: boolean;
+    jsonSchema?: Record<string, unknown>;
+    stop?: string[];
+    signal: AbortSignal;
+    onChunk?: (text: string) => void;
+  }): Promise<string> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (args.apiKey) {
+      headers.Authorization = `Bearer ${args.apiKey}`;
+    }
+
+    const body: Record<string, unknown> = {
+      model: args.model,
+      messages: args.messages,
+      stream: Boolean(args.stream && args.onChunk),
+    };
+    if (args.maxTokens !== undefined) {
+      body.max_tokens = args.maxTokens;
+    }
+    if (args.stop && args.stop.length > 0) {
+      body.stop = args.stop;
+    }
+    if (args.jsonSchema) {
+      body.response_format = { type: "json_object" };
+    }
+
+    const url = `${args.baseUrl}/chat/completions`;
+    const response = await this.fetchFn(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: args.signal,
+    });
+
+    if (!response.ok) {
+      const detail = await readResponseText(response);
+      throw new LlmGenerateError(
+        `backend returned HTTP ${response.status}${detail ? `: ${detail}` : ""}`,
+      );
+    }
+
+    if (body.stream === true && args.onChunk) {
+      try {
+        return await readSseCompletion(response, args.onChunk, args.signal);
+      } catch (error) {
+        if (args.signal.aborted) {
+          throw new LlmGenerateError("cancelled");
+        }
+        this.logger.warn({ err: error }, "SSE streaming failed, retrying without stream");
+        return this.callChatCompletions({ ...args, stream: false, onChunk: undefined });
+      }
+    }
+
+    const payload: unknown = await response.json();
+    const text = extractCompletionText(payload);
+    if (text === null) {
+      throw new LlmGenerateError("backend returned an empty completion");
+    }
+    return text;
+  }
+}
+
+function buildOpenAiMessages(params: GenerateParams): OpenAiChatMessage[] {
+  const messages: OpenAiChatMessage[] = [];
+  const systemPrompt = augmentSystemPrompt(params.systemPrompt, params.jsonSchema);
+  if (systemPrompt) {
+    messages.push({ role: "system", content: systemPrompt });
+  }
+  for (const item of params.history ?? []) {
+    messages.push({
+      role: item.role === "user" ? "user" : "assistant",
+      content: item.text,
+    });
+  }
+  messages.push({ role: "user", content: params.prompt });
+  return messages;
+}
+
+function augmentSystemPrompt(
+  systemPrompt: string | undefined,
+  jsonSchema: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!jsonSchema) {
+    return systemPrompt;
+  }
+  const schemaHint = `Respond with valid JSON matching this schema:\n${JSON.stringify(jsonSchema, null, 2)}`;
+  return systemPrompt ? `${systemPrompt}\n\n${schemaHint}` : schemaHint;
+}
+
+function extractCompletionText(payload: unknown): string | null {
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+  const choices = (payload as { choices?: unknown }).choices;
+  if (!Array.isArray(choices) || choices.length === 0) {
+    return null;
+  }
+  const message = (choices[0] as { message?: { content?: unknown } }).message;
+  const content = message?.content;
+  return typeof content === "string" ? content : null;
+}
+
+async function readResponseText(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    return text.trim().slice(0, 500);
+  } catch {
+    return "";
+  }
+}
+
+async function readSseCompletion(
+  response: Response,
+  onChunk: (text: string) => void,
+  signal: AbortSignal,
+): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new LlmGenerateError("backend returned an empty streaming body");
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+
+  while (true) {
+    if (signal.aborted) {
+      throw new LlmGenerateError("cancelled");
+    }
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) {
+        continue;
+      }
+      const data = trimmed.slice(5).trim();
+      if (!data || data === "[DONE]") {
+        continue;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(data);
+      } catch {
+        continue;
+      }
+      const delta = (parsed as { choices?: Array<{ delta?: { content?: unknown } }> }).choices?.[0]
+        ?.delta?.content;
+      if (typeof delta !== "string" || delta.length === 0) {
+        continue;
+      }
+      fullText += delta;
+      onChunk(delta);
+    }
+  }
+
+  return fullText;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
 }

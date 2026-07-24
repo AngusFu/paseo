@@ -491,6 +491,30 @@ Get the session ID from the agent JSON (`persistence.sessionId`), then:
 ~/.codex/sessions/{YYYY}/{MM}/{DD}/rollout-{timestamp}-{session-id}.jsonl
 ```
 
+## Local LLM (OpenAI-compatible backend)
+
+Lightweight AI features (prompt optimize, natural-language cron, kanban summaries, the built-in assistant) call the daemon's `llm.local.*` RPCs, which proxy a user-configured OpenAI-compatible HTTP backend. Configure it in **Host settings → Local AI model**:
+
+- **Base URL** — e.g. `http://127.0.0.1:11434/v1` for [Ollama](https://ollama.com)
+- **Model** — any model name the backend accepts (Ollama example: pull a small model with `ollama pull qwen3.5:0.8b`, then enter `qwen3.5:0.8b`)
+- **API key** — optional; leave blank for local servers without auth
+
+Example with Ollama:
+
+```bash
+ollama serve          # default listen on 127.0.0.1:11434
+ollama pull qwen3.5:0.8b
+```
+
+Then set base URL `http://127.0.0.1:11434/v1` and model `qwen3.5:0.8b` in host settings. Use **Test** to verify connectivity.
+
+Ad-hoc RPC smoke test (requires a running backend):
+
+```bash
+LOCAL_LLM_BASE_URL=http://127.0.0.1:11434/v1 LOCAL_LLM_MODEL=qwen3.5:0.8b \
+  npx tsx packages/server/src/server/llm-e2e-adhoc.ts
+```
+
 ## Testing with Playwright MCP
 
 Point Playwright MCP at the running Expo web target. For root checkout dev, `npm run dev:app` reserves `http://localhost:8081`. For Paseo-managed worktree app services, use the service URL or port shown by Paseo for that worktree.

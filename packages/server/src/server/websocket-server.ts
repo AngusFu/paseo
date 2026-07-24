@@ -551,7 +551,6 @@ export class VoiceAssistantWebSocketServer {
     this.llamaService =
       llamaService ??
       new LlamaService({
-        paseoHome,
         logger,
         onStatusUpdate: (model) => {
           this.broadcast(
@@ -560,7 +559,7 @@ export class VoiceAssistantWebSocketServer {
         },
         // Lazy read: daemonConfigStore is assigned later in this constructor
         // and config edits should apply without a daemon restart.
-        getModelConfig: () => this.daemonConfigStore.get().localLlm ?? null,
+        getConfig: () => this.daemonConfigStore.get().localLlm ?? null,
       });
     this.checkoutDiffManager = requiredServices.checkoutDiffManager;
     this.github = github ?? createGitHubService();

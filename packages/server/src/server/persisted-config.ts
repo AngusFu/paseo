@@ -255,6 +255,19 @@ export const PersistedConfigSchema = z
           .object({
             enabled: z.boolean().optional(),
           })
+          .passthrough()
+          .optional(),
+        localLlm: z
+          .object({
+            baseUrl: z.string().optional(),
+            apiKey: z.string().optional(),
+            model: z.string().optional(),
+            // COMPAT(localLlmGguf): added in v0.1.110, remove after 2027-01-16.
+            modelFilename: z.string().optional(),
+            // COMPAT(localLlmGguf): added in v0.1.110, remove after 2027-01-16.
+            modelUrls: z.array(z.string()).optional(),
+          })
+          .passthrough()
           .optional(),
         terminalProfiles: z.array(TerminalProfileSchema).optional(),
         cors: z

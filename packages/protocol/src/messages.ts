@@ -287,12 +287,16 @@ export const MutableDaemonConfigSchema = z
         enabled: z.boolean().default(true),
       })
       .default({ enabled: true }),
-    // Built-in local model override. Both fields must be set together: the
-    // download URLs must serve exactly `modelFilename`. Absent → the daemon's
-    // built-in default model.
+    // OpenAI-compatible local LLM backend (Ollama, LM Studio, etc.). When
+    // baseUrl and model are absent, llm.local.* features stay unavailable.
     localLlm: z
       .object({
+        baseUrl: z.string().optional(),
+        apiKey: z.string().optional(),
+        model: z.string().optional(),
+        // COMPAT(localLlmGguf): added in v0.1.110, remove after 2027-01-16.
         modelFilename: z.string().optional(),
+        // COMPAT(localLlmGguf): added in v0.1.110, remove after 2027-01-16.
         modelUrls: z.array(z.string()).optional(),
       })
       .passthrough()
@@ -320,7 +324,12 @@ export const MutableDaemonConfigPatchSchema = z
       .optional(),
     localLlm: z
       .object({
+        baseUrl: z.string().optional(),
+        apiKey: z.string().optional(),
+        model: z.string().optional(),
+        // COMPAT(localLlmGguf): added in v0.1.110, remove after 2027-01-16.
         modelFilename: z.string().optional(),
+        // COMPAT(localLlmGguf): added in v0.1.110, remove after 2027-01-16.
         modelUrls: z.array(z.string()).optional(),
       })
       .passthrough()

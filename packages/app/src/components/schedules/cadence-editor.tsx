@@ -324,26 +324,8 @@ function CadenceAiControls({
     );
   }
 
-  if (ai.model?.status === "downloading") {
-    const percent = ai.model.totalBytes
-      ? Math.round((ai.model.receivedBytes / ai.model.totalBytes) * 100)
-      : 0;
-    return <Text style={styles.preview}>{t("schedule.cadence.ai.downloading", { percent })}</Text>;
-  }
-
   if (ai.model?.status !== "ready") {
-    // absent (or error) — offer the model download.
-    return (
-      <Button
-        variant="ghost"
-        size="xs"
-        style={styles.aiTrigger}
-        testID="cadence-ai-download"
-        onPress={ai.startDownload}
-      >
-        {t("schedule.cadence.ai.download")}
-      </Button>
-    );
+    return null;
   }
 
   return (

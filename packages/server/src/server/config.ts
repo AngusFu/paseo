@@ -502,6 +502,7 @@ export function loadConfig(
     proseStop: {
       enabled: persisted.daemon?.proseStop?.enabled ?? true,
     },
+    localLlm: persisted.daemon?.localLlm,
     terminalProfiles,
     mcpDebug: env.MCP_DEBUG === "1",
     isDev: resolvePaseoNodeEnv(env) === "development",

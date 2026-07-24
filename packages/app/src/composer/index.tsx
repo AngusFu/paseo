@@ -1119,6 +1119,7 @@ export function Composer({
     buildOutgoingAttachments,
     removeAttachment,
     openAttachment,
+    beginSubmit,
     clearSentAttachments,
     completeSubmit,
     resetSuppression,
@@ -1396,6 +1397,9 @@ export function Composer({
           queueMessage(queuedText, queuedAttachments);
         },
         submitMessage: async ({ message: submitText, attachments: submitAttachments }) => {
+          if (submitBehavior !== "preserve-and-lock") {
+            beginSubmit(submitAttachments);
+          }
           await submitMessage(submitText, submitAttachments);
         },
         clearDraft,
@@ -1417,6 +1421,7 @@ export function Composer({
     },
     [
       allowEmptySubmit,
+      beginSubmit,
       clearDraft,
       completeSubmit,
       hasExternalContent,

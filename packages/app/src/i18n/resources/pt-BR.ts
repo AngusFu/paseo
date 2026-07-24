@@ -2053,6 +2053,7 @@ export const ptBR: TranslationResources = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "Nenhum modelo — buscar no Ollama",
         modelSearchPlaceholder: "Buscar modelos",
+        useOllama: "Usar Ollama",
         fetchModels: "Buscar modelos",
         save: "Salvar",
         test: "Testar",

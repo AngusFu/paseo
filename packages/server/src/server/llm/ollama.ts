@@ -181,14 +181,6 @@ export async function detectAndListOllamaModels(args: {
     candidates: args.candidates,
     isExecutableImpl: args.isExecutableImpl,
   });
-  if (!ollamaPath) {
-    return {
-      ollamaAvailable: false,
-      ollamaPath: null,
-      models: [],
-      error: null,
-    };
-  }
 
   try {
     const models = await listOllamaModels({
@@ -197,17 +189,26 @@ export async function detectAndListOllamaModels(args: {
       fetchImpl: args.fetchImpl,
     });
     return {
+      // Binary or a reachable HTTP API is enough — GUI-only installs often omit CLI PATH.
       ollamaAvailable: true,
       ollamaPath,
       models,
       error: null,
     };
   } catch (error) {
+    if (ollamaPath) {
+      return {
+        ollamaAvailable: true,
+        ollamaPath,
+        models: [],
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
     return {
-      ollamaAvailable: true,
-      ollamaPath,
+      ollamaAvailable: false,
+      ollamaPath: null,
       models: [],
-      error: error instanceof Error ? error.message : String(error),
+      error: null,
     };
   }
 }

@@ -2031,6 +2031,7 @@ export const en = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "No models yet — fetch from Ollama",
         modelSearchPlaceholder: "Search models",
+        useOllama: "Use Ollama",
         fetchModels: "Fetch models",
         save: "Save",
         test: "Test",

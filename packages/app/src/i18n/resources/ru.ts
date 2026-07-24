@@ -2058,6 +2058,7 @@ export const ru: TranslationResources = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "Нет моделей — загрузить из Ollama",
         modelSearchPlaceholder: "Поиск моделей",
+        useOllama: "Использовать Ollama",
         fetchModels: "Загрузить модели",
         save: "Сохранить",
         test: "Проверить",

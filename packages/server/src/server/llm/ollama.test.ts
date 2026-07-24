@@ -58,7 +58,7 @@ describe("ollama helpers", () => {
     ).resolves.toEqual(["qwen3:0.6b"]);
   });
 
-  it("reports unavailable when the ollama binary is missing", async () => {
+  it("reports unavailable when the ollama binary and HTTP API are both missing", async () => {
     const result = await detectAndListOllamaModels({
       candidates: ["ollama"],
       execFileImpl: (async () => {
@@ -66,7 +66,7 @@ describe("ollama helpers", () => {
       }) as never,
       isExecutableImpl: async () => false,
       fetchImpl: (async () => {
-        throw new Error("should not fetch");
+        throw new Error("connection refused");
       }) as unknown as typeof fetch,
     });
 
@@ -74,6 +74,33 @@ describe("ollama helpers", () => {
       ollamaAvailable: false,
       ollamaPath: null,
       models: [],
+      error: null,
+    });
+  });
+
+  it("treats a reachable HTTP API as available even without the ollama binary", async () => {
+    const fetchImpl = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          models: [{ name: "qwen3.5:0.8b" }],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const result = await detectAndListOllamaModels({
+      candidates: ["ollama"],
+      execFileImpl: (async () => {
+        throw new Error("not found");
+      }) as never,
+      isExecutableImpl: async () => false,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result).toEqual({
+      ollamaAvailable: true,
+      ollamaPath: null,
+      models: ["qwen3.5:0.8b"],
       error: null,
     });
   });

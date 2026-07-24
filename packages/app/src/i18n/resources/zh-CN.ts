@@ -1998,6 +1998,7 @@ export const zhCN: TranslationResources = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "还没有模型 — 从 Ollama 拉取",
         modelSearchPlaceholder: "搜索模型",
+        useOllama: "使用 Ollama",
         fetchModels: "拉取模型",
         save: "保存",
         test: "测试",

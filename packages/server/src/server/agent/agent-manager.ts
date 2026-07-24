@@ -87,6 +87,7 @@ import {
   isOpaqueAcpMcpToolCall,
   isPaseoAskQuestionToolCall,
 } from "./ask-question-timeline.js";
+import { isPlanExecuteQuestionRequestId } from "./plan-execute-question.js";
 import type { QuestionStore } from "../question/store.js";
 import type { InboxQuestionStatus, StoredInboxQuestion } from "@getpaseo/protocol/question/types";
 
@@ -2110,6 +2111,9 @@ export class AgentManager {
     const agent = existingAgent;
     const isReplacement = agent.pendingReplacement;
     agent.lastError = undefined;
+
+    // Unanswered CreatePlan execute CTAs drop when the user sends a later message.
+    this.dismissPlanExecutePermissionsForAgent(agent, "Superseded by a new user message");
 
     const pendingRun = this.runs.createPendingRun(agentId);
 
@@ -4445,6 +4449,22 @@ export class AgentManager {
         });
       }
     }
+  }
+
+  private dismissPlanExecutePermissionsForAgent(agent: ActiveManagedAgent, message: string): void {
+    for (const [requestId] of agent.pendingPermissions) {
+      if (!isPlanExecuteQuestionRequestId(requestId)) {
+        continue;
+      }
+      agent.pendingPermissions.delete(requestId);
+      this.dispatchStream(agent.id, {
+        type: "permission_resolved",
+        provider: agent.provider,
+        requestId,
+        resolution: { behavior: "deny", message },
+      });
+    }
+    this.emitState(agent);
   }
 
   private recordAndDispatchTimelineItem(

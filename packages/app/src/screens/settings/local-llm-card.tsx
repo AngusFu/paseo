@@ -44,19 +44,41 @@ function resolveLocalLlmErrorText(args: {
 
 function LocalLlmModelField(props: {
   draft: LocalLlmDraft;
-  ollamaAvailable: boolean;
   selectOptions: SelectFieldOption<string>[];
   selectedDisplay: { label: string } | null;
+  hasFetchedModels: boolean;
   isBusy: boolean;
   fetchPending: boolean;
+  useOllamaPending: boolean;
   onModelTextChange: (value: string) => void;
   onModelSelect: (value: string, display: { label: string }) => void;
+  onUseOllama: () => void;
   onFetchModels: () => void;
 }) {
   const { t } = useTranslation();
-  if (!props.ollamaAvailable) {
-    return (
-      <Field label={t("settings.host.localLlm.model")} testID="host-page-local-llm-model">
+  const showSelect = props.hasFetchedModels || props.selectOptions.length > 0;
+
+  return (
+    <Field label={t("settings.host.localLlm.model")} testID="host-page-local-llm-model">
+      {showSelect ? (
+        <SelectField
+          field={false}
+          label={t("settings.host.localLlm.model")}
+          value={props.draft.model.trim() || null}
+          selectedDisplay={props.selectedDisplay}
+          options={props.selectOptions}
+          onChange={props.onModelSelect}
+          placeholder={t("settings.host.localLlm.modelPlaceholder")}
+          emptyText={t("settings.host.localLlm.modelEmpty")}
+          searchable
+          searchPlaceholder={t("settings.host.localLlm.modelSearchPlaceholder")}
+          loading={props.fetchPending || props.useOllamaPending}
+          disabled={props.isBusy}
+          size="sm"
+          testID="host-page-local-llm-model-select"
+          triggerTestID="host-page-local-llm-model-trigger"
+        />
+      ) : (
         <FormTextInput
           size="sm"
           value={props.draft.model}
@@ -67,30 +89,18 @@ function LocalLlmModelField(props: {
           editable={!props.isBusy}
           testID="host-page-local-llm-model-input"
         />
-      </Field>
-    );
-  }
-
-  return (
-    <Field label={t("settings.host.localLlm.model")} testID="host-page-local-llm-model">
-      <SelectField
-        field={false}
-        label={t("settings.host.localLlm.model")}
-        value={props.draft.model.trim() || null}
-        selectedDisplay={props.selectedDisplay}
-        options={props.selectOptions}
-        onChange={props.onModelSelect}
-        placeholder={t("settings.host.localLlm.modelPlaceholder")}
-        emptyText={t("settings.host.localLlm.modelEmpty")}
-        searchable
-        searchPlaceholder={t("settings.host.localLlm.modelSearchPlaceholder")}
-        loading={props.fetchPending}
-        disabled={props.isBusy}
-        size="sm"
-        testID="host-page-local-llm-model-select"
-        triggerTestID="host-page-local-llm-model-trigger"
-      />
+      )}
       <View style={styles.fetchRow}>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={props.isBusy}
+          loading={props.useOllamaPending}
+          onPress={props.onUseOllama}
+          testID="host-page-local-llm-use-ollama"
+        >
+          {t("settings.host.localLlm.useOllama")}
+        </Button>
         <Button
           size="sm"
           variant="ghost"
@@ -115,8 +125,8 @@ export function LocalLlmCard({ serverId }: { serverId: string }) {
   const { config, patchConfig } = useDaemonConfig(serverId);
   const persisted = useMemo(() => readLocalLlmDraft(config), [config]);
   const [draft, setDraft] = useState(persisted);
-  const [ollamaAvailable, setOllamaAvailable] = useState(false);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [hasFetchedModels, setHasFetchedModels] = useState(false);
 
   useEffect(() => {
     setDraft(persisted);
@@ -154,6 +164,18 @@ export function LocalLlmCard({ serverId }: { serverId: string }) {
     },
   });
 
+  const applyListedModels = useCallback(
+    (models: string[], preferredModel?: string) => {
+      setHasFetchedModels(true);
+      setModelOptions(models);
+      const current = (preferredModel ?? draft.model).trim();
+      if (models.length > 0 && (!current || !models.includes(current))) {
+        setDraft((prev) => ({ ...prev, model: models[0] ?? prev.model }));
+      }
+    },
+    [draft.model],
+  );
+
   const fetchModelsMutation = useMutation({
     mutationFn: async () => {
       if (!client) {
@@ -167,19 +189,34 @@ export function LocalLlmCard({ serverId }: { serverId: string }) {
         baseUrl,
         apiKey: draft.apiKey.trim() || undefined,
       });
-      setOllamaAvailable(payload.ollamaAvailable);
       if (payload.error) {
         throw new Error(payload.error);
       }
-      setModelOptions(payload.models);
-      if (payload.models.length > 0 && !payload.models.includes(draft.model.trim())) {
-        setDraft((prev) => ({ ...prev, model: payload.models[0] ?? prev.model }));
-      }
+      applyListedModels(payload.models);
       return payload;
     },
   });
 
-  // Probe once on connect so we know whether to show the Ollama fetch control.
+  const useOllamaMutation = useMutation({
+    mutationFn: async () => {
+      if (!client) {
+        throw new Error(t("workspace.terminal.hostDisconnected"));
+      }
+      const baseUrl = DEFAULT_LOCAL_LLM_BASE_URL;
+      setDraft((prev) => ({ ...prev, baseUrl }));
+      const payload = await client.llmLocalOllamaListModels({
+        baseUrl,
+        apiKey: draft.apiKey.trim() || undefined,
+      });
+      if (payload.error) {
+        throw new Error(payload.error);
+      }
+      applyListedModels(payload.models);
+      return payload;
+    },
+  });
+
+  // Probe once on connect so the model select can prefill when Ollama is already up.
   useEffect(() => {
     if (!supported || !isConnected || !client) {
       return;
@@ -194,14 +231,12 @@ export function LocalLlmCard({ serverId }: { serverId: string }) {
         if (cancelled) {
           return;
         }
-        setOllamaAvailable(payload.ollamaAvailable);
         if (payload.models.length > 0) {
+          setHasFetchedModels(true);
           setModelOptions(payload.models);
         }
       } catch {
-        if (!cancelled) {
-          setOllamaAvailable(false);
-        }
+        // Probe is best-effort; manual buttons remain available.
       }
     })();
     return () => {
@@ -220,6 +255,10 @@ export function LocalLlmCard({ serverId }: { serverId: string }) {
   const handleFetchModels = useCallback(() => {
     fetchModelsMutation.mutate();
   }, [fetchModelsMutation]);
+
+  const handleUseOllama = useCallback(() => {
+    useOllamaMutation.mutate();
+  }, [useOllamaMutation]);
 
   const handleBaseUrlChange = useCallback((baseUrl: string) => {
     setDraft((prev) => ({ ...prev, baseUrl }));
@@ -261,12 +300,16 @@ export function LocalLlmCard({ serverId }: { serverId: string }) {
   if (!supported || !isConnected) return null;
 
   const hasChanges = localLlmDraftHasChanges(draft, persisted);
-  const isBusy = saveMutation.isPending || testMutation.isPending || fetchModelsMutation.isPending;
+  const isBusy =
+    saveMutation.isPending ||
+    testMutation.isPending ||
+    fetchModelsMutation.isPending ||
+    useOllamaMutation.isPending;
   const errorText = resolveLocalLlmErrorText({
     model,
     saveError: saveMutation.error,
     testError: testMutation.error,
-    fetchError: fetchModelsMutation.error,
+    fetchError: fetchModelsMutation.error ?? useOllamaMutation.error,
   });
 
   let badge: React.ReactNode = null;
@@ -321,13 +364,15 @@ export function LocalLlmCard({ serverId }: { serverId: string }) {
 
           <LocalLlmModelField
             draft={draft}
-            ollamaAvailable={ollamaAvailable}
             selectOptions={selectOptions}
             selectedDisplay={selectedDisplay}
+            hasFetchedModels={hasFetchedModels}
             isBusy={isBusy}
             fetchPending={fetchModelsMutation.isPending}
+            useOllamaPending={useOllamaMutation.isPending}
             onModelTextChange={handleModelTextChange}
             onModelSelect={handleModelSelect}
+            onUseOllama={handleUseOllama}
             onFetchModels={handleFetchModels}
           />
         </View>
@@ -371,7 +416,10 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[4],
   },
   fetchRow: {
-    alignItems: "flex-start",
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing[2],
     marginTop: theme.spacing[1],
   },
   footerRow: {

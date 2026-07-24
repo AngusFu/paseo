@@ -71,6 +71,7 @@ import {
   type AgentPermissionRequest,
   type AgentPermissionRequestKind,
   type AgentPermissionResponse,
+  type AgentPermissionResult,
   type AgentPersistenceHandle,
   type AgentPromptContentBlock,
   type AgentPromptInput,
@@ -113,6 +114,17 @@ import {
   truncateForDiagnostic,
 } from "./diagnostic-utils.js";
 import { withTimeout } from "../../../utils/promise-timeout.js";
+import { CLAUDE_ASK_USER_QUESTION_TOOL_NAME } from "../ask-question-timeline.js";
+import {
+  buildPlanExecuteQuestionRequestId,
+  buildPlanExecuteQuestions,
+  buildPlanImplementationPrompt,
+  isCreatePlanToolName,
+  isPlanExecuteAnswer,
+  isPlanExecuteQuestionRequestId,
+  normalizePlanMarkdown,
+  resolveImplementationModeId,
+} from "../plan-execute-question.js";
 
 function assertChildWithPipes(
   child: ChildProcess,
@@ -465,6 +477,11 @@ interface PendingPermission {
   resolve: (response: RequestPermissionResponse) => void;
   reject: (error: Error) => void;
   turnId: string | null;
+}
+
+interface PendingPlanExecutePermission {
+  request: AgentPermissionRequest;
+  planText: string;
 }
 
 interface MessageAssemblyState {
@@ -1302,6 +1319,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private readonly launchEnv?: Record<string, string>;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private readonly pendingPermissions = new Map<string, PendingPermission>();
+  private readonly planExecutePermissions = new Map<string, PendingPlanExecutePermission>();
+  /** Set when CreatePlan completes in plan mode; consumed on successful turn_completed. */
+  private pendingPlanExecuteText: string | null = null;
   private readonly messageAssemblies = new Map<string, MessageAssemblyState>();
   private readonly submittedUserMessageIds = new Set<string>();
   private activeSubmittedUserMessage: SubmittedUserMessageEcho | null = null;
@@ -1472,6 +1492,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     if (this.activeForegroundTurnId) {
       throw new Error("A foreground turn is already active");
     }
+
+    // A later user message supersedes an unanswered plan-execute CTA.
+    this.dismissPlanExecutePermissions("Superseded by a new user message");
 
     const turnId = randomUUID();
     const messageId = options?.clientMessageId ?? randomUUID();
@@ -1952,10 +1975,20 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   getPendingPermissions(): AgentPermissionRequest[] {
-    return Array.from(this.pendingPermissions.values(), (entry) => entry.request);
+    return [
+      ...Array.from(this.pendingPermissions.values(), (entry) => entry.request),
+      ...Array.from(this.planExecutePermissions.values(), (entry) => entry.request),
+    ];
   }
 
-  async respondToPermission(requestId: string, response: AgentPermissionResponse): Promise<void> {
+  async respondToPermission(
+    requestId: string,
+    response: AgentPermissionResponse,
+  ): Promise<AgentPermissionResult | void> {
+    if (isPlanExecuteQuestionRequestId(requestId)) {
+      return this.respondToPlanExecutePermission(requestId, response);
+    }
+
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) {
       throw new Error(`No pending permission request with id '${requestId}'`);
@@ -1987,6 +2020,42 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     }
   }
 
+  private async respondToPlanExecutePermission(
+    requestId: string,
+    response: AgentPermissionResponse,
+  ): Promise<AgentPermissionResult | void> {
+    const pending = this.planExecutePermissions.get(requestId);
+    if (!pending) {
+      throw new Error(`No pending permission request with id '${requestId}'`);
+    }
+    this.planExecutePermissions.delete(requestId);
+
+    let followUpPrompt: string | undefined;
+    const shouldExecute =
+      response.behavior === "allow" &&
+      isPlanExecuteAnswer(
+        response.updatedInput && typeof response.updatedInput === "object"
+          ? (response.updatedInput as { answers?: unknown }).answers
+          : null,
+      );
+    if (shouldExecute) {
+      const modeId = resolveImplementationModeId(this.availableModes);
+      await this.setMode(modeId);
+      followUpPrompt = buildPlanImplementationPrompt(pending.planText);
+    }
+
+    this.pushEvent({
+      type: "permission_resolved",
+      provider: this.provider,
+      requestId,
+      resolution: response,
+    });
+
+    if (followUpPrompt) {
+      return { followUpPrompt };
+    }
+  }
+
   describePersistence(): AgentPersistenceHandle | null {
     if (!this.sessionId) {
       return null;
@@ -2011,6 +2080,8 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       pending.resolve({ outcome: { outcome: "cancelled" } });
     }
     this.pendingPermissions.clear();
+    this.dismissPlanExecutePermissions("Interrupted");
+    this.pendingPlanExecuteText = null;
 
     if (this.activeForegroundTurnId) {
       await this.connection.cancel({ sessionId: this.sessionId });
@@ -2029,6 +2100,8 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       pending.resolve({ outcome: { outcome: "cancelled" } });
     }
     this.pendingPermissions.clear();
+    this.dismissPlanExecutePermissions("Session closed");
+    this.pendingPlanExecuteText = null;
 
     if (this.connection && this.sessionId) {
       try {
@@ -2521,6 +2594,12 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       snapshot = this.toolSnapshotTransformer(snapshot);
     }
     this.toolCalls.set(toolCallId, snapshot);
+    if (snapshot.status === "completed" && isCreatePlanToolSnapshot(snapshot)) {
+      const planText = extractCreatePlanText(snapshot);
+      if (planText && this.currentMode === "plan") {
+        this.pendingPlanExecuteText = planText;
+      }
+    }
     return [this.wrapTimeline(mapToolSnapshotToTimeline(snapshot, this.terminalEntries))];
   }
 
@@ -2731,6 +2810,63 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       this.activeSubmittedUserMessage = null;
     }
     this.pushEvent(event);
+    if (event.type === "turn_completed") {
+      this.maybeEmitPlanExecuteQuestion();
+    } else {
+      this.pendingPlanExecuteText = null;
+    }
+  }
+
+  private maybeEmitPlanExecuteQuestion(): void {
+    const planText = this.pendingPlanExecuteText;
+    if (!planText || this.currentMode !== "plan") {
+      this.pendingPlanExecuteText = null;
+      return;
+    }
+    this.pendingPlanExecuteText = null;
+    this.emitPlanExecuteQuestion(planText);
+  }
+
+  private emitPlanExecuteQuestion(planText: string): void {
+    // Replace any prior unanswered CTA for this session.
+    this.dismissPlanExecutePermissions("Replaced by a newer plan");
+
+    const requestId = buildPlanExecuteQuestionRequestId(randomUUID());
+    const questions = buildPlanExecuteQuestions();
+    const request: AgentPermissionRequest = {
+      id: requestId,
+      provider: this.provider,
+      name: CLAUDE_ASK_USER_QUESTION_TOOL_NAME,
+      kind: "question",
+      title: "Plan",
+      description: "Review the proposed plan before implementation starts.",
+      input: { questions, plan: planText },
+      metadata: {
+        planText,
+        source: "acp_plan_execute",
+      },
+    };
+    this.planExecutePermissions.set(requestId, { request, planText });
+    this.pushEvent({
+      type: "permission_requested",
+      provider: this.provider,
+      request,
+    });
+  }
+
+  private dismissPlanExecutePermissions(message: string): void {
+    if (this.planExecutePermissions.size === 0) {
+      return;
+    }
+    for (const [requestId] of this.planExecutePermissions) {
+      this.pushEvent({
+        type: "permission_resolved",
+        provider: this.provider,
+        requestId,
+        resolution: { behavior: "deny", message },
+      });
+    }
+    this.planExecutePermissions.clear();
   }
 
   private isSubmittedUserMessageEcho(
@@ -3122,6 +3258,32 @@ interface MapToolDetailContext {
   rawOutput: ReturnType<typeof readRecord>;
 }
 
+function isCreatePlanToolSnapshot(snapshot: ACPToolSnapshot): boolean {
+  return isCreatePlanToolName(snapshot.title) || isCreatePlanToolName(snapshot.kind);
+}
+
+function extractCreatePlanText(snapshot: ACPToolSnapshot): string {
+  const textContent = extractToolText(snapshot.content);
+  if (textContent && textContent.trim()) {
+    return normalizePlanMarkdown(textContent);
+  }
+  for (const candidate of [snapshot.rawInput, snapshot.rawOutput]) {
+    const record = readRecord(candidate);
+    if (!record) {
+      continue;
+    }
+    for (const key of ["plan", "content", "text", "overview", "markdown", "name"]) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) {
+        return normalizePlanMarkdown(value);
+      }
+    }
+  }
+  // Fall back to a short label so the execute CTA can still appear.
+  const title = snapshot.title.trim();
+  return title.length > 0 ? title : "Approved plan";
+}
+
 function mapToolDetail(
   snapshot: ACPToolSnapshot,
   terminals: Map<string, TerminalEntry>,
@@ -3135,6 +3297,16 @@ function mapToolDetail(
     rawInput: readRecord(snapshot.rawInput),
     rawOutput: readRecord(snapshot.rawOutput),
   };
+
+  if (isCreatePlanToolSnapshot(snapshot)) {
+    const planText = extractCreatePlanText(snapshot);
+    if (planText) {
+      return {
+        type: "plan",
+        text: planText,
+      };
+    }
+  }
 
   switch (snapshot.kind) {
     case "read":

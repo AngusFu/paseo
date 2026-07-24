@@ -86,9 +86,14 @@ describe("buildACPClientCapabilities", () => {
 
 interface ACPSessionInternals {
   sessionId: string | null;
-  connection: { prompt: (...args: unknown[]) => Promise<PromptResponse> };
+  connection: {
+    prompt: (...args: unknown[]) => Promise<PromptResponse>;
+    setSessionMode?: (input: { sessionId: string; modeId: string }) => Promise<unknown>;
+  };
   activeForegroundTurnId: string | null;
   configOptions: SessionConfigOption[];
+  currentMode: string | null;
+  availableModes: Array<{ id: string; label: string }>;
   translateSessionUpdate(update: SessionUpdate): AgentStreamEvent[];
   acpMcpServers(): unknown[];
 }
@@ -2992,5 +2997,143 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
       cwd: "/tmp/paseo-acp-test",
       mcpServers: [],
     });
+  });
+
+  test("CreatePlan completion in plan mode emits an execute question after turn completes", async () => {
+    const session = createSession();
+    const events: AgentStreamEvent[] = [];
+    let resolvePrompt!: (value: PromptResponse) => void;
+    const prompt = vi.fn(
+      () =>
+        new Promise<PromptResponse>((resolve) => {
+          resolvePrompt = resolve;
+        }),
+    );
+
+    const internals = asInternals<ACPSessionInternals>(session);
+    internals.sessionId = "session-1";
+    internals.connection = { prompt };
+    internals.currentMode = "plan";
+    internals.availableModes = [
+      { id: "plan", label: "Plan" },
+      { id: "default", label: "Agent" },
+    ];
+
+    session.subscribe((event) => {
+      events.push(event);
+    });
+
+    await session.startTurn("draft a plan");
+    const toolEvents = internals.translateSessionUpdate({
+      sessionUpdate: "tool_call",
+      toolCallId: "call-create-plan",
+      title: "CreatePlan",
+      kind: "other",
+      status: "completed",
+      content: [{ type: "content", content: { type: "text", text: "- Step one\n- Step two" } }],
+      rawInput: { plan: "- Step one\n- Step two" },
+    });
+
+    expect(toolEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "timeline",
+          item: expect.objectContaining({
+            type: "tool_call",
+            detail: {
+              type: "plan",
+              text: "- Step one\n- Step two",
+            },
+          }),
+        }),
+      ]),
+    );
+
+    resolvePrompt({ stopReason: "end_turn" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const permission = events.find((event) => event.type === "permission_requested");
+    expect(permission).toMatchObject({
+      type: "permission_requested",
+      request: {
+        kind: "question",
+        name: "AskUserQuestion",
+        id: expect.stringMatching(/^plan-execute-question-/),
+      },
+    });
+    expect(session.getPendingPermissions()).toHaveLength(1);
+
+    const setSessionMode = vi.fn(async () => ({}));
+    internals.connection = { prompt, setSessionMode };
+    const result = await session.respondToPermission(
+      (permission as Extract<AgentStreamEvent, { type: "permission_requested" }>).request.id,
+      {
+        behavior: "allow",
+        updatedInput: {
+          answers: { Execute: "Execute" },
+        },
+      },
+    );
+
+    expect(setSessionMode).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      modeId: "default",
+    });
+    expect(result?.followUpPrompt).toEqual(expect.stringContaining("Step one"));
+    expect(session.getPendingPermissions()).toHaveLength(0);
+  });
+
+  test("a later user message dismisses an unanswered plan-execute question", async () => {
+    const session = createSession();
+    const events: AgentStreamEvent[] = [];
+    let resolvePrompt!: (value: PromptResponse) => void;
+    const prompt = vi.fn(
+      () =>
+        new Promise<PromptResponse>((resolve) => {
+          resolvePrompt = resolve;
+        }),
+    );
+
+    const internals = asInternals<ACPSessionInternals>(session);
+    internals.sessionId = "session-1";
+    internals.connection = { prompt };
+    internals.currentMode = "plan";
+    internals.availableModes = [
+      { id: "plan", label: "Plan" },
+      { id: "default", label: "Agent" },
+    ];
+
+    session.subscribe((event) => {
+      events.push(event);
+    });
+
+    await session.startTurn("draft a plan");
+    internals.translateSessionUpdate({
+      sessionUpdate: "tool_call",
+      toolCallId: "call-create-plan-2",
+      title: "CreatePlan",
+      status: "completed",
+      content: [{ type: "content", content: { type: "text", text: "- Do the thing" } }],
+    });
+    resolvePrompt({ stopReason: "end_turn" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(session.getPendingPermissions()).toHaveLength(1);
+
+    const secondPrompt = vi.fn(async () => ({ stopReason: "end_turn" as const }));
+    internals.connection = { prompt: secondPrompt };
+    await session.startTurn("actually do something else");
+
+    expect(session.getPendingPermissions()).toHaveLength(0);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "permission_resolved" &&
+          event.resolution.behavior === "deny" &&
+          event.requestId.startsWith("plan-execute-question-"),
+      ),
+    ).toBe(true);
   });
 });

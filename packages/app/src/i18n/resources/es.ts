@@ -2069,6 +2069,7 @@ export const es: TranslationResources = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "Sin modelos — obtener de Ollama",
         modelSearchPlaceholder: "Buscar modelos",
+        useOllama: "Usar Ollama",
         fetchModels: "Obtener modelos",
         save: "Guardar",
         test: "Probar",

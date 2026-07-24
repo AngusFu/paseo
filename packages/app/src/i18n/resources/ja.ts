@@ -2041,6 +2041,7 @@ export const ja: TranslationResources = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "モデルがありません — Ollama から取得",
         modelSearchPlaceholder: "モデルを検索",
+        useOllama: "Ollama を使う",
         fetchModels: "モデルを取得",
         save: "保存",
         test: "テスト",

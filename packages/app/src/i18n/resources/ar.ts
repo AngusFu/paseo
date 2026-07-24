@@ -2020,6 +2020,7 @@ export const ar: TranslationResources = {
         modelPlaceholder: "qwen3.5:0.8b",
         modelEmpty: "لا توجد نماذج — اجلب من Ollama",
         modelSearchPlaceholder: "ابحث عن النماذج",
+        useOllama: "استخدم Ollama",
         fetchModels: "جلب النماذج",
         save: "حفظ",
         test: "اختبار",

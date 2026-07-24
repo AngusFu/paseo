@@ -436,6 +436,10 @@ export function buildWorkflowsRoute() {
   return "/workflows" as const;
 }
 
+export function buildApprovalsRoute() {
+  return "/approvals" as const;
+}
+
 export function buildOpenProjectRoute() {
   return "/open-project" as const;
 }

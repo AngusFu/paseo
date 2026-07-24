@@ -1034,6 +1034,7 @@ export const es: TranslationResources = {
       schedules: "Horarios",
       kanban: "Kanban",
       workflows: "Workflows",
+      approvals: "Approvals",
       pinned: "Fijados",
     },
     worktreeSetup: {
@@ -3058,6 +3059,35 @@ export const es: TranslationResources = {
     confirmDelete: {
       message: "Eliminar «{{title}}»? Esta acción no se puede deshacer.",
       confirm: "Eliminar",
+    },
+  },
+  approvals: {
+    title: "Approvals",
+    filter: {
+      pending: "Pending",
+      resolved: "Resolved",
+    },
+    list: {
+      loadError: "Unable to load approvals",
+      tryAgain: "Try again",
+      hostError: "{{serverName}}: Could not load questions",
+      answerError: "Could not submit answer",
+    },
+    empty: {
+      pendingTitle: "No pending questions",
+      pendingDescription: "When agents ask for a decision, it shows up here.",
+      resolvedTitle: "No resolved questions",
+      resolvedDescription: "Answered and dismissed questions appear here.",
+    },
+    row: {
+      meta: "{{agent}} · {{host}} · {{source}}",
+      openAgent: "Open agent",
+    },
+    status: {
+      pending: "Pending",
+      answered: "Answered",
+      dismissed: "Dismissed",
+      expired: "Expired",
     },
   },
 };

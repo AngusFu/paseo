@@ -58,9 +58,10 @@ sequenceDiagram
 | CLI `paseo question ls \| answer`                                                                            | Debug / scripting over the same inbox                                                                   |
 | Timeline disguise [`ask-question-timeline.ts`](../packages/server/src/server/agent/ask-question-timeline.ts) | Project MCP calls as Claude `AskUserQuestion` for consistent cards                                      |
 | UI [`ask-question-card.tsx`](../packages/app/src/components/ask-question-card.tsx)                           | Renders question + answers on the timeline                                                              |
+| Approvals page [`approvals-screen.tsx`](../packages/app/src/screens/approvals-screen.tsx)                    | Global inbox UI at `/approvals` — list/answer/dismiss without opening each agent tab                    |
 | Prose-stop nudge [`nudge-prompt.ts`](../packages/server/src/server/agent/prose-stop/nudge-prompt.ts)         | Pushes agents away from prose and toward ask_question                                                   |
 
-**P1+P2 landed:** durable inbox + MCP persistence + `question.list/answer/create/wait` + CLI + `paseo-ask` skill. Approvals UI (P3) is not implemented yet.
+**P1–P3 landed:** durable inbox + MCP persistence + `question.list/answer/create/wait` + CLI + `paseo-ask` skill + global Approvals page (`/approvals`). Optional unix-socket waiter and native AskUserQuestion mirroring are still open.
 
 ## Target shape
 
@@ -119,11 +120,11 @@ Architecture and policy only.
 - Timeout classifier in `packages/server/src/server/question/timeout.ts`; prose-stop nudge teaches the ladder.
 - User dismiss stays `dismissed=true` and must not trigger fallback.
 
-### P3 — Approvals page + extras
+### P3 — Approvals page + extras ✅ (page) / open (extras)
 
-- Global Approvals / Inbox UI over pending questions (and later other permissions).
-- Optional unix socket waiter.
-- Optional mirror of native AskUserQuestion answers into the inbox for audit.
+- Global Approvals UI at `/approvals` (sidebar entry) over inbox questions: pending/resolved filters, answer/dismiss via `question.answer`, open agent.
+- Optional unix socket waiter — not implemented.
+- Optional mirror of native AskUserQuestion answers into the inbox for audit — not implemented.
 
 ## Risks
 

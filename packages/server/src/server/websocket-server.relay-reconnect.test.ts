@@ -316,6 +316,7 @@ function createReadySpeechReadinessSnapshot(): SpeechReadinessSnapshot {
     download: {
       inProgress: false,
       error: null,
+      progressByModelId: {},
     },
     dictation: {
       enabled: true,
@@ -352,6 +353,7 @@ function createDownloadInProgressSpeechReadinessSnapshot(): SpeechReadinessSnaps
     download: {
       inProgress: true,
       error: null,
+      progressByModelId: {},
     },
     dictation: {
       enabled: true,

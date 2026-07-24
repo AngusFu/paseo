@@ -2109,6 +2109,23 @@ export const ptBR: TranslationResources = {
       agents: {
         unavailable: "Conecte-se a este host para gerenciar agentes",
       },
+      dictation: {
+        title: "Dictation model",
+        hint: "Speech-to-text model for the microphone button. SenseVoice adds Chinese, Cantonese, Japanese and Korean.",
+        loading: "Loading models…",
+        notInstalled: "Not downloaded yet",
+        downloading: "Downloading…",
+        downloadingPercent: "Downloading {{percent}}%",
+        downloadingPercentWithSpeed: "Downloading {{percent}}% · {{speed}}",
+        downloadSpeed: "{{speed}}",
+        download: "Download",
+        apply: "Apply",
+        applied: "Applied",
+        running: "Running",
+        starting: "Starting…",
+        stopped: "Not started",
+        selectErrorTitle: "Couldn't switch dictation model",
+      },
       workspaces: {
         unavailable: "Conecte-se a este host para gerenciar espaços de trabalho",
         autoArchive: {

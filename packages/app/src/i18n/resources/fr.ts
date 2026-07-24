@@ -2129,6 +2129,23 @@ export const fr: TranslationResources = {
       agents: {
         unavailable: "Connectez-vous à cet hôte pour gérer les agents",
       },
+      dictation: {
+        title: "Modèle de dictée",
+        hint: "Modèle de reconnaissance vocale pour le bouton du microphone. SenseVoice ajoute le chinois, le cantonais, le japonais et le coréen.",
+        loading: "Chargement des modèles…",
+        notInstalled: "Pas encore téléchargé",
+        downloading: "Téléchargement…",
+        downloadingPercent: "Téléchargement {{percent}} %",
+        downloadingPercentWithSpeed: "Téléchargement {{percent}} % · {{speed}}",
+        downloadSpeed: "{{speed}}",
+        download: "Télécharger",
+        apply: "Appliquer",
+        applied: "Appliqué",
+        running: "Actif",
+        starting: "Démarrage…",
+        stopped: "Non démarré",
+        selectErrorTitle: "Impossible de changer le modèle de dictée",
+      },
       workspaces: {
         unavailable: "Connectez-vous à cet hôte pour gérer les espaces de travail",
         autoArchive: {

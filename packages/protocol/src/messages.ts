@@ -1316,6 +1316,59 @@ export const SetDaemonConfigRequestMessageSchema = z.object({
   config: MutableDaemonConfigPatchSchema,
 });
 
+// --- Dictation STT model selection (speech.dictation.*) ---
+// COMPAT(dictationModelSelection): added in v0.1.105, drop the gate when floor >= v0.1.105.
+
+export const DictationModelInfoSchema = z.object({
+  id: z.string(),
+  description: z.string(),
+  /** Language tags the model can transcribe (BCP-47-ish), for display in the UI. */
+  languages: z.array(z.string()),
+  /** Whether the model's files are already present on disk. */
+  installed: z.boolean(),
+  // COMPAT(dictationModelDownloadProgress): optional so old daemons omit it.
+  /** True while this model's archive is being downloaded/extracted. */
+  downloading: z.boolean().optional(),
+  /** Overall download progress for this model, 0–100. Present while downloading. */
+  downloadProgress: z.number().optional(),
+  /** Instantaneous download speed in bytes/sec. Present while downloading. */
+  downloadBytesPerSecond: z.number().optional(),
+  /** Bytes received so far for the active download. */
+  downloadReceivedBytes: z.number().optional(),
+  /** Total archive size in bytes when known (Content-Length). */
+  downloadTotalBytes: z.number().nullable().optional(),
+});
+
+export const DictationCurrentSelectionSchema = z.object({
+  provider: z.string(),
+  model: z.string(),
+  language: z.string(),
+});
+
+export const DictationReadinessSchema = z.object({
+  available: z.boolean(),
+  downloading: z.boolean(),
+  missingModelIds: z.array(z.string()),
+  reasonCode: z.string(),
+  message: z.string(),
+  // COMPAT(dictationModelDownloadProgress): optional so old daemons omit it.
+  /** Aggregate download progress for models currently downloading, 0–100. */
+  downloadProgress: z.number().optional(),
+  /** Aggregate download speed in bytes/sec. */
+  downloadBytesPerSecond: z.number().optional(),
+});
+
+export const SpeechDictationListModelsRequestSchema = z.object({
+  type: z.literal("speech.dictation.list_models.request"),
+  requestId: z.string(),
+});
+
+export const SpeechDictationSetModelRequestSchema = z.object({
+  type: z.literal("speech.dictation.set_model.request"),
+  model: z.string(),
+  requestId: z.string(),
+});
+
 export const ReadProjectConfigRequestMessageSchema = z.object({
   type: z.literal("read_project_config_request"),
   requestId: z.string(),
@@ -2616,6 +2669,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   DiagnosticsRequestSchema,
   GetDaemonConfigRequestMessageSchema,
   SetDaemonConfigRequestMessageSchema,
+  SpeechDictationListModelsRequestSchema,
+  SpeechDictationSetModelRequestSchema,
   ReadProjectConfigRequestMessageSchema,
   WriteProjectConfigRequestMessageSchema,
   DictationStreamStartMessageSchema,
@@ -2994,6 +3049,8 @@ export const ServerInfoStatusPayloadSchema = z
         rewind: z.boolean().optional(),
         // COMPAT(checkoutRefresh): added in v0.1.86, remove gate after 2026-11-29.
         checkoutRefresh: z.boolean().optional(),
+        // COMPAT(dictationModelSelection): added in v0.1.105, remove gate after 2026-12-09.
+        dictationModelSelection: z.boolean().optional(),
         // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
         workspaceMultiplicity: z.boolean().optional(),
         // COMPAT(projectRemove): added in v0.1.97, drop the gate when floor >= v0.1.97.
@@ -4010,6 +4067,33 @@ export const SetDaemonConfigResponseMessageSchema = z.object({
     .object({
       requestId: z.string(),
       config: MutableDaemonConfigSchema,
+    })
+    .passthrough(),
+});
+
+export const SpeechDictationListModelsResponseSchema = z.object({
+  type: z.literal("speech.dictation.list_models.response"),
+  payload: z
+    .object({
+      requestId: z.string(),
+      models: z.array(DictationModelInfoSchema),
+      current: DictationCurrentSelectionSchema,
+      readiness: DictationReadinessSchema,
+      error: z.string().nullable().optional(),
+    })
+    .passthrough(),
+});
+
+export const SpeechDictationSetModelResponseSchema = z.object({
+  type: z.literal("speech.dictation.set_model.response"),
+  payload: z
+    .object({
+      requestId: z.string(),
+      accepted: z.boolean(),
+      models: z.array(DictationModelInfoSchema),
+      current: DictationCurrentSelectionSchema,
+      readiness: DictationReadinessSchema,
+      error: z.string().nullable().optional(),
     })
     .passthrough(),
 });
@@ -5379,6 +5463,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   DiagnosticsResponseSchema,
   GetDaemonConfigResponseMessageSchema,
   SetDaemonConfigResponseMessageSchema,
+  SpeechDictationListModelsResponseSchema,
+  SpeechDictationSetModelResponseSchema,
   ReadProjectConfigResponseMessageSchema,
   WriteProjectConfigResponseMessageSchema,
   SetAgentModeResponseMessageSchema,
@@ -5563,6 +5649,17 @@ export type DiffToolAvailability = z.infer<typeof DiffToolAvailabilitySchema>;
 export type ServerDiffToolsCapability = z.infer<typeof ServerDiffToolsCapabilitySchema>;
 export type ServerCapabilities = z.infer<typeof ServerCapabilitiesSchema>;
 export type ServerInfoStatusPayload = z.infer<typeof ServerInfoStatusPayloadSchema>;
+export type DictationModelInfo = z.infer<typeof DictationModelInfoSchema>;
+export type DictationCurrentSelection = z.infer<typeof DictationCurrentSelectionSchema>;
+export type DictationReadiness = z.infer<typeof DictationReadinessSchema>;
+export type SpeechDictationListModelsRequest = z.infer<
+  typeof SpeechDictationListModelsRequestSchema
+>;
+export type SpeechDictationSetModelRequest = z.infer<typeof SpeechDictationSetModelRequestSchema>;
+export type SpeechDictationListModelsResponse = z.infer<
+  typeof SpeechDictationListModelsResponseSchema
+>;
+export type SpeechDictationSetModelResponse = z.infer<typeof SpeechDictationSetModelResponseSchema>;
 export type RpcErrorMessage = z.infer<typeof RpcErrorMessageSchema>;
 export type ArtifactMessage = z.infer<typeof ArtifactMessageSchema>;
 export type AgentUpdateMessage = z.infer<typeof AgentUpdateMessageSchema>;

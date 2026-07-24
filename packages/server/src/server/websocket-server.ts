@@ -48,6 +48,10 @@ import type { ScriptHealthState } from "./script-health-monitor.js";
 import type { ServiceProxySubsystem } from "./service-proxy.js";
 import type { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
 import type { SpeechReadinessSnapshot, SpeechService } from "./speech/speech-runtime.js";
+import {
+  createDictationSettingsController,
+  type DictationSettingsController,
+} from "./speech/dictation-settings.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "./voice-types.js";
 import {
   computeNotificationPlan,
@@ -446,6 +450,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly pushNotificationSender: PushNotificationSender;
   private readonly mcpBaseUrl: string | null;
   private speech!: SpeechService | null;
+  private dictationSettings: DictationSettingsController | null = null;
   private terminalManager!: TerminalManager | null;
   private serviceProxy!: ServiceProxySubsystem | null;
   private scriptRuntimeStore!: WorkspaceScriptRuntimeStore | null;
@@ -599,6 +604,16 @@ export class VoiceAssistantWebSocketServer {
       this.speech?.onReadinessChange((snapshot) => {
         this.publishSpeechReadiness(snapshot);
       }) ?? null;
+    // Backs the speech.dictation.* model-selection RPCs. Reuses the live speech stack so
+    // switching models hot-reconfigures in place (no daemon restart).
+    this.dictationSettings = this.speech
+      ? createDictationSettingsController({
+          paseoHome: this.paseoHome,
+          env: process.env,
+          speechService: this.speech,
+          logger: this.logger,
+        })
+      : null;
     this.unsubscribeDaemonConfigChange = this.daemonConfigStore.onChange((config, details) => {
       const nextAgentManagerState = this.providerSnapshotManager.applyMutableProviderConfig(
         config.providers,
@@ -1153,6 +1168,7 @@ export class VoiceAssistantWebSocketServer {
               getSpeechReadiness: () => this.speech!.getReadiness(),
             }
           : undefined,
+      dictationSettings: this.dictationSettings ?? undefined,
       serverId: this.serverId,
       daemonVersion: this.daemonVersion,
       daemonRuntimeConfig: this.daemonRuntimeConfig,
@@ -1321,6 +1337,8 @@ export class VoiceAssistantWebSocketServer {
         rewind: true,
         // COMPAT(checkoutRefresh): added in v0.1.86, remove gate after 2026-11-29.
         checkoutRefresh: true,
+        // COMPAT(dictationModelSelection): added in v0.1.105, remove gate after 2026-12-09.
+        ...(this.dictationSettings ? { dictationModelSelection: true } : {}),
         // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
         workspaceMultiplicity: true,
         // COMPAT(projectRemove): added in v0.1.97, drop the gate when floor >= v0.1.97.

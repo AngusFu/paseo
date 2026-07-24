@@ -2097,6 +2097,23 @@ export const ja: TranslationResources = {
       agents: {
         unavailable: "エージェントを管理するにはこのホストに接続してください",
       },
+      dictation: {
+        title: "ディクテーションモデル",
+        hint: "マイクボタンで使う音声テキスト変換モデル。SenseVoice は中国語、広東語、日本語、韓国語に対応します。",
+        loading: "モデルを読み込み中…",
+        notInstalled: "未ダウンロード",
+        downloading: "ダウンロード中…",
+        downloadingPercent: "ダウンロード中 {{percent}}%",
+        downloadingPercentWithSpeed: "ダウンロード中 {{percent}}% · {{speed}}",
+        downloadSpeed: "{{speed}}",
+        download: "ダウンロード",
+        apply: "適用",
+        applied: "適用済み",
+        running: "起動中",
+        starting: "起動しています…",
+        stopped: "未起動",
+        selectErrorTitle: "ディクテーションモデルを切り替えできませんでした",
+      },
       workspaces: {
         unavailable: "ワークスペースを管理するにはこのホストに接続してください",
         autoArchive: {

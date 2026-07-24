@@ -2076,6 +2076,23 @@ export const ar: TranslationResources = {
       agents: {
         unavailable: "اتصل بهذا المضيف لإدارة الوكلاء",
       },
+      dictation: {
+        title: "نموذج الإملاء",
+        hint: "نموذج تحويل الكلام إلى نص لزر الميكروفون. يضيف SenseVoice الصينية والكانتونية واليابانية والكورية.",
+        loading: "جارٍ تحميل النماذج…",
+        notInstalled: "لم يتم التنزيل بعد",
+        downloading: "جارٍ التنزيل…",
+        downloadingPercent: "جارٍ التنزيل {{percent}}%",
+        downloadingPercentWithSpeed: "جارٍ التنزيل {{percent}}% · {{speed}}",
+        downloadSpeed: "{{speed}}",
+        download: "تنزيل",
+        apply: "تطبيق",
+        applied: "مُطبَّق",
+        running: "قيد التشغيل",
+        starting: "جارٍ التشغيل…",
+        stopped: "غير مُشغَّل",
+        selectErrorTitle: "تعذّر تبديل نموذج الإملاء",
+      },
       workspaces: {
         unavailable: "اتصل بهذا المضيف لإدارة مساحات العمل",
         autoArchive: {

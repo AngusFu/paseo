@@ -1305,22 +1305,60 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         dismissed: z
           .boolean()
           .describe("True if the user dismissed the question without answering."),
+        timedOut: z
+          .boolean()
+          .optional()
+          .describe(
+            "True when the MCP tools/call wait was aborted/timed out. Not a user dismiss — follow paseo-ask and wait the same questionId.",
+          ),
+        questionId: z
+          .string()
+          .optional()
+          .describe("Durable Question Inbox id when available (use with paseo question wait)."),
       },
     },
     async (args, context) => {
       if (!callerAgentId) {
         throw new Error("ask_question requires an agent-scoped tool session");
       }
-      const response = await agentManager.askAgentQuestion({
+      const result = await agentManager.askAgentQuestion({
         agentId: callerAgentId,
         questions: args.questions,
         ...(args.title ? { title: args.title } : {}),
         ...(context?.signal ? { signal: context.signal } : {}),
       });
-      if (!response || response.behavior === "deny") {
+      if (result.outcome === "timed_out") {
         return {
           content: [],
-          structuredContent: ensureValidJson({ answers: {}, dismissed: true }),
+          structuredContent: ensureValidJson({
+            answers: {},
+            dismissed: false,
+            timedOut: true,
+            ...(result.questionId ? { questionId: result.questionId } : {}),
+          }),
+        };
+      }
+      if (result.outcome === "dismissed") {
+        return {
+          content: [],
+          structuredContent: ensureValidJson({
+            answers: {},
+            dismissed: true,
+            timedOut: false,
+            ...(result.questionId ? { questionId: result.questionId } : {}),
+          }),
+        };
+      }
+      const response = result.response;
+      if (!response || response.behavior !== "allow") {
+        return {
+          content: [],
+          structuredContent: ensureValidJson({
+            answers: {},
+            dismissed: true,
+            timedOut: false,
+            ...(result.questionId ? { questionId: result.questionId } : {}),
+          }),
         };
       }
       const rawAnswers = response.updatedInput?.answers;
@@ -1334,7 +1372,12 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       }
       return {
         content: [],
-        structuredContent: ensureValidJson({ answers, dismissed: false }),
+        structuredContent: ensureValidJson({
+          answers,
+          dismissed: false,
+          timedOut: false,
+          ...(result.questionId ? { questionId: result.questionId } : {}),
+        }),
       };
     },
   );

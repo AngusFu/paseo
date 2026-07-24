@@ -2762,6 +2762,10 @@ export class Session {
         return this.handleQuestionListRequest(msg);
       case "question.answer.request":
         return this.handleQuestionAnswerRequest(msg);
+      case "question.create.request":
+        return this.handleQuestionCreateRequest(msg);
+      case "question.wait.request":
+        return this.handleQuestionWaitRequest(msg);
       default:
         return undefined;
     }
@@ -2807,6 +2811,56 @@ export class Session {
     } catch (error) {
       this.emit({
         type: "question.answer.response",
+        payload: {
+          requestId: msg.requestId,
+          question: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleQuestionCreateRequest(
+    msg: Extract<SessionInboundMessage, { type: "question.create.request" }>,
+  ): Promise<void> {
+    try {
+      const question = await this.agentManager.createInboxQuestion({
+        agentId: msg.agentId,
+        questions: msg.questions,
+        ...(msg.title !== undefined ? { title: msg.title } : {}),
+        ...(msg.source !== undefined ? { source: msg.source } : {}),
+      });
+      this.emit({
+        type: "question.create.response",
+        payload: { requestId: msg.requestId, question, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "question.create.response",
+        payload: {
+          requestId: msg.requestId,
+          question: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleQuestionWaitRequest(
+    msg: Extract<SessionInboundMessage, { type: "question.wait.request" }>,
+  ): Promise<void> {
+    try {
+      const question = await this.agentManager.waitInboxQuestion({
+        questionId: msg.questionId,
+        ...(msg.timeoutMs !== undefined ? { timeoutMs: msg.timeoutMs } : {}),
+      });
+      this.emit({
+        type: "question.wait.response",
+        payload: { requestId: msg.requestId, question, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "question.wait.response",
         payload: {
           requestId: msg.requestId,
           question: null,

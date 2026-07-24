@@ -31,6 +31,7 @@ export interface SkillTargets {
 export const PASEO_SKILL_NAMES = [
   "paseo",
   "paseo-advisor",
+  "paseo-ask",
   "paseo-chat",
   "paseo-committee",
   "paseo-create-workflow",

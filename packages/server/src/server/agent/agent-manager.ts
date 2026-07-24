@@ -89,7 +89,17 @@ import {
 } from "./ask-question-timeline.js";
 import { isPlanExecuteQuestionRequestId } from "./plan-execute-question.js";
 import type { QuestionStore } from "../question/store.js";
-import type { InboxQuestionStatus, StoredInboxQuestion } from "@getpaseo/protocol/question/types";
+import type {
+  InboxQuestionSource,
+  InboxQuestionStatus,
+  StoredInboxQuestion,
+} from "@getpaseo/protocol/question/types";
+
+export interface AskAgentQuestionResult {
+  outcome: "answered" | "dismissed" | "timed_out";
+  response: AgentPermissionResponse | null;
+  questionId: string | null;
+}
 
 /**
  * COMPAT(askQuestionAskUserQuestionDisguise): permission companion for the
@@ -649,8 +659,13 @@ export class AgentManager {
     { agentId: string; requestId: string; questions: unknown[]; synthetic: boolean }
   >();
   private readonly mcpAskQuestionCallIdByRequest = new Map<string, string>();
-  /** mcp permission request id → inbox question id */
+  /** mcp/inbox permission request id → inbox question id */
   private readonly inboxQuestionIdByMcpRequest = new Map<string, string>();
+  /** Waiters for `question.wait` / skill fallback (keyed by inbox question id). */
+  private readonly inboxQuestionWaiters = new Map<
+    string,
+    Set<(question: StoredInboxQuestion) => void>
+  >();
   private readonly questionStore: QuestionStore | null;
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
@@ -2386,7 +2401,7 @@ export class AgentManager {
     questions: unknown[];
     title?: string;
     signal?: AbortSignal;
-  }): Promise<AgentPermissionResponse | null> {
+  }): Promise<AskAgentQuestionResult> {
     const agent = this.requireAgent(input.agentId);
     if (agent.internal) {
       throw new Error("ask_question is not available to internal agents");
@@ -2403,17 +2418,21 @@ export class AgentManager {
       ...(input.title ? { title: input.title } : {}),
       input: disguiseAskQuestionAsClaudeAskUserQuestion(input.questions),
     };
-    return await new Promise<AgentPermissionResponse | null>((resolveWaiter) => {
+    const response = await new Promise<AgentPermissionResponse | null>((resolveWaiter) => {
       this.mcpQuestionResolvers.set(requestId, resolveWaiter);
       if (input.signal) {
         if (input.signal.aborted) {
-          this.settleMcpQuestion(input.agentId, requestId, null);
+          // Timeout/abort releases only the MCP tool waiter. Keep the inbox row
+          // + permission so the skill can `question.wait` the same id.
+          this.releaseMcpQuestionWaiterOnTimeout(requestId);
           return;
         }
         input.signal.addEventListener(
           "abort",
-          () => this.settleMcpQuestion(input.agentId, requestId, null),
-          { once: true },
+          () => this.releaseMcpQuestionWaiterOnTimeout(requestId),
+          {
+            once: true,
+          },
         );
       }
       const hadPendingPermissions = agent.pendingPermissions.size > 0;
@@ -2437,22 +2456,180 @@ export class AgentManager {
       // Persist after the live waiter/permission are registered so callers can
       // observe pending permissions synchronously. Settlement looks up by
       // mcpRequestId map once create finishes (or falls back to store scan).
-      void this.persistMcpInboxQuestion({
+      void this.persistInboxQuestionRecord({
         agentId: agent.id,
         workspaceId: agent.workspaceId,
         requestId,
         questions: input.questions,
         title: input.title,
+        source: "mcp",
       });
+    });
+
+    const questionId = this.peekInboxQuestionIdForRequest(requestId);
+    if (response == null) {
+      return { outcome: "timed_out", response: null, questionId };
+    }
+    if (response.behavior === "deny") {
+      return { outcome: "dismissed", response, questionId };
+    }
+    return { outcome: "answered", response, questionId };
+  }
+
+  /**
+   * Create a durable inbox question and surface it as a pending permission
+   * without blocking. Used by skill/CLI fallback after MCP timeout.
+   */
+  async createInboxQuestion(input: {
+    agentId: string;
+    questions: unknown[];
+    title?: string;
+    source?: Extract<InboxQuestionSource, "skill" | "cli">;
+  }): Promise<StoredInboxQuestion> {
+    if (!this.questionStore) {
+      throw new Error("Question inbox is not configured on this daemon");
+    }
+    const agent = this.requireAgent(input.agentId);
+    if (agent.internal) {
+      throw new Error("question.create is not available to internal agents");
+    }
+    const source = input.source ?? "cli";
+    const question = await this.questionStore.create({
+      agentId: agent.id,
+      ...(agent.workspaceId ? { workspaceId: agent.workspaceId } : {}),
+      ...(input.title ? { title: input.title } : {}),
+      questions: input.questions,
+      source,
+    });
+    const requestId = `inbox-question-${question.id}`;
+    const withRequest = await this.questionStore.update(question.id, (current) => ({
+      ...current,
+      mcpRequestId: requestId,
+    }));
+    const stored = withRequest ?? { ...question, mcpRequestId: requestId };
+    this.inboxQuestionIdByMcpRequest.set(requestId, stored.id);
+
+    const request: AgentPermissionRequest = {
+      id: requestId,
+      provider: agent.provider,
+      name: CLAUDE_ASK_USER_QUESTION_TOOL_NAME,
+      kind: "question",
+      ...(input.title ? { title: input.title } : {}),
+      input: disguiseAskQuestionAsClaudeAskUserQuestion(input.questions),
+    };
+    const hadPendingPermissions = agent.pendingPermissions.size > 0;
+    agent.pendingPermissions.set(requestId, request);
+    if (!hadPendingPermissions) {
+      this.broadcastAgentAttention(agent, "permission");
+    }
+    this.bindAndProjectMcpAskQuestionTimeline({
+      agentId: agent.id,
+      requestId,
+      questions: input.questions,
+      provider: agent.provider,
+    });
+    this.touchUpdatedAt(agent);
+    this.emitState(agent);
+    this.dispatchStream(agent.id, {
+      type: "permission_requested",
+      provider: agent.provider,
+      request,
+    });
+    return stored;
+  }
+
+  async waitInboxQuestion(input: {
+    questionId: string;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+  }): Promise<StoredInboxQuestion> {
+    if (!this.questionStore) {
+      throw new Error("Question inbox is not configured on this daemon");
+    }
+    const current = await this.questionStore.get(input.questionId);
+    if (!current) {
+      throw new Error(`Question not found: ${input.questionId}`);
+    }
+    if (current.status !== "pending") {
+      return current;
+    }
+    if (input.signal?.aborted) {
+      throw new Error("ASK_QUESTION_TIMEOUT: question.wait aborted");
+    }
+
+    return await new Promise<StoredInboxQuestion>((resolveWait, rejectWait) => {
+      let settled = false;
+      const finish = (question: StoredInboxQuestion) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        resolveWait(question);
+      };
+      const fail = (error: Error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        rejectWait(error);
+      };
+
+      const waiter = (question: StoredInboxQuestion) => finish(question);
+      let waiters = this.inboxQuestionWaiters.get(input.questionId);
+      if (!waiters) {
+        waiters = new Set();
+        this.inboxQuestionWaiters.set(input.questionId, waiters);
+      }
+      waiters.add(waiter);
+
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      if (input.timeoutMs != null) {
+        timer = setTimeout(() => {
+          fail(new Error(`ASK_QUESTION_TIMEOUT: question.wait exceeded ${input.timeoutMs}ms`));
+        }, input.timeoutMs);
+      }
+
+      const onAbort = () => {
+        fail(new Error("ASK_QUESTION_TIMEOUT: question.wait aborted"));
+      };
+      if (input.signal) {
+        input.signal.addEventListener("abort", onAbort, { once: true });
+      }
+
+      const cleanup = () => {
+        const set = this.inboxQuestionWaiters.get(input.questionId);
+        set?.delete(waiter);
+        if (set && set.size === 0) {
+          this.inboxQuestionWaiters.delete(input.questionId);
+        }
+        if (timer) {
+          clearTimeout(timer);
+        }
+        input.signal?.removeEventListener("abort", onAbort);
+      };
+
+      // Re-check after registering — answer may have raced in.
+      void this.questionStore
+        ?.get(input.questionId)
+        .then((latest) => {
+          if (latest && latest.status !== "pending") {
+            finish(latest);
+          }
+          return undefined;
+        })
+        .catch(() => undefined);
     });
   }
 
-  private async persistMcpInboxQuestion(input: {
+  private async persistInboxQuestionRecord(input: {
     agentId: string;
     workspaceId?: string;
     requestId: string;
     questions: unknown[];
     title?: string;
+    source: InboxQuestionSource;
   }): Promise<void> {
     if (!this.questionStore) {
       return;
@@ -2463,7 +2640,7 @@ export class AgentManager {
         ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
         ...(input.title ? { title: input.title } : {}),
         questions: input.questions,
-        source: "mcp",
+        source: input.source,
         mcpRequestId: input.requestId,
       });
       this.inboxQuestionIdByMcpRequest.set(input.requestId, created.id);
@@ -2473,6 +2650,38 @@ export class AgentManager {
         "Failed to persist ask_question inbox record",
       );
     }
+  }
+
+  private peekInboxQuestionIdForRequest(requestId: string): string | null {
+    return this.inboxQuestionIdByMcpRequest.get(requestId) ?? null;
+  }
+
+  /**
+   * MCP tools/call timed out or aborted: resolve the tool waiter only.
+   * Leave the permission + inbox row pending so skill/CLI can wait the same id.
+   */
+  private releaseMcpQuestionWaiterOnTimeout(requestId: string): void {
+    const resolveWaiter = this.mcpQuestionResolvers.get(requestId);
+    if (!resolveWaiter) {
+      return;
+    }
+    this.mcpQuestionResolvers.delete(requestId);
+    resolveWaiter(null);
+  }
+
+  private notifyInboxQuestionWaiters(question: StoredInboxQuestion): void {
+    const waiters = this.inboxQuestionWaiters.get(question.id);
+    if (!waiters || waiters.size === 0) {
+      return;
+    }
+    this.inboxQuestionWaiters.delete(question.id);
+    for (const waiter of waiters) {
+      waiter(question);
+    }
+  }
+
+  private isInboxPermissionRequestId(requestId: string): boolean {
+    return requestId.startsWith("mcp-question-") || requestId.startsWith("inbox-question-");
   }
 
   async listInboxQuestions(
@@ -2516,11 +2725,20 @@ export class AgentManager {
       throw new Error("question.answer cannot dismiss and include answers");
     }
 
-    if (question.mcpRequestId && this.mcpQuestionResolvers.has(question.mcpRequestId)) {
-      const response: AgentPermissionResponse = dismiss
-        ? { behavior: "deny", message: "Question dismissed" }
-        : { behavior: "allow", updatedInput: { answers } };
-      await this.respondToPermission(question.agentId, question.mcpRequestId, response);
+    const response: AgentPermissionResponse = dismiss
+      ? { behavior: "deny", message: "Question dismissed" }
+      : { behavior: "allow", updatedInput: { answers } };
+
+    // Prefer the permission path so the agent card / orphaned MCP timeout row
+    // shares one settle (works even after the MCP tool waiter was released).
+    if (question.mcpRequestId) {
+      const agent = this.agents.get(question.agentId);
+      if (
+        agent?.pendingPermissions.has(question.mcpRequestId) ||
+        this.mcpQuestionResolvers.has(question.mcpRequestId)
+      ) {
+        await this.respondToPermission(question.agentId, question.mcpRequestId, response);
+      }
     }
 
     // MCP settle persists asynchronously; if the row is still pending, finish it here.
@@ -2529,6 +2747,7 @@ export class AgentManager {
       throw new Error(`Question disappeared after settle: ${input.questionId}`);
     }
     if (current.status !== "pending") {
+      this.notifyInboxQuestionWaiters(current);
       return current;
     }
     const updated = dismiss
@@ -2537,6 +2756,7 @@ export class AgentManager {
     if (!updated) {
       throw new Error(`Question not found: ${input.questionId}`);
     }
+    this.notifyInboxQuestionWaiters(updated);
     return updated;
   }
 
@@ -2579,10 +2799,16 @@ export class AgentManager {
             answers[key] = value;
           }
         }
-        await this.questionStore.markAnswered(questionId, answers);
+        const answered = await this.questionStore.markAnswered(questionId, answers);
+        if (answered) {
+          this.notifyInboxQuestionWaiters(answered);
+        }
         return;
       }
-      await this.questionStore.markDismissed(questionId);
+      const dismissed = await this.questionStore.markDismissed(questionId);
+      if (dismissed) {
+        this.notifyInboxQuestionWaiters(dismissed);
+      }
     } catch (error) {
       this.logger.warn(
         { err: error, requestId, questionId },
@@ -2707,9 +2933,9 @@ export class AgentManager {
   }
 
   /**
-   * Settle a pending `ask_question` waiter and clear its permission request.
-   * No-op (returns false) when the request id is not an MCP-owned question, so
-   * callers can safely probe before falling through to provider handling.
+   * Settle a pending inbox/MCP question permission and any live MCP tool waiter.
+   * Also handles orphaned rows after MCP timeout (permission still pending,
+   * tool waiter already released).
    */
   private settleMcpQuestion(
     agentId: string,
@@ -2717,12 +2943,15 @@ export class AgentManager {
     response: AgentPermissionResponse | null,
   ): boolean {
     const resolveWaiter = this.mcpQuestionResolvers.get(requestId);
-    if (!resolveWaiter) {
+    const agent = this.agents.get(agentId);
+    const hasPermission = agent?.pendingPermissions.has(requestId) ?? false;
+    if (!resolveWaiter && !(this.isInboxPermissionRequestId(requestId) && hasPermission)) {
       return false;
     }
-    this.mcpQuestionResolvers.delete(requestId);
+    if (resolveWaiter) {
+      this.mcpQuestionResolvers.delete(requestId);
+    }
     void this.persistInboxSettlement(requestId, response);
-    const agent = this.agents.get(agentId);
     const timelineBinding = this.clearMcpAskQuestionTimelineBinding(requestId);
     if (agent?.pendingPermissions.delete(requestId)) {
       this.dispatchStream(agentId, {
@@ -2731,36 +2960,45 @@ export class AgentManager {
         requestId,
         resolution: response ?? { behavior: "deny", message: "Question dismissed" },
       });
-      if (timelineBinding?.synthetic) {
-        const disguisedQuestions = disguiseAskQuestionAsClaudeAskUserQuestion(
-          timelineBinding.questions,
-        ).questions as unknown[];
-        const answers =
-          response?.behavior === "allow" &&
-          response.updatedInput &&
-          typeof response.updatedInput.answers === "object"
-            ? response.updatedInput.answers
-            : null;
-        this.recordAndDispatchTimelineItem(
-          agentId,
-          buildAskUserQuestionToolCall({
-            callId: timelineBinding.callId,
-            questions: disguisedQuestions,
-            status: response?.behavior === "allow" ? "completed" : "failed",
-            output: answers ?? { success: response?.behavior === "allow" },
-            error:
-              response?.behavior === "allow"
-                ? undefined
-                : { message: response?.message ?? "Question dismissed" },
-          }),
-          agent.provider,
-        );
-      }
+      this.completeSyntheticAskQuestionTimeline(agentId, agent.provider, timelineBinding, response);
       this.touchUpdatedAt(agent);
       this.emitState(agent);
     }
-    resolveWaiter(response);
+    resolveWaiter?.(response);
     return true;
+  }
+
+  private completeSyntheticAskQuestionTimeline(
+    agentId: string,
+    provider: AgentProvider,
+    timelineBinding: { callId: string; synthetic: boolean; questions: unknown[] } | null,
+    response: AgentPermissionResponse | null,
+  ): void {
+    if (!timelineBinding?.synthetic) {
+      return;
+    }
+    const disguisedQuestions = disguiseAskQuestionAsClaudeAskUserQuestion(timelineBinding.questions)
+      .questions as unknown[];
+    const answers =
+      response?.behavior === "allow" &&
+      response.updatedInput &&
+      typeof response.updatedInput.answers === "object"
+        ? response.updatedInput.answers
+        : null;
+    this.recordAndDispatchTimelineItem(
+      agentId,
+      buildAskUserQuestionToolCall({
+        callId: timelineBinding.callId,
+        questions: disguisedQuestions,
+        status: response?.behavior === "allow" ? "completed" : "failed",
+        output: answers ?? { success: response?.behavior === "allow" },
+        error:
+          response?.behavior === "allow"
+            ? undefined
+            : { message: response?.message ?? "Question dismissed" },
+      }),
+      provider,
+    );
   }
 
   async respondToPermission(

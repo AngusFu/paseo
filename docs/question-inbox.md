@@ -60,7 +60,7 @@ sequenceDiagram
 | UI [`ask-question-card.tsx`](../packages/app/src/components/ask-question-card.tsx)                           | Renders question + answers on the timeline                                                              |
 | Prose-stop nudge [`nudge-prompt.ts`](../packages/server/src/server/agent/prose-stop/nudge-prompt.ts)         | Pushes agents away from prose and toward ask_question                                                   |
 
-**P1 landed:** durable inbox + MCP persistence + `question.*` RPCs + CLI ls/answer. Skill timeout fallback (P2) is not implemented yet — timeout still fails the MCP tool call.
+**P1+P2 landed:** durable inbox + MCP persistence + `question.list/answer/create/wait` + CLI + `paseo-ask` skill. Approvals UI (P3) is not implemented yet.
 
 ## Target shape
 
@@ -111,12 +111,13 @@ Architecture and policy only.
 - MCP `ask_question` writes `source: mcp` with `mcpRequestId`; answer/dismiss via agent card or `question.answer` settles the same waiter.
 - CLI `paseo question ls/answer` over WS RPCs.
 
-### P2 — Timeout → skill fallback
+### P2 — Timeout → skill fallback ✅
 
-- Ship `paseo-ask` skill to managed skill install paths.
-- Teach agents (system / prose-stop copy) the MCP → skill ladder.
-- CLI `paseo question create/wait` used by the skill after MCP timeout.
-- Detect timeout classes carefully (MCP `-32001`, client abort, daemon deadline) so ordinary dismiss is not treated as fallback.
+- `paseo-ask` skill under `skills/paseo-ask` (desktop managed skill list).
+- MCP `ask_question` returns `timedOut` + optional `questionId` on tools/call abort; permission/inbox stay pending for the same id.
+- CLI + RPCs: `paseo question create/wait` (`question.create` / `question.wait`).
+- Timeout classifier in `packages/server/src/server/question/timeout.ts`; prose-stop nudge teaches the ladder.
+- User dismiss stays `dismissed=true` and must not trigger fallback.
 
 ### P3 — Approvals page + extras
 

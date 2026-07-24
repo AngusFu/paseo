@@ -8593,9 +8593,12 @@ test("askAgentQuestion surfaces a question permission and returns the user's ans
       updatedInput: { answers: { Env: "production" } },
     });
 
-    await expect(questionPromise).resolves.toEqual({
-      behavior: "allow",
-      updatedInput: { answers: { Env: "production" } },
+    await expect(questionPromise).resolves.toMatchObject({
+      outcome: "answered",
+      response: {
+        behavior: "allow",
+        updatedInput: { answers: { Env: "production" } },
+      },
     });
     expect(manager.getPendingPermissions(agentId)).toHaveLength(0);
   } finally {
@@ -8617,9 +8620,12 @@ test("askAgentQuestion returns the deny response when the user dismisses", async
       message: "Question dismissed",
     });
 
-    await expect(questionPromise).resolves.toEqual({
-      behavior: "deny",
-      message: "Question dismissed",
+    await expect(questionPromise).resolves.toMatchObject({
+      outcome: "dismissed",
+      response: {
+        behavior: "deny",
+        message: "Question dismissed",
+      },
     });
     expect(manager.getPendingPermissions(agentId)).toHaveLength(0);
   } finally {
@@ -8627,8 +8633,10 @@ test("askAgentQuestion returns the deny response when the user dismisses", async
   }
 });
 
-test("askAgentQuestion resolves null and withdraws the question when the caller aborts", async () => {
-  const { manager, agentId, cleanup } = await createAskQuestionFixture();
+test("askAgentQuestion times out without dismissing the pending permission", async () => {
+  const { manager, agentId, cleanup } = await createAskQuestionFixture({
+    withQuestionStore: true,
+  });
   try {
     const controller = new AbortController();
     const questionPromise = manager.askAgentQuestion({
@@ -8640,7 +8648,23 @@ test("askAgentQuestion resolves null and withdraws the question when the caller 
 
     controller.abort();
 
-    await expect(questionPromise).resolves.toBeNull();
+    const timedOut = await questionPromise;
+    expect(timedOut.outcome).toBe("timed_out");
+    expect(manager.getPendingPermissions(agentId)).toHaveLength(1);
+
+    await vi.waitFor(async () => {
+      expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(1);
+    });
+    const pending = await manager.listInboxQuestions({ status: "pending" });
+    const waited = manager.waitInboxQuestion({ questionId: pending[0].id });
+    await manager.answerInboxQuestion({
+      questionId: pending[0].id,
+      answers: { Env: "staging" },
+    });
+    await expect(waited).resolves.toMatchObject({
+      status: "answered",
+      answers: { Env: "staging" },
+    });
     expect(manager.getPendingPermissions(agentId)).toHaveLength(0);
   } finally {
     cleanup();
@@ -8699,7 +8723,10 @@ test("askAgentQuestion rewrites opaque ACP MCP: tool timeline calls to AskUserQu
       behavior: "allow",
       updatedInput: { answers: { Env: "staging" } },
     });
-    await expect(questionPromise).resolves.toMatchObject({ behavior: "allow" });
+    await expect(questionPromise).resolves.toMatchObject({
+      outcome: "answered",
+      response: { behavior: "allow" },
+    });
 
     // Provider completion for the same callId must keep the AskUserQuestion disguise.
     await manager.appendTimelineItem(agentId, {
@@ -8757,9 +8784,12 @@ test("askAgentQuestion persists and settles the Question Inbox record", async ()
     expect(answered.status).toBe("answered");
     expect(answered.answers).toEqual({ Env: "production" });
 
-    await expect(questionPromise).resolves.toEqual({
-      behavior: "allow",
-      updatedInput: { answers: { Env: "production" } },
+    await expect(questionPromise).resolves.toMatchObject({
+      outcome: "answered",
+      response: {
+        behavior: "allow",
+        updatedInput: { answers: { Env: "production" } },
+      },
     });
     expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(0);
     expect(await manager.listInboxQuestions({ status: "answered" })).toEqual([answered]);

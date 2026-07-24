@@ -652,6 +652,15 @@ type QuestionAnswerPayload = Extract<
   SessionOutboundMessage,
   { type: "question.answer.response" }
 >["payload"];
+type QuestionCreatePayload = Extract<
+  SessionOutboundMessage,
+  { type: "question.create.response" }
+>["payload"];
+type QuestionWaitPayload = Extract<
+  SessionOutboundMessage,
+  { type: "question.wait.response" }
+>["payload"];
+const QUESTION_WAIT_DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 // Cold-start generation loads the model from disk first (tens of seconds).
 const LLM_GENERATE_TIMEOUT_MS = 120_000;
 interface LlmLocalGenerateOptions {
@@ -5610,6 +5619,50 @@ export class DaemonClient {
         questionId: options.questionId,
         ...(options.dismiss !== undefined ? { dismiss: options.dismiss } : {}),
         ...(options.answers !== undefined ? { answers: options.answers } : {}),
+      },
+    });
+  }
+
+  async questionCreate(options: {
+    agentId: string;
+    questions: Array<{
+      question: string;
+      header: string;
+      options?: Array<{ label: string; description?: string }>;
+      multiSelect?: boolean;
+      allowOther?: boolean;
+      allowEmpty?: boolean;
+      placeholder?: string;
+    }>;
+    title?: string;
+    source?: "skill" | "cli";
+    requestId?: string;
+  }): Promise<QuestionCreatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "question.create.request",
+        agentId: options.agentId,
+        questions: options.questions,
+        ...(options.title !== undefined ? { title: options.title } : {}),
+        ...(options.source !== undefined ? { source: options.source } : {}),
+      },
+    });
+  }
+
+  async questionWait(options: {
+    questionId: string;
+    timeoutMs?: number;
+    requestId?: string;
+  }): Promise<QuestionWaitPayload> {
+    const timeoutMs = options.timeoutMs ?? QUESTION_WAIT_DEFAULT_TIMEOUT_MS;
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      timeout: timeoutMs + 5_000,
+      message: {
+        type: "question.wait.request",
+        questionId: options.questionId,
+        ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
       },
     });
   }

@@ -185,8 +185,12 @@ import {
 import {
   QuestionListRequestSchema,
   QuestionAnswerRequestSchema,
+  QuestionCreateRequestSchema,
+  QuestionWaitRequestSchema,
   QuestionListResponseSchema,
   QuestionAnswerResponseSchema,
+  QuestionCreateResponseSchema,
+  QuestionWaitResponseSchema,
 } from "./question/rpc-schemas.js";
 import { BrowserAutomationHostCapabilitySchema } from "./browser-automation/capabilities.js";
 import {
@@ -2860,6 +2864,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   LlmChatToolRespondRequestSchema,
   QuestionListRequestSchema,
   QuestionAnswerRequestSchema,
+  QuestionCreateRequestSchema,
+  QuestionWaitRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -5639,6 +5645,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   LlmChatToolRespondResponseSchema,
   QuestionListResponseSchema,
   QuestionAnswerResponseSchema,
+  QuestionCreateResponseSchema,
+  QuestionWaitResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
   InstallDifftasticProgressMessageSchema,
@@ -5824,8 +5832,12 @@ export type LlmLocalOllamaListModelsResponse = z.infer<
 >;
 export type QuestionListRequest = z.infer<typeof QuestionListRequestSchema>;
 export type QuestionAnswerRequest = z.infer<typeof QuestionAnswerRequestSchema>;
+export type QuestionCreateRequest = z.infer<typeof QuestionCreateRequestSchema>;
+export type QuestionWaitRequest = z.infer<typeof QuestionWaitRequestSchema>;
 export type QuestionListResponse = z.infer<typeof QuestionListResponseSchema>;
 export type QuestionAnswerResponse = z.infer<typeof QuestionAnswerResponseSchema>;
+export type QuestionCreateResponse = z.infer<typeof QuestionCreateResponseSchema>;
+export type QuestionWaitResponse = z.infer<typeof QuestionWaitResponseSchema>;
 
 // Type exports for payload types
 export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;

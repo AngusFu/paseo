@@ -80,6 +80,7 @@ import {
 } from "./retriable-turn-hook.js";
 import { checkProseStopWithLlama } from "./prose-stop/check.js";
 import { formatProseStopNudgePrompt } from "./prose-stop/nudge-prompt.js";
+import { PROSE_STOP_PREVENTION_PROMPT } from "./prose-stop/prevention-prompt.js";
 import type { LlamaService } from "../llm/llama-service.js";
 import {
   buildAskUserQuestionToolCall,
@@ -302,6 +303,8 @@ export interface AgentManagerOptions {
   appendSystemPrompt?: string;
   /** When false, skip the prose-stop turn-end gate. Default true. */
   getProseStopEnabled?: () => boolean;
+  /** When true, inject PROSE_STOP_PREVENTION_PROMPT into daemonAppendSystemPrompt. */
+  getProseStopPreventionPromptEnabled?: () => boolean;
   getLlamaService?: () => LlamaService | null;
   agentStreamCoalesceWindowMs?: number;
   rescueTimeouts?: AgentManagerRescueTimeouts;
@@ -682,6 +685,8 @@ export class AgentManager {
   private paseoToolCatalogFactory: PaseoToolCatalogFactory | null = null;
   private appendSystemPrompt: string;
   private getProseStopEnabled: () => boolean = () => true;
+  /** Off until bootstrap wires config — keeps unit tests focused on user append. */
+  private getProseStopPreventionPromptEnabled: () => boolean = () => false;
   private getLlamaService: () => LlamaService | null = () => null;
   private onAgentAttention?: AgentAttentionCallback;
   private onAgentArchived?: AgentArchivedCallback;
@@ -796,10 +801,14 @@ export class AgentManager {
   /** Wire prose-stop deps after LlamaService / daemon config exist (bootstrap). */
   configureProseStop(options: {
     getProseStopEnabled?: () => boolean;
+    getProseStopPreventionPromptEnabled?: () => boolean;
     getLlamaService?: () => LlamaService | null;
   }): void {
     if (options.getProseStopEnabled) {
       this.getProseStopEnabled = options.getProseStopEnabled;
+    }
+    if (options.getProseStopPreventionPromptEnabled) {
+      this.getProseStopPreventionPromptEnabled = options.getProseStopPreventionPromptEnabled;
     }
     if (options.getLlamaService) {
       this.getLlamaService = options.getLlamaService;
@@ -5322,7 +5331,15 @@ export class AgentManager {
   }
 
   private applyDaemonAppendSystemPrompt(config: AgentSessionConfig): AgentSessionConfig {
-    const daemonAppendSystemPrompt = this.appendSystemPrompt.trim();
+    const parts: string[] = [];
+    const userAppend = this.appendSystemPrompt.trim();
+    if (userAppend.length > 0) {
+      parts.push(userAppend);
+    }
+    if (this.getProseStopPreventionPromptEnabled()) {
+      parts.push(PROSE_STOP_PREVENTION_PROMPT.trim());
+    }
+    const daemonAppendSystemPrompt = parts.join("\n\n");
     const next = { ...config };
     delete next.daemonAppendSystemPrompt;
 

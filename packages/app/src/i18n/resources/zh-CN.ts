@@ -2011,6 +2011,9 @@ export const zhCN: TranslationResources = {
         title: "散文停候门禁",
         label: "拦截用聊天散文等用户的回合",
         hint: "当 agent 用「let me know」「要 push 即可」等散文结尾等待你时，自动 nudge 它改用 ask_question。默认开启；有本地 AI 时在正则之外还会做分类。",
+        preventionPromptLabel: "注入预防提示词",
+        preventionPromptHint:
+          "在系统提示里追加一小段说明，让 agent 一开始就别用聊天散文等人。与回合结束 nudge 独立。默认开启；对新创建/重载的 agent 生效。",
         updateErrorTitle: "无法更新散文停候设置",
       },
       connections: {

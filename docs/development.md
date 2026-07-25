@@ -549,6 +549,9 @@ Foreground `turn_completed` runs a turn-end gate that detects waiting-for-user c
 (e.g. “let me know”, “要 push 即可”) and auto-nudges the agent to re-ask via `ask_question`.
 
 - **Default on** — `MutableDaemonConfig.proseStop.enabled` (Host settings toggle near Local AI).
+- **Prevention prompt (default on)** — `proseStop.preventionPrompt` injects a short
+  `daemonAppendSystemPrompt` fragment (`prevention-prompt.ts`) so agents avoid prose waits
+  up front. Independent of the turn-end gate; applies on create/reload.
 - **No local LLM** — regex only; never fails the turn for a missing model.
 - **Local AI ready** — regex-first, then a WAIT/DONE classifier via `LlamaService`.
   The classifier **defaults to DONE when unsure** (regex already catches many clear waits);

@@ -1157,10 +1157,23 @@ function ProseStopCard({ serverId }: { serverId: string }) {
   const isConnected = useHostRuntimeIsConnected(serverId);
   const { config, patchConfig } = useDaemonConfig(serverId);
 
-  const handleValueChange = useCallback(
+  const handleEnabledChange = useCallback(
     (next: boolean) => {
       void patchConfig({ proseStop: { enabled: next } }).catch((error) => {
         console.error("[HostPage] Failed to update prose-stop", error);
+        Alert.alert(
+          t("settings.host.proseStop.updateErrorTitle"),
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+    },
+    [patchConfig, t],
+  );
+
+  const handlePreventionPromptChange = useCallback(
+    (next: boolean) => {
+      void patchConfig({ proseStop: { preventionPrompt: next } }).catch((error) => {
+        console.error("[HostPage] Failed to update prose-stop prevention prompt", error);
         Alert.alert(
           t("settings.host.proseStop.updateErrorTitle"),
           error instanceof Error ? error.message : String(error),
@@ -1182,9 +1195,25 @@ function ProseStopCard({ serverId }: { serverId: string }) {
           </View>
           <Switch
             value={config?.proseStop?.enabled !== false}
-            onValueChange={handleValueChange}
+            onValueChange={handleEnabledChange}
             accessibilityLabel={t("settings.host.proseStop.label")}
             testID="host-page-prose-stop-switch"
+          />
+        </View>
+        <View style={settingsStyles.row}>
+          <View style={settingsStyles.rowContent}>
+            <Text style={settingsStyles.rowTitle}>
+              {t("settings.host.proseStop.preventionPromptLabel")}
+            </Text>
+            <Text style={settingsStyles.rowHint}>
+              {t("settings.host.proseStop.preventionPromptHint")}
+            </Text>
+          </View>
+          <Switch
+            value={config?.proseStop?.preventionPrompt !== false}
+            onValueChange={handlePreventionPromptChange}
+            accessibilityLabel={t("settings.host.proseStop.preventionPromptLabel")}
+            testID="host-page-prose-stop-prevention-prompt-switch"
           />
         </View>
       </View>

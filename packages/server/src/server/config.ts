@@ -419,6 +419,16 @@ function resolveBrowserToolsEnabled(persisted: ReturnType<typeof loadPersistedCo
   return persisted.daemon?.browserTools?.enabled ?? false;
 }
 
+function resolveProseStopConfig(persisted: ReturnType<typeof loadPersistedConfig>): {
+  enabled: boolean;
+  preventionPrompt: boolean;
+} {
+  return {
+    enabled: persisted.daemon?.proseStop?.enabled ?? true,
+    preventionPrompt: persisted.daemon?.proseStop?.preventionPrompt ?? true,
+  };
+}
+
 function resolveStaticLoadConfigSettings(
   env: NodeJS.ProcessEnv,
   cli: CliConfigOverrides | undefined,
@@ -431,6 +441,7 @@ function resolveStaticLoadConfigSettings(
     browserToolsEnabled: resolveBrowserToolsEnabled(persisted),
     autoArchiveAfterMerge: persisted.daemon?.autoArchiveAfterMerge ?? false,
     appendSystemPrompt: resolveAppendSystemPrompt(persisted),
+    proseStop: resolveProseStopConfig(persisted),
     terminalProfiles: persisted.daemon?.terminalProfiles,
     hostnames: mergeHostnames([
       persisted.daemon?.hostnames,
@@ -459,6 +470,7 @@ export function loadConfig(
     browserToolsEnabled,
     autoArchiveAfterMerge,
     appendSystemPrompt,
+    proseStop,
     terminalProfiles,
     hostnames,
     trustedProxies,
@@ -499,9 +511,7 @@ export function loadConfig(
     autoArchiveAfterMerge,
     enableTerminalAgentHooks: persisted.daemon?.enableTerminalAgentHooks ?? false,
     appendSystemPrompt,
-    proseStop: {
-      enabled: persisted.daemon?.proseStop?.enabled ?? true,
-    },
+    proseStop,
     localLlm: persisted.daemon?.localLlm,
     terminalProfiles,
     mcpDebug: env.MCP_DEBUG === "1",

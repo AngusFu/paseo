@@ -310,7 +310,7 @@ function makeConfig(providers: MutableDaemonConfig["providers"] = {}): MutableDa
     autoArchiveAfterMerge: false,
     enableTerminalAgentHooks: false,
     appendSystemPrompt: "",
-    proseStop: { enabled: true },
+    proseStop: { enabled: true, preventionPrompt: true },
   };
 }
 

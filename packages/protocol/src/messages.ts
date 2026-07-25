@@ -294,11 +294,14 @@ export const MutableDaemonConfigSchema = z
     terminalProfiles: z.array(TerminalProfileSchema).optional(),
     // When enabled, foreground turn_completed messages that wait for the user
     // in chat prose are auto-nudged to re-ask via ask_question.
+    // preventionPrompt: inject a short system-prompt fragment that steers agents
+    // away from prose waits (independent of the turn-end gate).
     proseStop: z
       .object({
         enabled: z.boolean().default(true),
+        preventionPrompt: z.boolean().default(true),
       })
-      .default({ enabled: true }),
+      .default({ enabled: true, preventionPrompt: true }),
     // OpenAI-compatible local LLM backend (Ollama, LM Studio, etc.). When
     // baseUrl and model are absent, llm.local.* features stay unavailable.
     localLlm: z
@@ -332,6 +335,7 @@ export const MutableDaemonConfigPatchSchema = z
     proseStop: z
       .object({
         enabled: z.boolean().optional(),
+        preventionPrompt: z.boolean().optional(),
       })
       .optional(),
     localLlm: z

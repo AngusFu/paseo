@@ -254,6 +254,7 @@ export const PersistedConfigSchema = z
         proseStop: z
           .object({
             enabled: z.boolean().optional(),
+            preventionPrompt: z.boolean().optional(),
           })
           .passthrough()
           .optional(),

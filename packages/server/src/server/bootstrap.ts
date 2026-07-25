@@ -386,7 +386,7 @@ export interface PaseoDaemonConfig {
   autoArchiveAfterMerge?: boolean;
   enableTerminalAgentHooks?: boolean;
   appendSystemPrompt?: string;
-  proseStop?: { enabled: boolean };
+  proseStop?: { enabled: boolean; preventionPrompt?: boolean };
   localLlm?: {
     baseUrl?: string;
     apiKey?: string;
@@ -515,7 +515,10 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
     autoArchiveAfterMerge: config.autoArchiveAfterMerge ?? false,
     enableTerminalAgentHooks: config.enableTerminalAgentHooks ?? false,
     appendSystemPrompt: config.appendSystemPrompt ?? "",
-    proseStop: { enabled: config.proseStop?.enabled ?? true },
+    proseStop: {
+      enabled: config.proseStop?.enabled ?? true,
+      preventionPrompt: config.proseStop?.preventionPrompt ?? true,
+    },
   };
 
   if (config.localLlm !== undefined) {
@@ -1650,6 +1653,8 @@ export async function createPaseoDaemon(
             );
             agentManager.configureProseStop({
               getProseStopEnabled: () => daemonConfigStore.get().proseStop.enabled !== false,
+              getProseStopPreventionPromptEnabled: () =>
+                daemonConfigStore.get().proseStop.preventionPrompt !== false,
               getLlamaService: () => wsServer?.getLlamaService() ?? null,
             });
             if (relayEnabled) {

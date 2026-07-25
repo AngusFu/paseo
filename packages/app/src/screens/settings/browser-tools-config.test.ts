@@ -15,7 +15,7 @@ function makeConfig(browserToolsEnabled = false): MutableDaemonConfig {
     autoArchiveAfterMerge: false,
     enableTerminalAgentHooks: false,
     appendSystemPrompt: "",
-    proseStop: { enabled: true },
+    proseStop: { enabled: true, preventionPrompt: true },
   };
 }
 

@@ -2066,6 +2066,9 @@ export const ptBR: TranslationResources = {
         title: "Prose stop",
         label: "Nudge agents that wait in chat prose",
         hint: "When an agent ends a turn waiting for you in chat (for example “let me know” or “要 push 即可”), automatically ask it to re-ask via ask_question. Uses regex; with Local AI ready it also classifies. On by default.",
+        preventionPromptLabel: "Inject prevention prompt",
+        preventionPromptHint:
+          "Append a short system instruction so agents avoid prose waits up front. Independent of the turn-end nudge. On by default; applies to new/reloaded agents.",
         updateErrorTitle: "Unable to update prose stop",
       },
       connections: {

@@ -53,6 +53,20 @@ A loop is a worker/verifier cycle: launch a worker, check verification, repeat u
 /paseo-loop babysit PR 123 until checks are green, check every 2m, max-time 1h
 ```
 
+## `/paseo-goal`, Goal Until Done
+
+Cross-provider goal workflow: clarify fuzzy intent, then run until a verifiable condition holds. Use when you say "goal", "keep going until", "一直做到", or want a completion condition rather than a one-shot prompt.
+
+- **`--clarify`** — interview (via Paseo questions), write a goal doc under `$PASEO_HOME/goals/docs/`, **stop without coding**.
+- **Execute** — the agent picks orchestration: Codex native **`/goal`** (same thread), **paseo-loop** (isolated workers; default when unsure), or **in-thread continuation** on non-Codex when you want this tab continuously (daemon MCP **`set_paseo_goal`** / **`clear_paseo_goal`**).
+
+```
+/paseo-goal --clarify migrate auth module to the new session API
+/paseo-goal all tests in packages/server pass and lint is clean
+```
+
+See **paseo-loop** for explicit babysit/loop phrasing; this skill may route there automatically.
+
 ## `/paseo-committee`, Committee Planning
 
 Forms a committee of two high-reasoning agents to step back, do root cause analysis, and produce a plan. Use it when stuck, looping, tunnel-visioning, or facing a hard planning problem.

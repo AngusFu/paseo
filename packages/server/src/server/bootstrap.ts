@@ -148,6 +148,7 @@ import { FileBackedProjectRegistry, FileBackedWorkspaceRegistry } from "./worksp
 import { FileBackedChatService } from "./chat/chat-service.js";
 import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { LoopService } from "./loop-service.js";
+import { GoalService } from "./goal-service.js";
 import { ScheduleService } from "./schedule/service.js";
 import { KanbanService } from "./kanban/service.js";
 import { WORKFLOW_RUN_ID_LABEL, WorkflowService } from "./workflow/service.js";
@@ -1211,6 +1212,16 @@ export async function createPaseoDaemon(
   });
   await loopService.initialize();
   logger.info({ elapsed: elapsed() }, "Loop service initialized");
+  const goalService = new GoalService({
+    paseoHome: config.paseoHome,
+    agentManager,
+    providerSnapshotManager,
+    readDaemonConfig: () => ({ metadataGeneration: daemonConfigStore.get().metadataGeneration }),
+    logger,
+  });
+  await goalService.initialize();
+  agentManager.setGoalService(goalService);
+  logger.info({ elapsed: elapsed() }, "Goal service initialized");
   const createScheduleLocalWorkspaceExternal = async (input: {
     cwd: string;
     firstAgentContext: FirstAgentContext;
@@ -1364,6 +1375,7 @@ export async function createPaseoDaemon(
     browserToolsEnabled: browserToolsPolicy.isEnabled(),
     browserToolsBroker,
     workflowService,
+    goalService,
     paseoHome: config.paseoHome,
     worktreesRoot: config.worktreesRoot,
     callerAgentId: runtime.callerAgentId,

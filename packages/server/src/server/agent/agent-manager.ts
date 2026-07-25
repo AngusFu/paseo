@@ -81,6 +81,7 @@ import {
 import { checkProseStopWithLlama } from "./prose-stop/check.js";
 import { formatProseStopNudgePrompt } from "./prose-stop/nudge-prompt.js";
 import type { LlamaService } from "../llm/llama-service.js";
+import type { GoalService } from "../goal-service.js";
 import {
   buildAskUserQuestionToolCall,
   CLAUDE_ASK_USER_QUESTION_TOOL_NAME,
@@ -652,6 +653,7 @@ export class AgentManager {
   private appendSystemPrompt: string;
   private getProseStopEnabled: () => boolean = () => true;
   private getLlamaService: () => LlamaService | null = () => null;
+  private goalService: GoalService | null = null;
   private onAgentAttention?: AgentAttentionCallback;
   private onAgentArchived?: AgentArchivedCallback;
   private onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
@@ -772,6 +774,10 @@ export class AgentManager {
     if (options.getLlamaService) {
       this.getLlamaService = options.getLlamaService;
     }
+  }
+
+  setGoalService(service: GoalService | null): void {
+    this.goalService = service;
   }
 
   public getMetricsSnapshot(): AgentMetricsSnapshot {
@@ -3951,7 +3957,7 @@ export class AgentManager {
     agent.lastError = undefined;
     this.clearRetriableTurnRetry(agent.id);
     if (isForegroundEvent) {
-      return this.maybeScheduleProseStopNudge(agent).finally(() => {
+      return this.maybeScheduleGoalContinuation(agent).finally(() => {
         void this.refreshRuntimeInfo(agent);
       });
     }
@@ -4051,6 +4057,26 @@ export class AgentManager {
       clearTimeout(pending.timer);
     }
     this.proseStopPendingNudges.delete(agentId);
+  }
+
+  private async maybeScheduleGoalContinuation(agent: ActiveManagedAgent): Promise<void> {
+    const goalService = this.goalService;
+    if (goalService) {
+      try {
+        await goalService.maybeScheduleContinuation(agent.id);
+      } catch (error) {
+        this.logger.warn(
+          { err: error, agentId: agent.id },
+          "agent.manager.goal_continuation.check_failed",
+        );
+      }
+      if (goalService.hasActiveGoal(agent.id)) {
+        this.clearProseStopPendingNudge(agent.id);
+        this.proseStopActive.delete(agent.id);
+        return;
+      }
+    }
+    await this.maybeScheduleProseStopNudge(agent);
   }
 
   private async maybeScheduleProseStopNudge(agent: ActiveManagedAgent): Promise<void> {

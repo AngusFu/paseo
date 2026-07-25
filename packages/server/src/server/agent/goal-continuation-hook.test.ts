@@ -143,10 +143,33 @@ class ProseStopTestClient implements AgentClient {
 }
 
 function createGoalServiceStub(active: boolean): GoalService {
+  const maybeScheduleContinuation = vi.fn(async () => {});
   return {
     hasActiveGoal: vi.fn(() => active),
-    maybeScheduleContinuation: vi.fn(async () => {}),
-  } as unknown as GoalService;
+    maybeScheduleContinuation,
+  } as unknown as GoalService & { maybeScheduleContinuation: typeof maybeScheduleContinuation };
+}
+
+class TurnFailedTestSession extends ProseStopTestSession {
+  override async startTurn(): Promise<{ turnId: string }> {
+    const turnId = "turn-failed-1";
+    setTimeout(() => {
+      this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+      this.pushEvent({
+        type: "turn_failed",
+        provider: this.provider,
+        turnId,
+        error: "provider exploded",
+      });
+    }, 0);
+    return { turnId };
+  }
+}
+
+class TurnFailedTestClient extends ProseStopTestClient {
+  override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    return new TurnFailedTestSession(config);
+  }
 }
 
 afterEach(() => {
@@ -210,6 +233,34 @@ test("maybeScheduleGoalContinuation runs prose-stop when no goal is active", asy
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(checkProseStopWithLlama).toHaveBeenCalled();
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("maybeScheduleGoalContinuation runs on foreground turn_failed", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "goal-hook-turn-failed-"));
+  try {
+    const goalService = createGoalServiceStub(true);
+    const manager = new AgentManager({
+      clients: { codex: new TurnFailedTestClient() },
+      registry: new AgentStorage(join(workdir, "agents"), logger),
+      logger,
+      idFactory: () => "00000000-0000-4000-8000-000000000203",
+    });
+    manager.setGoalService(goalService);
+    manager.setPaseoToolsEnabled(false);
+
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+
+    for await (const _event of manager.streamAgent(agent.id, "finish this task")) {
+      // Drain foreground turn through turn_failed hook chain.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(goalService.maybeScheduleContinuation).toHaveBeenCalledWith(agent.id);
   } finally {
     rmSync(workdir, { recursive: true, force: true });
   }

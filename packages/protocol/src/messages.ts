@@ -3065,6 +3065,8 @@ export const ServerInfoStatusPayloadSchema = z
         // Daemon advertises pluggable non-GitHub forge support (the forge registry);
         // the client gates non-GitHub setup UI on it.
         forgeProviders: z.boolean().optional(),
+        // COMPAT(paseoGoalContinuation): added in v0.1.106, drop the gate when floor >= v0.1.106.
+        paseoGoalContinuation: z.boolean().optional(),
         // COMPAT(selectiveAgentTimeline): added in v0.1.106, remove after 2027-01-12.
         selectiveAgentTimeline: z.boolean().optional(),
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.

@@ -112,7 +112,12 @@ export class GoalService {
       const raw = await fs.readFile(this.storePath, "utf8");
       const parsed = StoredActiveGoalsSchema.parse(JSON.parse(raw));
       for (const [agentId, record] of Object.entries(parsed)) {
-        if (record.status === "active" || record.status === "paused") {
+        if (
+          record.status === "active" ||
+          record.status === "paused" ||
+          record.status === "met" ||
+          record.status === "max_iterations"
+        ) {
           this.goals.set(agentId, cloneRecord(record));
         }
       }
@@ -148,11 +153,12 @@ export class GoalService {
     }
     const now = nowIso();
     const existing = this.goals.get(agentId);
+    const preserveIteration = existing?.status === "active" || existing?.status === "paused";
     const record: GoalActiveRecord = {
       agentId,
       condition,
       status: "active",
-      iteration: existing?.status === "active" ? existing.iteration : 0,
+      iteration: preserveIteration ? existing.iteration : 0,
       maxIterations,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
@@ -218,7 +224,7 @@ export class GoalService {
       record.iteration = record.maxIterations;
       record.updatedAt = nowIso();
       record.lastEvaluationReason = `Reached max iterations (${record.maxIterations}).`;
-      this.goals.delete(agentId);
+      record.pauseReason = undefined;
       await this.persist();
       this.logger.info(
         { agentId, maxIterations: record.maxIterations },
@@ -251,7 +257,7 @@ export class GoalService {
 
     if (evaluation.met) {
       record.status = "met";
-      this.goals.delete(agentId);
+      record.pauseReason = undefined;
       await this.persist();
       this.logger.info({ agentId, reason: evaluation.reason }, "goal-service: condition met");
       return;

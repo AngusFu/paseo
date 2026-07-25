@@ -3957,9 +3957,14 @@ export class AgentManager {
     agent.lastError = undefined;
     this.clearRetriableTurnRetry(agent.id);
     if (isForegroundEvent) {
-      return this.maybeScheduleGoalContinuation(agent).finally(() => {
-        void this.refreshRuntimeInfo(agent);
+      void this.maybeScheduleGoalContinuation(agent).catch((error) => {
+        this.logger.warn(
+          { err: error, agentId: agent.id },
+          "agent.manager.goal_continuation.check_failed",
+        );
       });
+      void this.refreshRuntimeInfo(agent);
+      return undefined;
     }
     if (agent.lifecycle !== "idle" && !agent.pendingReplacement) {
       (agent as ActiveManagedAgent).lifecycle = "idle";
@@ -4034,6 +4039,14 @@ export class AgentManager {
     this.resolvePendingPermissionsForAgent(agent, event.provider, options, "Turn failed");
     if (!isForegroundEvent) {
       this.emitState(agent);
+    }
+    if (isForegroundEvent) {
+      void this.maybeScheduleGoalContinuation(agent).catch((error) => {
+        this.logger.warn(
+          { err: error, agentId: agent.id },
+          "agent.manager.goal_continuation.turn_failed_check_failed",
+        );
+      });
     }
   }
 

@@ -46,6 +46,7 @@ describe("GoalService", () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    vi.clearAllTimers();
     vi.useRealTimers();
   });
 
@@ -124,7 +125,9 @@ describe("GoalService", () => {
 
     await service.maybeScheduleContinuation("agent-1");
 
-    expect(service.getGoal("agent-1")).toBeNull();
+    const goal = service.getGoal("agent-1");
+    expect(goal?.status).toBe("met");
+    expect(service.hasActiveGoal("agent-1")).toBe(false);
     expect(streamAgent).not.toHaveBeenCalled();
   });
 
@@ -152,7 +155,39 @@ describe("GoalService", () => {
     expect(service.getGoal("agent-1")?.iteration).toBe(1);
 
     await service.maybeScheduleContinuation("agent-1");
-    expect(service.getGoal("agent-1")).toBeNull();
+    const goal = service.getGoal("agent-1");
+    expect(goal?.status).toBe("max_iterations");
+    expect(service.hasActiveGoal("agent-1")).toBe(false);
+  });
+
+  it("preserves iteration when re-setting a paused goal", async () => {
+    await createService();
+    await service.setGoal("agent-1", { condition: "First", maxIterations: 5 });
+    evaluateGoal.mockResolvedValueOnce({ met: false, reason: "Not yet" });
+    await service.maybeScheduleContinuation("agent-1");
+    expect(service.getGoal("agent-1")?.iteration).toBe(1);
+
+    agentManager.getPendingPermissions.mockReturnValueOnce([
+      { id: "perm-1", name: "approve", kind: "permission" } as never,
+    ]);
+    await service.maybeScheduleContinuation("agent-1");
+    expect(service.getGoal("agent-1")?.status).toBe("paused");
+
+    const updated = await service.setGoal("agent-1", { condition: "Second" });
+    expect(updated.iteration).toBe(1);
+    expect(updated.status).toBe("active");
+    expect(updated.condition).toBe("Second");
+  });
+
+  it("preserves iteration when re-setting an active goal", async () => {
+    await createService();
+    await service.setGoal("agent-1", { condition: "Tests pass", maxIterations: 5 });
+    evaluateGoal.mockResolvedValueOnce({ met: false, reason: "Not yet" });
+    await service.maybeScheduleContinuation("agent-1");
+    expect(service.getGoal("agent-1")?.iteration).toBe(1);
+
+    const updated = await service.setGoal("agent-1", { condition: "Tests pass harder" });
+    expect(updated.iteration).toBe(1);
   });
 
   it("pauses and notifies when evaluation fails", async () => {

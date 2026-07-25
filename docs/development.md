@@ -551,6 +551,8 @@ Foreground `turn_completed` runs a turn-end gate that detects waiting-for-user c
 - **Default on** — `MutableDaemonConfig.proseStop.enabled` (Host settings toggle near Local AI).
 - **No local LLM** — regex only; never fails the turn for a missing model.
 - **Local AI ready** — regex-first, then a WAIT/DONE classifier via `LlamaService`.
+  The classifier **defaults to DONE when unsure** (regex already catches many clear waits);
+  it should only WAIT on explicit handoffs / consent asks.
 - **Re-entry guard** — one automatic nudge per cycle; a second consecutive WAIT is allowed through.
 
 ## Typecheck

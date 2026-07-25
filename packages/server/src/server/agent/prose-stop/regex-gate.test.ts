@@ -121,6 +121,12 @@ describe("prose-stop regex fixtures (from test-check-prose-stop.sh)", () => {
     await expectDecision("要修复执行 npm i 即可。", "allow");
     await expectDecision("这样改即可。", "allow");
     await expectDecision("清理完成。\n\n要执行删掉这个吗?", "block");
+    // 需要时…即可 must not trip via the 要 inside 需要
+    await expectDecision("需要时打开 DMG 即可。", "allow");
+    await expectDecision("需要时拖进 Applications 即可。", "allow");
+    await expectDecision("收工。", "allow");
+    await expectDecision("好。", "allow");
+    await expectDecision("知道了。", "allow");
   });
 
   it("denies offer-if-wanted without ?", async () => {

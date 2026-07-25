@@ -91,9 +91,14 @@ export const BLOCKING_PATTERN_SOURCES: readonly string[] = [
   "(说|讲|告诉我|吱一声)(一声)?(即可|就行|就好)",
   "你?(说|讲)一声我?就",
   // condition-clause-first + 即可 after ACTION
-  "(想|要|需要|如果要|若要)[^。！？]{0,25}(告诉我|跟我说|知会|喊我)",
-  "(想|要)[^。！？]{0,25}(说一声|吱一声)",
-  "^[^。！？]{0,4}(想|要)[^。！？]{0,25}即可[。.！!]?$",
+  // Use 想要/要继续/要我… — bare `(想|要)` also matches the 要 inside 需要
+  // ("需要时…即可" / "需要时告诉我"), which is a common false positive.
+  // `想…告诉我` stays (想 is not a substring of 需要). Bare `要…告诉我` dropped —
+  // use 要继续/要我/想要/需要我 instead so 需要时… cannot match.
+  "(想要|想|要继续|要我|需要我|如果要|若要)[^。！？]{0,25}(告诉我|跟我说|知会|喊我)",
+  "(要继续|要我|想要|想继续|需要我)[^。！？]{0,25}(说一声|吱一声)",
+  // Line-local "要 X 即可" handoff. Negative lookbehind so 需要/只要/…要 do not count.
+  "^(?:想要|(?<![主需重必只想])要)[^。！？]{0,25}即可[。.！!]?$",
   // offer-if-wanted
   "([^不]|^)需要的话.{0,28}(我可以|帮你|继续|push|提交|推送|告诉我|喊我)",
   "([^不需]|^)要的话.{0,28}(我可以|帮你|继续|push|提交|推送|告诉我|喊我)",
@@ -125,8 +130,11 @@ export interface RegexGateMiss {
 export type RegexGateResult = RegexGateHit | RegexGateMiss;
 
 function isExemptablePattern(source: string): boolean {
-  // Match bash: only the 「想/要…即可」source (contains both tokens in the pattern text).
-  return source.includes("即可") && source.includes("(想|要)");
+  // Only the line-local 「要…即可」handoff pattern is instructional-exemptable.
+  return (
+    source.includes("即可") &&
+    (source.includes("(?<![主需重必只想])要") || source.includes("(想|要)"))
+  );
 }
 
 export function matchBlockingPatterns(closingText: string): RegexGateResult {

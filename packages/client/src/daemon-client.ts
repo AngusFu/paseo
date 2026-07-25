@@ -25,6 +25,7 @@ import type {
   UpdateWorkflowDefinitionInput,
 } from "@getpaseo/protocol/workflow/types";
 import type { AgentAttentionNotificationPayload } from "@getpaseo/protocol/agent-attention-notification";
+import type { McpCliServerConfig } from "@getpaseo/protocol/mcp-cli/types";
 import {
   AgentCreateFailedStatusPayloadSchema,
   AgentCreatedStatusPayloadSchema,
@@ -644,6 +645,31 @@ type LlmLocalOllamaListModelsPayload = Extract<
   SessionOutboundMessage,
   { type: "llm.local.ollama.list_models.response" }
 >["payload"];
+type McpCliRuntimeStatusPayload = Extract<
+  SessionOutboundMessage,
+  { type: "mcp_cli.runtime.status.response" }
+>["payload"];
+type McpCliRuntimeInstallPayload = Extract<
+  SessionOutboundMessage,
+  { type: "mcp_cli.runtime.install.response" }
+>["payload"];
+type McpCliServersListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "mcp_cli.servers.list.response" }
+>["payload"];
+type McpCliServersUpsertPayload = Extract<
+  SessionOutboundMessage,
+  { type: "mcp_cli.servers.upsert.response" }
+>["payload"];
+type McpCliServersDeletePayload = Extract<
+  SessionOutboundMessage,
+  { type: "mcp_cli.servers.delete.response" }
+>["payload"];
+type McpCliServersTestPayload = Extract<
+  SessionOutboundMessage,
+  { type: "mcp_cli.servers.test.response" }
+>["payload"];
+const MCP_CLI_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 type QuestionListPayload = Extract<
   SessionOutboundMessage,
   { type: "question.list.response" }
@@ -5586,6 +5612,53 @@ export class DaemonClient {
         ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
         ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
       },
+    });
+  }
+
+  async mcpCliRuntimeStatus(requestId?: string): Promise<McpCliRuntimeStatusPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "mcp_cli.runtime.status.request" },
+    });
+  }
+
+  async mcpCliRuntimeInstall(requestId?: string): Promise<McpCliRuntimeInstallPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      timeout: MCP_CLI_INSTALL_TIMEOUT_MS,
+      message: { type: "mcp_cli.runtime.install.request" },
+    });
+  }
+
+  async mcpCliServersList(requestId?: string): Promise<McpCliServersListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "mcp_cli.servers.list.request" },
+    });
+  }
+
+  async mcpCliServersUpsert(
+    server: McpCliServerConfig,
+    requestId?: string,
+  ): Promise<McpCliServersUpsertPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "mcp_cli.servers.upsert.request", server },
+    });
+  }
+
+  async mcpCliServersDelete(name: string, requestId?: string): Promise<McpCliServersDeletePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "mcp_cli.servers.delete.request", name },
+    });
+  }
+
+  async mcpCliServersTest(name: string, requestId?: string): Promise<McpCliServersTestPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      timeout: MCP_CLI_INSTALL_TIMEOUT_MS,
+      message: { type: "mcp_cli.servers.test.request", name },
     });
   }
 

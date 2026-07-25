@@ -8,6 +8,8 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { createExternalProcessEnv } from "../server/paseo-env.js";
 import { writePrivateFileAtomicSync } from "../server/private-files.js";
+import { resolvePaseoHome } from "../server/paseo-home.js";
+import { mcpCliBinDir, prependMcpCliBinPath } from "../server/mcp-cli/index.js";
 import { findExecutable } from "../executable-resolution/executable-resolution.js";
 import type { TerminalCell, TerminalState } from "@getpaseo/protocol/messages";
 import { TerminalInputModeTracker } from "@getpaseo/protocol/terminal-input-mode";
@@ -155,6 +157,8 @@ interface BuildTerminalEnvironmentInput {
   zshShellIntegrationDir?: string;
   paseoCliBinDir?: string | null;
   paseoHookCliPath?: string | null;
+  /** When null, skip MCP CLI PATH. When undefined, resolve from PASEO_HOME. */
+  paseoHome?: string | null;
 }
 
 interface EnsureNodePtySpawnHelperExecutableOptions {
@@ -410,8 +414,15 @@ export function buildTerminalEnvironment(
     TERM: "xterm-256color",
     TERM_PROGRAM: "kitty",
   });
+  // Prepend MCP CLI before the Paseo CLI so existing terminals keep `paseo` first on PATH.
+  // Only inject when the bin dir exists (after Detect/Install); avoids polluting unit-test PATH.
+  const paseoHome = input.paseoHome === undefined ? resolvePaseoHome() : input.paseoHome;
+  const envWithMcpCli =
+    paseoHome !== null && existsSync(mcpCliBinDir(paseoHome))
+      ? prependMcpCliBinPath(baseEnv, paseoHome)
+      : baseEnv;
   const envWithAgentHooks = prependPaseoCliToPath(
-    baseEnv,
+    envWithMcpCli,
     input.paseoCliBinDir === undefined ? resolvePaseoCliBinDir() : input.paseoCliBinDir,
   );
   const envWithHookCli = injectPaseoHookCli(

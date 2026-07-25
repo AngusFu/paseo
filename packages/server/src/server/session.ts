@@ -127,6 +127,7 @@ import {
 } from "./agent/agent-sdk-types.js";
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
+import { McpCliService } from "./mcp-cli/index.js";
 import {
   ImportSessionsRequestError,
   importProviderSession,
@@ -565,6 +566,7 @@ export class Session {
   private readonly sessionLogger: pino.Logger;
   private readonly paseoHome: string;
   private readonly worktreesRoot: string | undefined;
+  private mcpCliService: McpCliService | null = null;
 
   private agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
@@ -2766,6 +2768,18 @@ export class Session {
         return this.handleQuestionCreateRequest(msg);
       case "question.wait.request":
         return this.handleQuestionWaitRequest(msg);
+      case "mcp_cli.runtime.status.request":
+        return this.handleMcpCliRuntimeStatusRequest(msg);
+      case "mcp_cli.runtime.install.request":
+        return this.handleMcpCliRuntimeInstallRequest(msg);
+      case "mcp_cli.servers.list.request":
+        return this.handleMcpCliServersListRequest(msg);
+      case "mcp_cli.servers.upsert.request":
+        return this.handleMcpCliServersUpsertRequest(msg);
+      case "mcp_cli.servers.delete.request":
+        return this.handleMcpCliServersDeleteRequest(msg);
+      case "mcp_cli.servers.test.request":
+        return this.handleMcpCliServersTestRequest(msg);
       default:
         return undefined;
     }
@@ -2864,6 +2878,165 @@ export class Session {
         payload: {
           requestId: msg.requestId,
           question: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private getMcpCliService(): McpCliService {
+    if (!this.mcpCliService) {
+      this.mcpCliService = new McpCliService(this.paseoHome);
+    }
+    return this.mcpCliService;
+  }
+
+  private async handleMcpCliRuntimeStatusRequest(
+    msg: Extract<SessionInboundMessage, { type: "mcp_cli.runtime.status.request" }>,
+  ): Promise<void> {
+    try {
+      const status = await this.getMcpCliService().status();
+      this.emit({
+        type: "mcp_cli.runtime.status.response",
+        payload: { requestId: msg.requestId, status, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "mcp_cli.runtime.status.response",
+        payload: {
+          requestId: msg.requestId,
+          status: {
+            platformSupported: false,
+            platform: process.platform,
+            uv: { state: "error", path: null },
+            venv: { state: "error", path: null },
+            runner: { state: "error", path: null },
+            ready: false,
+            message: error instanceof Error ? error.message : String(error),
+          },
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleMcpCliRuntimeInstallRequest(
+    msg: Extract<SessionInboundMessage, { type: "mcp_cli.runtime.install.request" }>,
+  ): Promise<void> {
+    try {
+      const status = await this.getMcpCliService().install();
+      this.emit({
+        type: "mcp_cli.runtime.install.response",
+        payload: { requestId: msg.requestId, status, error: null },
+      });
+    } catch (error) {
+      const status = await this.getMcpCliService()
+        .status()
+        .catch(() => null);
+      this.emit({
+        type: "mcp_cli.runtime.install.response",
+        payload: {
+          requestId: msg.requestId,
+          status: status ?? {
+            platformSupported: false,
+            platform: process.platform,
+            uv: { state: "error", path: null },
+            venv: { state: "error", path: null },
+            runner: { state: "error", path: null },
+            ready: false,
+          },
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleMcpCliServersListRequest(
+    msg: Extract<SessionInboundMessage, { type: "mcp_cli.servers.list.request" }>,
+  ): Promise<void> {
+    try {
+      const servers = await this.getMcpCliService().listServers();
+      this.emit({
+        type: "mcp_cli.servers.list.response",
+        payload: { requestId: msg.requestId, servers, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "mcp_cli.servers.list.response",
+        payload: {
+          requestId: msg.requestId,
+          servers: [],
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleMcpCliServersUpsertRequest(
+    msg: Extract<SessionInboundMessage, { type: "mcp_cli.servers.upsert.request" }>,
+  ): Promise<void> {
+    try {
+      const server = await this.getMcpCliService().upsertServer(msg.server);
+      this.emit({
+        type: "mcp_cli.servers.upsert.response",
+        payload: { requestId: msg.requestId, server, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "mcp_cli.servers.upsert.response",
+        payload: {
+          requestId: msg.requestId,
+          server: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleMcpCliServersDeleteRequest(
+    msg: Extract<SessionInboundMessage, { type: "mcp_cli.servers.delete.request" }>,
+  ): Promise<void> {
+    try {
+      await this.getMcpCliService().deleteServer(msg.name);
+      this.emit({
+        type: "mcp_cli.servers.delete.response",
+        payload: { requestId: msg.requestId, name: msg.name, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "mcp_cli.servers.delete.response",
+        payload: {
+          requestId: msg.requestId,
+          name: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleMcpCliServersTestRequest(
+    msg: Extract<SessionInboundMessage, { type: "mcp_cli.servers.test.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.getMcpCliService().testServer(msg.name);
+      this.emit({
+        type: "mcp_cli.servers.test.response",
+        payload: {
+          requestId: msg.requestId,
+          ok: result.ok,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          error: result.error,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "mcp_cli.servers.test.response",
+        payload: {
+          requestId: msg.requestId,
+          ok: false,
+          stdout: "",
+          stderr: "",
           error: error instanceof Error ? error.message : String(error),
         },
       });

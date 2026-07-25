@@ -524,6 +524,7 @@ export const HOST_SECTION_SLUGS = [
   "workspaces",
   "providers",
   "integrations",
+  "fastmcp",
   "usage",
   "terminals",
   "host",

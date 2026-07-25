@@ -84,6 +84,11 @@ import {
   formatProseStopReentryWarningPrompt,
 } from "./prose-stop/nudge-prompt.js";
 import { PROSE_STOP_PREVENTION_PROMPT } from "./prose-stop/prevention-prompt.js";
+import {
+  McpCliService,
+  prependMcpCliBinPath,
+  stripMcpServersMatchingCliNames,
+} from "../mcp-cli/index.js";
 import type { LlamaService } from "../llm/llama-service.js";
 import {
   buildAskUserQuestionToolCall,
@@ -308,6 +313,8 @@ export interface AgentManagerOptions {
   getProseStopEnabled?: () => boolean;
   /** When true, inject PROSE_STOP_PREVENTION_PROMPT into daemonAppendSystemPrompt. */
   getProseStopPreventionPromptEnabled?: () => boolean;
+  /** Used for FastMCP CLI PATH prepend + daemonAppend + mcpServers strip. */
+  paseoHome?: string;
   getLlamaService?: () => LlamaService | null;
   agentStreamCoalesceWindowMs?: number;
   rescueTimeouts?: AgentManagerRescueTimeouts;
@@ -690,6 +697,7 @@ export class AgentManager {
   private getProseStopEnabled: () => boolean = () => true;
   /** Off until bootstrap wires config — keeps unit tests focused on user append. */
   private getProseStopPreventionPromptEnabled: () => boolean = () => false;
+  private paseoHome: string | null = null;
   private getLlamaService: () => LlamaService | null = () => null;
   private onAgentAttention?: AgentAttentionCallback;
   private onAgentArchived?: AgentArchivedCallback;
@@ -734,6 +742,7 @@ export class AgentManager {
   private configurePaseoTools(options: AgentManagerOptions): void {
     this.paseoToolsEnabled = options.paseoToolsEnabled ?? true;
     this.paseoToolCatalogFactory = options.paseoToolCatalogFactory ?? null;
+    this.paseoHome = options.paseoHome ?? null;
   }
 
   registerClient(provider: AgentProvider, client: AgentClient): void {
@@ -5348,18 +5357,20 @@ export class AgentManager {
     env?: Record<string, string>,
   ): Promise<PreparedSessionConfig> {
     const storedConfig = await this.normalizeConfig(stripInternalPaseoMcpServer(config), { env });
-    const launchConfig = this.applyDaemonAppendSystemPrompt(
-      withRuntimePaseoMcpServer({
-        config: storedConfig,
-        agentId,
-        mcpBaseUrl: this.mcpBaseUrl,
-        mcpAuthToken: this.mcpAuthToken,
-      }),
-    );
+    let launchConfig = withRuntimePaseoMcpServer({
+      config: storedConfig,
+      agentId,
+      mcpBaseUrl: this.mcpBaseUrl,
+      mcpAuthToken: this.mcpAuthToken,
+    });
+    launchConfig = await this.applyDaemonAppendSystemPrompt(launchConfig);
+    launchConfig = await this.applyMcpCliLaunchOverlay(launchConfig);
     return { storedConfig, launchConfig };
   }
 
-  private applyDaemonAppendSystemPrompt(config: AgentSessionConfig): AgentSessionConfig {
+  private async applyDaemonAppendSystemPrompt(
+    config: AgentSessionConfig,
+  ): Promise<AgentSessionConfig> {
     const parts: string[] = [];
     const userAppend = this.appendSystemPrompt.trim();
     if (userAppend.length > 0) {
@@ -5367,6 +5378,16 @@ export class AgentManager {
     }
     if (this.getProseStopPreventionPromptEnabled()) {
       parts.push(PROSE_STOP_PREVENTION_PROMPT.trim());
+    }
+    if (this.paseoHome) {
+      try {
+        const mcpPrompt = await new McpCliService(this.paseoHome).daemonAppendPrompt();
+        if (mcpPrompt.trim().length > 0) {
+          parts.push(mcpPrompt.trim());
+        }
+      } catch {
+        // FastMCP CLI overlay is best-effort at launch.
+      }
     }
     const daemonAppendSystemPrompt = parts.join("\n\n");
     const next = { ...config };
@@ -5378,6 +5399,28 @@ export class AgentManager {
           daemonAppendSystemPrompt,
         }
       : next;
+  }
+
+  private async applyMcpCliLaunchOverlay(config: AgentSessionConfig): Promise<AgentSessionConfig> {
+    if (!this.paseoHome || !config.mcpServers) {
+      return config;
+    }
+    try {
+      const enabled = await new McpCliService(this.paseoHome).enabledCliNames();
+      const mcpServers = stripMcpServersMatchingCliNames(config.mcpServers, enabled);
+      if (mcpServers === config.mcpServers) {
+        return config;
+      }
+      const next = { ...config };
+      if (mcpServers) {
+        next.mcpServers = mcpServers;
+      } else {
+        delete next.mcpServers;
+      }
+      return next;
+    } catch {
+      return config;
+    }
   }
 
   private async buildLaunchContext(
@@ -5398,13 +5441,14 @@ export class AgentManager {
     // in the terminal worker process and is not synchronously readable from the
     // agent-manager. Injecting it needs a worker round-trip or recomputing from the
     // worktree records — tracked separately.
+    const envWithIds: Record<string, string> = {
+      ...env,
+      PASEO_AGENT_ID: agentId,
+      ...(workspaceId ? { PASEO_WORKSPACE_ID: workspaceId } : {}),
+    };
     const context: AgentLaunchContext = {
       agentId,
-      env: {
-        ...env,
-        PASEO_AGENT_ID: agentId,
-        ...(workspaceId ? { PASEO_WORKSPACE_ID: workspaceId } : {}),
-      },
+      env: this.paseoHome ? prependMcpCliBinPath(envWithIds, this.paseoHome) : envWithIds,
     };
     if (
       this.paseoToolsEnabled &&

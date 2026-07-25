@@ -192,6 +192,20 @@ import {
   QuestionCreateResponseSchema,
   QuestionWaitResponseSchema,
 } from "./question/rpc-schemas.js";
+import {
+  McpCliRuntimeStatusRequestSchema,
+  McpCliRuntimeInstallRequestSchema,
+  McpCliServersListRequestSchema,
+  McpCliServersUpsertRequestSchema,
+  McpCliServersDeleteRequestSchema,
+  McpCliServersTestRequestSchema,
+  McpCliRuntimeStatusResponseSchema,
+  McpCliRuntimeInstallResponseSchema,
+  McpCliServersListResponseSchema,
+  McpCliServersUpsertResponseSchema,
+  McpCliServersDeleteResponseSchema,
+  McpCliServersTestResponseSchema,
+} from "./mcp-cli/rpc-schemas.js";
 import { BrowserAutomationHostCapabilitySchema } from "./browser-automation/capabilities.js";
 import {
   PaseoConfigRawSchema,
@@ -2870,6 +2884,12 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   QuestionAnswerRequestSchema,
   QuestionCreateRequestSchema,
   QuestionWaitRequestSchema,
+  McpCliRuntimeStatusRequestSchema,
+  McpCliRuntimeInstallRequestSchema,
+  McpCliServersListRequestSchema,
+  McpCliServersUpsertRequestSchema,
+  McpCliServersDeleteRequestSchema,
+  McpCliServersTestRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -3149,6 +3169,8 @@ export const ServerInfoStatusPayloadSchema = z
         stableProjectIdentity: z.boolean().optional(),
         // COMPAT(questionWaitSocket): added in v0.1.114, remove gate after 2027-01-25.
         questionWaitSocket: z.boolean().optional(),
+        // COMPAT(mcpCli): added in v0.1.115, remove gate after 2027-01-25.
+        mcpCli: z.boolean().optional(),
       })
       .optional(),
   })
@@ -5653,6 +5675,12 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   QuestionAnswerResponseSchema,
   QuestionCreateResponseSchema,
   QuestionWaitResponseSchema,
+  McpCliRuntimeStatusResponseSchema,
+  McpCliRuntimeInstallResponseSchema,
+  McpCliServersListResponseSchema,
+  McpCliServersUpsertResponseSchema,
+  McpCliServersDeleteResponseSchema,
+  McpCliServersTestResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
   InstallDifftasticProgressMessageSchema,
@@ -5844,6 +5872,18 @@ export type QuestionListResponse = z.infer<typeof QuestionListResponseSchema>;
 export type QuestionAnswerResponse = z.infer<typeof QuestionAnswerResponseSchema>;
 export type QuestionCreateResponse = z.infer<typeof QuestionCreateResponseSchema>;
 export type QuestionWaitResponse = z.infer<typeof QuestionWaitResponseSchema>;
+export type McpCliRuntimeStatusRequest = z.infer<typeof McpCliRuntimeStatusRequestSchema>;
+export type McpCliRuntimeInstallRequest = z.infer<typeof McpCliRuntimeInstallRequestSchema>;
+export type McpCliServersListRequest = z.infer<typeof McpCliServersListRequestSchema>;
+export type McpCliServersUpsertRequest = z.infer<typeof McpCliServersUpsertRequestSchema>;
+export type McpCliServersDeleteRequest = z.infer<typeof McpCliServersDeleteRequestSchema>;
+export type McpCliServersTestRequest = z.infer<typeof McpCliServersTestRequestSchema>;
+export type McpCliRuntimeStatusResponse = z.infer<typeof McpCliRuntimeStatusResponseSchema>;
+export type McpCliRuntimeInstallResponse = z.infer<typeof McpCliRuntimeInstallResponseSchema>;
+export type McpCliServersListResponse = z.infer<typeof McpCliServersListResponseSchema>;
+export type McpCliServersUpsertResponse = z.infer<typeof McpCliServersUpsertResponseSchema>;
+export type McpCliServersDeleteResponse = z.infer<typeof McpCliServersDeleteResponseSchema>;
+export type McpCliServersTestResponse = z.infer<typeof McpCliServersTestResponseSchema>;
 
 // Type exports for payload types
 export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;

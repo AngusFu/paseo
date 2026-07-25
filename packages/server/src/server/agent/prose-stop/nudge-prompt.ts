@@ -21,3 +21,25 @@ export function formatProseStopNudgePrompt(args?: { pattern?: string; source?: s
     "next tool call if no decision is required. Do not end the turn waiting in prose again.",
   ].join("\n");
 }
+
+/**
+ * Short warning after a full nudge already fired this cycle — still waiting in prose.
+ * Avoids silent reentry allow without starting another full nudge loop.
+ */
+export function formatProseStopReentryWarningPrompt(args?: {
+  pattern?: string;
+  source?: string;
+}): string {
+  const detail =
+    args?.pattern != null && args.pattern.length > 0
+      ? `Matched /${args.pattern}/ (${args.source ?? "regex"}).`
+      : "";
+
+  return [
+    "⚠️ prose-stop: still waiting in chat prose after the previous nudge.",
+    detail,
+    "Use ask_question (or native Q UI), or finish without asking the user in prose.",
+  ]
+    .filter((line) => line.length > 0)
+    .join("\n");
+}

@@ -79,7 +79,10 @@ import {
   shouldRetryRetriableTurn,
 } from "./retriable-turn-hook.js";
 import { checkProseStopWithLlama } from "./prose-stop/check.js";
-import { formatProseStopNudgePrompt } from "./prose-stop/nudge-prompt.js";
+import {
+  formatProseStopNudgePrompt,
+  formatProseStopReentryWarningPrompt,
+} from "./prose-stop/nudge-prompt.js";
 import { PROSE_STOP_PREVENTION_PROMPT } from "./prose-stop/prevention-prompt.js";
 import type { LlamaService } from "../llm/llama-service.js";
 import {
@@ -4648,12 +4651,11 @@ export class AgentManager {
       return;
     }
 
-    const stopHookActive = this.proseStopActive.has(agent.id);
+    const alreadyNudged = this.proseStopActive.has(agent.id);
     let result;
     try {
       result = await checkProseStopWithLlama({
         text: lastText,
-        stopHookActive,
         llamaService: this.getLlamaService(),
       });
     } catch (error) {
@@ -4663,32 +4665,44 @@ export class AgentManager {
     }
 
     if (result.decision !== "block") {
-      if (result.source === "reentry") {
-        this.logger.info({ agentId: agent.id }, "agent.manager.prose_stop.reentry_allow");
-      }
       this.proseStopActive.delete(agent.id);
       return;
     }
 
-    this.proseStopActive.add(agent.id);
-    this.scheduleProseStopNudge(agent.id, {
+    const detail = {
       pattern: result.pattern,
       source: result.source,
-    });
-    this.logger.info(
-      {
-        agentId: agent.id,
-        source: result.source,
-        pattern: result.pattern,
+    };
+
+    // Second consecutive WAIT: still detect, but inject a short warning instead of
+    // another full nudge (avoids silent allow and nudge loops).
+    if (alreadyNudged) {
+      this.proseStopActive.delete(agent.id);
+      this.scheduleProseStopInjection(agent.id, formatProseStopReentryWarningPrompt(detail), {
+        kind: "reentry_warn",
+        ...detail,
         llmVerdict: result.llmVerdict,
-      },
-      "agent.manager.prose_stop.nudge_scheduled",
-    );
+      });
+      return;
+    }
+
+    this.proseStopActive.add(agent.id);
+    this.scheduleProseStopInjection(agent.id, formatProseStopNudgePrompt(detail), {
+      kind: "nudge",
+      ...detail,
+      llmVerdict: result.llmVerdict,
+    });
   }
 
-  private scheduleProseStopNudge(
+  private scheduleProseStopInjection(
     agentId: string,
-    detail: { pattern?: string; source?: string },
+    body: string,
+    detail: {
+      kind: "nudge" | "reentry_warn";
+      pattern?: string;
+      source?: string;
+      llmVerdict?: string;
+    },
   ): void {
     const existing = this.proseStopPendingNudges.get(agentId);
     if (existing?.timer) {
@@ -4702,19 +4716,34 @@ export class AgentManager {
       }
       pending.timer = null;
       this.proseStopPendingNudges.delete(agentId);
-      const prompt = formatSystemNotificationPrompt(formatProseStopNudgePrompt(detail));
+      const prompt = formatSystemNotificationPrompt(body);
       void (async () => {
         try {
           for await (const _event of this.streamAgent(agentId, prompt)) {
-            // Drain until the nudge turn settles; events broadcast via subscribers.
+            // Drain until the injection turn settles; events broadcast via subscribers.
           }
         } catch (nudgeError) {
           this.proseStopActive.delete(agentId);
-          this.logger.warn({ err: nudgeError, agentId }, "agent.manager.prose_stop.nudge_failed");
+          this.logger.warn(
+            { err: nudgeError, agentId, kind: detail.kind },
+            "agent.manager.prose_stop.injection_failed",
+          );
         }
       })();
     }, 0);
     this.proseStopPendingNudges.set(agentId, { timer });
+    this.logger.info(
+      {
+        agentId,
+        kind: detail.kind,
+        source: detail.source,
+        pattern: detail.pattern,
+        llmVerdict: detail.llmVerdict,
+      },
+      detail.kind === "reentry_warn"
+        ? "agent.manager.prose_stop.reentry_warn_scheduled"
+        : "agent.manager.prose_stop.nudge_scheduled",
+    );
   }
 
   private scheduleRetriableTurnRetry(

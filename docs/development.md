@@ -556,7 +556,8 @@ Foreground `turn_completed` runs a turn-end gate that detects waiting-for-user c
 - **Local AI ready** — regex-first, then a WAIT/DONE classifier via `LlamaService`.
   The classifier **defaults to DONE when unsure** (regex already catches many clear waits);
   it should only WAIT on explicit handoffs / consent asks.
-- **Re-entry guard** — one automatic nudge per cycle; a second consecutive WAIT is allowed through.
+- **Re-entry** — first WAIT gets the full nudge; a second consecutive WAIT still runs the
+  gate and injects a short warning (not another full nudge), then clears the cycle.
 
 ## Typecheck
 

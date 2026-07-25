@@ -3,15 +3,10 @@ import { checkProseStop } from "./check.js";
 import { matchBlockingPatterns } from "./regex-gate.js";
 import { prepareClosingText, stripQuotedContent } from "./strip-and-closing.js";
 
-async function expectDecision(
-  text: string,
-  want: "block" | "allow",
-  options?: { stopHookActive?: boolean },
-): Promise<void> {
+async function expectDecision(text: string, want: "block" | "allow"): Promise<void> {
   const result = await checkProseStop({
     text,
     mode: "regex",
-    stopHookActive: options?.stopHookActive,
   });
   expect(result.decision, text).toBe(want);
 }
@@ -77,10 +72,6 @@ describe("prose-stop regex fixtures (from test-check-prose-stop.sh)", () => {
   it("requires a real question marker for 删…吗", async () => {
     await expectDecision("我已经删掉了旧文件吗记录。", "allow");
     await expectDecision("构建完成。\n\n删了缓存吗？", "block");
-  });
-
-  it("honors stop_hook_active re-entry", async () => {
-    await expectDecision("let me know when ready", "allow", { stopHookActive: true });
   });
 
   it("denies statement-form waiting without ?", async () => {

@@ -9,7 +9,7 @@ export type ProseStopDecision = "block" | "allow";
 
 export interface ProseStopCheckResult {
   decision: ProseStopDecision;
-  source: "regex" | "llm" | "none" | "reentry";
+  source: "regex" | "llm" | "none";
   pattern?: string;
   closingText: string;
   regexBlocked: boolean;
@@ -18,8 +18,6 @@ export interface ProseStopCheckResult {
 
 export interface CheckProseStopParams {
   text: string;
-  /** When true, skip the gate entirely (already nudged once this cycle). */
-  stopHookActive?: boolean;
   mode: ProseStopMode;
   /** Optional classifier — only used when mode is regex-first. */
   classify?: (closingText: string) => Promise<ClassifierVerdict>;
@@ -37,10 +35,6 @@ export async function checkProseStop(params: CheckProseStopParams): Promise<Pros
 
   if (!params.text.trim() || !closingText) {
     return empty;
-  }
-
-  if (params.stopHookActive) {
-    return { ...empty, source: "reentry", closingText };
   }
 
   const regex = matchBlockingPatterns(closingText);
@@ -93,7 +87,6 @@ export function resolveProseStopMode(params: ResolveProseStopModeParams): ProseS
 
 export async function checkProseStopWithLlama(params: {
   text: string;
-  stopHookActive?: boolean;
   llamaService: LlamaService | null;
 }): Promise<ProseStopCheckResult> {
   let localLlmReady = false;
@@ -111,7 +104,6 @@ export async function checkProseStopWithLlama(params: {
 
   return checkProseStop({
     text: params.text,
-    stopHookActive: params.stopHookActive,
     mode,
     classify:
       mode === "regex-first" && llamaService

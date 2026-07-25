@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import type { McpCliRuntimeStatus, McpCliServerConfig } from "@getpaseo/protocol/mcp-cli/types";
+import { discoverLocalMcpServers, type ImportLocalResult } from "./import-local.js";
 import { syncMcpCliLaunchers } from "./launchers.js";
 import { mcpCliBinDir, mcpCliOauthClientsPath, mcpCliRoot } from "./paths.js";
 import { prependMcpCliBinPath } from "./path.js";
@@ -11,15 +12,21 @@ import { McpCliServerStore } from "./store.js";
 function oauthClientsRegistry(servers: readonly McpCliServerConfig[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const server of servers) {
-    if (server.auth?.kind !== "oauth" || !server.auth.clientId) {
+    if (!server.enabled) {
       continue;
     }
+    // Always write source so launchers can resolve URL. OAuth fields are optional
+    // (missing client → runner attempts DCR / open access).
     out[server.name] = {
       source: server.url,
-      oauth_client_id: server.auth.clientId,
-      ...(server.auth.clientSecret ? { oauth_client_secret: server.auth.clientSecret } : {}),
-      ...(server.auth.redirectUri ? { oauth_redirect_uri: server.auth.redirectUri } : {}),
-      ...(server.auth.scope ? { oauth_scope: server.auth.scope } : {}),
+      ...(server.auth?.kind === "oauth" && server.auth.clientId
+        ? {
+            oauth_client_id: server.auth.clientId,
+            ...(server.auth.clientSecret ? { oauth_client_secret: server.auth.clientSecret } : {}),
+            ...(server.auth.redirectUri ? { oauth_redirect_uri: server.auth.redirectUri } : {}),
+            ...(server.auth.scope ? { oauth_scope: server.auth.scope } : {}),
+          }
+        : {}),
     };
   }
   return out;
@@ -93,16 +100,8 @@ export class McpCliService {
     if (!server.enabled) {
       return { ok: false, stdout: "", stderr: "", error: `Server '${name}' is disabled` };
     }
-    if (server.auth?.kind !== "oauth" || !server.auth.clientId) {
-      return {
-        ok: false,
-        stdout: "",
-        stderr: "",
-        error:
-          "OAuth clientId required. Paste clientId/secret/redirectUri from Claude or Cursor MCP settings, then save.",
-      };
-    }
-
+    // OAuth is optional: open / DCR endpoints can run without a pasted clientId.
+    // Atlassian/Figma still need clientId for a successful Test.
     const status = await this.status();
     if (!status.ready) {
       return {
@@ -156,6 +155,19 @@ export class McpCliService {
         });
       });
     });
+  }
+
+  async importLocalServers(): Promise<ImportLocalResult & { saved: McpCliServerConfig[] }> {
+    const discovered = await discoverLocalMcpServers();
+    const saved: McpCliServerConfig[] = [];
+    for (const server of discovered.servers) {
+      saved.push(await this.upsertServer(server));
+    }
+    return {
+      ...discovered,
+      servers: saved,
+      saved,
+    };
   }
 
   private async persistOauthClients(servers: readonly McpCliServerConfig[]): Promise<void> {

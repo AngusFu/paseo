@@ -34,6 +34,7 @@ describe("formatMcpCliDaemonAppendPrompt", () => {
     expect(text).toContain("figma");
     expect(text).toContain("getJiraIssue");
     expect(text).toContain("--list");
+    expect(text).toContain("mcp_cli_import_local");
   });
 });
 

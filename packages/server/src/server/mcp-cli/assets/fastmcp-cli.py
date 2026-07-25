@@ -223,19 +223,20 @@ def term_score(term: str, name: str, name_words, desc: str) -> int:
 
 def load_cfg(server: str) -> dict:
     if not os.path.exists(CONFIG):
-        die(f"oauth config not found: {CONFIG} (install-fastmcp-cli.sh seeds it)")
+        die(f"oauth config not found: {CONFIG} — save a server in Host → FastMCP first")
     all_cfg = json.load(open(CONFIG))
     if server not in all_cfg:
-        die(f"unknown server '{server}' (have: {', '.join(all_cfg)})")
+        die(f"unknown server '{server}' (have: {', '.join(all_cfg) or 'none'})")
     c = all_cfg[server]
-    for req in ("source", "oauth_client_id"):
-        if not c.get(req):
-            die(f"{server}: oauth-clients.json missing '{req}' (re-run seed-oauth-clients.sh)")
+    if not c.get("source"):
+        die(f"{server}: oauth-clients.json missing 'source'")
+    # oauth_client_id is optional: missing → fastmcp OAuth DCR / open endpoint.
+    # Atlassian/Figma block DCR and need a pasted client_id.
     redir = c.get("oauth_redirect_uri") or ""
     m = re.search(r"localhost:(\d+)", redir)
     return {
         "url": c["source"],
-        "client_id": c["oauth_client_id"],
+        "client_id": c.get("oauth_client_id") or None,
         "client_secret": c.get("oauth_client_secret"),
         "scope": c.get("oauth_scope"),
         "callback_port": int(m.group(1)) if m else None,

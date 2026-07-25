@@ -2780,6 +2780,8 @@ export class Session {
         return this.handleMcpCliServersDeleteRequest(msg);
       case "mcp_cli.servers.test.request":
         return this.handleMcpCliServersTestRequest(msg);
+      case "mcp_cli.servers.import_local.request":
+        return this.handleMcpCliServersImportLocalRequest(msg);
       default:
         return undefined;
     }
@@ -3037,6 +3039,35 @@ export class Session {
           ok: false,
           stdout: "",
           stderr: "",
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleMcpCliServersImportLocalRequest(
+    msg: Extract<SessionInboundMessage, { type: "mcp_cli.servers.import_local.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.getMcpCliService().importLocalServers();
+      this.emit({
+        type: "mcp_cli.servers.import_local.response",
+        payload: {
+          requestId: msg.requestId,
+          servers: result.saved,
+          sources: result.sources,
+          warnings: result.warnings,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "mcp_cli.servers.import_local.response",
+        payload: {
+          requestId: msg.requestId,
+          servers: [],
+          sources: [],
+          warnings: [],
           error: error instanceof Error ? error.message : String(error),
         },
       });

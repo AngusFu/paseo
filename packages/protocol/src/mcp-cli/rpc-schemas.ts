@@ -36,6 +36,11 @@ export const McpCliServersTestRequestSchema = z.object({
   name: z.string().min(1),
 });
 
+export const McpCliServersImportLocalRequestSchema = z.object({
+  type: z.literal("mcp_cli.servers.import_local.request"),
+  requestId: z.string(),
+});
+
 export const McpCliRuntimeStatusResponseSchema = z.object({
   type: z.literal("mcp_cli.runtime.status.response"),
   payload: z.object({
@@ -88,6 +93,17 @@ export const McpCliServersTestResponseSchema = z.object({
     ok: z.boolean(),
     stdout: z.string(),
     stderr: z.string(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const McpCliServersImportLocalResponseSchema = z.object({
+  type: z.literal("mcp_cli.servers.import_local.response"),
+  payload: z.object({
+    requestId: z.string(),
+    servers: z.array(McpCliServerConfigSchema),
+    sources: z.array(z.string()),
+    warnings: z.array(z.string()),
     error: z.string().nullable(),
   }),
 });

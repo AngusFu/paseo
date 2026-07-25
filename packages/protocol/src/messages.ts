@@ -199,12 +199,14 @@ import {
   McpCliServersUpsertRequestSchema,
   McpCliServersDeleteRequestSchema,
   McpCliServersTestRequestSchema,
+  McpCliServersImportLocalRequestSchema,
   McpCliRuntimeStatusResponseSchema,
   McpCliRuntimeInstallResponseSchema,
   McpCliServersListResponseSchema,
   McpCliServersUpsertResponseSchema,
   McpCliServersDeleteResponseSchema,
   McpCliServersTestResponseSchema,
+  McpCliServersImportLocalResponseSchema,
 } from "./mcp-cli/rpc-schemas.js";
 import { BrowserAutomationHostCapabilitySchema } from "./browser-automation/capabilities.js";
 import {
@@ -2890,6 +2892,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   McpCliServersUpsertRequestSchema,
   McpCliServersDeleteRequestSchema,
   McpCliServersTestRequestSchema,
+  McpCliServersImportLocalRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -5681,6 +5684,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   McpCliServersUpsertResponseSchema,
   McpCliServersDeleteResponseSchema,
   McpCliServersTestResponseSchema,
+  McpCliServersImportLocalResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
   InstallDifftasticProgressMessageSchema,
@@ -5878,12 +5882,16 @@ export type McpCliServersListRequest = z.infer<typeof McpCliServersListRequestSc
 export type McpCliServersUpsertRequest = z.infer<typeof McpCliServersUpsertRequestSchema>;
 export type McpCliServersDeleteRequest = z.infer<typeof McpCliServersDeleteRequestSchema>;
 export type McpCliServersTestRequest = z.infer<typeof McpCliServersTestRequestSchema>;
+export type McpCliServersImportLocalRequest = z.infer<typeof McpCliServersImportLocalRequestSchema>;
 export type McpCliRuntimeStatusResponse = z.infer<typeof McpCliRuntimeStatusResponseSchema>;
 export type McpCliRuntimeInstallResponse = z.infer<typeof McpCliRuntimeInstallResponseSchema>;
 export type McpCliServersListResponse = z.infer<typeof McpCliServersListResponseSchema>;
 export type McpCliServersUpsertResponse = z.infer<typeof McpCliServersUpsertResponseSchema>;
 export type McpCliServersDeleteResponse = z.infer<typeof McpCliServersDeleteResponseSchema>;
 export type McpCliServersTestResponse = z.infer<typeof McpCliServersTestResponseSchema>;
+export type McpCliServersImportLocalResponse = z.infer<
+  typeof McpCliServersImportLocalResponseSchema
+>;
 
 // Type exports for payload types
 export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;

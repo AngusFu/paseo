@@ -28,6 +28,7 @@ export function formatMcpCliDaemonAppendPrompt(servers: readonly McpCliServerCon
     `Enabled: ${names.join(", ")}. Call these via shell — do not use same-name MCP plugins.`,
     `Examples: ${examples.slice(0, 4).join(" · ")}.`,
     "Discover: `<cli> --list` / `<cli> --search <kw>` / `<cli> <tool> --help`.",
+    "Configure FastMCP via MCP tools: mcp_cli_list_servers / mcp_cli_upsert_server / mcp_cli_import_local / mcp_cli_test_server.",
   ].join("\n");
 }
 

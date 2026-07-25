@@ -669,6 +669,10 @@ type McpCliServersTestPayload = Extract<
   SessionOutboundMessage,
   { type: "mcp_cli.servers.test.response" }
 >["payload"];
+type McpCliServersImportLocalPayload = Extract<
+  SessionOutboundMessage,
+  { type: "mcp_cli.servers.import_local.response" }
+>["payload"];
 const MCP_CLI_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 type QuestionListPayload = Extract<
   SessionOutboundMessage,
@@ -5659,6 +5663,14 @@ export class DaemonClient {
       requestId,
       timeout: MCP_CLI_INSTALL_TIMEOUT_MS,
       message: { type: "mcp_cli.servers.test.request", name },
+    });
+  }
+
+  async mcpCliServersImportLocal(requestId?: string): Promise<McpCliServersImportLocalPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      timeout: MCP_CLI_INSTALL_TIMEOUT_MS,
+      message: { type: "mcp_cli.servers.import_local.request" },
     });
   }
 

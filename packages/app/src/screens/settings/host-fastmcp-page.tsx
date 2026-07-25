@@ -1,18 +1,29 @@
-import { useCallback, useEffect, useState } from "react";
-import { Alert, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
 import type { McpCliRuntimeStatus, McpCliServerConfig } from "@getpaseo/protocol/mcp-cli/types";
+import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
+import { SettingsTextArea } from "@/components/settings-textarea";
 import { Button } from "@/components/ui/button";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/contexts/toast-context";
 import { useHostFeature } from "@/runtime/host-features";
 import { useHostRuntimeClient, useHostRuntimeIsConnected, useHosts } from "@/runtime/host-runtime";
 import { SettingsSection } from "@/screens/settings/settings-section";
+import { parseMcpServersJson, serializeMcpServersJson } from "@/screens/settings/mcp-servers-json";
 import { settingsStyles } from "@/styles/settings";
+import { confirmDialog } from "@/utils/confirm-dialog";
 
 const ATLASSIAN_DEFAULT_REDIRECT = "http://localhost:62367/callback";
+const EMPTY_MCP_SERVERS_JSON = `${JSON.stringify({ mcpServers: {} }, null, 2)}\n`;
+
+interface TestResult {
+  ok: boolean;
+  message: string;
+}
 
 function runtimeBadgeVariant(status: McpCliRuntimeStatus | null): "success" | "error" | "muted" {
   if (!status) return "muted";
@@ -35,74 +46,175 @@ function runtimeStatusLabel(
   return t("settings.hostSections.fastmcp.notReady");
 }
 
+function defaultRedirectFor(name: string): string {
+  return name === "atlassian" ? ATLASSIAN_DEFAULT_REDIRECT : "";
+}
+
+function oauthFromServer(server: McpCliServerConfig): {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+} {
+  const auth = server.auth?.kind === "oauth" ? server.auth : null;
+  return {
+    clientId: auth?.clientId ?? "",
+    clientSecret: auth?.clientSecret ?? "",
+    redirectUri: auth?.redirectUri ?? defaultRedirectFor(server.name),
+  };
+}
+
+function buildOauthAuth(
+  clientId: string,
+  clientSecret: string,
+  redirectUri: string,
+): McpCliServerConfig["auth"] {
+  const trimmedId = clientId.trim();
+  if (!trimmedId) {
+    return undefined;
+  }
+  const auth: NonNullable<McpCliServerConfig["auth"]> = {
+    kind: "oauth",
+    clientId: trimmedId,
+  };
+  if (clientSecret.trim()) {
+    auth.clientSecret = clientSecret.trim();
+  }
+  if (redirectUri.trim()) {
+    auth.redirectUri = redirectUri.trim();
+  }
+  return auth;
+}
+
 function ServerCard({
   server,
   busy,
   onSave,
   onTest,
+  onDelete,
 }: {
   server: McpCliServerConfig;
   busy: boolean;
   onSave: (next: McpCliServerConfig) => Promise<void>;
-  onTest: (name: string) => Promise<void>;
+  onTest: (name: string) => Promise<TestResult>;
+  onDelete: (name: string) => Promise<void>;
 }) {
   const { t } = useTranslation();
-  const auth = server.auth?.kind === "oauth" ? server.auth : null;
+  const toast = useToast();
+  const initial = oauthFromServer(server);
   const [enabled, setEnabled] = useState(server.enabled);
-  const [clientId, setClientId] = useState(auth?.clientId ?? "");
-  const [clientSecret, setClientSecret] = useState(auth?.clientSecret ?? "");
-  const [redirectUri, setRedirectUri] = useState(
-    auth?.redirectUri ?? (server.name === "atlassian" ? ATLASSIAN_DEFAULT_REDIRECT : ""),
-  );
+  const [clientId, setClientId] = useState(initial.clientId);
+  const [clientSecret, setClientSecret] = useState(initial.clientSecret);
+  const [redirectUri, setRedirectUri] = useState(initial.redirectUri);
+  const [url, setUrl] = useState(server.url);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   useEffect(() => {
+    const next = oauthFromServer(server);
     setEnabled(server.enabled);
-    const nextAuth = server.auth?.kind === "oauth" ? server.auth : null;
-    setClientId(nextAuth?.clientId ?? "");
-    setClientSecret(nextAuth?.clientSecret ?? "");
-    setRedirectUri(
-      nextAuth?.redirectUri ?? (server.name === "atlassian" ? ATLASSIAN_DEFAULT_REDIRECT : ""),
-    );
+    setUrl(server.url);
+    setClientId(next.clientId);
+    setClientSecret(next.clientSecret);
+    setRedirectUri(next.redirectUri);
+    setTestResult(null);
   }, [server]);
 
-  const handleSavePress = useCallback(() => {
-    setSaving(true);
-    const next: McpCliServerConfig = {
+  const buildConfig = useCallback(
+    (nextEnabled: boolean): McpCliServerConfig => ({
       ...server,
-      enabled,
-      url: server.url,
-      auth: clientId.trim()
-        ? {
-            kind: "oauth",
-            clientId: clientId.trim(),
-            ...(clientSecret.trim() ? { clientSecret: clientSecret.trim() } : {}),
-            ...(redirectUri.trim() ? { redirectUri: redirectUri.trim() } : {}),
-          }
-        : undefined,
-    };
-    void onSave(next)
-      .catch((error) => {
-        Alert.alert(
-          t("settings.hostSections.fastmcp.saveErrorTitle"),
-          error instanceof Error ? error.message : String(error),
-        );
-      })
-      .finally(() => setSaving(false));
-  }, [clientId, clientSecret, enabled, onSave, redirectUri, server, t]);
+      enabled: nextEnabled,
+      url: url.trim() || server.url,
+      auth: buildOauthAuth(clientId, clientSecret, redirectUri),
+    }),
+    [clientId, clientSecret, redirectUri, server, url],
+  );
+
+  const persist = useCallback(
+    async (next: McpCliServerConfig) => {
+      setSaving(true);
+      try {
+        await onSave(next);
+        toast.show(t("settings.hostSections.fastmcp.savedToast"), { variant: "success" });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+        throw err;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [onSave, t, toast],
+  );
+
+  const handleToggle = useCallback(
+    (next: boolean) => {
+      setEnabled(next);
+      void persist(buildConfig(next)).catch(() => {
+        setEnabled(!next);
+      });
+    },
+    [buildConfig, persist],
+  );
+
+  const handleSavePress = useCallback(() => {
+    void persist(buildConfig(enabled));
+  }, [buildConfig, enabled, persist]);
 
   const handleTestPress = useCallback(() => {
-    setTesting(true);
-    void onTest(server.name)
-      .catch((error) => {
-        Alert.alert(
-          t("settings.hostSections.fastmcp.testErrorTitle"),
-          error instanceof Error ? error.message : String(error),
-        );
-      })
-      .finally(() => setTesting(false));
-  }, [onTest, server.name, t]);
+    void (async () => {
+      setTesting(true);
+      setTestResult(null);
+      try {
+        const result = await onTest(server.name);
+        setTestResult(result);
+        if (result.ok) {
+          toast.show(t("settings.hostSections.fastmcp.testOkTitle"), { variant: "success" });
+        } else {
+          toast.error(result.message);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setTestResult({ ok: false, message });
+        toast.error(message);
+      } finally {
+        setTesting(false);
+      }
+    })();
+  }, [onTest, server.name, t, toast]);
+
+  const handleDeletePress = useCallback(() => {
+    void (async () => {
+      const confirmed = await confirmDialog({
+        title: t("settings.hostSections.fastmcp.deleteTitle"),
+        message: t("settings.hostSections.fastmcp.deleteMessage", { name: server.name }),
+        confirmLabel: t("settings.hostSections.fastmcp.delete"),
+        destructive: true,
+      });
+      if (!confirmed) return;
+      try {
+        await onDelete(server.name);
+        toast.show(t("settings.hostSections.fastmcp.deletedToast"), { variant: "success" });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+      }
+    })();
+  }, [onDelete, server.name, t, toast]);
+
+  let testResultText: string | null = null;
+  if (testResult) {
+    testResultText = testResult.ok
+      ? t("settings.hostSections.fastmcp.testOkInline")
+      : testResult.message;
+  }
+
+  const fieldResetKey = [
+    server.name,
+    server.url,
+    server.enabled ? "1" : "0",
+    server.auth?.kind === "oauth" ? server.auth.clientId : "",
+    server.auth?.kind === "oauth" ? (server.auth.clientSecret ?? "") : "",
+    server.auth?.kind === "oauth" ? (server.auth.redirectUri ?? "") : "",
+  ].join("|");
 
   return (
     <View
@@ -118,87 +230,196 @@ function ServerCard({
         </View>
         <Switch
           value={enabled}
-          onValueChange={setEnabled}
+          onValueChange={handleToggle}
           disabled={busy || saving}
           accessibilityLabel={t("settings.hostSections.fastmcp.enable", { name: server.name })}
         />
       </View>
 
-      <View style={styles.serverBody}>
-        <Text style={settingsStyles.rowHint}>
-          {t("settings.hostSections.fastmcp.oauthPasteHint")}
+      <ServerCardEditor
+        serverName={server.name}
+        isPreset={Boolean(server.preset)}
+        busy={busy}
+        saving={saving}
+        testing={testing}
+        enabled={enabled}
+        fieldResetKey={fieldResetKey}
+        url={url}
+        clientId={clientId}
+        clientSecret={clientSecret}
+        redirectUri={redirectUri}
+        testResultText={testResultText}
+        testOk={testResult?.ok ?? false}
+        onUrlChange={setUrl}
+        onClientIdChange={setClientId}
+        onClientSecretChange={setClientSecret}
+        onRedirectUriChange={setRedirectUri}
+        onSave={handleSavePress}
+        onTest={handleTestPress}
+        onDelete={handleDeletePress}
+      />
+    </View>
+  );
+}
+
+function ServerCardEditor({
+  serverName,
+  isPreset,
+  busy,
+  saving,
+  testing,
+  enabled,
+  fieldResetKey,
+  url,
+  clientId,
+  clientSecret,
+  redirectUri,
+  testResultText,
+  testOk,
+  onUrlChange,
+  onClientIdChange,
+  onClientSecretChange,
+  onRedirectUriChange,
+  onSave,
+  onTest,
+  onDelete,
+}: {
+  serverName: string;
+  isPreset: boolean;
+  busy: boolean;
+  saving: boolean;
+  testing: boolean;
+  enabled: boolean;
+  fieldResetKey: string;
+  url: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  testResultText: string | null;
+  testOk: boolean;
+  onUrlChange: (value: string) => void;
+  onClientIdChange: (value: string) => void;
+  onClientSecretChange: (value: string) => void;
+  onRedirectUriChange: (value: string) => void;
+  onSave: () => void;
+  onTest: () => void;
+  onDelete: () => void;
+}) {
+  const { t } = useTranslation();
+  const editable = !busy && !saving;
+  const redirectPlaceholder =
+    serverName === "atlassian"
+      ? ATLASSIAN_DEFAULT_REDIRECT
+      : t("settings.hostSections.fastmcp.redirectUriPlaceholder");
+
+  return (
+    <View style={styles.serverBody}>
+      <Text style={settingsStyles.rowHint}>
+        {t("settings.hostSections.fastmcp.oauthPasteHint")}
+      </Text>
+      <Text style={settingsStyles.rowHint}>
+        {t("settings.hostSections.fastmcp.authOptionalHint")}
+      </Text>
+
+      <Field label={t("settings.hostSections.fastmcp.url")} testID={`fastmcp-${serverName}-url`}>
+        <FormTextInput
+          size="sm"
+          initialValue={url}
+          resetKey={`${fieldResetKey}|url`}
+          onChangeText={onUrlChange}
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={editable}
+        />
+      </Field>
+      <Field
+        label={t("settings.hostSections.fastmcp.clientId")}
+        testID={`fastmcp-${serverName}-client-id`}
+      >
+        <FormTextInput
+          size="sm"
+          initialValue={clientId}
+          resetKey={`${fieldResetKey}|clientId`}
+          onChangeText={onClientIdChange}
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={editable}
+          placeholder={t("settings.hostSections.fastmcp.clientIdPlaceholder")}
+        />
+      </Field>
+      <Field
+        label={t("settings.hostSections.fastmcp.clientSecret")}
+        testID={`fastmcp-${serverName}-client-secret`}
+      >
+        <FormTextInput
+          size="sm"
+          initialValue={clientSecret}
+          resetKey={`${fieldResetKey}|clientSecret`}
+          onChangeText={onClientSecretChange}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+          editable={editable}
+          placeholder={t("settings.hostSections.fastmcp.clientSecretPlaceholder")}
+        />
+      </Field>
+      <Field
+        label={t("settings.hostSections.fastmcp.redirectUri")}
+        testID={`fastmcp-${serverName}-redirect`}
+      >
+        <FormTextInput
+          size="sm"
+          initialValue={redirectUri}
+          resetKey={`${fieldResetKey}|redirect`}
+          onChangeText={onRedirectUriChange}
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={editable}
+          placeholder={redirectPlaceholder}
+        />
+      </Field>
+
+      {testResultText ? (
+        <Text
+          style={testOk ? styles.testOk : styles.errorText}
+          testID={`fastmcp-${serverName}-test-result`}
+        >
+          {testResultText}
         </Text>
+      ) : null}
 
-        <Field
-          label={t("settings.hostSections.fastmcp.clientId")}
-          testID={`fastmcp-${server.name}-client-id`}
+      <View style={styles.actions}>
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={saving}
+          disabled={busy || testing}
+          onPress={onSave}
+          testID={`fastmcp-${serverName}-save`}
         >
-          <FormTextInput
-            size="sm"
-            value={clientId}
-            onChangeText={setClientId}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!busy && !saving}
-            placeholder={t("settings.hostSections.fastmcp.clientIdPlaceholder")}
-          />
-        </Field>
-        <Field
-          label={t("settings.hostSections.fastmcp.clientSecret")}
-          testID={`fastmcp-${server.name}-client-secret`}
+          {t("settings.hostSections.fastmcp.save")}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          loading={testing}
+          disabled={busy || saving || !enabled}
+          onPress={onTest}
+          testID={`fastmcp-${serverName}-test`}
         >
-          <FormTextInput
-            size="sm"
-            value={clientSecret}
-            onChangeText={setClientSecret}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            editable={!busy && !saving}
-            placeholder={t("settings.hostSections.fastmcp.clientSecretPlaceholder")}
-          />
-        </Field>
-        <Field
-          label={t("settings.hostSections.fastmcp.redirectUri")}
-          testID={`fastmcp-${server.name}-redirect`}
-        >
-          <FormTextInput
-            size="sm"
-            value={redirectUri}
-            onChangeText={setRedirectUri}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!busy && !saving}
-            placeholder={
-              server.name === "atlassian"
-                ? ATLASSIAN_DEFAULT_REDIRECT
-                : t("settings.hostSections.fastmcp.redirectUriPlaceholder")
-            }
-          />
-        </Field>
-
-        <View style={styles.actions}>
-          <Button
-            size="sm"
-            variant="secondary"
-            loading={saving}
-            disabled={busy || testing}
-            onPress={handleSavePress}
-            testID={`fastmcp-${server.name}-save`}
-          >
-            {t("settings.hostSections.fastmcp.save")}
-          </Button>
+          {t("settings.hostSections.fastmcp.test")}
+        </Button>
+        {!isPreset ? (
           <Button
             size="sm"
             variant="outline"
-            loading={testing}
-            disabled={busy || saving || !enabled}
-            onPress={handleTestPress}
-            testID={`fastmcp-${server.name}-test`}
+            disabled={busy || saving || testing}
+            onPress={onDelete}
+            testID={`fastmcp-${serverName}-delete`}
           >
-            {t("settings.hostSections.fastmcp.test")}
+            {t("settings.hostSections.fastmcp.delete")}
           </Button>
-        </View>
+        ) : null}
       </View>
     </View>
   );
@@ -206,6 +427,7 @@ function ServerCard({
 
 export function HostFastMcpPage({ serverId }: { serverId: string }) {
   const { t } = useTranslation();
+  const toast = useToast();
   const hosts = useHosts();
   const host = hosts.find((entry) => entry.serverId === serverId) ?? null;
   const supported = useHostFeature(serverId, "mcpCli");
@@ -215,6 +437,21 @@ export function HostFastMcpPage({ serverId }: { serverId: string }) {
   const [servers, setServers] = useState<McpCliServerConfig[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [jsonOpen, setJsonOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [jsonText, setJsonText] = useState(EMPTY_MCP_SERVERS_JSON);
+  const [jsonBusy, setJsonBusy] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newUrl, setNewUrl] = useState("");
+
+  const jsonHeader = useMemo<SheetHeader>(
+    () => ({ title: t("settings.hostSections.fastmcp.jsonTitle") }),
+    [t],
+  );
+  const addHeader = useMemo<SheetHeader>(
+    () => ({ title: t("settings.hostSections.fastmcp.addTitle") }),
+    [t],
+  );
 
   const refresh = useCallback(async () => {
     if (!client || !supported) {
@@ -246,11 +483,15 @@ export function HostFastMcpPage({ serverId }: { serverId: string }) {
 
   const handleDetect = useCallback(() => {
     setBusy(true);
-    void refresh()
-      .catch((err) => {
+    void (async () => {
+      try {
+        await refresh();
+      } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => setBusy(false));
+      } finally {
+        setBusy(false);
+      }
+    })();
   }, [refresh]);
 
   const handleInstall = useCallback(() => {
@@ -262,17 +503,21 @@ export function HostFastMcpPage({ serverId }: { serverId: string }) {
         setStatus(payload.status);
         if (payload.error) {
           setError(payload.error);
+          toast.error(payload.error);
           return;
         }
         setError(null);
         await refresh();
+        toast.show(t("settings.hostSections.fastmcp.installOk"), { variant: "success" });
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+        toast.error(message);
       } finally {
         setBusy(false);
       }
     })();
-  }, [client, refresh]);
+  }, [client, refresh, t, toast]);
 
   const handleSave = useCallback(
     async (next: McpCliServerConfig) => {
@@ -286,21 +531,219 @@ export function HostFastMcpPage({ serverId }: { serverId: string }) {
     [client, refresh],
   );
 
-  const handleTest = useCallback(
+  const handleDelete = useCallback(
     async (name: string) => {
       if (!client) return;
+      const payload = await client.mcpCliServersDelete(name);
+      if (payload.error) {
+        throw new Error(payload.error);
+      }
+      await refresh();
+    },
+    [client, refresh],
+  );
+
+  const handleTest = useCallback(
+    async (name: string): Promise<TestResult> => {
+      if (!client) {
+        return { ok: false, message: "Not connected" };
+      }
       const payload = await client.mcpCliServersTest(name);
       if (!payload.ok) {
-        throw new Error(
-          payload.error ?? (payload.stderr.trim() || payload.stdout.trim() || "Test failed"),
-        );
+        return {
+          ok: false,
+          message:
+            payload.error ?? (payload.stderr.trim() || payload.stdout.trim() || "Test failed"),
+        };
       }
-      Alert.alert(
-        t("settings.hostSections.fastmcp.testOkTitle"),
-        payload.stdout.trim() || t("settings.hostSections.fastmcp.testOkMessage"),
-      );
+      const head = payload.stdout.trim().split("\n").slice(0, 3).join(" · ");
+      return {
+        ok: true,
+        message: head || t("settings.hostSections.fastmcp.testOkMessage"),
+      };
     },
     [client, t],
+  );
+
+  const closeJson = useCallback(() => setJsonOpen(false), []);
+  const openJson = useCallback(() => {
+    setJsonText(serializeMcpServersJson(servers));
+    setJsonOpen(true);
+  }, [servers]);
+  const closeAdd = useCallback(() => setAddOpen(false), []);
+  const openAdd = useCallback(() => setAddOpen(true), []);
+
+  const handleImportJson = useCallback(() => {
+    if (!client) return;
+    const parsed = parseMcpServersJson(jsonText);
+    if (!parsed.ok) {
+      toast.error(parsed.error);
+      return;
+    }
+    setJsonBusy(true);
+    void (async () => {
+      try {
+        for (const server of parsed.servers) {
+          const payload = await client.mcpCliServersUpsert(server);
+          if (payload.error) {
+            throw new Error(payload.error);
+          }
+        }
+        await refresh();
+        setJsonOpen(false);
+        const warning = parsed.warnings.length > 0 ? ` (${parsed.warnings.length} skipped)` : "";
+        toast.show(
+          t("settings.hostSections.fastmcp.importOk", {
+            count: parsed.servers.length,
+          }) + warning,
+          { variant: "success" },
+        );
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+      } finally {
+        setJsonBusy(false);
+      }
+    })();
+  }, [client, jsonText, refresh, t, toast]);
+
+  const handleAddServer = useCallback(() => {
+    if (!client) return;
+    const name = newName.trim();
+    const url = newUrl.trim();
+    if (!name || !url) {
+      toast.error(t("settings.hostSections.fastmcp.addValidation"));
+      return;
+    }
+    if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+      toast.error(t("settings.hostSections.fastmcp.addNameInvalid"));
+      return;
+    }
+    setJsonBusy(true);
+    void (async () => {
+      try {
+        await handleSave({ name, url, enabled: true });
+        setAddOpen(false);
+        setNewName("");
+        setNewUrl("");
+        toast.show(t("settings.hostSections.fastmcp.savedToast"), { variant: "success" });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+      } finally {
+        setJsonBusy(false);
+      }
+    })();
+  }, [client, handleSave, newName, newUrl, t, toast]);
+
+  const handleImportLocal = useCallback(() => {
+    if (!client) return;
+    setBusy(true);
+    void (async () => {
+      try {
+        const payload = await client.mcpCliServersImportLocal();
+        if (payload.error) {
+          toast.error(payload.error);
+          return;
+        }
+        await refresh();
+        const warning = payload.warnings.length > 0 ? ` (${payload.warnings.length} skipped)` : "";
+        toast.show(
+          t("settings.hostSections.fastmcp.importLocalOk", {
+            count: payload.servers.length,
+          }) + warning,
+          { variant: "success" },
+        );
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusy(false);
+      }
+    })();
+  }, [client, refresh, t, toast]);
+
+  const sectionTrailing = useMemo(
+    () => (
+      <View style={styles.sectionActions}>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={!connected || busy}
+          loading={busy}
+          onPress={handleImportLocal}
+          testID="host-fastmcp-import-local"
+        >
+          {t("settings.hostSections.fastmcp.importLocal")}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={!connected || busy}
+          onPress={openAdd}
+          testID="host-fastmcp-add"
+        >
+          {t("settings.hostSections.fastmcp.add")}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={!connected || busy}
+          onPress={openJson}
+          testID="host-fastmcp-json"
+        >
+          {t("settings.hostSections.fastmcp.jsonEdit")}
+        </Button>
+      </View>
+    ),
+    [busy, connected, handleImportLocal, openAdd, openJson, t],
+  );
+
+  const jsonFooter = useMemo(
+    () => (
+      <View style={styles.sheetFooter}>
+        <Button
+          variant="secondary"
+          onPress={closeJson}
+          disabled={jsonBusy}
+          style={styles.footerButton}
+        >
+          {t("common.actions.cancel")}
+        </Button>
+        <Button
+          onPress={handleImportJson}
+          loading={jsonBusy}
+          disabled={jsonBusy}
+          style={styles.footerButton}
+          testID="host-fastmcp-json-import"
+        >
+          {t("settings.hostSections.fastmcp.import")}
+        </Button>
+      </View>
+    ),
+    [closeJson, handleImportJson, jsonBusy, t],
+  );
+
+  const addFooter = useMemo(
+    () => (
+      <View style={styles.sheetFooter}>
+        <Button
+          variant="secondary"
+          onPress={closeAdd}
+          disabled={jsonBusy}
+          style={styles.footerButton}
+        >
+          {t("common.actions.cancel")}
+        </Button>
+        <Button
+          onPress={handleAddServer}
+          loading={jsonBusy}
+          disabled={jsonBusy}
+          style={styles.footerButton}
+          testID="host-fastmcp-add-submit"
+        >
+          {t("settings.hostSections.fastmcp.addSubmit")}
+        </Button>
+      </View>
+    ),
+    [closeAdd, handleAddServer, jsonBusy, t],
   );
 
   if (!host) {
@@ -383,6 +826,7 @@ export function HostFastMcpPage({ serverId }: { serverId: string }) {
       <SettingsSection
         title={t("settings.hostSections.fastmcp.serversTitle")}
         testID="host-fastmcp-servers"
+        trailing={sectionTrailing}
       >
         {servers.map((server) => (
           <ServerCard
@@ -391,9 +835,60 @@ export function HostFastMcpPage({ serverId }: { serverId: string }) {
             busy={busy}
             onSave={handleSave}
             onTest={handleTest}
+            onDelete={handleDelete}
           />
         ))}
       </SettingsSection>
+
+      <AdaptiveModalSheet
+        visible={jsonOpen}
+        onClose={closeJson}
+        header={jsonHeader}
+        testID="host-fastmcp-json-sheet"
+        footer={jsonFooter}
+      >
+        <Text style={settingsStyles.rowHint}>{t("settings.hostSections.fastmcp.jsonHint")}</Text>
+        <SettingsTextArea
+          accessibilityLabel={t("settings.hostSections.fastmcp.jsonTitle")}
+          value={jsonText}
+          onChangeText={setJsonText}
+          placeholder={EMPTY_MCP_SERVERS_JSON}
+          testID="host-fastmcp-json-input"
+          style={styles.jsonInput}
+        />
+      </AdaptiveModalSheet>
+
+      <AdaptiveModalSheet
+        visible={addOpen}
+        onClose={closeAdd}
+        header={addHeader}
+        testID="host-fastmcp-add-sheet"
+        footer={addFooter}
+      >
+        <Field label={t("settings.hostSections.fastmcp.name")}>
+          <FormTextInput
+            size="sm"
+            value={newName}
+            onChangeText={setNewName}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="my-remote"
+            testID="host-fastmcp-add-name"
+          />
+        </Field>
+        <Field label={t("settings.hostSections.fastmcp.url")}>
+          <FormTextInput
+            size="sm"
+            value={newUrl}
+            onChangeText={setNewUrl}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="https://…"
+            testID="host-fastmcp-add-url"
+          />
+        </Field>
+        <Text style={settingsStyles.rowHint}>{t("settings.hostSections.fastmcp.addHint")}</Text>
+      </AdaptiveModalSheet>
     </View>
   );
 }
@@ -413,9 +908,30 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
     marginTop: theme.spacing[2],
   },
+  sectionActions: {
+    flexDirection: "row",
+    gap: theme.spacing[1],
+  },
   errorText: {
     color: theme.colors.destructive,
     fontSize: theme.fontSize.xs,
     marginTop: theme.spacing[1],
+  },
+  testOk: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    marginTop: theme.spacing[1],
+  },
+  sheetFooter: {
+    flexDirection: "row",
+    gap: theme.spacing[2],
+  },
+  footerButton: {
+    flex: 1,
+  },
+  jsonInput: {
+    minHeight: 220,
+    marginTop: theme.spacing[3],
+    fontFamily: theme.fontFamily.mono,
   },
 }));

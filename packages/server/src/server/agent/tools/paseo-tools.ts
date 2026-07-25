@@ -100,6 +100,7 @@ import {
 } from "../../worktree/commands.js";
 import { registerBrowserTools } from "../../browser-tools/tools.js";
 import type { BrowserToolsBroker } from "../../browser-tools/broker.js";
+import { McpCliService } from "../../mcp-cli/index.js";
 import type {
   PaseoToolCatalog,
   PaseoToolConfig,
@@ -3774,6 +3775,206 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         return {
           content: [],
           structuredContent: ensureValidJson({ cards: result.cards }),
+        };
+      },
+    );
+  }
+
+  if (options.paseoHome) {
+    const mcpCli = new McpCliService(options.paseoHome);
+    const McpCliOAuthInputSchema = z.object({
+      clientId: z.string().min(1).describe("OAuth client ID from Claude/Cursor MCP settings."),
+      clientSecret: z.string().optional().describe("Optional OAuth client secret."),
+      redirectUri: z.string().optional().describe("Optional OAuth redirect URI."),
+      scope: z.string().optional().describe("Optional OAuth scope."),
+    });
+
+    registerTool(
+      "mcp_cli_list_servers",
+      {
+        title: "List FastMCP CLI servers",
+        description:
+          "List Paseo FastMCP CLI servers (Host → FastMCP). Includes presets (atlassian/figma) and custom HTTP MCP servers.",
+        inputSchema: {},
+        outputSchema: {
+          servers: z.array(
+            z.object({
+              name: z.string(),
+              url: z.string(),
+              enabled: z.boolean(),
+              preset: z.boolean().optional(),
+              hasOAuth: z.boolean(),
+            }),
+          ),
+        },
+      },
+      async () => {
+        const servers = await mcpCli.listServers();
+        const summaries = servers.map((server) => {
+          const row: {
+            name: string;
+            url: string;
+            enabled: boolean;
+            preset?: boolean;
+            hasOAuth: boolean;
+          } = {
+            name: server.name,
+            url: server.url,
+            enabled: server.enabled,
+            hasOAuth: server.auth?.kind === "oauth",
+          };
+          if (server.preset) {
+            row.preset = true;
+          }
+          return row;
+        });
+        return {
+          content: [],
+          structuredContent: ensureValidJson({ servers: summaries }),
+        };
+      },
+    );
+
+    registerTool(
+      "mcp_cli_upsert_server",
+      {
+        title: "Upsert FastMCP CLI server",
+        description:
+          "Create or update a Paseo FastMCP HTTP MCP server (Host → FastMCP). Use for remote URL MCP only — stdio/bearer not supported. OAuth fields optional for open/DCR endpoints; Atlassian/Figma need clientId.",
+        inputSchema: {
+          name: z
+            .string()
+            .min(1)
+            .regex(/^[a-zA-Z0-9._-]+$/)
+            .describe("CLI name (also the launcher binary name)."),
+          url: z.string().min(1).describe("Remote HTTP MCP URL."),
+          enabled: z.boolean().optional().describe("Defaults to true."),
+          oauth: McpCliOAuthInputSchema.optional().describe("Optional OAuth client metadata."),
+        },
+        outputSchema: {
+          server: z.object({
+            name: z.string(),
+            url: z.string(),
+            enabled: z.boolean(),
+            hasOAuth: z.boolean(),
+          }),
+        },
+      },
+      async ({ name, url, enabled, oauth }) => {
+        const server = await mcpCli.upsertServer({
+          name,
+          url,
+          enabled: enabled ?? true,
+          ...(oauth
+            ? {
+                auth: {
+                  kind: "oauth" as const,
+                  clientId: oauth.clientId,
+                  ...(oauth.clientSecret ? { clientSecret: oauth.clientSecret } : {}),
+                  ...(oauth.redirectUri ? { redirectUri: oauth.redirectUri } : {}),
+                  ...(oauth.scope ? { scope: oauth.scope } : {}),
+                },
+              }
+            : {}),
+        });
+        return {
+          content: [],
+          structuredContent: ensureValidJson({
+            server: {
+              name: server.name,
+              url: server.url,
+              enabled: server.enabled,
+              hasOAuth: server.auth?.kind === "oauth",
+            },
+          }),
+        };
+      },
+    );
+
+    registerTool(
+      "mcp_cli_delete_server",
+      {
+        title: "Delete FastMCP CLI server",
+        description:
+          "Delete a custom FastMCP server, or reset a preset (atlassian/figma) to defaults.",
+        inputSchema: {
+          name: z.string().min(1).describe("Server name to delete/reset."),
+        },
+        outputSchema: {
+          success: z.boolean(),
+        },
+      },
+      async ({ name }) => {
+        await mcpCli.deleteServer(name);
+        return {
+          content: [],
+          structuredContent: ensureValidJson({ success: true }),
+        };
+      },
+    );
+
+    registerTool(
+      "mcp_cli_import_local",
+      {
+        title: "Import FastMCP servers from local configs",
+        description:
+          "Scan Claude/Cursor mcp.json and ~/.config/sciforum/oauth-clients.json on the daemon host and import HTTP MCP servers into FastMCP CLI. Skips stdio and bearer/headers entries.",
+        inputSchema: {},
+        outputSchema: {
+          imported: z.number(),
+          sources: z.array(z.string()),
+          warnings: z.array(z.string()),
+          servers: z.array(
+            z.object({
+              name: z.string(),
+              url: z.string(),
+              enabled: z.boolean(),
+              hasOAuth: z.boolean(),
+            }),
+          ),
+        },
+      },
+      async () => {
+        const result = await mcpCli.importLocalServers();
+        const servers = result.saved.map((server) => ({
+          name: server.name,
+          url: server.url,
+          enabled: server.enabled,
+          hasOAuth: server.auth?.kind === "oauth",
+        }));
+        return {
+          content: [],
+          structuredContent: ensureValidJson({
+            imported: result.saved.length,
+            sources: result.sources,
+            warnings: result.warnings,
+            servers,
+          }),
+        };
+      },
+    );
+
+    registerTool(
+      "mcp_cli_test_server",
+      {
+        title: "Test FastMCP CLI server",
+        description:
+          "Run `<name> --list` for an enabled FastMCP CLI. First OAuth may open a browser on the daemon host.",
+        inputSchema: {
+          name: z.string().min(1).describe("Enabled server name to test."),
+        },
+        outputSchema: {
+          ok: z.boolean(),
+          stdout: z.string(),
+          stderr: z.string(),
+          error: z.string().nullable(),
+        },
+      },
+      async ({ name }) => {
+        const result = await mcpCli.testServer(name);
+        return {
+          content: [],
+          structuredContent: ensureValidJson(result),
         };
       },
     );

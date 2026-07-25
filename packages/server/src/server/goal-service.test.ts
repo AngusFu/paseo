@@ -23,12 +23,18 @@ describe("formatGoalContinuationPrompt", () => {
 describe("GoalService", () => {
   let tempHome = "";
   let service: GoalService;
+  let evaluateGoal = vi.fn<
+    Parameters<NonNullable<ConstructorParameters<typeof GoalService>[0]["evaluateGoal"]>>[0],
+    ReturnType<NonNullable<ConstructorParameters<typeof GoalService>[0]["evaluateGoal"]>>
+  >();
+
+  const streamAgent = vi.fn(async function* (_agentId: string, _prompt: string) {});
 
   const agentManager = {
     getAgent: vi.fn(() => ({ id: "agent-1", cwd: "/tmp/project" })),
     getTimeline: vi.fn(() => []),
     getPendingPermissions: vi.fn(() => []),
-    streamAgent: vi.fn(async function* () {}),
+    streamAgent,
   } satisfies Pick<
     AgentManager,
     "getAgent" | "getTimeline" | "getPendingPermissions" | "streamAgent"
@@ -40,15 +46,19 @@ describe("GoalService", () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   async function createService() {
     tempHome = await mkdtemp(path.join(tmpdir(), "paseo-goal-"));
+    streamAgent.mockClear();
+    evaluateGoal = vi.fn(async () => ({ met: false, reason: "Still in progress" }));
     service = new GoalService({
       paseoHome: tempHome,
       agentManager,
       providerSnapshotManager,
       readDaemonConfig: () => ({ metadataGeneration: { providers: [] } }),
+      evaluateGoal: (input) => evaluateGoal(input),
       logger: {
         child: () => ({
           info: vi.fn(),
@@ -90,7 +100,8 @@ describe("GoalService", () => {
     await service.maybeScheduleContinuation("agent-1");
 
     expect(service.getGoal("agent-1")?.status).toBe("paused");
-    expect(agentManager.streamAgent).not.toHaveBeenCalled();
+    expect(service.getGoal("agent-1")?.pauseReason).toBe("permissions");
+    expect(streamAgent).not.toHaveBeenCalled();
   });
 
   it("hasActiveGoal is true for active and paused records", async () => {
@@ -104,5 +115,61 @@ describe("GoalService", () => {
     ]);
     await service.maybeScheduleContinuation("agent-1");
     expect(service.hasActiveGoal("agent-1")).toBe(true);
+  });
+
+  it("clears goal when evaluation reports met", async () => {
+    await createService();
+    evaluateGoal.mockResolvedValueOnce({ met: true, reason: "Tests passed" });
+    await service.setGoal("agent-1", { condition: "Tests pass" });
+
+    await service.maybeScheduleContinuation("agent-1");
+
+    expect(service.getGoal("agent-1")).toBeNull();
+    expect(streamAgent).not.toHaveBeenCalled();
+  });
+
+  it("schedules continuation when evaluation reports not met", async () => {
+    vi.useFakeTimers();
+    await createService();
+    await service.setGoal("agent-1", { condition: "Tests pass", maxIterations: 3 });
+
+    await service.maybeScheduleContinuation("agent-1");
+    await vi.runAllTimersAsync();
+
+    expect(service.getGoal("agent-1")?.iteration).toBe(1);
+    expect(streamAgent).toHaveBeenCalledTimes(1);
+    const prompt = streamAgent.mock.calls[0]?.[1];
+    expect(typeof prompt).toBe("string");
+    expect(prompt).toContain("paseo-system");
+  });
+
+  it("stops after max iterations", async () => {
+    await createService();
+    await service.setGoal("agent-1", { condition: "Tests pass", maxIterations: 1 });
+    evaluateGoal.mockResolvedValue({ met: false, reason: "Not yet" });
+
+    await service.maybeScheduleContinuation("agent-1");
+    expect(service.getGoal("agent-1")?.iteration).toBe(1);
+
+    await service.maybeScheduleContinuation("agent-1");
+    expect(service.getGoal("agent-1")).toBeNull();
+  });
+
+  it("pauses and notifies when evaluation fails", async () => {
+    await createService();
+    evaluateGoal.mockRejectedValueOnce(new Error("no structured providers"));
+    await service.setGoal("agent-1", { condition: "Tests pass" });
+
+    await service.maybeScheduleContinuation("agent-1");
+
+    const goal = service.getGoal("agent-1");
+    expect(goal?.status).toBe("paused");
+    expect(goal?.pauseReason).toBe("evaluation_failed");
+    expect(streamAgent).toHaveBeenCalledTimes(1);
+    expect(streamAgent.mock.calls[0]?.[1]).toContain("evaluator could not run");
+
+    streamAgent.mockClear();
+    await service.maybeScheduleContinuation("agent-1");
+    expect(streamAgent).not.toHaveBeenCalled();
   });
 });

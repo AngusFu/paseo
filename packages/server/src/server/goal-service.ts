@@ -11,6 +11,12 @@ import type { StructuredGenerationDaemonConfig } from "./agent/structured-genera
 import { resolveStructuredGenerationProviders } from "./agent/structured-generation-providers.js";
 import type { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
 import { formatGoalContinuationPrompt } from "./goal/continuation-prompt.js";
+import { formatGoalEvaluationFailurePrompt } from "./goal/evaluation-failure-prompt.js";
+
+export type GoalEvaluator = (input: {
+  agentId: string;
+  condition: string;
+}) => Promise<z.infer<typeof GoalEvaluationSchema>>;
 
 const DEFAULT_MAX_ITERATIONS = 12;
 const GOAL_ACTIVITY_MAX_ITEMS = 80;
@@ -22,6 +28,8 @@ const GoalEvaluationSchema = z.object({
 
 const GoalStatusSchema = z.enum(["active", "paused", "met", "cleared", "max_iterations"]);
 
+const GoalPauseReasonSchema = z.enum(["permissions", "evaluation_failed"]);
+
 export const GoalActiveRecordSchema = z.object({
   agentId: z.string(),
   condition: z.string().min(1),
@@ -31,6 +39,7 @@ export const GoalActiveRecordSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   lastEvaluationReason: z.string().nullable().optional(),
+  pauseReason: GoalPauseReasonSchema.optional(),
 });
 
 const StoredActiveGoalsSchema = z.record(z.string(), GoalActiveRecordSchema);
@@ -87,6 +96,7 @@ export class GoalService {
       providerSnapshotManager: Pick<ProviderSnapshotManager, "listProviders">;
       readDaemonConfig: () => StructuredGenerationDaemonConfig;
       logger: Logger;
+      evaluateGoal?: GoalEvaluator;
     },
   ) {
     this.storePath = path.join(options.paseoHome, "goals", "active.json");
@@ -147,6 +157,7 @@ export class GoalService {
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
       lastEvaluationReason: null,
+      pauseReason: undefined,
     };
     this.goals.set(agentId, record);
     await this.persist();
@@ -178,10 +189,15 @@ export class GoalService {
       return;
     }
 
+    if (record.status === "paused" && record.pauseReason === "evaluation_failed") {
+      return;
+    }
+
     const pendingPermissions = this.options.agentManager.getPendingPermissions(agentId);
     if (pendingPermissions.length > 0) {
       if (record.status !== "paused") {
         record.status = "paused";
+        record.pauseReason = "permissions";
         record.updatedAt = nowIso();
         await this.persist();
         this.logger.info({ agentId }, "goal-service: paused for pending permissions");
@@ -191,6 +207,7 @@ export class GoalService {
 
     if (record.status === "paused") {
       record.status = "active";
+      record.pauseReason = undefined;
       record.updatedAt = nowIso();
       await this.persist();
     }
@@ -212,9 +229,19 @@ export class GoalService {
 
     let evaluation: z.infer<typeof GoalEvaluationSchema>;
     try {
-      evaluation = await this.evaluateGoal(agentId, record.condition);
+      evaluation = await this.runEvaluation(agentId, record.condition);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       this.logger.warn({ err: error, agentId }, "goal-service: evaluation failed");
+      record.status = "paused";
+      record.pauseReason = "evaluation_failed";
+      record.lastEvaluationReason = `Evaluation failed: ${message}`;
+      record.updatedAt = nowIso();
+      await this.persist();
+      this.scheduleEvaluationFailureNotification(agentId, {
+        condition: record.condition,
+        reason: record.lastEvaluationReason,
+      });
       return;
     }
 
@@ -239,7 +266,17 @@ export class GoalService {
     });
   }
 
-  private async evaluateGoal(
+  private async runEvaluation(
+    agentId: string,
+    condition: string,
+  ): Promise<z.infer<typeof GoalEvaluationSchema>> {
+    if (this.options.evaluateGoal) {
+      return this.options.evaluateGoal({ agentId, condition });
+    }
+    return this.evaluateGoalWithStructuredGeneration(agentId, condition);
+  }
+
+  private async evaluateGoalWithStructuredGeneration(
     agentId: string,
     condition: string,
   ): Promise<z.infer<typeof GoalEvaluationSchema>> {
@@ -270,6 +307,23 @@ export class GoalService {
       },
       logger: this.logger,
     });
+  }
+
+  private scheduleEvaluationFailureNotification(
+    agentId: string,
+    detail: { condition: string; reason: string },
+  ): void {
+    const prompt = formatSystemNotificationPrompt(formatGoalEvaluationFailurePrompt(detail));
+    void (async () => {
+      try {
+        for await (const _event of this.options.agentManager.streamAgent(agentId, prompt)) {
+          // Drain until the failure notification turn settles.
+        }
+      } catch (error) {
+        this.logger.warn({ err: error, agentId }, "goal-service: evaluation failure notify failed");
+      }
+    })();
+    this.logger.info({ agentId }, "goal-service: evaluation failure notification scheduled");
   }
 
   private scheduleContinuation(

@@ -108,6 +108,8 @@ import type {
   PaseoToolExecutionContext,
   PaseoToolResult,
 } from "./types.js";
+import type { GoalService } from "../../goal-service.js";
+import { GoalActiveRecordSchema } from "../../goal-service.js";
 
 export interface PaseoToolHostDependencies {
   agentManager: AgentManager;
@@ -147,6 +149,7 @@ export interface PaseoToolHostDependencies {
     WorkflowService,
     "listDefinitions" | "dispatch" | "getRun" | "listRunLogs"
   > | null;
+  goalService?: GoalService | null;
   paseoHome?: string;
   worktreesRoot?: string;
   /**
@@ -589,6 +592,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     callerAgentId,
     resolveSpeakHandler,
     resolveCallerContext,
+    goalService,
     logger,
   } = options;
   const childLogger = logger.child({ module: "agent", component: "paseo-tool-catalog" });
@@ -1379,6 +1383,98 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           timedOut: false,
           ...(result.questionId ? { questionId: result.questionId } : {}),
         }),
+      };
+    },
+  );
+
+  const requireGoalService = (): GoalService => {
+    if (!goalService) {
+      throw new Error("paseo-goal is not available on this host");
+    }
+    return goalService;
+  };
+
+  registerTool(
+    "set_paseo_goal",
+    {
+      title: "Register a paseo-goal for in-thread continuation",
+      description:
+        "Bind a verifiable completion condition to the current agent. After each turn the daemon evaluates progress and continues the same agent tab until the condition is met, blocked, or max iterations is reached.",
+      inputSchema: {
+        condition: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Verifiable completion condition for this agent tab."),
+        maxIterations: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Maximum continuation turns before stopping (default 12)."),
+      },
+      outputSchema: {
+        goal: GoalActiveRecordSchema,
+      },
+    },
+    async (args) => {
+      if (!callerAgentId) {
+        throw new Error("set_paseo_goal requires an agent-scoped tool session");
+      }
+      const service = requireGoalService();
+      const goal = await service.setGoal(callerAgentId, {
+        condition: args.condition,
+        ...(args.maxIterations !== undefined ? { maxIterations: args.maxIterations } : {}),
+      });
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ goal }),
+      };
+    },
+  );
+
+  registerTool(
+    "get_paseo_goal",
+    {
+      title: "Get the active paseo-goal for this agent",
+      description: "Return the active paseo-goal bound to the current agent, if any.",
+      inputSchema: {},
+      outputSchema: {
+        goal: GoalActiveRecordSchema.nullable(),
+      },
+    },
+    async () => {
+      if (!callerAgentId) {
+        throw new Error("get_paseo_goal requires an agent-scoped tool session");
+      }
+      const service = requireGoalService();
+      const goal = service.getGoal(callerAgentId);
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ goal }),
+      };
+    },
+  );
+
+  registerTool(
+    "clear_paseo_goal",
+    {
+      title: "Clear the active paseo-goal for this agent",
+      description: "Stop daemon-managed in-thread goal continuation for the current agent tab.",
+      inputSchema: {},
+      outputSchema: {
+        goal: GoalActiveRecordSchema.nullable(),
+      },
+    },
+    async () => {
+      if (!callerAgentId) {
+        throw new Error("clear_paseo_goal requires an agent-scoped tool session");
+      }
+      const service = requireGoalService();
+      const goal = await service.clearGoal(callerAgentId);
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ goal }),
       };
     },
   );

@@ -1411,6 +1411,8 @@ export class VoiceAssistantWebSocketServer {
         importSessionWorkspaceTarget: true,
         // COMPAT(forgeProviders): added in v0.1.106, drop the gate when daemon floor >= v0.1.106.
         forgeProviders: true,
+        // COMPAT(paseoGoalContinuation): added in v0.1.106, drop the gate when floor >= v0.1.106.
+        paseoGoalContinuation: true,
         // COMPAT(selectiveAgentTimeline): added in v0.1.106, remove after 2027-01-12.
         selectiveAgentTimeline: true,
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.

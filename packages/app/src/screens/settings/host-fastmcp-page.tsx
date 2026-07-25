@@ -14,6 +14,7 @@ import { useHostFeature } from "@/runtime/host-features";
 import { useHostRuntimeClient, useHostRuntimeIsConnected, useHosts } from "@/runtime/host-runtime";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { parseMcpServersJson, serializeMcpServersJson } from "@/screens/settings/mcp-servers-json";
+import { formatMcpCliToolListSummary } from "@/screens/settings/mcp-cli-test-summary";
 import { settingsStyles } from "@/styles/settings";
 import { confirmDialog } from "@/utils/confirm-dialog";
 
@@ -168,7 +169,7 @@ function ServerCard({
         const result = await onTest(server.name);
         setTestResult(result);
         if (result.ok) {
-          toast.show(t("settings.hostSections.fastmcp.testOkTitle"), { variant: "success" });
+          toast.show(result.message, { variant: "success" });
         } else {
           toast.error(result.message);
         }
@@ -180,7 +181,7 @@ function ServerCard({
         setTesting(false);
       }
     })();
-  }, [onTest, server.name, t, toast]);
+  }, [onTest, server.name, toast]);
 
   const handleDeletePress = useCallback(() => {
     void (async () => {
@@ -202,9 +203,7 @@ function ServerCard({
 
   let testResultText: string | null = null;
   if (testResult) {
-    testResultText = testResult.ok
-      ? t("settings.hostSections.fastmcp.testOkInline")
-      : testResult.message;
+    testResultText = testResult.message;
   }
 
   const fieldResetKey = [
@@ -556,10 +555,11 @@ export function HostFastMcpPage({ serverId }: { serverId: string }) {
             payload.error ?? (payload.stderr.trim() || payload.stdout.trim() || "Test failed"),
         };
       }
-      const head = payload.stdout.trim().split("\n").slice(0, 3).join(" · ");
       return {
         ok: true,
-        message: head || t("settings.hostSections.fastmcp.testOkMessage"),
+        message: formatMcpCliToolListSummary(payload.stdout, {
+          emptyMessage: t("settings.hostSections.fastmcp.testOkMessage"),
+        }),
       };
     },
     [client, t],

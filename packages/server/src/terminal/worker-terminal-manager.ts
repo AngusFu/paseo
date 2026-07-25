@@ -93,6 +93,8 @@ interface WorkerTerminalManagerOptions {
   requestTimeoutMs?: number;
   forkWorker?: () => TerminalWorkerProcess;
   getTerminalActivityUrl?: () => string | null;
+  /** Daemon home — forwarded into each createTerminal worker request. */
+  paseoHome?: string;
 }
 
 function createActivityToken(): string {
@@ -139,18 +141,24 @@ function cloneTerminalInfo(info: RequiredWorkerTerminalInfo): RequiredWorkerTerm
   };
 }
 
-function forkTerminalWorker(): TerminalWorkerProcess {
+function forkTerminalWorker(paseoHome?: string): TerminalWorkerProcess {
   return fork(fileURLToPath(resolveWorkerUrl()), [], {
     execArgv: resolveWorkerExecArgv(),
     serialization: "advanced",
     stdio: ["ignore", "ignore", "inherit", "ipc"],
+    env: {
+      ...process.env,
+      ...(paseoHome ? { PASEO_HOME: paseoHome } : {}),
+    },
   }) as TerminalWorkerProcess;
 }
 
 export function createWorkerTerminalManager(
   managerOptions: WorkerTerminalManagerOptions = {},
 ): TerminalManager {
-  const worker = managerOptions.forkWorker ? managerOptions.forkWorker() : forkTerminalWorker();
+  const worker = managerOptions.forkWorker
+    ? managerOptions.forkWorker()
+    : forkTerminalWorker(managerOptions.paseoHome);
   const requestTimeoutMs = managerOptions.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
   const pendingRequests = new Map<string, PendingRequest>();
   const recordsById = new Map<string, WorkerTerminalRecord>();
@@ -690,6 +698,8 @@ export function createWorkerTerminalManager(
         terminal: RequiredWorkerTerminalInfo;
         state: TerminalState;
       };
+      const resolvedPaseoHome =
+        options.paseoHome !== undefined ? options.paseoHome : managerOptions.paseoHome;
       try {
         result = (await sendRequest({
           type: "createTerminal",
@@ -698,6 +708,7 @@ export function createWorkerTerminalManager(
             id: terminalId,
             activityToken,
             activityUrl: terminalActivityUrl,
+            ...(resolvedPaseoHome !== undefined ? { paseoHome: resolvedPaseoHome } : {}),
           },
         })) as {
           terminal: RequiredWorkerTerminalInfo;

@@ -52,9 +52,11 @@ $PASEO_HOME/mcp-cli/
 ## PATH + single channel
 
 - Shared helper `prependMcpCliBinPath` — agent launch env and Paseo terminal env.
-- MVP does **not** edit shell rc.
+- Inject only when `$PASEO_HOME/mcp-cli/bin` **exists** (after Detect/Install). Agents use the daemon’s configured `paseoHome` directly; terminals get the same home via bootstrap (`process.env.PASEO_HOME`) + explicit `paseoHome` on create (worker fork included).
+- Paseo does **not** edit the user’s shell rc. For zsh PTY terminals, shell integration sets `PASEO_MCP_CLI_BIN` and re-prepends that dir after `.zshenv` / on `precmd` so mise/asdf/`.zshrc` PATH rewrites don’t hide the CLIs.
 - `daemonAppendSystemPrompt` includes short usage lines for enabled CLIs.
 - Launch overlay strips same-name keys from `mcpServers` on create **and** resume/reload. Stored user config is unchanged; strip is launch-only. Enabled CLI wins over plugin.
+- Packaged desktop (`~/.paseo`) and repo `.dev/paseo-home` are separate homes — Install FastMCP on the host you’re actually connected to.
 
 ## Non-goals (MVP)
 

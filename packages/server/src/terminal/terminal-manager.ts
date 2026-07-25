@@ -64,6 +64,7 @@ export interface TerminalManager {
     cols?: number;
     activityToken?: string;
     activityUrl?: string | null;
+    paseoHome?: string | null;
   }): Promise<TerminalSession>;
   registerCwdEnv(options: { cwd: string; env: Record<string, string> }): void;
   validateTerminalActivityToken(terminalId: string, token: string): "valid" | "unknown" | "invalid";
@@ -95,6 +96,8 @@ export interface TerminalManager {
 
 export interface TerminalManagerOptions {
   getTerminalActivityUrl?: () => string | null;
+  /** Daemon home — prepend `$paseoHome/mcp-cli/bin` into new terminals when present. */
+  paseoHome?: string;
 }
 
 function createActivityToken(): string {
@@ -321,6 +324,7 @@ export function createTerminalManager(
       cols?: number;
       activityToken?: string;
       activityUrl?: string | null;
+      paseoHome?: string | null;
     }): Promise<TerminalSession> {
       assertAbsolutePath(options.cwd);
 
@@ -342,6 +346,8 @@ export function createTerminalManager(
       };
       terminalActivityTokenById.set(terminalId, activityToken);
       let session: TerminalSession;
+      const resolvedPaseoHome =
+        options.paseoHome !== undefined ? options.paseoHome : managerOptions.paseoHome;
       try {
         session = registerSession(
           await createTerminal({
@@ -355,6 +361,7 @@ export function createTerminalManager(
             ...(options.rows !== undefined ? { rows: options.rows } : {}),
             ...(options.cols !== undefined ? { cols: options.cols } : {}),
             ...(mergedEnv ? { env: mergedEnv } : {}),
+            ...(resolvedPaseoHome !== undefined ? { paseoHome: resolvedPaseoHome } : {}),
             activityEnv,
           }),
         );

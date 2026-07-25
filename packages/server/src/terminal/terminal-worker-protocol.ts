@@ -31,6 +31,8 @@ export interface WorkerCreateTerminalOptions {
   cols?: number;
   activityToken?: string;
   activityUrl?: string | null;
+  /** Daemon home for MCP CLI PATH injection inside the worker. */
+  paseoHome?: string | null;
 }
 
 export interface WorkerKillAndWaitOptions {

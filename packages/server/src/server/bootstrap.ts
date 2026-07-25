@@ -536,6 +536,9 @@ export async function createPaseoDaemon(
   config: PaseoDaemonConfig,
   rootLogger: Logger,
 ): Promise<PaseoDaemon> {
+  // Keep process.env.PASEO_HOME aligned with the configured home so forked
+  // workers (terminals) and resolvePaseoHome() see the same path as AgentManager.
+  process.env.PASEO_HOME = config.paseoHome;
   const logger = rootLogger.child({ module: "bootstrap" });
   const bootstrapStart = performance.now();
   const elapsed = () => `${(performance.now() - bootstrapStart).toFixed(0)}ms`;
@@ -582,6 +585,7 @@ export async function createPaseoDaemon(
   let boundListenTarget: ListenTarget | null = null;
   let workspaceRegistry: FileBackedWorkspaceRegistry | null = null;
   const terminalManager = createConfiguredTerminalManager({
+    paseoHome: config.paseoHome,
     getTerminalActivityUrl: () => createTerminalActivityUrl(boundListenTarget),
   });
   applyTerminalAgentHookSetting({ store: daemonConfigStore, logger });

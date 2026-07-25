@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 import { createExternalProcessEnv } from "../server/paseo-env.js";
 import { writePrivateFileAtomicSync } from "../server/private-files.js";
 import { resolvePaseoHome } from "../server/paseo-home.js";
-import { mcpCliBinDir, prependMcpCliBinPath } from "../server/mcp-cli/index.js";
+import { mcpCliBinDir } from "../server/mcp-cli/paths.js";
+import { prependMcpCliBinPath } from "../server/mcp-cli/path.js";
 import { findExecutable } from "../executable-resolution/executable-resolution.js";
 import type { TerminalCell, TerminalState } from "@getpaseo/protocol/messages";
 import { TerminalInputModeTracker } from "@getpaseo/protocol/terminal-input-mode";
@@ -130,6 +131,8 @@ export interface CreateTerminalOptions {
   title?: string;
   command?: string;
   args?: string[];
+  /** When set, prepend `$paseoHome/mcp-cli/bin` if that dir exists. */
+  paseoHome?: string | null;
 }
 
 function toTerminalActivity(snapshot: {
@@ -417,10 +420,9 @@ export function buildTerminalEnvironment(
   // Prepend MCP CLI before the Paseo CLI so existing terminals keep `paseo` first on PATH.
   // Only inject when the bin dir exists (after Detect/Install); avoids polluting unit-test PATH.
   const paseoHome = input.paseoHome === undefined ? resolvePaseoHome() : input.paseoHome;
-  const envWithMcpCli =
-    paseoHome !== null && existsSync(mcpCliBinDir(paseoHome))
-      ? prependMcpCliBinPath(baseEnv, paseoHome)
-      : baseEnv;
+  const mcpCliBin =
+    paseoHome !== null && existsSync(mcpCliBinDir(paseoHome)) ? mcpCliBinDir(paseoHome) : null;
+  const envWithMcpCli = mcpCliBin ? prependMcpCliBinPath(baseEnv, paseoHome as string) : baseEnv;
   const envWithAgentHooks = prependPaseoCliToPath(
     envWithMcpCli,
     input.paseoCliBinDir === undefined ? resolvePaseoCliBinDir() : input.paseoCliBinDir,
@@ -429,14 +431,17 @@ export function buildTerminalEnvironment(
     envWithAgentHooks,
     input.paseoHookCliPath === undefined ? resolvePaseoCliExecutablePath() : input.paseoHookCliPath,
   );
+  const envWithMcpCliMarker = mcpCliBin
+    ? { ...envWithHookCli, PASEO_MCP_CLI_BIN: mcpCliBin }
+    : envWithHookCli;
 
   if (basename(input.shell) !== "zsh") {
-    return envWithHookCli;
+    return envWithMcpCliMarker;
   }
 
-  const originalZdotdir = envWithHookCli.ZDOTDIR ?? "";
+  const originalZdotdir = envWithMcpCliMarker.ZDOTDIR ?? "";
   return {
-    ...envWithHookCli,
+    ...envWithMcpCliMarker,
     PASEO_ZSH_ZDOTDIR: originalZdotdir,
     ZDOTDIR: prepareZshShellIntegrationRuntimeDir(input.zshShellIntegrationDir),
   };
@@ -820,6 +825,7 @@ export async function createTerminal(options: CreateTerminalOptions): Promise<Te
     title: presetTitle,
     command,
     args = [],
+    paseoHome,
   } = options;
   const resolvedShell = shell ?? resolveDefaultTerminalShell();
 
@@ -878,6 +884,7 @@ export async function createTerminal(options: CreateTerminalOptions): Promise<Te
         ...activityEnv,
         PASEO_WORKSPACE_ID: workspaceId,
       },
+      ...(paseoHome !== undefined ? { paseoHome } : {}),
     }),
   });
 

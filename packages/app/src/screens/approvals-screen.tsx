@@ -444,28 +444,32 @@ const styles = StyleSheet.create((theme) => ({
   },
   body: {
     flex: 1,
-    gap: theme.spacing[3],
-    paddingHorizontal: theme.spacing[4],
-    paddingBottom: theme.spacing[4],
+    minHeight: 0,
   },
   filterRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: theme.spacing[3],
+    paddingHorizontal: { xs: theme.spacing[3], md: theme.spacing[6] },
+    paddingTop: theme.spacing[4],
   },
   filterRowControls: {
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
     gap: theme.spacing[2],
-    flex: 1,
+    flexShrink: 1,
   },
   scroll: {
     flex: 1,
+    minHeight: 0,
   },
   scrollContent: {
+    flexGrow: 1,
     gap: theme.spacing[3],
+    paddingHorizontal: { xs: theme.spacing[3], md: theme.spacing[6] },
+    paddingTop: theme.spacing[4],
     paddingBottom: theme.spacing[6],
   },
   centered: {

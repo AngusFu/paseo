@@ -162,6 +162,10 @@ export const ar: TranslationResources = {
       open: "ميزات الوكيل المفتوح",
       on: "على",
       off: "عن",
+      autoAccept: {
+        label: "الموافقة التلقائية",
+        tooltip: "الموافقة تلقائياً على طلبات أذونات الأدوات",
+      },
     },
     mode: {
       title: "وضع",

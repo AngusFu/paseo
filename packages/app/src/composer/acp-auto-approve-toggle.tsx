@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { getFeatureTooltip } from "@/composer/agent-controls/utils";
 import type { Theme } from "@/styles/theme";
 
-interface AcpAutoApproveFloatingToggleProps {
+interface AcpAutoApproveToggleProps {
   feature: AgentFeature & { type: "toggle" };
   disabled?: boolean;
   onToggle: () => void;
@@ -38,16 +38,17 @@ function resolveToggleStyle(
   return [
     styles.toggle,
     enabled ? styles.toggleEnabled : null,
+    !enabled && (pressed || hovered) && !disabled ? styles.toggleHovered : null,
     disabled ? styles.toggleDisabled : null,
-    (pressed || hovered) && !disabled ? styles.toggleActive : null,
+    enabled && (pressed || hovered) && !disabled ? styles.toggleEnabledActive : null,
   ];
 }
 
-export const AcpAutoApproveFloatingToggle = memo(function AcpAutoApproveFloatingToggle({
+export const AcpAutoApproveToggle = memo(function AcpAutoApproveToggle({
   feature,
   disabled = false,
   onToggle,
-}: AcpAutoApproveFloatingToggleProps) {
+}: AcpAutoApproveToggleProps) {
   const enabled = feature.value === true;
   const tooltip = getFeatureTooltip(feature);
   const accessibilityState = useMemo(() => ({ checked: enabled, disabled }), [disabled, enabled]);
@@ -94,28 +95,23 @@ export function findAutoAcceptToggleFeature(
 
 const styles = StyleSheet.create((theme) => ({
   toggle: {
-    position: "absolute",
-    top: theme.spacing[2],
-    right: theme.spacing[2],
-    zIndex: 3,
     width: 28,
     height: 28,
     borderRadius: theme.borderRadius.full,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: theme.colors.surface1,
-    borderWidth: theme.borderWidth[1],
-    borderColor: theme.colors.border,
+  },
+  toggleHovered: {
+    backgroundColor: theme.colors.surface2,
   },
   toggleEnabled: {
     backgroundColor: theme.colors.palette.green[600],
-    borderColor: theme.colors.palette.green[600],
+  },
+  toggleEnabledActive: {
+    opacity: 0.9,
   },
   toggleDisabled: {
     opacity: 0.5,
-  },
-  toggleActive: {
-    opacity: 0.9,
   },
   tooltipText: {
     color: theme.colors.foreground,

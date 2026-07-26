@@ -162,6 +162,10 @@ export const ptBR: TranslationResources = {
       open: "Abrir recursos do agente",
       on: "Ativado",
       off: "Desativado",
+      autoAccept: {
+        label: "Aprovação automática",
+        tooltip: "Aprovar automaticamente permissões de ferramentas",
+      },
     },
     mode: {
       title: "Modo",

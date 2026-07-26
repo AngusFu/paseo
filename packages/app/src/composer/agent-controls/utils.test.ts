@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatAgentModeLabel,
   getFeatureHighlightColor,
+  getFeatureLabel,
   getFeatureTooltip,
   getAgentControlHintKey,
   formatThinkingOptionLabel,
@@ -21,15 +22,33 @@ describe("feature metadata helpers", () => {
   it("prefers explicit feature tooltip copy", () => {
     expect(
       getFeatureTooltip({
+        id: "custom",
         label: "Plan",
         tooltip: "Toggle plan mode",
       }),
     ).toBe("Toggle plan mode");
   });
 
+  it("translates known auto_accept feature copy", () => {
+    expect(
+      getFeatureTooltip({
+        id: "auto_accept",
+        label: "Auto Approve",
+        tooltip: "Auto approve tool permissions",
+      }),
+    ).toBe("Auto approve tool permissions");
+    expect(
+      getFeatureLabel({
+        id: "auto_accept",
+        label: "Auto Approve",
+      }),
+    ).toBe("Auto Approve");
+  });
+
   it("falls back to the feature label when no tooltip is provided", () => {
     expect(
       getFeatureTooltip({
+        id: "custom",
         label: "Custom",
       }),
     ).toBe("Custom");

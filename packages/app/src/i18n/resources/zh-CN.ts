@@ -162,6 +162,10 @@ export const zhCN: TranslationResources = {
       open: "打开 Agent features",
       on: "开启",
       off: "关闭",
+      autoAccept: {
+        label: "自动批准",
+        tooltip: "自动批准工具权限提示",
+      },
     },
     mode: {
       title: "Mode",

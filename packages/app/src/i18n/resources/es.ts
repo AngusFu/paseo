@@ -162,6 +162,10 @@ export const es: TranslationResources = {
       open: "Funciones de agente abierto",
       on: "En",
       off: "Apagado",
+      autoAccept: {
+        label: "Aprobación automática",
+        tooltip: "Aprobar automáticamente los permisos de herramientas",
+      },
     },
     mode: {
       title: "Modo",

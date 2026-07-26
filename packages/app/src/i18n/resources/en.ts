@@ -160,6 +160,10 @@ export const en = {
       open: "Open agent features",
       on: "On",
       off: "Off",
+      autoAccept: {
+        label: "Auto Approve",
+        tooltip: "Auto approve tool permissions",
+      },
     },
     mode: {
       title: "Mode",

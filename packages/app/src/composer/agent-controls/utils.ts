@@ -29,8 +29,32 @@ export function normalizeModelId(modelId: string | null | undefined): string | n
   return normalized;
 }
 
-export function getFeatureTooltip(feature: Pick<AgentFeature, "label" | "tooltip">): string {
-  return feature.tooltip ?? feature.label;
+export function getFeatureLabel(feature: Pick<AgentFeature, "id" | "label">): string {
+  const key = resolveKnownFeatureTranslationKey(feature.id, "label");
+  if (key) {
+    return i18n.t(key);
+  }
+  return feature.label;
+}
+
+export function getFeatureTooltip(feature: Pick<AgentFeature, "id" | "label" | "tooltip">): string {
+  const tooltipKey = resolveKnownFeatureTranslationKey(feature.id, "tooltip");
+  if (tooltipKey) {
+    return i18n.t(tooltipKey);
+  }
+  return feature.tooltip ?? getFeatureLabel(feature);
+}
+
+function resolveKnownFeatureTranslationKey(
+  featureId: string,
+  field: "label" | "tooltip",
+): `agentControls.features.autoAccept.label` | `agentControls.features.autoAccept.tooltip` | null {
+  if (featureId === "auto_accept") {
+    return field === "label"
+      ? "agentControls.features.autoAccept.label"
+      : "agentControls.features.autoAccept.tooltip";
+  }
+  return null;
 }
 
 export function getFeatureHighlightColor(featureId: string): FeatureHighlightColor {

@@ -162,6 +162,10 @@ export const ru: TranslationResources = {
       open: "Открытые возможности агента",
       on: "На",
       off: "Выключенный",
+      autoAccept: {
+        label: "Автоодобрение",
+        tooltip: "Автоматически одобрять запросы разрешений для инструментов",
+      },
     },
     mode: {
       title: "Режим",

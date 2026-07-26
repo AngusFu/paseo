@@ -35,6 +35,7 @@ import {
   SquareTerminal,
   Code2,
   Terminal,
+  MessageSquareWarning,
 } from "lucide-react-native";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
@@ -105,6 +106,7 @@ import {
   HostTerminalsPage,
 } from "@/screens/settings/host-page";
 import { HostFastMcpPage } from "@/screens/settings/host-fastmcp-page";
+import { HostProseStopPage } from "@/screens/settings/host-prose-stop-page";
 import ProjectsScreen from "@/screens/projects-screen";
 import ProjectSettingsScreen from "@/screens/project-settings-screen";
 import { SETTINGS_DESKTOP_SIDEBAR_WIDTH, useIsCompactFormFactor } from "@/constants/layout";
@@ -177,6 +179,7 @@ const HOST_SECTION_ITEMS: HostSectionItem[] = [
   { id: "providers", labelKey: "settings.hostSections.providers", icon: Boxes },
   { id: "integrations", labelKey: "settings.hostSections.integrations", icon: Puzzle },
   { id: "fastmcp", labelKey: "settings.hostSections.fastmcp.nav", icon: Terminal },
+  { id: "prose-stop", labelKey: "settings.hostSections.proseStop.nav", icon: MessageSquareWarning },
   { id: "usage", labelKey: "settings.hostSections.usage", icon: Gauge },
   { id: "terminals", labelKey: "settings.hostSections.terminals", icon: SquareTerminal },
 ];
@@ -198,6 +201,8 @@ function renderHostSettingsContent(
       return <HostIntegrationsPage serverId={view.serverId} />;
     case "fastmcp":
       return <HostFastMcpPage serverId={view.serverId} />;
+    case "prose-stop":
+      return <HostProseStopPage serverId={view.serverId} />;
     case "usage":
       return <HostUsagePage serverId={view.serverId} />;
     case "terminals":

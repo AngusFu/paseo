@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import type { AttachmentMetadata } from "@/attachments/types";
 import { useAttachmentPreviewUrl } from "@/attachments/use-attachment-preview-url";
 import { isWeb } from "@/constants/platform";
+import { pushEscHandler } from "@/lib/esc-stack";
 import { WindowChromeRootRegion, WindowChromeSafeArea } from "@/utils/desktop-window";
 
 interface AttachmentLightboxProps {
@@ -28,15 +29,7 @@ export function AttachmentLightbox({ metadata, onClose }: AttachmentLightboxProp
 
   useEffect(() => {
     if (!isWeb || !metadata) return;
-    function handleKeydown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", handleKeydown);
-    return () => {
-      window.removeEventListener("keydown", handleKeydown);
-    };
+    return pushEscHandler(onClose);
   }, [metadata, onClose]);
 
   const closeButtonRowStyle = useMemo(

@@ -525,6 +525,7 @@ export const HOST_SECTION_SLUGS = [
   "providers",
   "integrations",
   "fastmcp",
+  "prose-stop",
   "usage",
   "terminals",
   "host",

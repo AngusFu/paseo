@@ -14,6 +14,7 @@ import {
   getWorkspaceIndexJumpModifierKey,
 } from "@/keyboard/keyboard-shortcuts";
 import { resolveKeyboardFocusScope } from "@/keyboard/focus-scope";
+import { isEscStackActive } from "@/lib/esc-stack";
 import {
   buildBrowserKeyboardPolicy,
   parseBrowserShortcutInput,
@@ -297,6 +298,9 @@ export function useKeyboardShortcuts({
       }
 
       const key = event.key ?? "";
+      if (key === "Escape" && isEscStackActive()) {
+        return;
+      }
       if (key === badgeModifierKey && !event.shiftKey) {
         setBadgeModifierDown(true);
       }

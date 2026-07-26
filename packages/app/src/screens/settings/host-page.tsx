@@ -71,7 +71,7 @@ import type { Theme } from "@/styles/theme";
 import { getProviderIcon } from "@/components/provider-icons";
 import { BrowserToolsOptInCard } from "./browser-tools-card";
 import { DictationModelCard } from "./dictation-model-card";
-import { ProseStopLocalLlmSection } from "./local-llm-card";
+import { VoiceTtsModelCard } from "./voice-tts-model-card";
 import { hasDaemonReconnectedAfter, type DaemonConnectionMarker } from "./daemon-reconnect";
 import { restartDaemonFromSettings } from "./daemon-restart";
 
@@ -387,7 +387,7 @@ export function HostSettingsPage({
       {!isLocalDaemon ? <UpdateDaemonCard key={host.serverId} host={host} /> : null}
 
       <DictationModelCard serverId={serverId} />
-      <ProseStopCard serverId={serverId} />
+      <VoiceTtsModelCard serverId={serverId} />
 
       <RemoveHostSection host={host} isLocalDaemon={isLocalDaemon} onRemoved={onHostRemoved} />
     </View>
@@ -1148,76 +1148,6 @@ function EnableTerminalAgentHooksCard({ serverId }: { serverId: string }) {
         />
       </View>
     </View>
-  );
-}
-
-function ProseStopCard({ serverId }: { serverId: string }) {
-  const { t } = useTranslation();
-  const isConnected = useHostRuntimeIsConnected(serverId);
-  const { config, patchConfig } = useDaemonConfig(serverId);
-
-  const handleEnabledChange = useCallback(
-    (next: boolean) => {
-      void patchConfig({ proseStop: { enabled: next } }).catch((error) => {
-        console.error("[HostPage] Failed to update prose-stop", error);
-        Alert.alert(
-          t("settings.host.proseStop.updateErrorTitle"),
-          error instanceof Error ? error.message : String(error),
-        );
-      });
-    },
-    [patchConfig, t],
-  );
-
-  const handlePreventionPromptChange = useCallback(
-    (next: boolean) => {
-      void patchConfig({ proseStop: { preventionPrompt: next } }).catch((error) => {
-        console.error("[HostPage] Failed to update prose-stop prevention prompt", error);
-        Alert.alert(
-          t("settings.host.proseStop.updateErrorTitle"),
-          error instanceof Error ? error.message : String(error),
-        );
-      });
-    },
-    [patchConfig, t],
-  );
-
-  if (!isConnected) return null;
-
-  return (
-    <SettingsSection title={t("settings.host.proseStop.title")} testID="host-page-prose-stop-card">
-      <View style={settingsStyles.card}>
-        <View style={settingsStyles.row}>
-          <View style={settingsStyles.rowContent}>
-            <Text style={settingsStyles.rowTitle}>{t("settings.host.proseStop.label")}</Text>
-            <Text style={settingsStyles.rowHint}>{t("settings.host.proseStop.hint")}</Text>
-          </View>
-          <Switch
-            value={config?.proseStop?.enabled !== false}
-            onValueChange={handleEnabledChange}
-            accessibilityLabel={t("settings.host.proseStop.label")}
-            testID="host-page-prose-stop-switch"
-          />
-        </View>
-        <View style={settingsStyles.row}>
-          <View style={settingsStyles.rowContent}>
-            <Text style={settingsStyles.rowTitle}>
-              {t("settings.host.proseStop.preventionPromptLabel")}
-            </Text>
-            <Text style={settingsStyles.rowHint}>
-              {t("settings.host.proseStop.preventionPromptHint")}
-            </Text>
-          </View>
-          <Switch
-            value={config?.proseStop?.preventionPrompt !== false}
-            onValueChange={handlePreventionPromptChange}
-            accessibilityLabel={t("settings.host.proseStop.preventionPromptLabel")}
-            testID="host-page-prose-stop-prevention-prompt-switch"
-          />
-        </View>
-        <ProseStopLocalLlmSection serverId={serverId} />
-      </View>
-    </SettingsSection>
   );
 }
 

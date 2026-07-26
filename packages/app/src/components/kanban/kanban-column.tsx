@@ -11,6 +11,8 @@ import { KanbanCard, type KanbanCardDropHandler } from "@/components/kanban/kanb
 import { KanbanColumnMenu } from "@/components/kanban/kanban-column-menu";
 import { isNative } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
+import { resolveColumnCollapsed } from "@/kanban/column-collapse";
+import { useKanbanColumnCollapseStore } from "@/kanban/column-collapse-store";
 
 export interface KanbanColumnBounds {
   x: number;
@@ -213,16 +215,17 @@ export const KanbanColumn = memo(function KanbanColumn({
   // mounted (opacity + pointerEvents, not conditional render) so nothing
   // shifts the header layout when hover state flips (docs/hover.md #2).
   const showCollapseToggle = isHovered || isNative || isCompact;
-  // Local, unpersisted — collapsing is a per-view space-saver (Jira-style),
-  // not board state, so it resets on remount like a native disclosure widget.
-  // Defaults to collapsed for a column that starts empty (the original pain
-  // point this feature exists for: a row of 0-card status columns pushing
-  // columns with real cards off-screen) and expanded otherwise. Lazy
-  // initializer only — this is a DEFAULT, not a live sync with card count,
-  // so once the user toggles a column it stays put for the rest of the
-  // session even if its card count later changes (e.g. a card lands in it).
-  const [collapsed, setCollapsed] = useState(() => cards.length === 0);
-  const toggleCollapsed = useCallback(() => setCollapsed((current) => !current), []);
+  // Collapse preference survives tab remounts (and app restarts) via the
+  // persisted store. Absent a preference, empty lanes stay collapsed so a
+  // row of 0-card statuses doesn't push real work off-screen; that default
+  // is derived from card count (not a one-shot useState) so a tab that
+  // mounts with cards=[] for a frame can't lock every lane shut.
+  const collapsePreference = useKanbanColumnCollapseStore((state) => state.preferences[column.id]);
+  const setCollapsedPreference = useKanbanColumnCollapseStore((state) => state.setCollapsed);
+  const collapsed = resolveColumnCollapsed(collapsePreference, cards.length);
+  const toggleCollapsed = useCallback(() => {
+    setCollapsedPreference(column.id, !collapsed);
+  }, [collapsed, column.id, setCollapsedPreference]);
 
   const handleRef = useCallback(
     (node: View | null) => {

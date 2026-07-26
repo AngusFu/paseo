@@ -118,6 +118,14 @@ Each tab's board component is resolved by source kind through
 `KanbanBoard`. Registered today: `jira` → `KanbanJiraBoard`, `gitlab` →
 `KanbanGitlabBoard`, both built on the shared `KanbanStatusBoard`.
 
+**Lane collapse:** toggling a column open/closed is UI chrome, not board data.
+Preferences live in `app/src/kanban/column-collapse-store.ts` (AsyncStorage) so
+switching Overview ↔ source tabs (which remount the board) keeps the lanes the
+user left them. With no stored preference, empty lanes default collapsed and
+non-empty lanes default expanded — derived from live card count, not a one-shot
+mount initializer, so a remount that briefly sees `cards=[]` can't lock every
+lane shut.
+
 The Jira/GitLab tabs render lanes from the tracker's **real** status (e.g. Jira's
 exact status name like "Pending Code Review", not Paseo's six generic buckets),
 read off the card's raw `metadata` blob that sync already stores (`fields.status`

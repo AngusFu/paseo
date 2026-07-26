@@ -13,6 +13,7 @@
 - Large workspace sidebars stay responsive ([#1966](https://github.com/getpaseo/paseo/pull/1966))
 - Generated workspace names and Git text can use MiniMax M3 ([#1955](https://github.com/getpaseo/paseo/pull/1955) by [@octo-patch](https://github.com/octo-patch))
 - Cursor now exposes thinking and fast mode ([#1952](https://github.com/getpaseo/paseo/pull/1952))
+- Electron upgraded to 43.2.0 for the desktop app, with updated builder, updater, and logging dependencies
 
 ### Fixed
 

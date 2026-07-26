@@ -686,6 +686,39 @@ export function deriveModelDefinitionsFromACP(
   }));
 }
 
+export const ACP_AUTO_ACCEPT_FEATURE_ID = "auto_accept";
+
+export function isACPAutoAcceptEnabled(config: AgentSessionConfig): boolean {
+  return config.featureValues?.[ACP_AUTO_ACCEPT_FEATURE_ID] === true;
+}
+
+export function buildACPAutoAcceptFeature(config: AgentSessionConfig): AgentFeature {
+  return {
+    type: "toggle",
+    id: ACP_AUTO_ACCEPT_FEATURE_ID,
+    label: "Auto Approve",
+    description: "Automatically approves ACP tool permission prompts.",
+    tooltip: "Auto approve tool permissions",
+    icon: "shield-check",
+    value: isACPAutoAcceptEnabled(config),
+  };
+}
+
+function isPlanLikeACPMode(mode: AgentMode): boolean {
+  const text = `${mode.id} ${mode.label ?? ""} ${mode.description ?? ""}`.toLowerCase();
+  return (
+    text.includes("plan") ||
+    text.includes("read-only") ||
+    text.includes("read only") ||
+    (text.includes("avoid") && text.includes("edit"))
+  );
+}
+
+function isPlanLikeACPModeId(modeId: string): boolean {
+  const text = modeId.toLowerCase();
+  return text.includes("plan") || text.includes("read-only") || text.includes("read only");
+}
+
 export function deriveFeaturesFromACP(
   configOptions: SessionConfigOption[] | null | undefined,
   featureOptions: ACPConfigFeatureOption[],
@@ -909,11 +942,12 @@ export class ACPAgentClient implements AgentClient {
   }
 
   async listFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
+    this.assertProvider(config);
+    const autoAcceptFeature = buildACPAutoAcceptFeature(config);
     if (this.configFeatureOptions.length === 0) {
-      return [];
+      return [autoAcceptFeature];
     }
 
-    this.assertProvider(config);
     const probe = await this.spawnProcess(PROBE_ENV);
     try {
       const response = await this.runACPRequest(() =>
@@ -923,7 +957,10 @@ export class ACPAgentClient implements AgentClient {
         }),
       );
       const transformed = this.transformSessionResponse(response);
-      return deriveFeaturesFromACP(transformed.configOptions, this.configFeatureOptions);
+      return [
+        autoAcceptFeature,
+        ...deriveFeaturesFromACP(transformed.configOptions, this.configFeatureOptions),
+      ];
     } finally {
       await this.closeProbe(probe);
     }
@@ -1343,6 +1380,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private waitForInitialCommands: boolean;
   private initialCommandsWaitTimeoutMs: number;
   private readonly extensionCommandsParser?: ACPExtensionCommandsParser;
+  private autoAcceptEnabled: boolean;
   private currentTurnUsage: AgentUsage | undefined;
   private activeForegroundTurnId: string | null = null;
   private fallbackAssistantMessageId: string | null = null;
@@ -1376,6 +1414,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.launchEnv = options.launchEnv;
     this.initialHandle = options.handle;
     this.config = { ...config, provider: options.provider };
+    this.autoAcceptEnabled = isACPAutoAcceptEnabled(this.config);
     this.currentMode = config.modeId ?? null;
     this.currentModel = config.model ?? null;
     this.thinkingOptionId = config.thinkingOptionId ?? null;
@@ -1585,7 +1624,32 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   get features(): AgentFeature[] {
-    return deriveFeaturesFromACP(this.configOptions, this.configFeatureOptions);
+    return [
+      buildACPAutoAcceptFeature(this.config),
+      ...deriveFeaturesFromACP(this.configOptions, this.configFeatureOptions),
+    ];
+  }
+
+  private isInPlanLikeMode(): boolean {
+    const currentModeId = this.currentMode;
+    if (!currentModeId) {
+      return false;
+    }
+    const mode = this.availableModes.find((entry) => entry.id === currentModeId);
+    if (mode) {
+      return isPlanLikeACPMode(mode);
+    }
+    return isPlanLikeACPModeId(currentModeId);
+  }
+
+  private shouldAutoApprovePermission(params: RequestPermissionRequest): boolean {
+    if (!this.autoAcceptEnabled || this.isInPlanLikeMode()) {
+      return false;
+    }
+    if (params.toolCall.kind === "switch_mode") {
+      return false;
+    }
+    return true;
   }
 
   private ensureCommandsReadyDeferred(): void {
@@ -1921,6 +1985,16 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   async setFeature(featureId: string, value: unknown): Promise<void> {
+    if (featureId === ACP_AUTO_ACCEPT_FEATURE_ID) {
+      const enabled = value === true;
+      this.autoAcceptEnabled = enabled;
+      this.config.featureValues = {
+        ...this.config.featureValues,
+        [ACP_AUTO_ACCEPT_FEATURE_ID]: enabled,
+      };
+      return;
+    }
+
     if (!this.connection || !this.sessionId) {
       throw new Error("ACP session not initialized");
     }
@@ -2156,6 +2230,18 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   async requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
+    if (this.shouldAutoApprovePermission(params)) {
+      const selectedOption = selectAutoApprovePermissionOption(params.options);
+      if (selectedOption) {
+        return {
+          outcome: {
+            outcome: "selected",
+            optionId: selectedOption.optionId,
+          },
+        };
+      }
+    }
+
     // Match Zed acp.rs:3189-3220: generic ACP permission requests stay pure pass-through.
     const requestId = randomUUID();
     let toolSnapshot =
@@ -3554,6 +3640,16 @@ function selectPermissionOption(
     }
   }
   return null;
+}
+
+function selectAutoApprovePermissionOption(options: PermissionOption[]): PermissionOption | null {
+  for (const kind of ["allow_always", "allow_once"] as const) {
+    const match = options.find((option) => option.kind === kind);
+    if (match) {
+      return match;
+    }
+  }
+  return selectPermissionOption(options, { behavior: "allow" });
 }
 
 function appendTerminalOutput(entry: TerminalEntry, chunk: string): void {

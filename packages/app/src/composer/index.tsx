@@ -129,6 +129,8 @@ import {
   resolveWorkspaceFileDrop,
   type WorkspaceFileDragPayload,
 } from "@/attachments/workspace-file-drag";
+import { AcpAutoApproveFloatingToggle } from "@/composer/acp-auto-approve-toggle";
+import { useComposerAutoAccept } from "@/composer/use-composer-auto-accept";
 
 type QueuedMessage = QueuedComposerMessage;
 
@@ -2045,6 +2047,20 @@ export function Composer({
     : t("composer.github.noResults");
   const autocompleteVisible = autocomplete.isVisible && isPaneFocused;
 
+  const autoAccept = useComposerAutoAccept({
+    serverId,
+    agentId,
+    draftFeatures: agentControls?.features,
+    draftOnSetFeature: agentControls?.onSetFeature,
+  });
+  const autoApproveToggle = autoAccept.feature ? (
+    <AcpAutoApproveFloatingToggle
+      feature={autoAccept.feature}
+      disabled={autoAccept.disabled}
+      onToggle={autoAccept.toggle}
+    />
+  ) : null;
+
   return (
     <ComposerKeyboardScopeProvider isActiveComposer={isPaneFocused}>
       <Animated.View style={composerContainerStyle}>
@@ -2056,6 +2072,7 @@ export function Composer({
             {sendErrorNode}
 
             <View ref={messageInputContainerRef} style={styles.messageInputContainer}>
+              {autoApproveToggle}
               <AutocompletePopover
                 visible={autocompleteVisible}
                 anchorRef={messageInputContainerRef}

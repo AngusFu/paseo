@@ -179,7 +179,12 @@ class FakeTerminator {
 }
 
 function createSessionWithConfig(
-  config: { provider?: string; modeId?: string | null; model?: string | null } = {},
+  config: {
+    provider?: string;
+    modeId?: string | null;
+    model?: string | null;
+    featureValues?: Record<string, unknown>;
+  } = {},
   logger: ReturnType<typeof createTestLogger> = createTestLogger(),
 ): ACPAgentSession {
   return new ACPAgentSession(
@@ -188,6 +193,7 @@ function createSessionWithConfig(
       cwd: "/tmp/paseo-acp-test",
       modeId: config.modeId ?? undefined,
       model: config.model ?? undefined,
+      featureValues: config.featureValues,
     },
     {
       provider: config.provider ?? "claude-acp",
@@ -1151,6 +1157,81 @@ describe("ACPAgentSession Zed parity", () => {
     const requested = events.find((event) => event.type === "permission_requested");
     expect(requested?.request?.id).toEqual(expect.any(String));
 
+    await session.respondToPermission(requested!.request!.id, { behavior: "allow" });
+    await expect(permission).resolves.toEqual({
+      outcome: { outcome: "selected", optionId: "allow-once" },
+    });
+  });
+
+  test("auto-approves ACP tool permissions when auto_accept is enabled", async () => {
+    const session = createSessionWithConfig({
+      provider: "cursor-acp",
+      modeId: "default",
+      featureValues: { auto_accept: true },
+    });
+    const events: Array<{ type: string }> = [];
+    asInternals<ACPSessionInternals>(session).sessionId = "session-1";
+    asInternals<ACPSessionInternals>(session).availableModes = [
+      { id: "default", label: "Default" },
+      { id: "plan", label: "Plan", description: "Read only" },
+    ];
+    asInternals<ACPSessionInternals>(session).currentMode = "default";
+    session.subscribe((event) => {
+      events.push(event as { type: string });
+    });
+
+    await expect(
+      session.requestPermission({
+        sessionId: "session-1",
+        toolCall: {
+          toolCallId: "tool-1",
+          title: "Run git status",
+          kind: "execute",
+          status: "pending",
+        },
+        options: [
+          { optionId: "allow-once", name: "Allow", kind: "allow_once" },
+          { optionId: "allow-always", name: "Always", kind: "allow_always" },
+          { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+        ],
+      } satisfies RequestPermissionRequest),
+    ).resolves.toEqual({
+      outcome: { outcome: "selected", optionId: "allow-always" },
+    });
+    expect(events.some((event) => event.type === "permission_requested")).toBe(false);
+  });
+
+  test("does not auto-approve ACP permissions in plan-like mode", async () => {
+    const session = createSessionWithConfig({
+      provider: "cursor-acp",
+      modeId: "plan",
+      featureValues: { auto_accept: true },
+    });
+    const events: Array<{ type: string; request?: { id: string } }> = [];
+    asInternals<ACPSessionInternals>(session).sessionId = "session-1";
+    asInternals<ACPSessionInternals>(session).availableModes = [
+      { id: "default", label: "Default" },
+      { id: "plan", label: "Plan", description: "Read only" },
+    ];
+    asInternals<ACPSessionInternals>(session).currentMode = "plan";
+    session.subscribe((event) => {
+      events.push(event as { type: string; request?: { id: string } });
+    });
+
+    const permission = session.requestPermission({
+      sessionId: "session-1",
+      toolCall: {
+        toolCallId: "tool-1",
+        title: "Edit file",
+        kind: "edit",
+        status: "pending",
+      },
+      options: [{ optionId: "allow-once", name: "Allow", kind: "allow_once" }],
+    } satisfies RequestPermissionRequest);
+
+    await Promise.resolve();
+    const requested = events.find((event) => event.type === "permission_requested");
+    expect(requested?.request?.id).toEqual(expect.any(String));
     await session.respondToPermission(requested!.request!.id, { behavior: "allow" });
     await expect(permission).resolves.toEqual({
       outcome: { outcome: "selected", optionId: "allow-once" },

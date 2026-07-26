@@ -1066,6 +1066,17 @@ export class AgentManager {
   async listDraftFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
     const normalizedConfig = await this.normalizeConfig(config, { resolveDefaultModel: false });
     const client = this.requireClient(normalizedConfig.provider);
+
+    if (client.listFeatures) {
+      const available = await client.isAvailable();
+      if (!available) {
+        throw new Error(
+          `Provider '${normalizedConfig.provider}' is not available. Please ensure the CLI is installed.`,
+        );
+      }
+      return await client.listFeatures(normalizedConfig);
+    }
+
     if (!normalizedConfig.model) {
       return [];
     }
@@ -1074,10 +1085,6 @@ export class AgentManager {
       throw new Error(
         `Provider '${normalizedConfig.provider}' is not available. Please ensure the CLI is installed.`,
       );
-    }
-
-    if (client.listFeatures) {
-      return await client.listFeatures(normalizedConfig);
     }
 
     const session = await client.createSession(normalizedConfig);

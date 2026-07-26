@@ -508,6 +508,26 @@ ollama pull qwen2.5:0.5b
 
 Then set base URL `http://127.0.0.1:11434/v1` in host settings and use **Test**.
 
+## Retriable turn retry
+
+`AgentManager` auto-retries foreground turns when the error matches
+`retriable-turn-hook.ts` (e.g. Cursor ACP `RetriableError: [resource_exhausted]`,
+`PING timed out`). See `onStreamTurnFailed`, `onStreamTurnCompleted`, and
+`scheduleRetriableTurnRetry` in `agent-manager.ts`.
+
+Both terminal paths are covered:
+
+- **`turn_failed`** with a retriable error — schedules backoff and suppresses
+  the terminal event from clients/waiters.
+- **`turn_completed`** after the provider streamed retriable text into the last
+  assistant message (common Cursor ACP behavior) — same retry path; the
+  completed turn is not broadcast as success.
+
+**Verify in daemon.log:** `agent.manager.retriable_turn.retry` (scheduled),
+`agent.manager.retriable_turn.retry_failed` (retry `streamAgent` blocked).
+Timeline should show `Retriable provider error — retrying in …` when retry
+actually arms.
+
 Ad-hoc RPC smoke test (requires a running backend):
 
 ```bash

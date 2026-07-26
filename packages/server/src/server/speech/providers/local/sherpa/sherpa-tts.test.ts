@@ -34,7 +34,7 @@ describe("SherpaOnnxTTS", () => {
     const { SherpaOnnxTTS } = await import("./sherpa-tts.js");
     const tts = new SherpaOnnxTTS(
       {
-        preset: "kokoro-en-v0_19",
+        modelId: "kokoro-en-v0_19",
         modelDir: "/tmp/fake-model",
       },
       pino({ level: "silent" }),

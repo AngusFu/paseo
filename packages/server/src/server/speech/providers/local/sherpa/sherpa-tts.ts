@@ -4,12 +4,15 @@ import { existsSync } from "node:fs";
 
 import type { SpeechStreamResult, TextToSpeechProvider } from "../../../speech-provider.js";
 import { chunkBuffer, float32ToPcm16le } from "../../../audio.js";
+import {
+  getSherpaOnnxModelSpec,
+  type LocalTtsModelId,
+  type SherpaOnnxModelSpec,
+} from "./model-catalog.js";
 import { loadSherpaOnnxNode } from "./sherpa-onnx-node-loader.js";
 
-export type SherpaTtsPreset = "kokoro-en-v0_19";
-
 export interface SherpaTtsConfig {
-  preset: SherpaTtsPreset;
+  modelId: LocalTtsModelId;
   modelDir: string;
   speakerId?: number;
   speed?: number;
@@ -34,6 +37,43 @@ interface SherpaOfflineTtsNative {
   free?: () => void;
 }
 
+function resolveTtsModelFile(spec: SherpaOnnxModelSpec): string {
+  return spec.modelFile ?? "model.onnx";
+}
+
+function buildKokoroModelConfig(
+  modelDir: string,
+  spec: SherpaOnnxModelSpec,
+  lengthScale: number,
+): Record<string, unknown> {
+  const modelPath = `${modelDir}/${resolveTtsModelFile(spec)}`;
+  const voicesPath = `${modelDir}/voices.bin`;
+  const tokensPath = `${modelDir}/tokens.txt`;
+  const dataDir = `${modelDir}/espeak-ng-data`;
+
+  assertFileExists(modelPath, "TTS model");
+  assertFileExists(voicesPath, "TTS voices");
+  assertFileExists(tokensPath, "TTS tokens");
+  assertFileExists(dataDir, "TTS espeak-ng dataDir");
+
+  const kokoro: Record<string, unknown> = {
+    model: modelPath,
+    voices: voicesPath,
+    tokens: tokensPath,
+    dataDir,
+    lengthScale,
+  };
+
+  if (spec.lexiconFiles?.length) {
+    for (const lexiconFile of spec.lexiconFiles) {
+      assertFileExists(`${modelDir}/${lexiconFile}`, "TTS lexicon");
+    }
+    kokoro.lexicon = spec.lexiconFiles.map((lexiconFile) => `${modelDir}/${lexiconFile}`).join(",");
+  }
+
+  return { kokoro };
+}
+
 export class SherpaOnnxTTS implements TextToSpeechProvider {
   private readonly tts: SherpaOfflineTtsNative;
   private readonly speakerId: number;
@@ -45,30 +85,17 @@ export class SherpaOnnxTTS implements TextToSpeechProvider {
     this.speakerId = config.speakerId ?? 0;
     this.speed = config.speed ?? 1.0;
 
+    const spec = getSherpaOnnxModelSpec(config.modelId);
+    if (spec.kind !== "tts") {
+      throw new Error(`Model ${config.modelId} is not a local TTS model`);
+    }
+
     const sherpa = loadSherpaOnnxNode();
     if (typeof sherpa.OfflineTts !== "function") {
       throw new Error("sherpa-onnx-node OfflineTts is unavailable");
     }
 
-    const modelPath = `${config.modelDir}/model.onnx`;
-    const voicesPath = `${config.modelDir}/voices.bin`;
-    const tokensPath = `${config.modelDir}/tokens.txt`;
-    const dataDir = `${config.modelDir}/espeak-ng-data`;
-
-    assertFileExists(modelPath, "TTS model");
-    assertFileExists(voicesPath, "TTS voices");
-    assertFileExists(tokensPath, "TTS tokens");
-    assertFileExists(dataDir, "TTS espeak-ng dataDir");
-
-    const modelConfig = {
-      kokoro: {
-        model: modelPath,
-        voices: voicesPath,
-        tokens: tokensPath,
-        dataDir,
-        lengthScale: config.lengthScale ?? 1.0,
-      },
-    };
+    const modelConfig = buildKokoroModelConfig(config.modelDir, spec, config.lengthScale ?? 1.0);
 
     const offlineTtsConfig = {
       model: modelConfig,
@@ -81,7 +108,7 @@ export class SherpaOnnxTTS implements TextToSpeechProvider {
       sherpa as unknown as { OfflineTts: new (config: unknown) => SherpaOfflineTtsNative }
     ).OfflineTts(offlineTtsConfig);
     this.logger.info(
-      { preset: config.preset, modelDir: config.modelDir },
+      { modelId: config.modelId, modelDir: config.modelDir },
       "Sherpa offline TTS initialized",
     );
   }

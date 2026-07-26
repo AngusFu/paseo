@@ -192,7 +192,7 @@ downloadTest(
       const ttsText = "This is a voice note.";
       const ttsModelDir = getSherpaOnnxModelDir(modelsDir, "kokoro-en-v0_19");
       const tts = new SherpaOnnxTTS(
-        { preset: "kokoro-en-v0_19", modelDir: ttsModelDir, speakerId: 0 },
+        { modelId: "kokoro-en-v0_19", modelDir: ttsModelDir, speakerId: 0 },
         logger,
       );
       const { stream, format: ttsFormat } = await tts.synthesizeSpeech(ttsText);

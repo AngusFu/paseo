@@ -20,6 +20,10 @@ interface SherpaOnnxCatalogEntry {
   defaultFor?: DefaultModelRole;
   /** STT model architecture; drives offline-recognizer construction. Omitted for TTS entries. */
   architecture?: SherpaSttArchitecture;
+  /** ONNX weight filename inside extractedDir. Defaults to model.onnx for TTS entries. */
+  modelFile?: string;
+  /** Lexicon filenames for multi-language Kokoro TTS, joined when wiring sherpa-onnx. */
+  lexiconFiles?: readonly string[];
   /** Language tags the model can transcribe (BCP-47-ish), surfaced in the settings UI. */
   languages: readonly string[];
 }
@@ -90,9 +94,27 @@ export const SHERPA_ONNX_MODEL_CATALOG = {
       "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-en-v0_19.tar.bz2",
     extractedDir: "kokoro-en-v0_19",
     requiredFiles: ["model.onnx", "voices.bin", "tokens.txt", "espeak-ng-data"],
-    description: "Kokoro TTS (higher quality; larger).",
+    description: "Kokoro TTS (English only).",
     languages: ["en"],
     defaultFor: "tts",
+  },
+  "kokoro-int8-multi-lang-v1_1": {
+    kind: "tts",
+    archiveUrl:
+      "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2",
+    extractedDir: "kokoro-int8-multi-lang-v1_1",
+    modelFile: "model.int8.onnx",
+    lexiconFiles: ["lexicon-us-en.txt", "lexicon-zh.txt"],
+    requiredFiles: [
+      "model.int8.onnx",
+      "voices.bin",
+      "tokens.txt",
+      "espeak-ng-data",
+      "lexicon-us-en.txt",
+      "lexicon-zh.txt",
+    ],
+    description: "Kokoro multilingual TTS (Chinese + English, int8).",
+    languages: ["zh", "en"],
   },
 } as const satisfies Record<string, SherpaOnnxCatalogEntry>;
 
@@ -141,7 +163,23 @@ export const DEFAULT_LOCAL_TTS_MODEL = resolveDefaultModelId("tts");
 /** Local STT model used by default when the dictation/voice language is Chinese (incl. Cantonese). */
 export const DEFAULT_CHINESE_LOCAL_STT_MODEL: LocalSttModelId = "sense-voice-zh-en-ja-ko-yue-int8";
 
+/** Local TTS model used by default when voice language is Chinese (incl. Cantonese). */
+export const DEFAULT_CHINESE_LOCAL_TTS_MODEL: LocalTtsModelId = "kokoro-int8-multi-lang-v1_1";
+
 const CHINESE_LANGUAGE_PREFIXES = ["zh", "yue", "cmn"];
+
+function isChineseLanguageTag(language: string | undefined): boolean {
+  const normalized = language?.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return CHINESE_LANGUAGE_PREFIXES.some(
+    (prefix) =>
+      normalized === prefix ||
+      normalized.startsWith(`${prefix}-`) ||
+      normalized.startsWith(`${prefix}_`),
+  );
+}
 
 /**
  * Pick the local STT model that should be the default for a given language. Chinese (and
@@ -150,19 +188,35 @@ const CHINESE_LANGUAGE_PREFIXES = ["zh", "yue", "cmn"];
  * and is never overridden here.
  */
 export function resolveDefaultLocalSttModel(language: string | undefined): LocalSttModelId {
-  const normalized = language?.trim().toLowerCase();
-  if (normalized) {
-    const isChinese = CHINESE_LANGUAGE_PREFIXES.some(
-      (prefix) =>
-        normalized === prefix ||
-        normalized.startsWith(`${prefix}-`) ||
-        normalized.startsWith(`${prefix}_`),
-    );
-    if (isChinese) {
-      return DEFAULT_CHINESE_LOCAL_STT_MODEL;
-    }
+  if (isChineseLanguageTag(language)) {
+    return DEFAULT_CHINESE_LOCAL_STT_MODEL;
   }
   return DEFAULT_LOCAL_STT_MODEL;
+}
+
+/**
+ * Pick the local TTS model that should be the default for a given language. Chinese (and
+ * Cantonese) default to the multilingual Kokoro model; every other language keeps the
+ * English-only Kokoro default. An explicit user/env model selection is resolved upstream
+ * and is never overridden here.
+ */
+export function resolveDefaultLocalTtsModel(language: string | undefined): LocalTtsModelId {
+  if (isChineseLanguageTag(language)) {
+    return DEFAULT_CHINESE_LOCAL_TTS_MODEL;
+  }
+  return DEFAULT_LOCAL_TTS_MODEL;
+}
+
+/** Default speaker id (sid) for a local TTS model when the user has not set one. */
+export function resolveDefaultLocalTtsSpeakerId(modelId: LocalTtsModelId): number | undefined {
+  if (modelId === "kokoro-en-v0_19") {
+    return 0;
+  }
+  if (modelId === "kokoro-int8-multi-lang-v1_1") {
+    // zf3 — first Chinese female voice in kokoro-multi-lang-v1_1.
+    return 3;
+  }
+  return undefined;
 }
 
 function createModelIdSchema<T extends string>(modelIds: readonly T[]): z.ZodType<T, string> {

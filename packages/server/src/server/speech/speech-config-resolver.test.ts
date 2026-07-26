@@ -43,14 +43,14 @@ describe("resolveSpeechConfig", () => {
       models: {
         dictationStt: "sense-voice-zh-en-ja-ko-yue-int8",
         voiceStt: "sense-voice-zh-en-ja-ko-yue-int8",
-        voiceTts: "kokoro-en-v0_19",
-        voiceTtsSpeakerId: 0,
+        voiceTts: "kokoro-int8-multi-lang-v1_1",
+        voiceTtsSpeakerId: 3,
       },
     });
     expect(result.speech.local?.models.dictationStt).toBe("sense-voice-zh-en-ja-ko-yue-int8");
     expect(result.speech.local?.models.voiceStt).toBe("sense-voice-zh-en-ja-ko-yue-int8");
-    expect(result.speech.local?.models.voiceTts).toBe("kokoro-en-v0_19");
-    expect(result.speech.local?.models.voiceTtsSpeakerId).toBe(0);
+    expect(result.speech.local?.models.voiceTts).toBe("kokoro-int8-multi-lang-v1_1");
+    expect(result.speech.local?.models.voiceTtsSpeakerId).toBe(3);
     expect(result.speech.sttLanguages).toEqual({
       dictation: "zh",
       voice: "zh",
@@ -199,5 +199,23 @@ describe("resolveSpeechConfig", () => {
       explicit: false,
       enabled: false,
     });
+  });
+
+  test("defaults English voice language to kokoro-en TTS", () => {
+    const persisted = PersistedConfigSchema.parse({
+      features: {
+        dictation: { stt: { language: "en" } },
+        voiceMode: { stt: { language: "en" } },
+      },
+    });
+
+    const result = resolveSpeechConfig({
+      paseoHome: "/tmp/paseo-home",
+      env: {} as NodeJS.ProcessEnv,
+      persisted,
+    });
+
+    expect(result.speech.local?.models.voiceTts).toBe("kokoro-en-v0_19");
+    expect(result.speech.local?.models.voiceTtsSpeakerId).toBe(0);
   });
 });

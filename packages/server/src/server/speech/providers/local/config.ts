@@ -5,10 +5,11 @@ import { z } from "zod";
 import type { PersistedConfig } from "../../../persisted-config.js";
 import type { RequestedSpeechProviders } from "../../speech-types.js";
 import {
-  DEFAULT_LOCAL_TTS_MODEL,
   LocalSttModelIdSchema,
   LocalTtsModelIdSchema,
   resolveDefaultLocalSttModel,
+  resolveDefaultLocalTtsModel,
+  resolveDefaultLocalTtsSpeakerId,
   type LocalSpeechModelId,
   type LocalSttModelId,
   type LocalTtsModelId,
@@ -36,8 +37,9 @@ export type { LocalSpeechModelId, LocalSttModelId, LocalTtsModelId };
 
 const DEFAULT_LOCAL_MODELS_SUBDIR = path.join("models", "local-speech");
 // FORK: 默认语音转写语言改为中文（上游默认为 "en"）。dictation / voice 的默认本地模型会
-// 经 resolveDefaultLocalSttModel 自动选用多语言的 SenseVoice（中/粤/英/日/韩），从而开箱即可
-// 识别中文。用户仍可通过设置、env 或 persisted config 覆盖。合并上游时请勿还原为 "en"。
+// 经 resolveDefaultLocalSttModel / resolveDefaultLocalTtsModel 自动选用多语言的
+// SenseVoice（中/粤/英/日/韩）与 Kokoro 中英 TTS，从而开箱即可识别与朗读中文。
+// 用户仍可通过设置、env 或 persisted config 覆盖。合并上游时请勿还原为 "en"。
 const DEFAULT_STT_LANGUAGE = "zh";
 
 export interface LocalSpeechSttLanguageConfig {
@@ -61,7 +63,7 @@ const LocalSpeechResolutionSchema = z.object({
   modelsDir: z.string().trim().min(1),
   dictationLocalSttModel: LocalSttModelIdSchema.optional(),
   voiceLocalSttModel: LocalSttModelIdSchema.optional(),
-  voiceLocalTtsModel: LocalTtsModelIdSchema.default(DEFAULT_LOCAL_TTS_MODEL),
+  voiceLocalTtsModel: LocalTtsModelIdSchema.optional(),
   dictationLanguage: LanguageSchema,
   voiceLanguage: LanguageSchema,
   voiceLocalTtsSpeakerId: OptionalIntegerSchema,
@@ -176,7 +178,6 @@ function buildLocalSpeechResolutionInput(params: {
         providers.voiceTts.enabled,
         persisted.features?.voiceMode?.tts?.model,
       ),
-      DEFAULT_LOCAL_TTS_MODEL,
     ]),
     ...buildLocalSpeechLanguageResolutionInput({ env, persisted }),
     voiceLocalTtsSpeakerId: firstDefinedValue<string | number>([
@@ -201,9 +202,11 @@ export function resolveLocalSpeechConfig(params: {
     buildLocalSpeechResolutionInput({ ...params, includeProviderConfig }),
   );
 
+  const resolvedVoiceTtsModel =
+    parsed.voiceLocalTtsModel ?? resolveDefaultLocalTtsModel(parsed.voiceLanguage);
+
   const resolvedVoiceTtsSpeakerId =
-    parsed.voiceLocalTtsSpeakerId ??
-    (parsed.voiceLocalTtsModel === "kokoro-en-v0_19" ? 0 : undefined);
+    parsed.voiceLocalTtsSpeakerId ?? resolveDefaultLocalTtsSpeakerId(resolvedVoiceTtsModel);
 
   return {
     sttLanguages: {
@@ -219,7 +222,7 @@ export function resolveLocalSpeechConfig(params: {
               resolveDefaultLocalSttModel(parsed.dictationLanguage),
             voiceStt:
               parsed.voiceLocalSttModel ?? resolveDefaultLocalSttModel(parsed.voiceLanguage),
-            voiceTts: parsed.voiceLocalTtsModel,
+            voiceTts: resolvedVoiceTtsModel,
             ...(resolvedVoiceTtsSpeakerId !== undefined
               ? { voiceTtsSpeakerId: resolvedVoiceTtsSpeakerId }
               : {}),

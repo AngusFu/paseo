@@ -4317,6 +4317,8 @@ export function GitDiffPane({
 
   const flatItemsRef = useRef(flatItems);
   flatItemsRef.current = flatItems;
+  const scheduleLoadsForPathsRef = useRef(lazyDiffFiles.scheduleLoadsForPaths);
+  scheduleLoadsForPathsRef.current = lazyDiffFiles.scheduleLoadsForPaths;
   const viewabilityConfig = useMemo(
     () => ({
       itemVisiblePercentThreshold: 20,
@@ -4326,22 +4328,19 @@ export function GitDiffPane({
   );
   const handleViewableItemsChanged = useCallback<
     NonNullable<FlatListProps<DiffFlatItem>["onViewableItemsChanged"]>
-  >(
-    ({ viewableItems }) => {
-      const paths: string[] = [];
-      for (const token of viewableItems) {
-        if (token.index == null) {
-          continue;
-        }
-        const item = flatItemsRef.current[token.index];
-        if (item?.type === "body") {
-          paths.push(item.file.path);
-        }
+  >(({ viewableItems }) => {
+    const paths: string[] = [];
+    for (const token of viewableItems) {
+      if (token.index == null) {
+        continue;
       }
-      lazyDiffFiles.scheduleLoadsForPaths(paths);
-    },
-    [lazyDiffFiles],
-  );
+      const item = flatItemsRef.current[token.index];
+      if (item?.type === "body") {
+        paths.push(item.file.path);
+      }
+    }
+    scheduleLoadsForPathsRef.current(paths);
+  }, []);
 
   const getBodyHeightKey = useCallback(
     (file: ParsedDiffFile): string => {

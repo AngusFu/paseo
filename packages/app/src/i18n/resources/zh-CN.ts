@@ -164,7 +164,7 @@ export const zhCN: TranslationResources = {
       off: "关闭",
       autoAccept: {
         label: "自动批准",
-        tooltip: "自动批准工具权限提示",
+        tooltip: "等效 --yolo：持久授权工具，不再弹出权限确认",
       },
     },
     mode: {

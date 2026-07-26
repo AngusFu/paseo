@@ -166,7 +166,7 @@ export const fr: TranslationResources = {
       off: "Désactivé",
       autoAccept: {
         label: "Approbation automatique",
-        tooltip: "Approuver automatiquement les demandes d'autorisation d'outils",
+        tooltip: "Équivalent à --yolo : autorise durablement les outils sans invite de permission",
       },
     },
     mode: {

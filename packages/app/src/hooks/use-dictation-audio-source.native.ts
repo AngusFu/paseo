@@ -70,5 +70,6 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
     start,
     stop,
     volume,
+    supportsVolumeVad: true,
   };
 }

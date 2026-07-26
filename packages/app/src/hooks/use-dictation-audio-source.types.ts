@@ -10,4 +10,6 @@ export interface DictationAudioSource {
   start: () => Promise<void>;
   stop: () => Promise<void>;
   volume: number;
+  /** False when live volume metering is unavailable (dictation VAD should stay off). */
+  supportsVolumeVad: boolean;
 }

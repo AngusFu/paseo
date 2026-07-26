@@ -164,7 +164,8 @@ export const ptBR: TranslationResources = {
       off: "Desativado",
       autoAccept: {
         label: "Aprovação automática",
-        tooltip: "Aprovar automaticamente permissões de ferramentas",
+        tooltip:
+          "Equivalente a --yolo: autoriza ferramentas de forma persistente sem pedir permissão",
       },
     },
     mode: {

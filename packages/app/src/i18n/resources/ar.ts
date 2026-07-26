@@ -164,7 +164,7 @@ export const ar: TranslationResources = {
       off: "عن",
       autoAccept: {
         label: "الموافقة التلقائية",
-        tooltip: "الموافقة تلقائياً على طلبات أذونات الأدوات",
+        tooltip: "مثل --yolo: يصرّح للأدوات بشكل دائم دون مطالبات إذن",
       },
     },
     mode: {

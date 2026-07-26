@@ -443,7 +443,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
   }, [clearStreamingState]);
 
   useEffect(() => {
-    if (!autoConfirmOnSilence || !isRecording || isProcessing) {
+    if (!autoConfirmOnSilence || !audio.supportsVolumeVad || !isRecording || isProcessing) {
       return;
     }
 
@@ -466,7 +466,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
     return () => {
       clearInterval(interval);
     };
-  }, [autoConfirmOnSilence, isProcessing, isRecording]);
+  }, [audio.supportsVolumeVad, autoConfirmOnSilence, isProcessing, isRecording]);
 
   const reset = useCallback(() => {
     setIsRecording(false);

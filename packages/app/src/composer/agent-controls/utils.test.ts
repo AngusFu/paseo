@@ -36,7 +36,7 @@ describe("feature metadata helpers", () => {
         label: "Auto Approve",
         tooltip: "Auto approve tool permissions",
       }),
-    ).toBe("Auto approve tool permissions");
+    ).toBe("Like --yolo: persistently allow tools without permission prompts");
     expect(
       getFeatureLabel({
         id: "auto_accept",

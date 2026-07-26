@@ -162,7 +162,7 @@ export const en = {
       off: "Off",
       autoAccept: {
         label: "Auto Approve",
-        tooltip: "Auto approve tool permissions",
+        tooltip: "Like --yolo: persistently allow tools without permission prompts",
       },
     },
     mode: {

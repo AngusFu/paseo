@@ -164,7 +164,8 @@ export const es: TranslationResources = {
       off: "Apagado",
       autoAccept: {
         label: "Aprobación automática",
-        tooltip: "Aprobar automáticamente los permisos de herramientas",
+        tooltip:
+          "Equivalente a --yolo: autoriza herramientas de forma persistente sin pedir permisos",
       },
     },
     mode: {

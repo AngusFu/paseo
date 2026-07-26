@@ -82,6 +82,18 @@ const int16ToBase64 = (pcm: Int16Array): string => {
   return btoa(binary);
 };
 
+function computeNormalizedVolume(samples: Float32Array): number {
+  let sumSquares = 0;
+  for (let i = 0; i < samples.length; i += 1) {
+    const sample = samples[i];
+    sumSquares += sample * sample;
+  }
+  const rms = Math.sqrt(sumSquares / Math.max(1, samples.length));
+  return Math.min(1, Math.max(0, rms * 2));
+}
+
+const RECORDER_VOLUME_POLL_MS = 200;
+
 interface RecorderRefs {
   recorder: MediaRecorder | null;
   audioChunks: Blob[];
@@ -102,9 +114,14 @@ function safeDisconnectNode(node: AudioNode | null): void {
 function disconnectDictationAudioGraph(graph: {
   processor: ScriptProcessorNode | null;
   source: AudioNode | null;
+  analyser: AnalyserNode | null;
   gain: AudioNode | null;
   stream: MediaStream | null;
+  volumeInterval: ReturnType<typeof setInterval> | null;
 }): void {
+  if (graph.volumeInterval) {
+    clearInterval(graph.volumeInterval);
+  }
   if (graph.processor) {
     try {
       graph.processor.onaudioprocess = null;
@@ -114,6 +131,7 @@ function disconnectDictationAudioGraph(graph: {
     safeDisconnectNode(graph.processor);
   }
   safeDisconnectNode(graph.source);
+  safeDisconnectNode(graph.analyser);
   safeDisconnectNode(graph.gain);
   if (graph.stream) {
     graph.stream.getTracks().forEach((track) => {
@@ -169,6 +187,7 @@ async function finalizeRecorderStoppedPromise(input: {
 
 export function useDictationAudioSource(config: DictationAudioSourceConfig): DictationAudioSource {
   const [volume, setVolume] = useState(0);
+  const [supportsVolumeVad, setSupportsVolumeVad] = useState(true);
 
   const onPcmSegmentRef = useRef(config.onPcmSegment);
   const onErrorRef = useRef(config.onError);
@@ -186,6 +205,8 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
     source: MediaStreamAudioSourceNode | null;
     processor: ScriptProcessorNode | null;
     gain: GainNode | null;
+    analyser: AnalyserNode | null;
+    volumeInterval: ReturnType<typeof setInterval> | null;
     pending: Int16Array;
     started: boolean;
     mode: "pcm" | "recorder";
@@ -196,6 +217,8 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
     source: null,
     processor: null,
     gain: null,
+    analyser: null,
+    volumeInterval: null,
     pending: new Int16Array(0),
     started: false,
     mode: "pcm",
@@ -299,14 +322,7 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
           return;
         }
         const input = event.inputBuffer.getChannelData(0);
-
-        let sumSquares = 0;
-        for (let i = 0; i < input.length; i++) {
-          const sample = input[i];
-          sumSquares += sample * sample;
-        }
-        const rms = Math.sqrt(sumSquares / Math.max(1, input.length));
-        const normalized = Math.min(1, Math.max(0, rms * 2));
+        const normalized = computeNormalizedVolume(input);
         onVolumeLevelRef.current?.(normalized);
         setVolume(normalized);
 
@@ -331,9 +347,12 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
         source,
         processor,
         gain,
+        analyser: null,
+        volumeInterval: null,
         pending: new Int16Array(0),
         started: true,
       };
+      setSupportsVolumeVad(true);
       return;
     } catch {
       // Fall back to MediaRecorder for environments where MediaStreamAudioSourceNode
@@ -392,27 +411,70 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
       throw err instanceof Error ? err : new Error(String(err));
     }
 
+    let analyserSource: MediaStreamAudioSourceNode | null = null;
+    let analyser: AnalyserNode | null = null;
+    let volumeInterval: ReturnType<typeof setInterval> | null = null;
+    let recorderSupportsVolumeVad = false;
+    try {
+      analyserSource = context.createMediaStreamSource(stream);
+      analyser = context.createAnalyser();
+      analyser.fftSize = 2048;
+      analyserSource.connect(analyser);
+      const volumeSamples = new Float32Array(analyser.fftSize);
+      volumeInterval = setInterval(() => {
+        if (!refs.current.started || refs.current.mode !== "recorder" || !refs.current.analyser) {
+          return;
+        }
+        refs.current.analyser.getFloatTimeDomainData(volumeSamples);
+        const normalized = computeNormalizedVolume(volumeSamples);
+        onVolumeLevelRef.current?.(normalized);
+        setVolume(normalized);
+      }, RECORDER_VOLUME_POLL_MS);
+      recorderSupportsVolumeVad = true;
+    } catch {
+      safeDisconnectNode(analyserSource);
+      safeDisconnectNode(analyser);
+      if (volumeInterval) {
+        clearInterval(volumeInterval);
+      }
+    }
+
     refs.current = {
       ...refs.current,
       stream,
       context,
-      source: null,
+      source: analyserSource,
       processor: null,
       gain: null,
+      analyser,
+      volumeInterval,
       pending: new Int16Array(0),
       started: true,
       mode: "recorder",
       recorder: recorderRefs,
     };
+    setSupportsVolumeVad(recorderSupportsVolumeVad);
   }, []);
 
   const stop = useCallback(async () => {
     refs.current.started = false;
     setVolume(0);
+    setSupportsVolumeVad(true);
 
-    const { processor, source, gain, context, stream, pending, mode, recorder } = refs.current;
+    const {
+      processor,
+      source,
+      analyser,
+      gain,
+      context,
+      stream,
+      pending,
+      mode,
+      recorder,
+      volumeInterval,
+    } = refs.current;
 
-    disconnectDictationAudioGraph({ processor, source, gain, stream });
+    disconnectDictationAudioGraph({ processor, source, analyser, gain, stream, volumeInterval });
 
     if (mode === "recorder") {
       stopMediaRecorderIfActive(recorder.recorder);
@@ -445,6 +507,8 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
       source: null,
       processor: null,
       gain: null,
+      analyser: null,
+      volumeInterval: null,
       pending: new Int16Array(0),
       started: false,
       mode: "pcm",
@@ -479,7 +543,8 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
       },
       stop,
       volume,
+      supportsVolumeVad,
     }),
-    [start, stop, volume],
+    [start, stop, supportsVolumeVad, volume],
   );
 }

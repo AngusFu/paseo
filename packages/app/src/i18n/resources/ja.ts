@@ -164,7 +164,7 @@ export const ja: TranslationResources = {
       off: "オフ",
       autoAccept: {
         label: "自動承認",
-        tooltip: "ツール権限のプロンプトを自動承認",
+        tooltip: "--yolo 相当：ツールを永続的に許可し、権限確認を省略",
       },
     },
     mode: {

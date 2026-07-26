@@ -589,7 +589,20 @@ git merge-base main upstream/main   # shared ancestor
 git log upstream/main --oneline -20 # spot-check recent upstream
 ```
 
-Last reconciled: **2026-07-26**. Batches **6**, **7a**, and **7b** are merged into fork `main` (composer/Changes/workspace-git/ACP/web-chat stickiness, etc.). **`7bd4afe84` (Codex setup guide)** is also on fork `main`.
+Last reconciled: **2026-07-26**. Batches **6**, **7a**, and **7b** are merged into fork `main` (composer/Changes/workspace-git/ACP/web-chat stickiness, etc.). **`7bd4afe84` (Codex setup guide)** is on fork `main`. **ACP provider catalog** was refreshed from `upstream/main` HEAD on 2026-07-26 (13 version pin bumps; fork PATH/`manual` entries such as `codebuddy-code` unchanged — upstream HEAD already matches those customizations).
+
+### Refreshing the ACP catalog later
+
+Do not cherry-pick old upstream `chore: … ACP provider catalog` commits — fork pins may already be newer. Instead:
+
+```bash
+git fetch upstream main
+git show upstream/main:packages/app/src/data/acp-provider-catalog.ts > /tmp/acp-upstream.ts
+# diff against packages/app/src/data/acp-provider-catalog.ts; keep any fork-only PATH/manual overrides
+git checkout upstream/main -- packages/app/src/data/acp-provider-catalog.ts   # when diff is pins-only
+npm run typecheck && npm run lint
+npx vitest run packages/app/src/hooks/use-acp-provider-catalog.test.ts --bail=1
+```
 
 ### Intentionally not ported
 
@@ -604,13 +617,12 @@ Last reconciled: **2026-07-26**. Batches **6**, **7a**, and **7b** are merged in
 
 As of merge-base `860fcb2e35` → `upstream/main`:
 
-| Commit                                     | Subject                                          | Notes                                                                         |
-| ------------------------------------------ | ------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `7bd4afe84`                                | `docs(providers): add Codex setup guide (#2389)` | Adds `public-docs/codex.md` — low risk doc port.                              |
-| `f86226a196`                               | `chore: update ACP provider catalog`             | Catalog pin bump; take when refreshing ACP providers.                         |
-| `5db070a4d9`                               | `docs: promote 0.1.106 release notes`            | Upstream release notes only.                                                  |
-| `51fea4b7e0`                               | `docs: clarify mobile beta release note`         | Upstream release notes only.                                                  |
-| `5ae53c7e55` / `144f951a79` / `d28e174b38` | `ops(relay): …`                                  | Upstream Fly relay ops; fork relay deploy may differ — review before porting. |
+| Commit                                     | Subject                                              | Notes                                                                                |
+| ------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| ~~`7bd4afe84`~~                            | ~~`docs(providers): add Codex setup guide (#2389)`~~ | **Done** on fork `main`.                                                             |
+| ~~ACP catalog (upstream HEAD)~~            | `chore(app): refresh ACP provider catalog` etc.      | **Done** 2026-07-26 — file-level refresh from `upstream/main`; pins-only delta.      |
+| `5db070a4d9` / `51fea4b7e0`                | upstream release-note edits                          | Upstream CHANGELOG only; skip unless aligning release notes.                         |
+| `5ae53c7e55` / `144f951a79` / `d28e174b38` | `ops(relay): …`                                      | Fly cutover bridge + manual deploy workflow; pending — fork relay deploy may differ. |
 
 Everything else in `git log $(git merge-base main upstream/main)..upstream/main` either matches on fork by subject or falls into the skip table above.
 

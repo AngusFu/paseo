@@ -2,7 +2,7 @@ import type { LlmLocalModelState } from "@getpaseo/protocol/llm/rpc-schemas";
 import type pino from "pino";
 
 const DOWNLOAD_STUB_MESSAGE =
-  "Configure Local AI under Host settings → Prose stop (Ollama base URL). Built-in model download is no longer available.";
+  "Configure Local AI under Host settings → Prose Check (Ollama base URL). Built-in model download is no longer available.";
 
 export interface LocalLlmConfig {
   baseUrl?: string;

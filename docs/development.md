@@ -495,7 +495,7 @@ Get the session ID from the agent JSON (`persistence.sessionId`), then:
 
 The daemon's `llm.local.*` RPCs proxy an OpenAI-compatible HTTP backend (typically
 [Ollama](https://ollama.com)). **The only consumer is prose-stop classification**
-— configure it under **Host settings → Prose stop → Local AI (Ollama)**.
+— configure it under **Host settings → Prose Check → Local AI (Ollama)**.
 
 - **Base URL** — e.g. `http://127.0.0.1:11434/v1`
 - **Model** — fixed to `qwen2.5:0.5b` (not user-selectable)
@@ -563,12 +563,12 @@ npx expo-doctor
 
 Diagnoses version mismatches and native module issues.
 
-## Prose stop (daemon)
+## Prose Check (daemon)
 
 Foreground `turn_completed` runs a turn-end gate that detects waiting-for-user chat prose
 (e.g. “let me know”, “要 push 即可”) and auto-nudges the agent to re-ask via `ask_question`.
 
-- **Default on** — `MutableDaemonConfig.proseStop.enabled` (Host settings → Prose stop; Local AI fields live in the same card).
+- **Default on** — `MutableDaemonConfig.proseStop.enabled` (Host settings → Prose Check; Local AI fields live in the same card).
 - **Prevention prompt (default on)** — `proseStop.preventionPrompt` injects a short
   `daemonAppendSystemPrompt` fragment (`prevention-prompt.ts`) so agents avoid prose waits
   up front. Independent of the turn-end gate; applies on create/reload.

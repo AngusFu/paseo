@@ -1796,8 +1796,8 @@ export const ar: TranslationResources = {
         installOk: "Runtime installed",
       },
       proseStop: {
-        nav: "Prose stop",
-        title: "Prose stop",
+        nav: "Prose Check",
+        title: "Prose Check",
       },
       usage: "الاستخدام",
       terminals: "الطرفيات",
@@ -2091,13 +2091,13 @@ export const ar: TranslationResources = {
       },
       localLlm: {
         title: "Local AI (Ollama)",
-        hint: "Used only for prose-stop classification. Configure Ollama on this host.",
+        hint: "Used only for Prose Check classification. Configure Ollama on this host.",
         baseUrl: "Base URL",
         baseUrlPlaceholder: "http://127.0.0.1:11434/v1",
         apiKey: "API key (optional)",
         apiKeyPlaceholder: "Leave blank for local servers without auth",
         model: "Model",
-        modelFixedHint: "Fixed for prose check — pull with: ollama pull qwen2.5:0.5b",
+        modelFixedHint: "Fixed for Prose Check — pull with: ollama pull qwen2.5:0.5b",
         useOllama: "Use Ollama",
         save: "Save",
         test: "Test",
@@ -2106,13 +2106,13 @@ export const ar: TranslationResources = {
         error: "Error",
       },
       proseStop: {
-        title: "Prose stop",
+        title: "Prose Check",
         label: "Nudge agents that wait in chat prose",
         hint: "When an agent ends a turn waiting for you in chat (for example “let me know” or “要 push 即可”), automatically ask it to re-ask via ask_question. Uses regex; with Local AI ready it also classifies. On by default.",
         preventionPromptLabel: "Inject prevention prompt",
         preventionPromptHint:
           "Append a short system instruction so agents avoid prose waits up front. Independent of the turn-end nudge. On by default; applies to new/reloaded agents.",
-        updateErrorTitle: "Unable to update prose stop",
+        updateErrorTitle: "Unable to update Prose Check",
       },
       connections: {
         title: "اتصالات",

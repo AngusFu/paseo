@@ -569,7 +569,7 @@ git merge-base main upstream/main   # shared ancestor
 git log upstream/main --oneline -20 # spot-check recent upstream
 ```
 
-Last reconciled: **2026-07-26**. Batches **6**, **7a**, and **7b** are merged into fork `main` (composer/Changes/workspace-git/ACP/web-chat stickiness, etc.).
+Last reconciled: **2026-07-26**. Batches **6**, **7a**, and **7b** are merged into fork `main` (composer/Changes/workspace-git/ACP/web-chat stickiness, etc.). **`7bd4afe84` (Codex setup guide)** is also on fork `main`.
 
 ### Intentionally not ported
 

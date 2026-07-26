@@ -44,7 +44,7 @@ interface ButtonIconProps {
 function ButtonIcon({ loading, leftIcon, iconSize, iconColor }: ButtonIconProps) {
   if (loading) {
     return (
-      <View>
+      <View style={styles.iconSlot}>
         <ActivityIndicator size="small" color={iconColor} />
       </View>
     );
@@ -53,7 +53,7 @@ function ButtonIcon({ loading, leftIcon, iconSize, iconColor }: ButtonIconProps)
   if (!leftIcon) return null;
 
   if (typeof leftIcon === "object" && "type" in leftIcon) {
-    return <View>{leftIcon}</View>;
+    return <View style={styles.iconSlot}>{leftIcon}</View>;
   }
 
   if (
@@ -61,12 +61,16 @@ function ButtonIcon({ loading, leftIcon, iconSize, iconColor }: ButtonIconProps)
     !leftIcon.prototype?.isReactComponent &&
     leftIcon.length > 0
   ) {
-    return <View>{(leftIcon as (color: string) => ReactElement)(iconColor)}</View>;
+    return (
+      <View style={styles.iconSlot}>
+        {(leftIcon as (color: string) => ReactElement)(iconColor)}
+      </View>
+    );
   }
 
   const Icon = leftIcon as ComponentType<{ color: string; size: number }>;
   return (
-    <View>
+    <View style={styles.iconSlot}>
       <Icon color={iconColor} size={iconSize} />
     </View>
   );
@@ -149,10 +153,15 @@ const styles = StyleSheet.create((theme) => {
     disabled: {
       opacity: theme.opacity[50],
     },
+    iconSlot: {
+      flexShrink: 0,
+    },
     text: {
       color: theme.colors.foreground,
       ...geometry.buttonText,
       fontWeight: theme.fontWeight.normal,
+      flexShrink: 1,
+      minWidth: 0,
     },
     textXs: {
       ...geometry.buttonTextXs,
@@ -180,6 +189,21 @@ function resolveHoverStyle(variant: ButtonVariant): ViewStyle {
     return styles.hoverSecondary;
   }
   return styles.hoverFill;
+}
+
+function renderButtonLabel(
+  loading: boolean,
+  children: ReactNode,
+  textStyle: StyleProp<TextStyle>,
+): ReactNode {
+  if (loading || children == null) {
+    return null;
+  }
+  return (
+    <Text style={textStyle} numberOfLines={1}>
+      {children}
+    </Text>
+  );
 }
 
 export function Button({
@@ -306,7 +330,7 @@ export function Button({
         iconSize={buttonIconSize[size]}
         uniProps={resolveIconMapping()}
       />
-      {children != null ? <Text style={resolvedTextStyle}>{children}</Text> : null}
+      {renderButtonLabel(loading, children, resolvedTextStyle)}
       {trailing}
     </Pressable>
   );

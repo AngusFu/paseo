@@ -42,6 +42,10 @@ Even though the usage is practically interactive — you type prompts, review ou
 - Your **Paseo chat** usage draws from the separate Agent SDK monthly credits.
 - Using Claude Code inside a Paseo terminal draws from your main subscription limits, same as any terminal.
 
+## Reauthentication
+
+If your Claude login expires, re-authenticate with the Claude Code CLI, then start a new Claude Code session in Paseo. Existing Paseo sessions keep the authentication they started with, so re-authenticating does not update a session that is already running.
+
 ## You can still use the terminal
 
 Paseo has first-class terminal support. You can run Claude Code in your terminal exactly as you always have, and Paseo will still give you:

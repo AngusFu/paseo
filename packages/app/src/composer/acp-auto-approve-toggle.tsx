@@ -9,8 +9,10 @@ import {
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { ShieldCheck } from "lucide-react-native";
 import type { AgentFeature } from "@getpaseo/protocol/agent-types";
+import { ACP_AUTO_ACCEPT_FEATURE_ID } from "@/composer/acp-auto-approve";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getFeatureTooltip } from "@/composer/agent-controls/utils";
+import type { Theme } from "@/styles/theme";
 
 interface AcpAutoApproveFloatingToggleProps {
   feature: AgentFeature & { type: "toggle" };
@@ -20,8 +22,10 @@ interface AcpAutoApproveFloatingToggleProps {
 
 const ThemedShieldCheck = withUnistyles(ShieldCheck);
 
-const iconEnabledMapping = () => ({ color: "#ffffff" });
-const iconDisabledMapping = (theme: { colors: { foregroundMuted: string } }) => ({
+const iconEnabledMapping = (theme: Theme) => ({
+  color: theme.colors.palette.white,
+});
+const iconDisabledMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
 });
 
@@ -82,7 +86,9 @@ export const AcpAutoApproveFloatingToggle = memo(function AcpAutoApproveFloating
 export function findAutoAcceptToggleFeature(
   features: AgentFeature[] | undefined,
 ): (AgentFeature & { type: "toggle" }) | null {
-  const feature = features?.find((entry) => entry.id === "auto_accept" && entry.type === "toggle");
+  const feature = features?.find(
+    (entry) => entry.id === ACP_AUTO_ACCEPT_FEATURE_ID && entry.type === "toggle",
+  );
   return feature?.type === "toggle" ? feature : null;
 }
 

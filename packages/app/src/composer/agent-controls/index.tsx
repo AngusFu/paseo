@@ -66,6 +66,8 @@ import {
   formatThinkingOptionLabel,
   resolveAgentModelSelection,
 } from "@/composer/agent-controls/utils";
+import { excludeComposerManagedAcpFeatures, isAcpProvider } from "@/composer/acp-auto-approve";
+import { useDaemonConfig } from "@/hooks/use-daemon-config";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
 import { toErrorMessage } from "@/utils/error-messages";
@@ -431,6 +433,13 @@ function ControlledAgentControls({
   desktopPlacement = "top-start",
 }: ControlledAgentControlsProps) {
   const { theme } = useUnistyles();
+  const { config } = useDaemonConfig(modelSelectorServerId);
+  const visibleFeatures = useMemo(() => {
+    if (!isAcpProvider(provider, config)) {
+      return features;
+    }
+    return excludeComposerManagedAcpFeatures(features);
+  }, [config, features, provider]);
   const { t } = useTranslation();
   const isCompactFormFactor = useIsCompactFormFactor();
   const isCompact = isCompactLayout ?? isCompactFormFactor;
@@ -473,12 +482,12 @@ function ControlledAgentControls({
     providerOptions,
     canSelectModel,
     thinkingOptions,
-    features,
+    features: visibleFeatures,
     hasMode: modeControl !== null && modeControl !== undefined,
   });
   const featureControls = useMemo(
     () =>
-      (features ?? []).map((feature) => {
+      (visibleFeatures ?? []).map((feature) => {
         if (feature.type === "toggle") return { type: "toggle" as const };
         const selectedOption = feature.options.find((option) => option.id === feature.value);
         return {
@@ -486,7 +495,7 @@ function ControlledAgentControls({
           label: selectedOption?.label ?? feature.label,
         };
       }),
-    [features],
+    [visibleFeatures],
   );
   const controlPresence = useMemo(
     () => ({
@@ -669,7 +678,7 @@ function ControlledAgentControls({
             selectedModelId={selectedModelId}
             thinkingOptions={formattedThinkingOptions}
             selectedThinkingOptionId={selectedThinkingOptionId}
-            features={features}
+            features={visibleFeatures}
             onSetFeature={onSetFeature}
             onToggleFavoriteModel={onToggleFavoriteModel}
             onDropdownClose={onDropdownClose}
@@ -716,7 +725,7 @@ function ControlledAgentControls({
             provider={provider}
             selectedModelId={selectedModelId}
             selectedThinkingOptionId={selectedThinkingOptionId}
-            features={features}
+            features={visibleFeatures}
             onSetFeature={onSetFeature}
             onToggleFavoriteModel={onToggleFavoriteModel}
             onDropdownClose={onDropdownClose}

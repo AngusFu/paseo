@@ -1201,6 +1201,59 @@ describe("ACPAgentSession Zed parity", () => {
     expect(events.some((event) => event.type === "permission_requested")).toBe(false);
   });
 
+  test("does not auto-approve switch_mode permissions when auto_accept is enabled", async () => {
+    const session = createSessionWithConfig({
+      provider: "cursor-acp",
+      modeId: "default",
+      featureValues: { auto_accept: true },
+    });
+    const events: Array<{ type: string; request?: { id: string } }> = [];
+    asInternals<ACPSessionInternals>(session).sessionId = "session-1";
+    asInternals<ACPSessionInternals>(session).availableModes = [
+      { id: "default", label: "Default" },
+    ];
+    asInternals<ACPSessionInternals>(session).currentMode = "default";
+    session.subscribe((event) => {
+      events.push(event as { type: string; request?: { id: string } });
+    });
+
+    const permission = session.requestPermission({
+      sessionId: "session-1",
+      toolCall: {
+        toolCallId: "tool-1",
+        title: "Switch to build mode",
+        kind: "switch_mode",
+        status: "pending",
+      },
+      options: [{ optionId: "allow-once", name: "Allow", kind: "allow_once" }],
+    } satisfies RequestPermissionRequest);
+
+    await Promise.resolve();
+    const requested = events.find((event) => event.type === "permission_requested");
+    expect(requested?.request?.id).toEqual(expect.any(String));
+    await session.respondToPermission(requested!.request!.id, { behavior: "allow" });
+    await expect(permission).resolves.toEqual({
+      outcome: { outcome: "selected", optionId: "allow-once" },
+    });
+  });
+
+  test("setFeature updates auto_accept in session features", async () => {
+    const session = createSessionWithConfig({
+      provider: "cursor-acp",
+      featureValues: { auto_accept: false },
+    });
+
+    expect(session.features).toEqual([
+      expect.objectContaining({ id: "auto_accept", type: "toggle", value: false }),
+    ]);
+
+    await session.setFeature("auto_accept", true);
+
+    expect(session.features).toEqual([
+      expect.objectContaining({ id: "auto_accept", type: "toggle", value: true }),
+    ]);
+  });
+
   test("does not auto-approve ACP permissions in plan-like mode", async () => {
     const session = createSessionWithConfig({
       provider: "cursor-acp",
@@ -1624,6 +1677,11 @@ describe("ACPAgentClient config features", () => {
       }),
     ).resolves.toEqual([
       expect.objectContaining({
+        type: "toggle",
+        id: "auto_accept",
+        value: false,
+      }),
+      expect.objectContaining({
         type: "select",
         id: "agent",
         value: "Probe Agent",
@@ -1631,6 +1689,37 @@ describe("ACPAgentClient config features", () => {
           expect.objectContaining({ id: "", label: "Default", isDefault: false }),
           expect.objectContaining({ id: "Probe Agent", label: "Probe Agent", isDefault: true }),
         ],
+      }),
+    ]);
+  });
+
+  test("listFeatures includes auto_accept even without config feature options", async () => {
+    class TestACPAgentClient extends ACPAgentClient {
+      protected override async spawnProcess(): Promise<SpawnedACPProcess> {
+        throw new Error("listFeatures should not spawn when configFeatureOptions is empty");
+      }
+
+      protected override async closeProbe(): Promise<void> {}
+    }
+
+    const client = new TestACPAgentClient({
+      provider: "kimi",
+      logger: createTestLogger(),
+      defaultCommand: ["kimi", "acp"],
+      configFeatureOptions: [],
+    });
+
+    await expect(
+      client.listFeatures({
+        provider: "kimi",
+        cwd: "/tmp/acp-features",
+        featureValues: { auto_accept: true },
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        type: "toggle",
+        id: "auto_accept",
+        value: true,
       }),
     ]);
   });

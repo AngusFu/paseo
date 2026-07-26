@@ -1,15 +1,18 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/shallow";
-import type { AgentFeature } from "@getpaseo/protocol/agent-types";
+import type { AgentFeature, AgentProvider } from "@getpaseo/protocol/agent-types";
 import { useSessionStore } from "@/stores/session-store";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
 import { mergeProviderPreferences, useFormPreferences } from "@/hooks/use-form-preferences";
+import { useDaemonConfig } from "@/hooks/use-daemon-config";
 import { useToast } from "@/contexts/toast-context";
 import { toErrorMessage } from "@/utils/error-messages";
 import { findAutoAcceptToggleFeature } from "@/composer/acp-auto-approve-toggle";
+import { ACP_AUTO_ACCEPT_FEATURE_ID, isAcpProvider } from "@/composer/acp-auto-approve";
 
 interface UseComposerAutoAcceptInput {
   serverId: string;
+  provider?: AgentProvider | null;
   agentId?: string;
   draftFeatures?: AgentFeature[];
   draftOnSetFeature?: (featureId: string, value: unknown) => void;
@@ -17,6 +20,7 @@ interface UseComposerAutoAcceptInput {
 
 export function useComposerAutoAccept({
   serverId,
+  provider,
   agentId,
   draftFeatures,
   draftOnSetFeature,
@@ -26,8 +30,10 @@ export function useComposerAutoAccept({
   toggle: () => void;
 } {
   const client = useHostRuntimeClient(serverId);
+  const { config } = useDaemonConfig(serverId);
   const toast = useToast();
   const { updatePreferences } = useFormPreferences();
+  const [optimisticValue, setOptimisticValue] = useState<boolean | null>(null);
   const liveAgent = useSessionStore(
     useShallow((state) => {
       if (!agentId) {
@@ -41,18 +47,41 @@ export function useComposerAutoAccept({
     }),
   );
 
-  const feature = useMemo(
+  const effectiveProvider = provider ?? liveAgent?.provider ?? null;
+  const isAcp = isAcpProvider(effectiveProvider, config);
+
+  const resolvedFeature = useMemo(
     () => findAutoAcceptToggleFeature(draftFeatures ?? liveAgent?.features),
     [draftFeatures, liveAgent?.features],
   );
+
+  useEffect(() => {
+    if (optimisticValue === null || !resolvedFeature) {
+      return;
+    }
+    if (resolvedFeature.value === optimisticValue) {
+      setOptimisticValue(null);
+    }
+  }, [optimisticValue, resolvedFeature]);
+
+  const feature = useMemo(() => {
+    if (!isAcp || !resolvedFeature) {
+      return null;
+    }
+    if (optimisticValue === null) {
+      return resolvedFeature;
+    }
+    return { ...resolvedFeature, value: optimisticValue };
+  }, [isAcp, optimisticValue, resolvedFeature]);
 
   const toggle = useCallback(() => {
     if (!feature) {
       return;
     }
     const nextValue = !feature.value;
+    setOptimisticValue(nextValue);
     if (draftOnSetFeature) {
-      draftOnSetFeature("auto_accept", nextValue);
+      draftOnSetFeature(ACP_AUTO_ACCEPT_FEATURE_ID, nextValue);
       return;
     }
     if (!client || !agentId || !liveAgent?.provider) {
@@ -64,14 +93,15 @@ export function useComposerAutoAccept({
         provider: liveAgent.provider,
         updates: {
           featureValues: {
-            auto_accept: nextValue,
+            [ACP_AUTO_ACCEPT_FEATURE_ID]: nextValue,
           },
         },
       }),
     ).catch((error) => {
       console.warn("[useComposerAutoAccept] persist feature preference failed", error);
     });
-    void client.setAgentFeature(agentId, "auto_accept", nextValue).catch((error) => {
+    void client.setAgentFeature(agentId, ACP_AUTO_ACCEPT_FEATURE_ID, nextValue).catch((error) => {
+      setOptimisticValue(null);
       console.warn("[useComposerAutoAccept] setAgentFeature failed", error);
       toast.error(toErrorMessage(error));
     });

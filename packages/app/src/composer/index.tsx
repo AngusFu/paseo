@@ -2050,6 +2050,7 @@ export function Composer({
   const autoAccept = useComposerAutoAccept({
     serverId,
     agentId,
+    provider: agentControls?.selectedProvider,
     draftFeatures: agentControls?.features,
     draftOnSetFeature: agentControls?.onSetFeature,
   });

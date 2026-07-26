@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { ActivityIndicator, Alert, Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useQueryClient } from "@tanstack/react-query";
-import type { DictationModelInfo } from "@getpaseo/protocol/messages";
+import type { VoiceTtsModelInfo } from "@getpaseo/protocol/messages";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useFetchQuery } from "@/data/query";
@@ -22,21 +22,20 @@ const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
-const DICTATION_DOWNLOAD_POLL_MS = 500;
-const EMPTY_DICTATION_MODELS: DictationModelInfo[] = [];
+const VOICE_TTS_DOWNLOAD_POLL_MS = 500;
+const EMPTY_VOICE_TTS_MODELS: VoiceTtsModelInfo[] = [];
 const ACCESSIBILITY_STATE_SELECTED = { selected: true } as const;
 const ACCESSIBILITY_STATE_UNSELECTED = { selected: false } as const;
 
-const DICTATION_MODEL_TITLE_KEYS = {
-  "sense-voice-zh-en-ja-ko-yue-int8": "settings.host.dictation.models.senseVoice",
-  "parakeet-tdt-0.6b-v2-int8": "settings.host.dictation.models.parakeetV2",
-  "parakeet-tdt-0.6b-v3-int8": "settings.host.dictation.models.parakeetV3",
+const VOICE_TTS_MODEL_TITLE_KEYS = {
+  "kokoro-en-v0_19": "settings.host.voiceTts.models.kokoroEn",
+  "kokoro-int8-multi-lang-v1_1": "settings.host.voiceTts.models.kokoroMultiLang",
 } as const;
 
-type DictationRunState = "running" | "starting" | "stopped";
+type VoiceTtsRunState = "running" | "starting" | "stopped";
 
-function dictationModelTitle(t: TFunction, modelId: string, fallback: string): string {
-  const key = DICTATION_MODEL_TITLE_KEYS[modelId as keyof typeof DICTATION_MODEL_TITLE_KEYS];
+function voiceTtsModelTitle(t: TFunction, modelId: string, fallback: string): string {
+  const key = VOICE_TTS_MODEL_TITLE_KEYS[modelId as keyof typeof VOICE_TTS_MODEL_TITLE_KEYS];
   if (!key) {
     return fallback;
   }
@@ -44,29 +43,25 @@ function dictationModelTitle(t: TFunction, modelId: string, fallback: string): s
 }
 
 function formatLanguages(t: TFunction, languages: readonly string[]): string {
-  // Long European catalogs read as noise in a settings row; summarize instead.
   if (languages.length > 8) {
-    return t("settings.host.dictation.languagesMany", { count: languages.length });
+    return t("settings.host.voiceTts.languagesMany", { count: languages.length });
   }
   return languages.join(" · ");
 }
 
-function resolveDictationRunState(
-  selected: boolean,
-  readinessAvailable: boolean,
-): DictationRunState {
+function resolveVoiceTtsRunState(selected: boolean, readinessAvailable: boolean): VoiceTtsRunState {
   if (selected && readinessAvailable) return "running";
   if (selected) return "starting";
   return "stopped";
 }
 
-function dictationRunStateLabel(t: TFunction, state: DictationRunState): string {
-  if (state === "running") return t("settings.host.dictation.running");
-  if (state === "starting") return t("settings.host.dictation.starting");
-  return t("settings.host.dictation.stopped");
+function voiceTtsRunStateLabel(t: TFunction, state: VoiceTtsRunState): string {
+  if (state === "running") return t("settings.host.voiceTts.running");
+  if (state === "starting") return t("settings.host.voiceTts.starting");
+  return t("settings.host.voiceTts.stopped");
 }
 
-function formatDictationDownloadSpeed(bytesPerSecond: number): string {
+function formatVoiceTtsDownloadSpeed(bytesPerSecond: number): string {
   if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) {
     return "—";
   }
@@ -79,8 +74,8 @@ function formatDictationDownloadSpeed(bytesPerSecond: number): string {
   return `${Math.round(bytesPerSecond)} B/s`;
 }
 
-function resolveDictationDownloadProgress(params: {
-  model: DictationModelInfo;
+function resolveVoiceTtsDownloadProgress(params: {
+  model: VoiceTtsModelInfo;
   downloading: boolean;
   optimistic: boolean;
 }): number | null {
@@ -93,15 +88,15 @@ function resolveDictationDownloadProgress(params: {
   return null;
 }
 
-function resolveDictationDownloadSpeed(model: DictationModelInfo): number {
+function resolveVoiceTtsDownloadSpeed(model: VoiceTtsModelInfo): number {
   if (typeof model.downloadBytesPerSecond === "number") {
     return model.downloadBytesPerSecond;
   }
   return 0;
 }
 
-function isDictationModelDownloading(params: {
-  model: DictationModelInfo;
+function isVoiceTtsModelDownloading(params: {
+  model: VoiceTtsModelInfo;
   optimistic: boolean;
 }): boolean {
   if (params.optimistic) {
@@ -110,7 +105,7 @@ function isDictationModelDownloading(params: {
   return params.model.downloading === true;
 }
 
-function useDictationModels(
+function useVoiceTtsModels(
   serverId: string,
   options: {
     forcePoll: boolean;
@@ -120,9 +115,9 @@ function useDictationModels(
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
   const supported = useSessionStore(
-    (state) => state.sessions[serverId]?.serverInfo?.features?.dictationModelSelection === true,
+    (state) => state.sessions[serverId]?.serverInfo?.features?.voiceTtsModelSelection === true,
   );
-  const queryKey = ["dictation-models", serverId] as const;
+  const queryKey = ["voice-tts-models", serverId] as const;
   const forcePoll = options.forcePoll;
   const query = useFetchQuery({
     queryKey,
@@ -131,26 +126,26 @@ function useDictationModels(
     staleTimeMs: forcePoll ? 0 : 5_000,
     refetchInterval: (queryState) => {
       if (forcePoll) {
-        return DICTATION_DOWNLOAD_POLL_MS;
+        return VOICE_TTS_DOWNLOAD_POLL_MS;
       }
       const data = queryState.state.data;
       if (!data) {
         return false;
       }
       if (data.readiness?.downloading === true) {
-        return DICTATION_DOWNLOAD_POLL_MS;
+        return VOICE_TTS_DOWNLOAD_POLL_MS;
       }
       if (
         data.models.some(
           (model) => model.downloading === true || typeof model.downloadProgress === "number",
         )
       ) {
-        return DICTATION_DOWNLOAD_POLL_MS;
+        return VOICE_TTS_DOWNLOAD_POLL_MS;
       }
       if (
         data.models.some((model) => model.id === data.current.model && model.installed !== true)
       ) {
-        return DICTATION_DOWNLOAD_POLL_MS;
+        return VOICE_TTS_DOWNLOAD_POLL_MS;
       }
       return false;
     },
@@ -158,23 +153,23 @@ function useDictationModels(
       if (!client) {
         throw new Error(t("workspace.terminal.hostDisconnected"));
       }
-      return client.listDictationModels();
+      return client.listVoiceTtsModels();
     },
   });
   return { query, queryKey, supported, client, isConnected };
 }
 
-export function DictationModelCard({ serverId }: { serverId: string }) {
+export function VoiceTtsModelCard({ serverId }: { serverId: string }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [trackingModelIds, setTrackingModelIds] = useState<Set<string>>(() => new Set());
   const [pendingModel, setPendingModel] = useState<string | null>(null);
   const forcePoll = trackingModelIds.size > 0 || pendingModel !== null;
-  const { query, queryKey, supported, client, isConnected } = useDictationModels(serverId, {
+  const { query, queryKey, supported, client, isConnected } = useVoiceTtsModels(serverId, {
     forcePoll,
   });
 
-  const models = query.data?.models ?? EMPTY_DICTATION_MODELS;
+  const models = query.data?.models ?? EMPTY_VOICE_TTS_MODELS;
   const currentModel = query.data?.current.model ?? null;
   const currentProvider = query.data?.current.provider ?? null;
   const readiness = query.data?.readiness ?? null;
@@ -211,7 +206,7 @@ export function DictationModelCard({ serverId }: { serverId: string }) {
       setTrackingModelIds((prev) => new Set(prev).add(modelId));
       void (async () => {
         try {
-          await client.setDictationModel(modelId);
+          await client.setVoiceTtsModel(modelId);
           await queryClient.invalidateQueries({ queryKey });
         } catch (error) {
           setTrackingModelIds((prev) => {
@@ -220,7 +215,7 @@ export function DictationModelCard({ serverId }: { serverId: string }) {
             return next;
           });
           Alert.alert(
-            t("settings.host.dictation.selectErrorTitle"),
+            t("settings.host.voiceTts.selectErrorTitle"),
             error instanceof Error ? error.message : String(error),
           );
         } finally {
@@ -238,13 +233,13 @@ export function DictationModelCard({ serverId }: { serverId: string }) {
   if (!supported) {
     return (
       <SettingsSection
-        title={t("settings.host.dictation.title")}
-        testID="host-page-dictation-model-card"
+        title={t("settings.host.voiceTts.title")}
+        testID="host-page-voice-tts-model-card"
       >
         <View style={settingsStyles.card}>
           <View style={settingsStyles.row}>
             <View style={settingsStyles.rowContent}>
-              <Text style={settingsStyles.rowHint}>{t("settings.host.dictation.unsupported")}</Text>
+              <Text style={settingsStyles.rowHint}>{t("settings.host.voiceTts.unsupported")}</Text>
             </View>
           </View>
         </View>
@@ -254,23 +249,23 @@ export function DictationModelCard({ serverId }: { serverId: string }) {
 
   return (
     <SettingsSection
-      title={t("settings.host.dictation.title")}
-      testID="host-page-dictation-model-card"
+      title={t("settings.host.voiceTts.title")}
+      testID="host-page-voice-tts-model-card"
     >
       <View style={settingsStyles.card}>
         <View style={settingsStyles.row}>
           <View style={settingsStyles.rowContent}>
-            <Text style={settingsStyles.rowHint}>{t("settings.host.dictation.hint")}</Text>
+            <Text style={settingsStyles.rowHint}>{t("settings.host.voiceTts.hint")}</Text>
             {usingNonLocalProvider ? (
-              <Text style={settingsStyles.rowHint} testID="host-page-dictation-cloud-provider-hint">
-                {t("settings.host.dictation.cloudProviderHint", { provider: currentProvider })}
+              <Text style={settingsStyles.rowHint} testID="host-page-voice-tts-cloud-provider-hint">
+                {t("settings.host.voiceTts.cloudProviderHint", { provider: currentProvider })}
               </Text>
             ) : null}
             {query.isError ? (
-              <Text style={settingsStyles.rowError} testID="host-page-dictation-load-error">
+              <Text style={settingsStyles.rowError} testID="host-page-voice-tts-load-error">
                 {query.error instanceof Error
                   ? query.error.message
-                  : t("settings.host.dictation.loadError")}
+                  : t("settings.host.voiceTts.loadError")}
               </Text>
             ) : null}
           </View>
@@ -278,18 +273,18 @@ export function DictationModelCard({ serverId }: { serverId: string }) {
 
         {query.isLoading && models.length === 0 ? (
           <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
-            <Text style={settingsStyles.rowHint}>{t("settings.host.dictation.loading")}</Text>
+            <Text style={settingsStyles.rowHint}>{t("settings.host.voiceTts.loading")}</Text>
           </View>
         ) : (
           models.map((model) => {
             const selected = model.id === currentModel && !usingNonLocalProvider;
             const optimistic = trackingModelIds.has(model.id) && model.installed !== true;
-            const downloading = isDictationModelDownloading({ model, optimistic });
-            const progress = resolveDictationDownloadProgress({ model, downloading, optimistic });
-            const speed = resolveDictationDownloadSpeed(model);
+            const downloading = isVoiceTtsModelDownloading({ model, optimistic });
+            const progress = resolveVoiceTtsDownloadProgress({ model, downloading, optimistic });
+            const speed = resolveVoiceTtsDownloadSpeed(model);
 
             return (
-              <DictationModelRow
+              <VoiceTtsModelRow
                 key={model.id}
                 model={model}
                 selected={selected}
@@ -308,7 +303,7 @@ export function DictationModelCard({ serverId }: { serverId: string }) {
   );
 }
 
-function DictationModelRow({
+function VoiceTtsModelRow({
   model,
   selected,
   pending,
@@ -318,7 +313,7 @@ function DictationModelRow({
   readinessAvailable,
   onApply,
 }: {
-  model: DictationModelInfo;
+  model: VoiceTtsModelInfo;
   selected: boolean;
   pending: boolean;
   downloading: boolean;
@@ -337,16 +332,16 @@ function DictationModelRow({
   const percent =
     downloadProgress === null ? null : Math.max(0, Math.min(100, Math.round(downloadProgress)));
   const showProgress = downloading || percent !== null;
-  const runState = resolveDictationRunState(selected, readinessAvailable);
-  const title = dictationModelTitle(t, model.id, model.description);
-  const speedLabel = formatDictationDownloadSpeed(downloadBytesPerSecond);
+  const runState = resolveVoiceTtsRunState(selected, readinessAvailable);
+  const title = voiceTtsModelTitle(t, model.id, model.description);
+  const speedLabel = formatVoiceTtsDownloadSpeed(downloadBytesPerSecond);
 
   let hintText: string;
   if (showProgress) {
     if (percent === null) {
-      hintText = t("settings.host.dictation.downloading");
+      hintText = t("settings.host.voiceTts.downloading");
     } else {
-      hintText = t("settings.host.dictation.downloadingPercentWithSpeed", {
+      hintText = t("settings.host.voiceTts.downloadingPercentWithSpeed", {
         percent,
         speed: speedLabel,
       });
@@ -366,22 +361,22 @@ function DictationModelRow({
         size="sm"
         variant="secondary"
         onPress={handleApply}
-        accessibilityLabel={t("settings.host.dictation.download")}
-        testID={`dictation-model-download-${model.id}`}
+        accessibilityLabel={t("settings.host.voiceTts.download")}
+        testID={`voice-tts-model-download-${model.id}`}
       >
-        {t("settings.host.dictation.download")}
+        {t("settings.host.voiceTts.download")}
       </Button>
     );
   } else if (selected) {
     trailing = (
       <View style={styles.trailingSelected}>
         <StatusBadge
-          label={dictationRunStateLabel(t, runState)}
+          label={voiceTtsRunStateLabel(t, runState)}
           variant={runState === "running" ? "success" : "muted"}
         />
         <View style={styles.appliedBadge} accessibilityRole="text">
           <ThemedCheck size={ICON_SIZE.sm} uniProps={foregroundColorMapping} />
-          <Text style={styles.appliedText}>{t("settings.host.dictation.applied")}</Text>
+          <Text style={styles.appliedText}>{t("settings.host.voiceTts.applied")}</Text>
         </View>
       </View>
     );
@@ -391,10 +386,10 @@ function DictationModelRow({
         size="sm"
         variant="secondary"
         onPress={handleApply}
-        accessibilityLabel={t("settings.host.dictation.apply")}
-        testID={`dictation-model-apply-${model.id}`}
+        accessibilityLabel={t("settings.host.voiceTts.apply")}
+        testID={`voice-tts-model-apply-${model.id}`}
       >
-        {t("settings.host.dictation.apply")}
+        {t("settings.host.voiceTts.apply")}
       </Button>
     );
   }
@@ -403,13 +398,13 @@ function DictationModelRow({
     <View
       style={[settingsStyles.row, settingsStyles.rowBorder, styles.modelRow]}
       accessibilityState={accessibilityState}
-      testID={`dictation-model-row-${model.id}`}
+      testID={`voice-tts-model-row-${model.id}`}
     >
       <View style={settingsStyles.rowContent}>
         <Text style={settingsStyles.rowTitle}>{title}</Text>
         <Text style={settingsStyles.rowHint}>{hintText}</Text>
         {showProgress ? (
-          <View style={styles.progressTrack} testID={`dictation-model-progress-${model.id}`}>
+          <View style={styles.progressTrack} testID={`voice-tts-model-progress-${model.id}`}>
             <View style={[styles.progressFill, { width: `${percent ?? 0}%` as `${number}%` }]} />
           </View>
         ) : null}

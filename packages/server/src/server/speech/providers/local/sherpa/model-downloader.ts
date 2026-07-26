@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { mkdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -159,6 +159,36 @@ function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+/** Remove orphaned partial downloads left behind when a download is interrupted. */
+async function pruneStaleDownloadTempFiles(
+  downloadsDir: string,
+  logger: pino.Logger,
+): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await readdir(downloadsDir);
+  } catch {
+    return;
+  }
+
+  const staleTempFiles = entries.filter((name) => name.includes(".tmp-"));
+  if (staleTempFiles.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    staleTempFiles.map(async (name) => {
+      const filePath = path.join(downloadsDir, name);
+      try {
+        await rm(filePath, { force: true });
+      } catch (error) {
+        logger.warn({ err: error, filePath }, "Failed to remove stale download temp file");
+      }
+    }),
+  );
+  logger.info({ count: staleTempFiles.length, downloadsDir }, "Removed stale download temp files");
+}
+
 function downloadPhasePercent(receivedBytes: number, totalBytes: number | null): number {
   if (totalBytes && totalBytes > 0) {
     return clampPercent((receivedBytes / totalBytes) * 90);
@@ -209,6 +239,9 @@ export async function ensureSherpaOnnxModel(
     const downloadsDir = path.join(options.modelsDir, ".downloads");
     const archiveFilename = path.basename(new URL(spec.archiveUrl).pathname);
     const archivePath = path.join(downloadsDir, archiveFilename);
+
+    await mkdir(downloadsDir, { recursive: true });
+    await pruneStaleDownloadTempFiles(downloadsDir, logger);
 
     if (!(await isNonEmptyFile(archivePath))) {
       // Throttle progress callbacks so high-frequency chunks don't flood listeners.

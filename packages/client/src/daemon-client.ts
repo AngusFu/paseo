@@ -143,6 +143,8 @@ import type {
   MutableDaemonConfigPatch,
   SpeechDictationListModelsResponse,
   SpeechDictationSetModelResponse,
+  SpeechVoiceTtsListModelsResponse,
+  SpeechVoiceTtsSetModelResponse,
 } from "@getpaseo/protocol/messages";
 import { isRelayClientWebSocketUrl } from "@getpaseo/protocol/daemon-endpoints";
 import { terminalSubscriptionKey } from "@getpaseo/protocol/terminal-subscription-key";
@@ -1184,6 +1186,8 @@ type SetDaemonConfigResponse = Extract<
 >;
 type DictationListModelsPayload = SpeechDictationListModelsResponse["payload"];
 type DictationSetModelPayload = SpeechDictationSetModelResponse["payload"];
+type VoiceTtsListModelsPayload = SpeechVoiceTtsListModelsResponse["payload"];
+type VoiceTtsSetModelPayload = SpeechVoiceTtsSetModelResponse["payload"];
 type CorrelatedResponseMessage =
   | Extract<SessionOutboundMessage, { payload: { requestId: string } }>
   | GetDaemonConfigResponse
@@ -4801,6 +4805,29 @@ export class DaemonClient {
         model,
       },
       responseType: "speech.dictation.set_model.response",
+      timeout: 15000,
+    });
+  }
+
+  async listVoiceTtsModels(requestId?: string): Promise<VoiceTtsListModelsPayload> {
+    return this.sendCorrelatedSessionRequest({
+      requestId,
+      message: {
+        type: "speech.voice_tts.list_models.request",
+      },
+      responseType: "speech.voice_tts.list_models.response",
+      timeout: 10000,
+    });
+  }
+
+  async setVoiceTtsModel(model: string, requestId?: string): Promise<VoiceTtsSetModelPayload> {
+    return this.sendCorrelatedSessionRequest({
+      requestId,
+      message: {
+        type: "speech.voice_tts.set_model.request",
+        model,
+      },
+      responseType: "speech.voice_tts.set_model.response",
       timeout: 15000,
     });
   }

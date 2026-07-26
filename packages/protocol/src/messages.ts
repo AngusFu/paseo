@@ -1399,6 +1399,24 @@ export const SpeechDictationSetModelRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// --- Voice TTS model selection (speech.voice_tts.*) ---
+// COMPAT(voiceTtsModelSelection): added in v0.1.105, drop the gate when floor >= v0.1.105.
+
+export const VoiceTtsModelInfoSchema = DictationModelInfoSchema;
+export const VoiceTtsCurrentSelectionSchema = DictationCurrentSelectionSchema;
+export const VoiceTtsReadinessSchema = DictationReadinessSchema;
+
+export const SpeechVoiceTtsListModelsRequestSchema = z.object({
+  type: z.literal("speech.voice_tts.list_models.request"),
+  requestId: z.string(),
+});
+
+export const SpeechVoiceTtsSetModelRequestSchema = z.object({
+  type: z.literal("speech.voice_tts.set_model.request"),
+  model: z.string(),
+  requestId: z.string(),
+});
+
 export const ReadProjectConfigRequestMessageSchema = z.object({
   type: z.literal("read_project_config_request"),
   requestId: z.string(),
@@ -2723,6 +2741,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SetDaemonConfigRequestMessageSchema,
   SpeechDictationListModelsRequestSchema,
   SpeechDictationSetModelRequestSchema,
+  SpeechVoiceTtsListModelsRequestSchema,
+  SpeechVoiceTtsSetModelRequestSchema,
   ReadProjectConfigRequestMessageSchema,
   WriteProjectConfigRequestMessageSchema,
   DictationStreamStartMessageSchema,
@@ -3117,6 +3137,8 @@ export const ServerInfoStatusPayloadSchema = z
         checkoutRefresh: z.boolean().optional(),
         // COMPAT(dictationModelSelection): added in v0.1.105, remove gate after 2026-12-09.
         dictationModelSelection: z.boolean().optional(),
+        // COMPAT(voiceTtsModelSelection): added in v0.1.105, remove gate after 2026-12-09.
+        voiceTtsModelSelection: z.boolean().optional(),
         // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
         workspaceMultiplicity: z.boolean().optional(),
         // COMPAT(projectRemove): added in v0.1.97, drop the gate when floor >= v0.1.97.
@@ -4193,6 +4215,33 @@ export const SpeechDictationSetModelResponseSchema = z.object({
       models: z.array(DictationModelInfoSchema),
       current: DictationCurrentSelectionSchema,
       readiness: DictationReadinessSchema,
+      error: z.string().nullable().optional(),
+    })
+    .passthrough(),
+});
+
+export const SpeechVoiceTtsListModelsResponseSchema = z.object({
+  type: z.literal("speech.voice_tts.list_models.response"),
+  payload: z
+    .object({
+      requestId: z.string(),
+      models: z.array(VoiceTtsModelInfoSchema),
+      current: VoiceTtsCurrentSelectionSchema,
+      readiness: VoiceTtsReadinessSchema,
+      error: z.string().nullable().optional(),
+    })
+    .passthrough(),
+});
+
+export const SpeechVoiceTtsSetModelResponseSchema = z.object({
+  type: z.literal("speech.voice_tts.set_model.response"),
+  payload: z
+    .object({
+      requestId: z.string(),
+      accepted: z.boolean(),
+      models: z.array(VoiceTtsModelInfoSchema),
+      current: VoiceTtsCurrentSelectionSchema,
+      readiness: VoiceTtsReadinessSchema,
       error: z.string().nullable().optional(),
     })
     .passthrough(),
@@ -5568,6 +5617,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SetDaemonConfigResponseMessageSchema,
   SpeechDictationListModelsResponseSchema,
   SpeechDictationSetModelResponseSchema,
+  SpeechVoiceTtsListModelsResponseSchema,
+  SpeechVoiceTtsSetModelResponseSchema,
   ReadProjectConfigResponseMessageSchema,
   WriteProjectConfigResponseMessageSchema,
   SetAgentModeResponseMessageSchema,
@@ -5774,6 +5825,15 @@ export type SpeechDictationListModelsResponse = z.infer<
   typeof SpeechDictationListModelsResponseSchema
 >;
 export type SpeechDictationSetModelResponse = z.infer<typeof SpeechDictationSetModelResponseSchema>;
+export type VoiceTtsModelInfo = z.infer<typeof VoiceTtsModelInfoSchema>;
+export type VoiceTtsCurrentSelection = z.infer<typeof VoiceTtsCurrentSelectionSchema>;
+export type VoiceTtsReadiness = z.infer<typeof VoiceTtsReadinessSchema>;
+export type SpeechVoiceTtsListModelsRequest = z.infer<typeof SpeechVoiceTtsListModelsRequestSchema>;
+export type SpeechVoiceTtsSetModelRequest = z.infer<typeof SpeechVoiceTtsSetModelRequestSchema>;
+export type SpeechVoiceTtsListModelsResponse = z.infer<
+  typeof SpeechVoiceTtsListModelsResponseSchema
+>;
+export type SpeechVoiceTtsSetModelResponse = z.infer<typeof SpeechVoiceTtsSetModelResponseSchema>;
 export type RpcErrorMessage = z.infer<typeof RpcErrorMessageSchema>;
 export type ArtifactMessage = z.infer<typeof ArtifactMessageSchema>;
 export type AgentUpdateMessage = z.infer<typeof AgentUpdateMessageSchema>;

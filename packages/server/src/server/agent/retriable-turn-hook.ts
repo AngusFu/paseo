@@ -28,14 +28,36 @@ export function shouldRetryRetriableTurn(args: { error: string; attemptCount: nu
   return isRetriableProviderError(args.error);
 }
 
-export function formatRetriableContinuePrompt(args: { error: string; attempt: number }): string {
-  const clipped = args.error.trim().replace(/\s+/g, " ").slice(0, 240);
+const RETRIABLE_CONTINUE_USER_PROMPT_MAX_CHARS = 2_000;
+
+/** Clip user text embedded in the continue nudge (keep enough to recover intent). */
+export function clipRetriableContinueUserPrompt(text: string): string {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  if (normalized.length <= RETRIABLE_CONTINUE_USER_PROMPT_MAX_CHARS) {
+    return normalized;
+  }
+  return `${normalized.slice(0, RETRIABLE_CONTINUE_USER_PROMPT_MAX_CHARS - 1)}…`;
+}
+
+export function formatRetriableContinuePrompt(args: {
+  error: string;
+  attempt: number;
+  /** Latest real user message for the failed turn — keeps retry on that request. */
+  lastUserPrompt?: string | null;
+}): string {
+  const clippedError = args.error.trim().replace(/\s+/g, " ").slice(0, 240);
+  const clippedUser =
+    typeof args.lastUserPrompt === "string" && args.lastUserPrompt.trim().length > 0
+      ? clipRetriableContinueUserPrompt(args.lastUserPrompt)
+      : null;
   return [
     "Previous turn failed with a retriable provider error.",
     `Attempt ${args.attempt}/${RETRIABLE_TURN_MAX_ATTEMPTS}.`,
-    clipped.length > 0 ? `Error: ${clipped}` : null,
-    "Continue the same task from where you left off. Do not restart from scratch.",
+    clippedError.length > 0 ? `Error: ${clippedError}` : null,
+    clippedUser
+      ? `Latest user message to continue:\n"""\n${clippedUser}\n"""\nResume that same user request from where you left off. Do not switch to an earlier task. Do not restart from scratch.`
+      : "Continue the same task from where you left off. Do not restart from scratch.",
   ]
     .filter((line): line is string => line !== null)
-    .join(" ");
+    .join("\n");
 }

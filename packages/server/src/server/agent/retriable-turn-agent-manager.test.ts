@@ -8,11 +8,22 @@ import { AgentManager } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
 import type {
   AgentClient,
+  AgentPromptInput,
   AgentRunResult,
   AgentSession,
   AgentSessionConfig,
   AgentStreamEvent,
 } from "./agent-sdk-types.js";
+
+function promptInputToText(prompt: AgentPromptInput): string {
+  if (typeof prompt === "string") {
+    return prompt;
+  }
+  return prompt
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .join("")
+    .trim();
+}
 
 const logger = createTestLogger();
 
@@ -33,20 +44,25 @@ abstract class RetriableTurnTestSession implements AgentSession {
   readonly capabilities = TEST_CAPABILITIES;
   readonly id = randomUUID();
   private subscribers = new Set<(event: AgentStreamEvent) => void>();
+  readonly startedPrompts: string[] = [];
+  protected turnCount = 0;
 
   constructor(protected readonly config: AgentSessionConfig) {}
 
-  abstract emitTurn(): void;
+  abstract emitTurn(turnId: string, promptText: string): void;
 
   async run(): Promise<AgentRunResult> {
     return { sessionId: this.id, finalText: "", timeline: [] };
   }
 
-  async startTurn(): Promise<{ turnId: string }> {
-    const turnId = "turn-retriable-1";
+  async startTurn(prompt: AgentPromptInput): Promise<{ turnId: string }> {
+    this.turnCount += 1;
+    const turnId = `turn-retriable-${this.turnCount}`;
+    const promptText = promptInputToText(prompt);
+    this.startedPrompts.push(promptText);
     setTimeout(() => {
       this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
-      this.emitTurn();
+      this.emitTurn(turnId, promptText);
     }, 0);
     return { turnId };
   }
@@ -102,19 +118,18 @@ abstract class RetriableTurnTestSession implements AgentSession {
 }
 
 class RetriableTurnFailedSession extends RetriableTurnTestSession {
-  emitTurn(): void {
+  emitTurn(turnId: string): void {
     this.pushEvent({
       type: "turn_failed",
       provider: this.provider,
-      turnId: "turn-retriable-1",
+      turnId,
       error: RETRIABLE_ERROR,
     });
   }
 }
 
 class RetriableTurnCompletedSession extends RetriableTurnTestSession {
-  emitTurn(): void {
-    const turnId = "turn-retriable-1";
+  emitTurn(turnId: string): void {
     this.pushEvent({
       type: "timeline",
       provider: this.provider,
@@ -125,9 +140,38 @@ class RetriableTurnCompletedSession extends RetriableTurnTestSession {
   }
 }
 
+/** First turn records the user message then fails; later turns complete cleanly. */
+class RetriableTurnFailedWithUserMessageSession extends RetriableTurnTestSession {
+  emitTurn(turnId: string, promptText: string): void {
+    if (this.turnCount === 1) {
+      this.pushEvent({
+        type: "timeline",
+        provider: this.provider,
+        turnId,
+        item: { type: "user_message", text: promptText },
+      });
+      this.pushEvent({
+        type: "turn_failed",
+        provider: this.provider,
+        turnId,
+        error: RETRIABLE_ERROR,
+      });
+      return;
+    }
+    this.pushEvent({
+      type: "timeline",
+      provider: this.provider,
+      turnId,
+      item: { type: "assistant_message", text: "resumed" },
+    });
+    this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+  }
+}
+
 class RetriableTurnTestClient implements AgentClient {
   readonly provider = "codex" as const;
   readonly capabilities = TEST_CAPABILITIES;
+  lastSession: RetriableTurnTestSession | null = null;
 
   constructor(private readonly SessionClass: typeof RetriableTurnTestSession) {}
 
@@ -136,17 +180,21 @@ class RetriableTurnTestClient implements AgentClient {
   }
 
   async createSession(config: AgentSessionConfig): Promise<AgentSession> {
-    return new this.SessionClass(config);
+    const session = new this.SessionClass(config);
+    this.lastSession = session;
+    return session;
   }
 
   async resumeSession(
     _handle: unknown,
     config?: Partial<AgentSessionConfig>,
   ): Promise<AgentSession> {
-    return new this.SessionClass({
+    const session = new this.SessionClass({
       provider: "codex",
       cwd: config?.cwd ?? process.cwd(),
     });
+    this.lastSession = session;
+    return session;
   }
 
   async fetchCatalog() {
@@ -267,6 +315,53 @@ test("runAgent does not throw when a retriable turn_failed is armed for retry", 
     await expect(manager.runAgent(agent.id, "continue task")).resolves.toMatchObject({
       canceled: false,
     });
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("retriable retry continue prompt includes the latest user message", async () => {
+  vi.useFakeTimers();
+  const workdir = mkdtempSync(join(tmpdir(), "retriable-turn-user-prompt-"));
+  try {
+    const client = new RetriableTurnTestClient(RetriableTurnFailedWithUserMessageSession);
+    const manager = new AgentManager({
+      clients: { codex: client },
+      registry: new AgentStorage(join(workdir, "agents"), logger),
+      logger,
+      idFactory: () => "00000000-0000-4000-8000-000000000304",
+    });
+    manager.setPaseoToolsEnabled(false);
+
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+
+    const drainPromise = (async () => {
+      for await (const _event of manager.streamAgent(agent.id, "完了报错")) {
+        // Drain the failed turn until the foreground waiter settles.
+      }
+    })();
+    await vi.advanceTimersByTimeAsync(0);
+    await drainPromise;
+
+    const retryDrain = (async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+      // Give the scheduled continue turn time to start and settle.
+      await vi.advanceTimersByTimeAsync(0);
+    })();
+    await retryDrain;
+
+    // Allow the continue streamAgent async IIFE to finish.
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const prompts = client.lastSession?.startedPrompts ?? [];
+    expect(prompts[0]).toBe("完了报错");
+    expect(prompts[1]).toContain("Latest user message to continue:");
+    expect(prompts[1]).toContain("完了报错");
+    expect(prompts[1]).toContain("Do not switch to an earlier task");
   } finally {
     rmSync(workdir, { recursive: true, force: true });
   }

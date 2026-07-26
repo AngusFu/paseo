@@ -61,4 +61,15 @@ describe("retriable-turn-hook", () => {
     expect(prompt).toContain("resource_exhausted");
     expect(prompt).toContain("Do not restart from scratch");
   });
+
+  it("embeds the latest user message so retry does not drift to an earlier task", () => {
+    const prompt = formatRetriableContinuePrompt({
+      error: "RetriableError: [aborted] read ECONNRESET",
+      attempt: 1,
+      lastUserPrompt: "完了报错",
+    });
+    expect(prompt).toContain("Latest user message to continue:");
+    expect(prompt).toContain("完了报错");
+    expect(prompt).toContain("Do not switch to an earlier task");
+  });
 });

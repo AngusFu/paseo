@@ -658,7 +658,12 @@ export class AgentManager {
   // Auto-continue after retriable provider turn failures (resource_exhausted, etc.).
   private readonly retriableTurnRetries = new Map<
     string,
-    { attempt: number; timer: ReturnType<typeof setTimeout> | null }
+    {
+      attempt: number;
+      timer: ReturnType<typeof setTimeout> | null;
+      /** Captured when the retry first arms — the failed turn's real user request. */
+      lastUserPrompt: string | null;
+    }
   >();
   // prose-stop: already nudged once this cycle (like Claude stop_hook_active).
   private readonly proseStopActive = new Set<string>();
@@ -4695,7 +4700,8 @@ export class AgentManager {
     options: { fromHistory?: boolean } | undefined;
     flags: StreamEventFlags;
   }): Promise<boolean> {
-    const previousAttempts = this.retriableTurnRetries.get(params.agent.id)?.attempt ?? 0;
+    const previous = this.retriableTurnRetries.get(params.agent.id);
+    const previousAttempts = previous?.attempt ?? 0;
     if (
       !shouldRetryRetriableTurn({
         error: params.error,
@@ -4707,6 +4713,10 @@ export class AgentManager {
 
     const attempt = previousAttempts + 1;
     const delayMs = retriableTurnBackoffMs(attempt);
+    // Keep the first-armed user prompt across backoff attempts so later retries
+    // don't drift after system continue nudges land in provider history.
+    const lastUserPrompt =
+      previous?.lastUserPrompt ?? this.getLastRealUserMessageText(params.agent.id);
     await this.appendSystemErrorTimelineMessage(
       params.agent,
       params.provider,
@@ -4722,11 +4732,36 @@ export class AgentManager {
     // Clear lastError so finalizeForegroundTurn keeps the agent busy for waiters
     // instead of settling into a terminal error before the retry fires.
     params.agent.lastError = undefined;
-    this.scheduleRetriableTurnRetry(params.agent.id, attempt, delayMs, params.error);
+    this.scheduleRetriableTurnRetry(
+      params.agent.id,
+      attempt,
+      delayMs,
+      params.error,
+      lastUserPrompt,
+    );
     params.flags.shouldDispatchEvent = false;
     params.flags.shouldNotifyWaiters = false;
     this.settleMatchingForegroundWaiters(params.agent, params.eventTurnId);
     return true;
+  }
+
+  /** Latest non-system user_message text from the live timeline (newest first). */
+  private getLastRealUserMessageText(agentId: string): string | null {
+    const items = this.timelineStore.getItems(agentId);
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index];
+      if (!item || item.type !== "user_message") {
+        continue;
+      }
+      if (isSystemInjectedEnvelope(item.text)) {
+        continue;
+      }
+      const text = item.text.trim();
+      if (text.length > 0) {
+        return text;
+      }
+    }
+    return null;
   }
 
   private settleMatchingForegroundWaiters(
@@ -4894,21 +4929,35 @@ export class AgentManager {
     attempt: number,
     delayMs: number,
     error: string,
+    lastUserPrompt: string | null,
   ): void {
     const existing = this.retriableTurnRetries.get(agentId);
     if (existing?.timer) {
       clearTimeout(existing.timer);
     }
-    this.retriableTurnRetries.set(agentId, { attempt, timer: null });
+    this.retriableTurnRetries.set(agentId, { attempt, timer: null, lastUserPrompt });
     const timer = setTimeout(() => {
       const pending = this.retriableTurnRetries.get(agentId);
       if (!pending || pending.attempt !== attempt) {
         return;
       }
       pending.timer = null;
-      this.logger.info({ agentId, attempt, delayMs, error }, "agent.manager.retriable_turn.retry");
+      this.logger.info(
+        {
+          agentId,
+          attempt,
+          delayMs,
+          error,
+          hasLastUserPrompt: Boolean(pending.lastUserPrompt),
+        },
+        "agent.manager.retriable_turn.retry",
+      );
       const prompt = formatSystemNotificationPrompt(
-        formatRetriableContinuePrompt({ error, attempt }),
+        formatRetriableContinuePrompt({
+          error,
+          attempt,
+          lastUserPrompt: pending.lastUserPrompt,
+        }),
       );
       void (async () => {
         try {
@@ -4923,7 +4972,7 @@ export class AgentManager {
         }
       })();
     }, delayMs);
-    this.retriableTurnRetries.set(agentId, { attempt, timer });
+    this.retriableTurnRetries.set(agentId, { attempt, timer, lastUserPrompt });
   }
 
   private onStreamTurnCanceled(params: {

@@ -3139,6 +3139,8 @@ export const ServerInfoStatusPayloadSchema = z
         dictationModelSelection: z.boolean().optional(),
         // COMPAT(voiceTtsModelSelection): added in v0.1.105, remove gate after 2026-12-09.
         voiceTtsModelSelection: z.boolean().optional(),
+        // COMPAT(webUi): added in v0.1.105, remove gate after 2026-12-09.
+        webUi: z.boolean().optional(),
         // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
         workspaceMultiplicity: z.boolean().optional(),
         // COMPAT(projectRemove): added in v0.1.97, drop the gate when floor >= v0.1.97.

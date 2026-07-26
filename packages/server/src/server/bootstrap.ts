@@ -1670,6 +1670,7 @@ export async function createPaseoDaemon(
                 worktreesRoot: config.worktreesRoot,
                 appBaseUrl: config.appBaseUrl,
                 desktopManaged: config.desktopManaged === true,
+                webUiEnabled: config.webUi?.enabled === true,
                 relay: {
                   enabled: relayEnabled,
                   endpoint: relayEndpoint,

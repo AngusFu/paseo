@@ -653,6 +653,7 @@ export const en = {
         copyPath: "Copy workspace path",
         copyBranchName: "Copy branch name",
         showSetup: "Show setup",
+        openWebUi: "Open web UI",
       },
       toasts: {
         workspacePathUnavailable: "Workspace path is not available yet",

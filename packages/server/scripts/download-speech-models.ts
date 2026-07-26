@@ -2,7 +2,6 @@ import { resolvePaseoHome } from "../src/server/paseo-home.js";
 import { createRootLogger } from "../src/server/logger.js";
 import {
   DEFAULT_CHINESE_LOCAL_STT_MODEL,
-  DEFAULT_CHINESE_LOCAL_TTS_MODEL,
   DEFAULT_LOCAL_STT_MODEL,
   DEFAULT_LOCAL_TTS_MODEL,
   ensureLocalSpeechModels,
@@ -35,7 +34,6 @@ function parseArgs(argv: string[]): { modelsDir: string; modelIds: LocalSpeechMo
   if (modelIds.length === 0) {
     modelIds.push(
       DEFAULT_CHINESE_LOCAL_STT_MODEL,
-      DEFAULT_CHINESE_LOCAL_TTS_MODEL,
       DEFAULT_LOCAL_STT_MODEL,
       DEFAULT_LOCAL_TTS_MODEL,
     );

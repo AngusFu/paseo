@@ -5,7 +5,6 @@ import {
 } from "./sherpa/model-downloader.js";
 import {
   DEFAULT_CHINESE_LOCAL_STT_MODEL,
-  DEFAULT_CHINESE_LOCAL_TTS_MODEL,
   DEFAULT_LOCAL_STT_MODEL,
   DEFAULT_LOCAL_TTS_MODEL,
   LocalSttModelIdSchema,
@@ -21,7 +20,6 @@ import {
 
 export {
   DEFAULT_CHINESE_LOCAL_STT_MODEL,
-  DEFAULT_CHINESE_LOCAL_TTS_MODEL,
   DEFAULT_LOCAL_STT_MODEL,
   DEFAULT_LOCAL_TTS_MODEL,
   LocalSttModelIdSchema,

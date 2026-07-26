@@ -1,4 +1,5 @@
 import {
+  buildDaemonHttpOriginUrl,
   buildDaemonWebSocketUrl,
   buildRelayWebSocketUrl as buildSharedRelayWebSocketUrl,
   deriveLabelFromEndpoint,
@@ -17,6 +18,7 @@ export { decodeOfferFragmentPayload } from "@getpaseo/protocol/connection-offer"
 export type { HostPortParts };
 
 export {
+  buildDaemonHttpOriginUrl,
   buildDaemonWebSocketUrl,
   deriveLabelFromEndpoint,
   extractHostPortFromWebSocketUrl,

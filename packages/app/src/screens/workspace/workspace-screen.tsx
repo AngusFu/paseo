@@ -67,6 +67,7 @@ import { WindowChromeRegion } from "@/utils/desktop-window";
 import { SourceControlPanelIcon } from "@/components/icons/source-control-panel-icon";
 import { WorkspaceActions } from "@/git/workspace-actions";
 import { WorkspaceOpenInEditorButton } from "@/screens/workspace/workspace-open-in-editor-button";
+import { WorkspaceOpenWebUiButton } from "@/screens/workspace/workspace-open-web-ui-button";
 import { WorkspaceScriptsButton } from "@/screens/workspace/workspace-scripts-button";
 import { ImportSessionSheet } from "@/components/import-session-sheet";
 import { useToast } from "@/contexts/toast-context";
@@ -3516,6 +3517,7 @@ function WorkspaceScreenContent({
   const headerRight = useMemo(
     () => (
       <View style={styles.headerRight}>
+        {!isMobile ? <WorkspaceOpenWebUiButton serverId={normalizedServerId} /> : null}
         {!isMobile && workspaceDescriptor && workspaceDescriptor.scripts.length > 0 ? (
           <WorkspaceScriptsButton
             serverId={normalizedServerId}

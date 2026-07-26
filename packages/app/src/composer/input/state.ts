@@ -1,6 +1,7 @@
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { MessagePayload } from "@/composer/types";
 import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
+import { VOICE_MODE_UI_ENABLED } from "@/constants/voice-features";
 
 export type SendBehavior = "interrupt" | "queue";
 
@@ -106,10 +107,16 @@ export function runMessageInputKeyboardAction(
     return false;
   }
   if (action === "voice-toggle") {
+    if (!VOICE_MODE_UI_ENABLED) {
+      return false;
+    }
     actions.toggleRealtimeVoice();
     return true;
   }
   if (action === "voice-mute-toggle") {
+    if (!VOICE_MODE_UI_ENABLED) {
+      return false;
+    }
     if (actions.isRealtimeVoiceActive) {
       actions.toggleRealtimeVoiceMute();
     }

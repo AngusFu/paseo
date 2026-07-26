@@ -335,7 +335,7 @@ Measured bundle size for a standard Expo web export:
 - gzip: 2.55 MiB
 - brotli: 1.93 MiB
 
-The desktop-managed daemon disables the bundled web UI by default (`PASEO_WEB_UI_ENABLED=false`) because the desktop app already ships the renderer as `app-dist`. Shipping the same assets again inside `@getpaseo/server` would duplicate the ~10.8 MiB install. Desktop packaging also excludes `node_modules/@getpaseo/server/dist/server/web-ui/**` from the packaged app.
+The desktop-managed daemon does not ship a second copy of the browser web UI inside `@getpaseo/server`. Desktop packaging excludes `node_modules/@getpaseo/server/dist/server/web-ui/**` from the app bundle and instead points the daemon at the existing `app-dist` renderer export via `PASEO_WEB_UI_DIST_DIR`. Enable the daemon-served web UI with `features.webUi.enabled: true` in `~/.paseo/config.json` (or `paseo daemon restart --web-ui` for a standalone daemon). Opening only the desktop app is enough when that setting is on — restart the desktop-managed daemon after changing it.
 
 ## Built workspace packages
 

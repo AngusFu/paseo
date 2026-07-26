@@ -656,6 +656,7 @@ export const ar: TranslationResources = {
         copyPath: "نسخ مسار مساحة العمل",
         copyBranchName: "انسخ اسم الفرع",
         showSetup: "إظهار الإعداد",
+        openWebUi: "فتح واجهة الويب",
       },
       toasts: {
         workspacePathUnavailable: "مسار Workspace غير متاح بعد",

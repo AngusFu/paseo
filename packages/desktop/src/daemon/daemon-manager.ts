@@ -34,7 +34,11 @@ import {
   sendLocalTransportMessage,
   closeLocalTransportSession,
 } from "./local-transport.js";
-import { createNodeEntrypointInvocation, resolveDaemonRunnerEntrypoint } from "./runtime-paths.js";
+import {
+  createNodeEntrypointInvocation,
+  resolveDaemonRunnerEntrypoint,
+  resolveDesktopWebUiDistDir,
+} from "./runtime-paths.js";
 import { runExternalCliJsonCommand, runExternalCliTextCommand } from "./cli/external.js";
 import {
   createDesktopSettingsCommandHandlers,
@@ -420,7 +424,9 @@ async function startDaemon(): Promise<DesktopDaemonStatus> {
     envOverlay: {
       PASEO_DESKTOP_MANAGED: "1",
       PASEO_CLI: getBundledCliShimPath(),
-      PASEO_WEB_UI_ENABLED: "false",
+      // Reuse packaged app-dist instead of duplicating server/dist/server/web-ui in the app bundle.
+      // Respect ~/.paseo/config.json features.webUi.enabled (no PASEO_WEB_UI_ENABLED override).
+      PASEO_WEB_UI_DIST_DIR: resolveDesktopWebUiDistDir(),
     },
     stdio: ["ignore", "ignore", "ignore"],
   });

@@ -43,14 +43,14 @@ describe("resolveSpeechConfig", () => {
       models: {
         dictationStt: "sense-voice-zh-en-ja-ko-yue-int8",
         voiceStt: "sense-voice-zh-en-ja-ko-yue-int8",
-        voiceTts: "kokoro-int8-multi-lang-v1_1",
-        voiceTtsSpeakerId: 3,
+        voiceTts: "kokoro-en-v0_19",
+        voiceTtsSpeakerId: 0,
       },
     });
     expect(result.speech.local?.models.dictationStt).toBe("sense-voice-zh-en-ja-ko-yue-int8");
     expect(result.speech.local?.models.voiceStt).toBe("sense-voice-zh-en-ja-ko-yue-int8");
-    expect(result.speech.local?.models.voiceTts).toBe("kokoro-int8-multi-lang-v1_1");
-    expect(result.speech.local?.models.voiceTtsSpeakerId).toBe(3);
+    expect(result.speech.local?.models.voiceTts).toBe("kokoro-en-v0_19");
+    expect(result.speech.local?.models.voiceTtsSpeakerId).toBe(0);
     expect(result.speech.sttLanguages).toEqual({
       dictation: "zh",
       voice: "zh",

@@ -36,9 +36,8 @@ export interface ResolvedLocalSpeechConfig {
 export type { LocalSpeechModelId, LocalSttModelId, LocalTtsModelId };
 
 const DEFAULT_LOCAL_MODELS_SUBDIR = path.join("models", "local-speech");
-// FORK: 默认语音转写语言改为中文（上游默认为 "en"）。dictation / voice 的默认本地模型会
-// 经 resolveDefaultLocalSttModel / resolveDefaultLocalTtsModel 自动选用多语言的
-// SenseVoice（中/粤/英/日/韩）与 Kokoro 中英 TTS，从而开箱即可识别与朗读中文。
+// FORK: 默认语音转写语言改为中文（上游默认为 "en"）。dictation / voice 的默认本地 STT
+// 经 resolveDefaultLocalSttModel 自动选用 SenseVoice（中/粤/英/日/韩）。
 // 用户仍可通过设置、env 或 persisted config 覆盖。合并上游时请勿还原为 "en"。
 const DEFAULT_STT_LANGUAGE = "zh";
 
@@ -63,7 +62,7 @@ const LocalSpeechResolutionSchema = z.object({
   modelsDir: z.string().trim().min(1),
   dictationLocalSttModel: LocalSttModelIdSchema.optional(),
   voiceLocalSttModel: LocalSttModelIdSchema.optional(),
-  voiceLocalTtsModel: LocalTtsModelIdSchema.optional(),
+  voiceLocalTtsModel: z.string().trim().min(1).optional(),
   dictationLanguage: LanguageSchema,
   voiceLanguage: LanguageSchema,
   voiceLocalTtsSpeakerId: OptionalIntegerSchema,
@@ -202,8 +201,12 @@ export function resolveLocalSpeechConfig(params: {
     buildLocalSpeechResolutionInput({ ...params, includeProviderConfig }),
   );
 
+  const parsedVoiceTtsModel = parsed.voiceLocalTtsModel
+    ? LocalTtsModelIdSchema.safeParse(parsed.voiceLocalTtsModel)
+    : null;
   const resolvedVoiceTtsModel =
-    parsed.voiceLocalTtsModel ?? resolveDefaultLocalTtsModel(parsed.voiceLanguage);
+    (parsedVoiceTtsModel?.success ? parsedVoiceTtsModel.data : undefined) ??
+    resolveDefaultLocalTtsModel(parsed.voiceLanguage);
 
   const resolvedVoiceTtsSpeakerId =
     parsed.voiceLocalTtsSpeakerId ?? resolveDefaultLocalTtsSpeakerId(resolvedVoiceTtsModel);

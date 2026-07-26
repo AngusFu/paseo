@@ -173,6 +173,17 @@ export function buildDaemonWebSocketUrl(endpoint: string, opts: WebSocketUrlOpti
   return new URL(`${protocol}://${hostPart}:${port}/ws`).toString();
 }
 
+export function buildDaemonHttpOriginUrl(
+  endpoint: string,
+  opts: WebSocketUrlOptions = { useTls: false },
+): string {
+  const normalized = normalizeLoopbackToLocalhost(endpoint);
+  const { host, port, isIpv6 } = parseHostPort(normalized);
+  const protocol = opts.useTls ? "https" : "http";
+  const hostPart = isIpv6 ? `[${host}]` : host;
+  return new URL(`${protocol}://${hostPart}:${port}/`).toString();
+}
+
 export function buildRelayWebSocketUrl(params: {
   endpoint: string;
   useTls: boolean;

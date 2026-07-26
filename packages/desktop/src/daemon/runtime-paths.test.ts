@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveNodeExecPath } from "./runtime-paths";
+import { resolveDesktopWebUiDistDir, resolveNodeExecPath } from "./runtime-paths";
 
 const mocks = vi.hoisted(() => ({
   existsSync: vi.fn(),
@@ -72,5 +72,17 @@ describe("runtime-paths", () => {
     expect(resolveNodeExecPath()).toBe(
       "/Applications/Paseo.app/Contents/Frameworks/Paseo Helper.app/Contents/MacOS/Paseo Helper",
     );
+  });
+
+  it("resolves packaged web UI assets from app-dist", () => {
+    expect(resolveDesktopWebUiDistDir()).toBe(
+      "/Applications/Paseo.app/Contents/Resources/app-dist",
+    );
+  });
+
+  it("resolves dev web UI assets from the app workspace export", () => {
+    mocks.app.isPackaged = false;
+
+    expect(resolveDesktopWebUiDistDir()).toMatch(/packages[/\\]app[/\\]dist$/);
   });
 });

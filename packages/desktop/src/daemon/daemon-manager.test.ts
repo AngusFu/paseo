@@ -70,6 +70,7 @@ vi.mock("./runtime-paths.js", () => ({
     entryPath: "/tmp/daemon.js",
     execArgv: [],
   })),
+  resolveDesktopWebUiDistDir: vi.fn(() => "/tmp/paseo-app-dist"),
 }));
 
 vi.mock("./cli/external.js", () => ({
@@ -454,7 +455,7 @@ describe("daemon-manager commands", () => {
         stdio: ["ignore", "ignore", "ignore"],
         envOverlay: expect.objectContaining({
           PASEO_CLI: getBundledCliShimPath(),
-          PASEO_WEB_UI_ENABLED: "false",
+          PASEO_WEB_UI_DIST_DIR: "/tmp/paseo-app-dist",
         }),
       }),
     );

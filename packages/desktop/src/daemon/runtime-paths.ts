@@ -37,6 +37,15 @@ export function resolvePackagedNodeEntrypointRunnerPath(): string {
   );
 }
 
+/** Static web client served by the desktop-managed daemon (reuses packaged app-dist). */
+export function resolveDesktopWebUiDistDir(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "app-dist");
+  }
+
+  return path.resolve(__dirname, "../../../app/dist");
+}
+
 export function resolveDaemonRunnerEntrypoint(): NodeEntrypointSpec {
   if (app.isPackaged) {
     return {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  buildDaemonHttpOriginUrl,
   buildDaemonWebSocketUrl,
   buildRelayWebSocketUrl,
   CURRENT_RELAY_PROTOCOL_VERSION,
@@ -209,5 +210,17 @@ describe("shouldUseTlsForDefaultHostedRelay", () => {
 
   test("returns false for malformed endpoints", () => {
     expect(shouldUseTlsForDefaultHostedRelay("not-an-endpoint")).toBe(false);
+  });
+});
+
+describe("buildDaemonHttpOriginUrl", () => {
+  test("builds the daemon web UI origin from a loopback endpoint", () => {
+    expect(buildDaemonHttpOriginUrl("127.0.0.1:6767")).toBe("http://localhost:6767/");
+  });
+
+  test("builds a TLS origin when requested", () => {
+    expect(buildDaemonHttpOriginUrl("example.com:6767", { useTls: true })).toBe(
+      "https://example.com:6767/",
+    );
   });
 });

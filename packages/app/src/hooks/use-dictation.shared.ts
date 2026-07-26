@@ -11,6 +11,8 @@ export interface UseDictationOptions {
   canStart?: () => boolean;
   canConfirm?: () => boolean;
   enableDuration?: boolean;
+  /** Auto-insert transcript after sustained silence (client-side VAD). */
+  autoConfirmOnSilence?: boolean;
 }
 
 export interface UseDictationResult {

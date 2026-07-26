@@ -661,6 +661,7 @@ export const ja: TranslationResources = {
         copyPath: "ワークスペースパスをコピー",
         copyBranchName: "ブランチ名をコピー",
         showSetup: "セットアップを表示",
+        openWebUi: "Web UI を開く",
       },
       toasts: {
         workspacePathUnavailable: "ワークスペースパスはまだ利用できません",

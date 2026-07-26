@@ -71,7 +71,6 @@ import type { Theme } from "@/styles/theme";
 import { getProviderIcon } from "@/components/provider-icons";
 import { BrowserToolsOptInCard } from "./browser-tools-card";
 import { DictationModelCard } from "./dictation-model-card";
-import { VoiceTtsModelCard } from "./voice-tts-model-card";
 import { hasDaemonReconnectedAfter, type DaemonConnectionMarker } from "./daemon-reconnect";
 import { restartDaemonFromSettings } from "./daemon-restart";
 
@@ -387,7 +386,6 @@ export function HostSettingsPage({
       {!isLocalDaemon ? <UpdateDaemonCard key={host.serverId} host={host} /> : null}
 
       <DictationModelCard serverId={serverId} />
-      <VoiceTtsModelCard serverId={serverId} />
 
       <RemoveHostSection host={host} isLocalDaemon={isLocalDaemon} onRemoved={onHostRemoved} />
     </View>

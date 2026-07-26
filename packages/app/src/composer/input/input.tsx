@@ -27,6 +27,7 @@ import { useTranslation } from "react-i18next";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { ArrowUp, Mic, MicOff, CornerDownLeft, Plus, Square } from "lucide-react-native";
 import { useDictation } from "@/hooks/use-dictation";
+import { VOICE_MODE_UI_ENABLED } from "@/constants/voice-features";
 import { DictationOverlay } from "@/components/dictation-controls";
 import { RealtimeVoiceOverlay } from "@/components/realtime-voice-overlay";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
@@ -837,6 +838,9 @@ interface ToggleRealtimeVoiceContext {
 }
 
 function toggleRealtimeVoiceImpl(ctx: ToggleRealtimeVoiceContext): void {
+  if (!VOICE_MODE_UI_ENABLED) {
+    return;
+  }
   if (!ctx.voice || !ctx.voiceServerId || !ctx.voiceAgentId || !ctx.isConnected || ctx.disabled) {
     return;
   }
@@ -1334,6 +1338,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       canStart: canStartDictation,
       canConfirm: canConfirmDictation,
       enableDuration: true,
+      autoConfirmOnSilence: true,
     });
 
     const isRealtimeVoiceForCurrentAgent = computeIsRealtimeVoiceForAgent(

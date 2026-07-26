@@ -209,7 +209,6 @@ import type { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import type { Resolvable } from "./speech/provider-resolver.js";
 import type { SpeechReadinessSnapshot } from "./speech/speech-runtime.js";
 import type { DictationSettingsController } from "./speech/dictation-settings.js";
-import type { VoiceTtsSettingsController } from "./speech/voice-tts-settings.js";
 import type pino from "pino";
 import { FileBackedChatService } from "./chat/chat-service.js";
 import { LoopService } from "./loop-service.js";
@@ -489,8 +488,6 @@ export interface SessionOptions {
   };
   /** Controller backing the speech.dictation.* model-selection RPCs (daemon-scoped). */
   dictationSettings?: DictationSettingsController | null;
-  /** Controller backing the speech.voice_tts.* model-selection RPCs (daemon-scoped). */
-  voiceTtsSettings?: VoiceTtsSettingsController | null;
   serverId?: string;
   daemonVersion?: string;
   daemonRuntimeConfig?: DaemonRuntimeConfig;
@@ -627,7 +624,6 @@ export class Session {
   private readonly workspaceGitObserver: WorkspaceGitObserverService;
   private readonly workspaceDirectory: WorkspaceDirectory;
   private readonly dictationSettings: DictationSettingsController | null;
-  private readonly voiceTtsSettings: VoiceTtsSettingsController | null;
   private readonly voiceSession: VoiceSession;
   private readonly checkoutSession: CheckoutSession;
   private readonly chatScheduleLoopSession: ChatScheduleLoopSession;
@@ -694,7 +690,6 @@ export class Session {
       voiceBridge,
       dictation,
       dictationSettings,
-      voiceTtsSettings,
       serverId,
       daemonVersion,
       daemonRuntimeConfig,
@@ -964,7 +959,6 @@ export class Session {
       buildWorkspaceDescriptor: (input) => this.buildWorkspaceDescriptor(input),
     });
     this.dictationSettings = dictationSettings ?? null;
-    this.voiceTtsSettings = voiceTtsSettings ?? null;
 
     this.voiceSession = new VoiceSession({
       host: {
@@ -2101,114 +2095,44 @@ export class Session {
   private async handleSpeechVoiceTtsListModels(
     msg: Extract<SessionInboundMessage, { type: "speech.voice_tts.list_models.request" }>,
   ): Promise<void> {
-    if (!this.voiceTtsSettings) {
-      this.emit({
-        type: "speech.voice_tts.list_models.response",
-        payload: {
-          requestId: msg.requestId,
-          models: [],
-          current: { provider: "unavailable", model: "", language: "zh" },
-          readiness: {
-            available: false,
-            downloading: false,
-            missingModelIds: [],
-            reasonCode: "disabled",
-            message: "Voice TTS is not available on this host.",
-          },
-          error: "Voice TTS model selection is not available on this host.",
+    this.emit({
+      type: "speech.voice_tts.list_models.response",
+      payload: {
+        requestId: msg.requestId,
+        models: [],
+        current: { provider: "unavailable", model: "", language: "zh" },
+        readiness: {
+          available: false,
+          downloading: false,
+          missingModelIds: [],
+          reasonCode: "disabled",
+          message: "Voice TTS model selection is not available on this host.",
         },
-      });
-      return;
-    }
-    try {
-      const snapshot = await this.voiceTtsSettings.getSnapshot();
-      this.emit({
-        type: "speech.voice_tts.list_models.response",
-        payload: {
-          requestId: msg.requestId,
-          models: snapshot.models,
-          current: snapshot.current,
-          readiness: snapshot.readiness,
-          error: null,
-        },
-      });
-    } catch (error) {
-      this.sessionLogger.error({ err: error }, "Failed to list voice TTS models");
-      this.emit({
-        type: "speech.voice_tts.list_models.response",
-        payload: {
-          requestId: msg.requestId,
-          models: [],
-          current: { provider: "unavailable", model: "", language: "zh" },
-          readiness: {
-            available: false,
-            downloading: false,
-            missingModelIds: [],
-            reasonCode: "tts_unavailable",
-            message: "Failed to list voice TTS models.",
-          },
-          error: error instanceof Error ? error.message : "Failed to list voice TTS models",
-        },
-      });
-    }
+        error: "Voice TTS model selection is not available on this host.",
+      },
+    });
   }
 
   private async handleSpeechVoiceTtsSetModel(
     msg: Extract<SessionInboundMessage, { type: "speech.voice_tts.set_model.request" }>,
   ): Promise<void> {
-    if (!this.voiceTtsSettings) {
-      this.emit({
-        type: "speech.voice_tts.set_model.response",
-        payload: {
-          requestId: msg.requestId,
-          accepted: false,
-          models: [],
-          current: { provider: "unavailable", model: "", language: "zh" },
-          readiness: {
-            available: false,
-            downloading: false,
-            missingModelIds: [],
-            reasonCode: "disabled",
-            message: "Voice TTS is not available on this host.",
-          },
-          error: "Voice TTS model selection is not available on this host.",
+    this.emit({
+      type: "speech.voice_tts.set_model.response",
+      payload: {
+        requestId: msg.requestId,
+        accepted: false,
+        models: [],
+        current: { provider: "unavailable", model: "", language: "zh" },
+        readiness: {
+          available: false,
+          downloading: false,
+          missingModelIds: [],
+          reasonCode: "disabled",
+          message: "Voice TTS model selection is not available on this host.",
         },
-      });
-      return;
-    }
-    try {
-      const snapshot = await this.voiceTtsSettings.setModel(msg.model);
-      this.emit({
-        type: "speech.voice_tts.set_model.response",
-        payload: {
-          requestId: msg.requestId,
-          accepted: true,
-          models: snapshot.models,
-          current: snapshot.current,
-          readiness: snapshot.readiness,
-          error: null,
-        },
-      });
-    } catch (error) {
-      this.sessionLogger.warn({ err: error, model: msg.model }, "Failed to set voice TTS model");
-      this.emit({
-        type: "speech.voice_tts.set_model.response",
-        payload: {
-          requestId: msg.requestId,
-          accepted: false,
-          models: [],
-          current: { provider: "unavailable", model: "", language: "zh" },
-          readiness: {
-            available: false,
-            downloading: false,
-            missingModelIds: [],
-            reasonCode: "tts_unavailable",
-            message: "Failed to set voice TTS model.",
-          },
-          error: error instanceof Error ? error.message : "Failed to set voice TTS model",
-        },
-      });
-    }
+        error: "Voice TTS model selection is not available on this host.",
+      },
+    });
   }
 
   // eslint-disable-next-line complexity

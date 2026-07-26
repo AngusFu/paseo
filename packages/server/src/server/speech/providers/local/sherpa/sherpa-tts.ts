@@ -56,22 +56,15 @@ function buildKokoroModelConfig(
   assertFileExists(tokensPath, "TTS tokens");
   assertFileExists(dataDir, "TTS espeak-ng dataDir");
 
-  const kokoro: Record<string, unknown> = {
-    model: modelPath,
-    voices: voicesPath,
-    tokens: tokensPath,
-    dataDir,
-    lengthScale,
+  return {
+    kokoro: {
+      model: modelPath,
+      voices: voicesPath,
+      tokens: tokensPath,
+      dataDir,
+      lengthScale,
+    },
   };
-
-  if (spec.lexiconFiles?.length) {
-    for (const lexiconFile of spec.lexiconFiles) {
-      assertFileExists(`${modelDir}/${lexiconFile}`, "TTS lexicon");
-    }
-    kokoro.lexicon = spec.lexiconFiles.map((lexiconFile) => `${modelDir}/${lexiconFile}`).join(",");
-  }
-
-  return { kokoro };
 }
 
 export class SherpaOnnxTTS implements TextToSpeechProvider {

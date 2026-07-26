@@ -651,6 +651,7 @@ export const zhCN: TranslationResources = {
         copyPath: "复制 workspace 路径",
         copyBranchName: "复制分支名称",
         showSetup: "显示 setup",
+        openWebUi: "打开 Web UI",
       },
       toasts: {
         workspacePathUnavailable: "Workspace 路径尚不可用",

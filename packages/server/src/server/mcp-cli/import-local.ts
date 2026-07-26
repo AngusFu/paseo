@@ -15,7 +15,10 @@ export interface ImportLocalResult {
 }
 
 interface OauthClientRow {
+  url?: unknown;
   source?: unknown;
+  auth?: unknown;
+  headers?: unknown;
   oauth_client_id?: unknown;
   oauth_client_secret?: unknown;
   oauth_redirect_uri?: unknown;
@@ -62,7 +65,11 @@ function isOauthClientsFile(parsed: unknown, path: string): boolean {
       continue;
     }
     const row = value as OauthClientRow;
-    if (typeof row.source === "string" || typeof row.oauth_client_id === "string") {
+    if (
+      typeof row.source === "string" ||
+      typeof row.url === "string" ||
+      typeof row.oauth_client_id === "string"
+    ) {
       return true;
     }
   }
@@ -103,32 +110,57 @@ function finalize(candidate: McpCliServerConfig): McpCliServerConfig | null {
 }
 
 function serverFromOauthRow(name: string, row: OauthClientRow): McpCliServerConfig | null {
-  const url = optionalString(row.source);
+  const url = optionalString(row.url) ?? optionalString(row.source);
   if (!url) {
     return null;
+  }
+  const oauth = authFromOauthRow(row);
+  const headers = stringRecord(row.headers);
+  let auth = oauth;
+  if (!auth && typeof row.auth === "string") {
+    auth = authFromFastmcpAuthString(row.auth);
   }
   return finalize({
     name,
     transport: "http",
     url,
     enabled: true,
-    ...(authFromOauthRow(row) ? { auth: authFromOauthRow(row) } : {}),
+    ...(headers ? { headers } : {}),
+    ...(auth ? { auth } : {}),
   });
 }
 
+function authFromFastmcpAuthString(value: string): McpCliServerConfig["auth"] {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (trimmed === "oauth") {
+    return { kind: "oauth" };
+  }
+  return { kind: "bearer", token: trimmed };
+}
+
 function authFromEntry(entry: Record<string, unknown>): McpCliServerConfig["auth"] {
+  if (typeof entry.auth === "string") {
+    return authFromFastmcpAuthString(entry.auth);
+  }
   if (entry.auth && typeof entry.auth === "object" && !Array.isArray(entry.auth)) {
     const a = entry.auth as Record<string, unknown>;
-    const clientId = optionalString(a.clientId);
-    if (a.kind !== "oauth" || !clientId) {
-      return undefined;
+    if (a.kind === "bearer") {
+      const token = optionalString(a.token);
+      return token ? { kind: "bearer", token } : undefined;
     }
-    return authFromOauthRow({
-      oauth_client_id: clientId,
-      oauth_client_secret: a.clientSecret,
-      oauth_redirect_uri: a.redirectUri,
-      oauth_scope: a.scope,
-    });
+    if (a.kind === "oauth") {
+      const clientId = optionalString(a.clientId);
+      return {
+        kind: "oauth",
+        ...(clientId ? { clientId } : {}),
+        ...(optionalString(a.clientSecret) ? { clientSecret: optionalString(a.clientSecret) } : {}),
+        ...(optionalString(a.redirectUri) ? { redirectUri: optionalString(a.redirectUri) } : {}),
+        ...(optionalString(a.scope) ? { scope: optionalString(a.scope) } : {}),
+      };
+    }
   }
   return authFromOauthRow(entry as OauthClientRow);
 }
@@ -154,21 +186,11 @@ function stringRecord(value: unknown): Record<string, string> | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-function skipReasonForEntry(entry: Record<string, unknown>): string | null {
-  if (entry.headers && typeof entry.headers === "object") {
-    return "bearer/headers not supported";
-  }
-  return null;
-}
-
 function serverFromMcpEntry(name: string, value: unknown): McpCliServerConfig | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
   const entry = value as Record<string, unknown>;
-  if (skipReasonForEntry(entry)) {
-    return null;
-  }
 
   const command = optionalString(entry.command);
   const isStdio = entry.type === "stdio" || entry.transport === "stdio" || Boolean(command);
@@ -189,11 +211,13 @@ function serverFromMcpEntry(name: string, value: unknown): McpCliServerConfig | 
     return null;
   }
   const auth = authFromEntry(entry);
+  const headers = stringRecord(entry.headers);
   return finalize({
     name,
     transport: "http",
     url,
     enabled: true,
+    ...(headers ? { headers } : {}),
     ...(auth ? { auth } : {}),
   });
 }
@@ -208,6 +232,7 @@ function mergeServers(into: Map<string, McpCliServerConfig>, next: McpCliServerC
     ...prev,
     ...next,
     auth: next.auth ?? prev.auth,
+    headers: next.headers ?? prev.headers,
     args: next.args ?? prev.args,
     env: next.env ?? prev.env,
     cwd: next.cwd ?? prev.cwd,
@@ -231,7 +256,7 @@ function ingestOauthClientsFile(
     }
     const server = serverFromOauthRow(name, value as OauthClientRow);
     if (!server) {
-      warnings.push(`Skipped '${name}' in ${path}: missing source URL`);
+      warnings.push(`Skipped '${name}' in ${path}: missing url/source`);
       continue;
     }
     mergeServers(byName, server);
@@ -248,13 +273,6 @@ function ingestMcpServersFile(
 ): number {
   let found = 0;
   for (const [name, value] of Object.entries(map)) {
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      const reason = skipReasonForEntry(value as Record<string, unknown>);
-      if (reason) {
-        warnings.push(`Skipped '${name}' in ${path}: ${reason}`);
-        continue;
-      }
-    }
     const server = serverFromMcpEntry(name, value);
     if (!server) {
       warnings.push(`Skipped '${name}' in ${path}: no HTTP url or stdio command`);
@@ -268,7 +286,7 @@ function ingestMcpServersFile(
 
 /**
  * Scan well-known Claude / Cursor / sciforum config paths on the daemon host
- * and return importable HTTP + stdio MCP server configs (bearer/headers skipped).
+ * and return importable MCP server configs (FastMCP MCPConfig-aligned).
  */
 export async function discoverLocalMcpServers(
   paths: readonly string[] = candidatePaths(),

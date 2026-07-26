@@ -1,13 +1,12 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { discoverLocalMcpServers } from "./import-local.js";
 
 describe("discoverLocalMcpServers", () => {
-  it("imports HTTP + stdio mcpServers and sciforum oauth-clients; skips headers", async () => {
-    const dir = join(tmpdir(), `paseo-mcp-import-${process.pid}-${Date.now()}`);
-    await mkdir(dir, { recursive: true });
+  it("imports HTTP + stdio + bearer/headers + sciforum oauth-clients", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "mcp-cli-import-"));
     const mcpPath = join(dir, "mcp.json");
     const oauthPath = join(dir, "oauth-clients.json");
     await writeFile(
@@ -15,8 +14,10 @@ describe("discoverLocalMcpServers", () => {
       JSON.stringify({
         mcpServers: {
           open: { url: "https://example.com/mcp" },
-          local: { command: "npx", args: ["-y", "x"] },
+          local: { command: "npx", args: ["-y", "foo"] },
           authed: { url: "https://x", headers: { Authorization: "Bearer t" } },
+          dcr: { url: "https://y", auth: "oauth" },
+          token: { url: "https://z", auth: "my-token" },
         },
       }),
       "utf8",
@@ -36,15 +37,19 @@ describe("discoverLocalMcpServers", () => {
 
     const result = await discoverLocalMcpServers([mcpPath, oauthPath]);
     expect(result.sources).toEqual([mcpPath, oauthPath]);
-    expect(result.servers.map((s) => s.name).sort()).toEqual(["figma", "local", "open"]);
     const figma = result.servers.find((s) => s.name === "figma");
     expect(figma?.auth).toMatchObject({ kind: "oauth", clientId: "cid", clientSecret: "sec" });
-    const local = result.servers.find((s) => s.name === "local");
-    expect(local).toMatchObject({
+    expect(result.servers.find((s) => s.name === "local")).toMatchObject({
       transport: "stdio",
       command: "npx",
-      args: ["-y", "x"],
     });
-    expect(result.warnings.some((w) => w.includes("headers"))).toBe(true);
+    expect(result.servers.find((s) => s.name === "authed")).toMatchObject({
+      headers: { Authorization: "Bearer t" },
+    });
+    expect(result.servers.find((s) => s.name === "dcr")?.auth).toEqual({ kind: "oauth" });
+    expect(result.servers.find((s) => s.name === "token")?.auth).toEqual({
+      kind: "bearer",
+      token: "my-token",
+    });
   });
 });

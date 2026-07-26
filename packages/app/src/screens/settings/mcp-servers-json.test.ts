@@ -33,28 +33,35 @@ describe("parseMcpServersJson", () => {
     expect(result.servers[0]?.auth).toMatchObject({ kind: "oauth", clientId: "cid" });
   });
 
-  it("imports stdio and skips headers", () => {
+  it("imports stdio, bearer auth string, and headers", () => {
     const result = parseMcpServersJson(
       JSON.stringify({
         mcpServers: {
           local: { command: "npx", args: ["-y", "foo"] },
           authed: { url: "https://x", headers: { Authorization: "Bearer t" } },
+          token: { url: "https://y", auth: "my-token" },
           ok: { url: "https://example.com/mcp" },
         },
       }),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.servers.map((s) => s.name).sort()).toEqual(["local", "ok"]);
+    expect(result.servers.map((s) => s.name).sort()).toEqual(["authed", "local", "ok", "token"]);
     expect(result.servers.find((s) => s.name === "local")).toMatchObject({
       transport: "stdio",
       command: "npx",
       args: ["-y", "foo"],
     });
-    expect(result.warnings.some((w) => w.includes("headers"))).toBe(true);
+    expect(result.servers.find((s) => s.name === "authed")?.headers).toEqual({
+      Authorization: "Bearer t",
+    });
+    expect(result.servers.find((s) => s.name === "token")?.auth).toEqual({
+      kind: "bearer",
+      token: "my-token",
+    });
   });
 
-  it("round-trips current servers as mcpServers JSON", () => {
+  it("round-trips current servers as FastMCP mcpServers JSON", () => {
     const json = serializeMcpServersJson([
       {
         name: "figma",
@@ -71,9 +78,18 @@ describe("parseMcpServersJson", () => {
         args: ["-y", "foo"],
         enabled: true,
       },
+      {
+        name: "token",
+        transport: "http",
+        url: "https://example.com/mcp",
+        enabled: true,
+        auth: { kind: "bearer", token: "abc" },
+      },
     ]);
     expect(json).toContain('"mcpServers"');
-    expect(json).toContain('"clientId": "cid"');
+    expect(json).toContain('"oauth_client_id": "cid"');
+    expect(json).toContain('"auth": "oauth"');
+    expect(json).toContain('"auth": "abc"');
     expect(json).toContain('"command": "npx"');
     const parsed = parseMcpServersJson(json);
     expect(parsed.ok).toBe(true);
@@ -89,6 +105,10 @@ describe("parseMcpServersJson", () => {
       transport: "stdio",
       command: "npx",
       args: ["-y", "foo"],
+    });
+    expect(parsed.servers.find((s) => s.name === "token")?.auth).toEqual({
+      kind: "bearer",
+      token: "abc",
     });
   });
 });

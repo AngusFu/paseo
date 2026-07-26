@@ -10,7 +10,14 @@ import { formatMcpCliDaemonAppendPrompt } from "./prompt.js";
 import { getMcpCliRuntimeStatus, installMcpCliRuntime } from "./runtime.js";
 import { McpCliServerStore } from "./store.js";
 
-/** Registry consumed by fastmcp-cli.py (filename kept for back-compat). */
+/**
+ * Registry consumed by fastmcp-cli.py (filename `oauth-clients.json` kept for
+ * back-compat). Entries follow FastMCP `MCPConfig` / Claude `mcpServers` shape:
+ * stdio → command/args/env/cwd; remote → url/headers/auth.
+ *
+ * Pre-registered OAuth (Atlassian/Figma) adds `oauth_client_*` extras that stock
+ * FastMCP JSON cannot express; the runner only special-cases those.
+ */
 export function oauthClientsRegistry(
   servers: readonly McpCliServerConfig[],
 ): Record<string, unknown> {
@@ -29,20 +36,27 @@ export function oauthClientsRegistry(
       };
       continue;
     }
-    // HTTP: always write source so launchers can resolve URL. OAuth fields are
-    // optional (missing client → open HTTP, no OAuth wrapper in the runner).
-    out[server.name] = {
+
+    const entry: Record<string, unknown> = {
       transport: "http",
-      source: server.url,
-      ...(server.auth?.kind === "oauth" && server.auth.clientId
-        ? {
-            oauth_client_id: server.auth.clientId,
-            ...(server.auth.clientSecret ? { oauth_client_secret: server.auth.clientSecret } : {}),
-            ...(server.auth.redirectUri ? { oauth_redirect_uri: server.auth.redirectUri } : {}),
-            ...(server.auth.scope ? { oauth_scope: server.auth.scope } : {}),
-          }
-        : {}),
+      url: server.url,
     };
+    if (server.headers && Object.keys(server.headers).length > 0) {
+      entry.headers = server.headers;
+    }
+    if (server.auth?.kind === "bearer") {
+      // FastMCP RemoteMCPServer.auth bearer token string
+      entry.auth = server.auth.token;
+    } else if (server.auth?.kind === "oauth") {
+      entry.auth = "oauth";
+      if (server.auth.clientId) {
+        entry.oauth_client_id = server.auth.clientId;
+        if (server.auth.clientSecret) entry.oauth_client_secret = server.auth.clientSecret;
+        if (server.auth.redirectUri) entry.oauth_redirect_uri = server.auth.redirectUri;
+        if (server.auth.scope) entry.oauth_scope = server.auth.scope;
+      }
+    }
+    out[server.name] = entry;
   }
   return out;
 }

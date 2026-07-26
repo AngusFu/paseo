@@ -96,14 +96,28 @@ function buildServerCardConfig(input: {
     if (server.preset) next.preset = true;
     return next;
   }
-  return {
+  const oauth = buildOauthAuth(clientId, clientSecret, redirectUri);
+  // OAuth form empty: keep imported bearer / DCR oauth (no clientId). Clearing
+  // Client ID still drops pre-registered oauth (buildOauthAuth returns undefined
+  // and those rows have clientId, so they are not preserved here).
+  const preservedAuth =
+    server.auth?.kind === "bearer" || (server.auth?.kind === "oauth" && !server.auth.clientId)
+      ? server.auth
+      : undefined;
+  const next: McpCliServerConfig = {
     name: server.name,
     transport: "http",
     url: url.trim() || server.url || "",
     enabled,
-    auth: buildOauthAuth(clientId, clientSecret, redirectUri),
-    ...(server.preset ? { preset: true } : {}),
+    auth: oauth ?? preservedAuth,
   };
+  if (server.headers && Object.keys(server.headers).length > 0) {
+    next.headers = server.headers;
+  }
+  if (server.preset) {
+    next.preset = true;
+  }
+  return next;
 }
 
 function errorMessage(err: unknown): string {

@@ -100,7 +100,48 @@ import {
 } from "../../worktree/commands.js";
 import { registerBrowserTools } from "../../browser-tools/tools.js";
 import type { BrowserToolsBroker } from "../../browser-tools/broker.js";
+import type { McpCliServerConfig } from "@getpaseo/protocol/mcp-cli/types";
 import { McpCliService } from "../../mcp-cli/index.js";
+
+function mcpCliAuthFromToolInput(
+  oauth:
+    | {
+        clientId?: string;
+        clientSecret?: string;
+        redirectUri?: string;
+        scope?: string;
+      }
+    | undefined,
+  bearerToken: string | undefined,
+): McpCliServerConfig["auth"] {
+  if (oauth) {
+    return {
+      kind: "oauth",
+      ...(oauth.clientId ? { clientId: oauth.clientId } : {}),
+      ...(oauth.clientSecret ? { clientSecret: oauth.clientSecret } : {}),
+      ...(oauth.redirectUri ? { redirectUri: oauth.redirectUri } : {}),
+      ...(oauth.scope ? { scope: oauth.scope } : {}),
+    };
+  }
+  const token = bearerToken?.trim();
+  if (token) {
+    return { kind: "bearer", token };
+  }
+  return undefined;
+}
+
+function mcpCliServerToolSummary(server: McpCliServerConfig) {
+  return {
+    name: server.name,
+    transport: (server.transport === "stdio" ? "stdio" : "http") as "http" | "stdio",
+    ...(server.url ? { url: server.url } : {}),
+    ...(server.command ? { command: server.command } : {}),
+    enabled: server.enabled,
+    hasOAuth: server.auth?.kind === "oauth",
+    hasBearer: server.auth?.kind === "bearer",
+    hasHeaders: Boolean(server.headers && Object.keys(server.headers).length > 0),
+  };
+}
 import type {
   PaseoToolCatalog,
   PaseoToolConfig,
@@ -3879,7 +3920,13 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
   if (options.paseoHome) {
     const mcpCli = new McpCliService(options.paseoHome);
     const McpCliOAuthInputSchema = z.object({
-      clientId: z.string().min(1).describe("OAuth client ID from Claude/Cursor MCP settings."),
+      clientId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Pre-registered OAuth client ID (Atlassian/Figma). Omit for FastMCP DCR (auth=oauth).",
+        ),
       clientSecret: z.string().optional().describe("Optional OAuth client secret."),
       redirectUri: z.string().optional().describe("Optional OAuth redirect URI."),
       scope: z.string().optional().describe("Optional OAuth scope."),
@@ -3903,6 +3950,8 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
               enabled: z.boolean(),
               preset: z.boolean().optional(),
               hasOAuth: z.boolean(),
+              hasBearer: z.boolean(),
+              hasHeaders: z.boolean(),
             }),
           ),
         },
@@ -3910,26 +3959,13 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       async () => {
         const servers = await mcpCli.listServers();
         const summaries = servers.map((server) => {
-          const transport = server.transport === "stdio" ? "stdio" : "http";
-          const row: {
-            name: string;
-            transport: "http" | "stdio";
-            url?: string;
-            command?: string;
-            args?: string[];
-            enabled: boolean;
-            preset?: boolean;
-            hasOAuth: boolean;
-          } = {
-            name: server.name,
-            transport,
-            enabled: server.enabled,
-            hasOAuth: server.auth?.kind === "oauth",
-          };
-          if (server.url) row.url = server.url;
-          if (server.command) row.command = server.command;
-          if (server.args?.length) row.args = server.args;
-          if (server.preset) row.preset = true;
+          const row = mcpCliServerToolSummary(server);
+          if (server.args?.length) {
+            Object.assign(row, { args: server.args });
+          }
+          if (server.preset) {
+            Object.assign(row, { preset: true });
+          }
           return row;
         });
         return {
@@ -3944,7 +3980,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       {
         title: "Upsert FastMCP CLI server",
         description:
-          "Create or update a Paseo FastMCP server (Host → FastMCP). HTTP: pass url (OAuth optional for open endpoints). Stdio: pass transport=stdio + command/args. Bearer/headers not supported.",
+          "Create or update a Paseo FastMCP server (Host → FastMCP). Aligns with FastMCP MCPConfig: HTTP url + optional oauth/bearer/headers; stdio command/args/env/cwd.",
         inputSchema: {
           name: z
             .string()
@@ -3960,9 +3996,17 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           args: z.array(z.string()).optional().describe("Stdio command args."),
           env: z.record(z.string(), z.string()).optional().describe("Extra env for stdio process."),
           cwd: z.string().optional().describe("Working directory for stdio process."),
+          headers: z
+            .record(z.string(), z.string())
+            .optional()
+            .describe("HTTP headers (FastMCP RemoteMCPServer.headers)."),
+          bearerToken: z
+            .string()
+            .optional()
+            .describe("Bearer token (FastMCP auth string). Ignored when oauth is set."),
           enabled: z.boolean().optional().describe("Defaults to true."),
           oauth: McpCliOAuthInputSchema.optional().describe(
-            "Optional OAuth client metadata (http only).",
+            "OAuth: omit clientId for DCR; set clientId for pre-registered (Atlassian/Figma).",
           ),
         },
         outputSchema: {
@@ -3973,42 +4017,31 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
             command: z.string().optional(),
             enabled: z.boolean(),
             hasOAuth: z.boolean(),
+            hasBearer: z.boolean(),
+            hasHeaders: z.boolean(),
           }),
         },
       },
-      async ({ name, transport, url, command, args, env, cwd, enabled, oauth }) => {
+      async (input) => {
+        const auth = mcpCliAuthFromToolInput(input.oauth, input.bearerToken);
         const server = await mcpCli.upsertServer({
-          name,
-          ...(transport ? { transport } : {}),
-          ...(url ? { url } : {}),
-          ...(command ? { command } : {}),
-          ...(args?.length ? { args } : {}),
-          ...(env && Object.keys(env).length > 0 ? { env } : {}),
-          ...(cwd ? { cwd } : {}),
-          enabled: enabled ?? true,
-          ...(oauth
-            ? {
-                auth: {
-                  kind: "oauth" as const,
-                  clientId: oauth.clientId,
-                  ...(oauth.clientSecret ? { clientSecret: oauth.clientSecret } : {}),
-                  ...(oauth.redirectUri ? { redirectUri: oauth.redirectUri } : {}),
-                  ...(oauth.scope ? { scope: oauth.scope } : {}),
-                },
-              }
+          name: input.name,
+          ...(input.transport ? { transport: input.transport } : {}),
+          ...(input.url ? { url: input.url } : {}),
+          ...(input.command ? { command: input.command } : {}),
+          ...(input.args?.length ? { args: input.args } : {}),
+          ...(input.env && Object.keys(input.env).length > 0 ? { env: input.env } : {}),
+          ...(input.cwd ? { cwd: input.cwd } : {}),
+          ...(input.headers && Object.keys(input.headers).length > 0
+            ? { headers: input.headers }
             : {}),
+          enabled: input.enabled ?? true,
+          ...(auth ? { auth } : {}),
         });
         return {
           content: [],
           structuredContent: ensureValidJson({
-            server: {
-              name: server.name,
-              transport: server.transport === "stdio" ? "stdio" : "http",
-              ...(server.url ? { url: server.url } : {}),
-              ...(server.command ? { command: server.command } : {}),
-              enabled: server.enabled,
-              hasOAuth: server.auth?.kind === "oauth",
-            },
+            server: mcpCliServerToolSummary(server),
           }),
         };
       },
@@ -4041,7 +4074,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       {
         title: "Import FastMCP servers from local configs",
         description:
-          "Scan Claude/Cursor mcp.json and ~/.config/sciforum/oauth-clients.json on the daemon host and import HTTP + stdio MCP servers into FastMCP CLI. Skips bearer/headers entries.",
+          "Scan Claude/Cursor mcp.json and ~/.config/sciforum/oauth-clients.json on the daemon host and import FastMCP-shaped HTTP (incl. bearer/headers/oauth) + stdio servers into FastMCP CLI.",
         inputSchema: {},
         outputSchema: {
           imported: z.number(),
@@ -4055,20 +4088,15 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
               command: z.string().optional(),
               enabled: z.boolean(),
               hasOAuth: z.boolean(),
+              hasBearer: z.boolean(),
+              hasHeaders: z.boolean(),
             }),
           ),
         },
       },
       async () => {
         const result = await mcpCli.importLocalServers();
-        const servers = result.saved.map((server) => ({
-          name: server.name,
-          transport: (server.transport === "stdio" ? "stdio" : "http") as "http" | "stdio",
-          ...(server.url ? { url: server.url } : {}),
-          ...(server.command ? { command: server.command } : {}),
-          enabled: server.enabled,
-          hasOAuth: server.auth?.kind === "oauth",
-        }));
+        const servers = result.saved.map((server) => mcpCliServerToolSummary(server));
         return {
           content: [],
           structuredContent: ensureValidJson({

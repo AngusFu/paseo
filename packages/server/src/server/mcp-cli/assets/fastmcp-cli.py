@@ -1,30 +1,25 @@
 #!/usr/bin/env python3
-"""fastmcp-backed CLI for the figma / atlassian MCP servers.
+"""Paseo FastMCP CLI runner — one-shot shell CLIs for MCP servers.
 
-Auth core = fastmcp StreamableHttpTransport + OAuth (pre-registered client from oauth-clients.json
-→ skips DCR, fixed callback_port for strict redirect_uri, DiskStore persistence → browser once).
-AS metadata is pre-seeded per call (disk-cached) so cold-start token refresh hits the REAL
-token_endpoint — see the comment above _meta_file for the mcp-SDK bug this works around.
-Native MCP surface — tool + flag names are the server's own (camelCase), no translation layer:
+Config ($PASEO_HOME/mcp-cli/oauth-clients.json) follows FastMCP MCPConfig /
+Claude mcpServers shape. The runner prefers StdioMCPServer / RemoteMCPServer
+to_transport() so open HTTP, bearer, headers, auth=\"oauth\" (DCR), and stdio
+match stock FastMCP.
 
-  <server> [--json] <toolName> [--flagName val ...]   # call tool (flag = schema property verbatim)
-  <server> --json <toolName> ...                       # JSON out (fastmcp CallToolResult envelope)
-  <server> <toolName> --help                           # flags for a tool (offline, uses cache)
-  <server> --list / --search <kw>                      # tools (live, refreshes cache)
+Special case only: pre-registered OAuth (oauth_client_id present — Atlassian /
+Figma block DCR). That path uses FastMCP OAuth(client_id=…) plus AS metadata
+pre-seed, refresh guard, and lock — workarounds for mcp-SDK cold-start refresh
+bugs. Secrets never printed.
 
-server (atlassian|figma) = argv[1], injected by the ~/.local/bin/<server> launcher.
+Native MCP surface — tool + flag names are the server's own (camelCase):
 
-Transport: explicit StreamableHttpTransport (one request/response) — a fresh connection is made
-per invocation, so we avoid SSE (which holds a stream open) and skip transport auto-detection.
-Tool schemas are cached on disk (SCHEMA_DIR) so a normal call does NOT pay a list_tools round-trip;
-the cache refreshes on --list/--search or when an unknown tool is requested.
-OAuth client + url + scope + redirect come from ~/.config/sciforum/oauth-clients.json (pre-registered
-client_id/secret per server; figma/atlassian block DCR so these are reused, never re-minted). Secrets
-never printed.
+  <server> [--json] <toolName> [--flagName val ...]
+  <server> <toolName> --help
+  <server> --list / --search <kw>
 
-SOURCE OF TRUTH: the canonical copy is the repo file .claude/scripts/remote-dev/fastmcp-cli.py;
-install-fastmcp-cli.sh copies it to ~/.config/sciforum/fastmcp-cli.py (the running copy). Edit the
-repo copy (or sync the running copy back with `cp`) — the two must stay identical, do not let drift.
+argv[1] = server name (injected by $PASEO_HOME/mcp-cli/bin/<server>).
+Canonical copy: packages/server/src/server/mcp-cli/assets/fastmcp-cli.py
+(copied into $PASEO_HOME/mcp-cli/ on Install / upsert).
 """
 import asyncio, difflib, fcntl, json, os, re, shutil, subprocess, sys, textwrap, time, traceback
 
@@ -221,39 +216,37 @@ def term_score(term: str, name: str, name_words, desc: str) -> int:
     return 0
 
 
-def load_cfg(server: str) -> dict:
+def _load_registry() -> dict:
     if not os.path.exists(CONFIG):
         die(f"oauth config not found: {CONFIG} — save a server in Host → FastMCP first")
-    all_cfg = json.load(open(CONFIG))
+    return json.load(open(CONFIG))
+
+
+def load_raw(server: str) -> dict:
+    """Load one server row from oauth-clients.json (FastMCP mcpServers-shaped)."""
+    all_cfg = _load_registry()
     if server not in all_cfg:
         die(f"unknown server '{server}' (have: {', '.join(all_cfg) or 'none'})")
     c = all_cfg[server]
-    transport = c.get("transport") or ("stdio" if c.get("command") and not c.get("source") else "http")
-    if transport == "stdio":
-        command = c.get("command")
-        if not command:
-            die(f"{server}: stdio config missing 'command'")
-        args = c.get("args") or []
-        if not isinstance(args, list):
-            die(f"{server}: stdio 'args' must be a list")
-        env = c.get("env") or {}
-        if not isinstance(env, dict):
-            die(f"{server}: stdio 'env' must be an object")
-        return {
-            "transport": "stdio",
-            "command": command,
-            "args": [str(a) for a in args],
-            "env": {str(k): str(v) for k, v in env.items()},
-            "cwd": c.get("cwd") or None,
-        }
-    if not c.get("source"):
-        die(f"{server}: oauth-clients.json missing 'source'")
-    # oauth_client_id optional: present → OAuth; absent → open HTTP (no auth wrapper).
+    if not isinstance(c, dict):
+        die(f"{server}: config must be an object")
+    # COMPAT(source→url): older registry rows used sciforum `source`; FastMCP uses `url`.
+    if "url" not in c and c.get("source"):
+        c = {**c, "url": c["source"]}
+    return c
+
+
+def load_cfg(server: str) -> dict:
+    """Normalize registry row for the pre-registered OAuth special path."""
+    c = load_raw(server)
+    url = c.get("url")
+    if not url:
+        die(f"{server}: oauth-clients.json missing 'url' (or legacy 'source')")
     redir = c.get("oauth_redirect_uri") or ""
     m = re.search(r"localhost:(\d+)", redir)
     return {
         "transport": "http",
-        "url": c["source"],
+        "url": url,
         "client_id": c.get("oauth_client_id") or None,
         "client_secret": c.get("oauth_client_secret"),
         "scope": c.get("oauth_scope"),
@@ -371,41 +364,53 @@ def capture_auth_metadata(server, client):
         pass  # capture is best-effort bookkeeping, never fail the call
 
 
-def make_client(server: str):
-    import os as _os
-    # macOS can raise PermissionError from os.getcwd() for directories guarded by TCC.
-    # If that happens, fall back to the user's home dir so downstream imports (e.g. rich)
-    # which call os.getcwd() succeed.
-    try:
-        _os.getcwd()
-    except PermissionError:
-        try:
-            _os.chdir(_os.path.expanduser("~"))
-        except Exception:
-            pass
-
+def _make_stdio_client(raw: dict):
+    """Stock FastMCP StdioMCPServer — env overlay on MCP SDK allowlist (not full os.environ)."""
     from fastmcp import Client
-    from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
+    from fastmcp.mcp_config import StdioMCPServer
 
-    c = load_cfg(server)
-    if c.get("transport") == "stdio":
-        # CLI is one-shot per process; do not keep the child alive across contexts.
-        env = {**os.environ, **(c.get("env") or {})}
-        return Client(
-            StdioTransport(
-                command=c["command"],
-                args=c.get("args") or [],
-                env=env,
-                cwd=c.get("cwd") or None,
-                keep_alive=False,
-            )
-        )
+    command = raw.get("command")
+    if not command:
+        die("stdio config missing 'command'")
+    payload = {
+        "transport": "stdio",
+        "command": command,
+        "args": raw.get("args") or [],
+        "keep_alive": False,  # CLI is one-shot per process
+    }
+    if raw.get("env"):
+        payload["env"] = {str(k): str(v) for k, v in dict(raw["env"]).items()}
+    if raw.get("cwd"):
+        payload["cwd"] = raw["cwd"]
+    return Client(StdioMCPServer.model_validate(payload).to_transport())
 
-    # Open HTTP: no OAuth client → no auth wrapper (avoids DCR / browser on public endpoints).
-    if not c.get("client_id"):
-        return Client(StreamableHttpTransport(c["url"]))
 
+def _make_remote_stock_client(raw: dict):
+    """Open HTTP / bearer / headers / auth='oauth' (DCR) via FastMCP RemoteMCPServer."""
+    from fastmcp import Client
+    from fastmcp.mcp_config import RemoteMCPServer
+
+    url = raw.get("url")
+    if not url:
+        die("http config missing 'url'")
+    payload = {"url": url}
+    if raw.get("transport") in ("http", "streamable-http", "sse"):
+        payload["transport"] = raw["transport"]
+    elif raw.get("transport") is None:
+        payload["transport"] = "http"
+    if isinstance(raw.get("headers"), dict) and raw["headers"]:
+        payload["headers"] = {str(k): str(v) for k, v in raw["headers"].items()}
+    auth = raw.get("auth")
+    if isinstance(auth, str) and auth:
+        payload["auth"] = auth
+    return Client(RemoteMCPServer.model_validate(payload).to_transport())
+
+
+def _make_preregistered_oauth_client(server: str, c: dict):
+    """Atlassian/Figma-style pre-registered client — FastMCP OAuth + metadata patches."""
+    from fastmcp import Client
     from fastmcp.client.auth import OAuth
+    from fastmcp.client.transports import StreamableHttpTransport
     from key_value.aio.stores.disk import DiskStore
 
     _attach_sdk_auth_logging()
@@ -464,6 +469,31 @@ def make_client(server: str):
         _auth_log(server, f"pre-seed FAILED (falls back to browser flow on refresh): {e}")
         pass  # pre-seed is an optimization; stock (browser) flow still works without it
     return Client(StreamableHttpTransport(c["url"], auth=oauth))
+
+
+def make_client(server: str):
+    import os as _os
+    # macOS can raise PermissionError from os.getcwd() for directories guarded by TCC.
+    # If that happens, fall back to the user's home dir so downstream imports (e.g. rich)
+    # which call os.getcwd() succeed.
+    try:
+        _os.getcwd()
+    except PermissionError:
+        try:
+            _os.chdir(_os.path.expanduser("~"))
+        except Exception:
+            pass
+
+    raw = load_raw(server)
+    transport = raw.get("transport") or raw.get("type")
+    if transport == "stdio" or (raw.get("command") and not raw.get("url")):
+        return _make_stdio_client(raw)
+
+    # Pre-registered OAuth only — stock FastMCP cannot express client_id in MCPConfig JSON.
+    if raw.get("oauth_client_id"):
+        return _make_preregistered_oauth_client(server, load_cfg(server))
+
+    return _make_remote_stock_client(raw)
 
 
 # --- disk schema cache: {toolName: {"description":.., "inputSchema":..}} -----------------------

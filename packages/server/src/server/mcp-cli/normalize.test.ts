@@ -43,4 +43,22 @@ describe("normalizeMcpCliServerConfig", () => {
       normalizeMcpCliServerConfig({ name: "x", transport: "stdio", enabled: true }),
     ).toThrow(/requires command/);
   });
+
+  it("keeps bearer auth and headers on http rows", () => {
+    const next = normalizeMcpCliServerConfig({
+      name: "api",
+      url: "https://example.com/mcp",
+      enabled: true,
+      auth: { kind: "bearer", token: " tok " },
+      headers: { "X-Extra": "1" },
+    });
+    expect(next).toEqual({
+      name: "api",
+      transport: "http",
+      url: "https://example.com/mcp",
+      enabled: true,
+      auth: { kind: "bearer", token: "tok" },
+      headers: { "X-Extra": "1" },
+    });
+  });
 });

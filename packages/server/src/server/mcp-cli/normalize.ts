@@ -15,6 +15,43 @@ export function isMcpCliStdioServer(server: McpCliServerConfig): boolean {
   return resolveMcpCliTransport(server) === "stdio";
 }
 
+function normalizeStringRecord(
+  value: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string") {
+      out[key] = entry;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function normalizeHttpAuth(
+  name: string,
+  auth: McpCliServerConfig["auth"],
+): McpCliServerConfig["auth"] {
+  if (!auth) {
+    return undefined;
+  }
+  if (auth.kind === "bearer") {
+    const token = auth.token.trim();
+    if (!token) {
+      throw new Error(`Server '${name}': bearer auth requires token`);
+    }
+    return { kind: "bearer", token };
+  }
+  const next: NonNullable<McpCliServerConfig["auth"]> = { kind: "oauth" };
+  if (auth.clientId?.trim()) next.clientId = auth.clientId.trim();
+  if (auth.clientSecret?.trim()) next.clientSecret = auth.clientSecret.trim();
+  if (auth.redirectUri?.trim()) next.redirectUri = auth.redirectUri.trim();
+  if (auth.scope?.trim()) next.scope = auth.scope.trim();
+  return next;
+}
+
 /**
  * Post-wire normalize: coerce legacy HTTP rows and validate transport invariants.
  * Does not live on the Zod wire schema (no .transform on protocol messages).
@@ -41,8 +78,9 @@ export function normalizeMcpCliServerConfig(raw: McpCliServerConfig): McpCliServ
     if (raw.args && raw.args.length > 0) {
       next.args = raw.args.map((arg) => String(arg));
     }
-    if (raw.env && Object.keys(raw.env).length > 0) {
-      next.env = { ...raw.env };
+    const env = normalizeStringRecord(raw.env);
+    if (env) {
+      next.env = env;
     }
     if (raw.cwd?.trim()) {
       next.cwd = raw.cwd.trim();
@@ -63,8 +101,13 @@ export function normalizeMcpCliServerConfig(raw: McpCliServerConfig): McpCliServ
     url,
     enabled: raw.enabled,
   };
-  if (raw.auth?.kind === "oauth") {
-    next.auth = raw.auth;
+  const headers = normalizeStringRecord(raw.headers);
+  if (headers) {
+    next.headers = headers;
+  }
+  const auth = normalizeHttpAuth(name, raw.auth);
+  if (auth) {
+    next.auth = auth;
   }
   if (raw.preset) {
     next.preset = true;

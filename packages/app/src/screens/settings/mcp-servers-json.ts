@@ -11,13 +11,13 @@ function isStdio(server: McpCliServerConfig): boolean {
   return server.transport === "stdio" || Boolean(server.command && !server.url);
 }
 
-/** Claude/Cursor-style export of the current Paseo FastMCP server list. */
+/** Claude/Cursor/FastMCP-style export of the current Paseo FastMCP server list. */
 export function serializeMcpServersJson(servers: readonly McpCliServerConfig[]): string {
   const mcpServers: Record<string, Record<string, unknown>> = {};
   for (const server of servers) {
     if (isStdio(server)) {
       const entry: Record<string, unknown> = {
-        type: "stdio",
+        transport: "stdio",
         command: server.command,
         enabled: server.enabled,
       };
@@ -30,16 +30,22 @@ export function serializeMcpServersJson(servers: readonly McpCliServerConfig[]):
     }
     const entry: Record<string, unknown> = {
       url: server.url,
+      transport: "http",
       enabled: server.enabled,
     };
-    if (server.auth?.kind === "oauth") {
-      entry.auth = {
-        kind: "oauth",
-        clientId: server.auth.clientId,
-        ...(server.auth.clientSecret ? { clientSecret: server.auth.clientSecret } : {}),
-        ...(server.auth.redirectUri ? { redirectUri: server.auth.redirectUri } : {}),
-        ...(server.auth.scope ? { scope: server.auth.scope } : {}),
-      };
+    if (server.headers && Object.keys(server.headers).length > 0) {
+      entry.headers = server.headers;
+    }
+    if (server.auth?.kind === "bearer") {
+      entry.auth = server.auth.token;
+    } else if (server.auth?.kind === "oauth") {
+      entry.auth = "oauth";
+      if (server.auth.clientId) {
+        entry.oauth_client_id = server.auth.clientId;
+        if (server.auth.clientSecret) entry.oauth_client_secret = server.auth.clientSecret;
+        if (server.auth.redirectUri) entry.oauth_redirect_uri = server.auth.redirectUri;
+        if (server.auth.scope) entry.oauth_scope = server.auth.scope;
+      }
     }
     if (server.preset) {
       entry.preset = true;
@@ -121,45 +127,61 @@ function collectEntries(parsed: unknown, warnings: string[]): NamedEntry[] | nul
 }
 
 function readUrl(entry: Record<string, unknown>): string | null {
-  const url = optionalString(entry.url) ?? optionalString(entry.serverUrl);
+  const url =
+    optionalString(entry.url) ?? optionalString(entry.serverUrl) ?? optionalString(entry.source);
   return url ?? null;
 }
 
-function oauthFields(input: {
-  clientId: string;
+function oauthFromFields(input: {
+  clientId?: string;
   clientSecret?: string;
   redirectUri?: string;
   scope?: string;
 }): NonNullable<McpCliServerConfig["auth"]> {
-  return {
-    kind: "oauth",
-    clientId: input.clientId,
-    ...(input.clientSecret ? { clientSecret: input.clientSecret } : {}),
-    ...(input.redirectUri ? { redirectUri: input.redirectUri } : {}),
-    ...(input.scope ? { scope: input.scope } : {}),
-  };
+  const auth: NonNullable<McpCliServerConfig["auth"]> = { kind: "oauth" };
+  if (input.clientId) auth.clientId = input.clientId;
+  if (input.clientSecret) auth.clientSecret = input.clientSecret;
+  if (input.redirectUri) auth.redirectUri = input.redirectUri;
+  if (input.scope) auth.scope = input.scope;
+  return auth;
 }
 
 function readAuth(entry: Record<string, unknown>): McpCliServerConfig["auth"] {
+  if (typeof entry.auth === "string") {
+    const trimmed = entry.auth.trim();
+    if (!trimmed) return undefined;
+    if (trimmed === "oauth") {
+      return oauthFromFields({
+        clientId: optionalString(entry.oauth_client_id),
+        clientSecret: optionalString(entry.oauth_client_secret),
+        redirectUri: optionalString(entry.oauth_redirect_uri),
+        scope: optionalString(entry.oauth_scope),
+      });
+    }
+    return { kind: "bearer", token: trimmed };
+  }
+
   if (entry.auth && typeof entry.auth === "object" && !Array.isArray(entry.auth)) {
     const a = entry.auth as Record<string, unknown>;
-    const clientId = optionalString(a.clientId);
-    if (a.kind === "oauth" && clientId) {
-      return oauthFields({
-        clientId,
+    if (a.kind === "bearer") {
+      const token = optionalString(a.token);
+      return token ? { kind: "bearer", token } : undefined;
+    }
+    if (a.kind === "oauth") {
+      return oauthFromFields({
+        clientId: optionalString(a.clientId),
         clientSecret: optionalString(a.clientSecret),
         redirectUri: optionalString(a.redirectUri),
         scope: optionalString(a.scope),
       });
     }
-    return undefined;
   }
 
   const clientId = optionalString(entry.oauth_client_id);
   if (!clientId) {
     return undefined;
   }
-  return oauthFields({
+  return oauthFromFields({
     clientId,
     clientSecret: optionalString(entry.oauth_client_secret),
     redirectUri: optionalString(entry.oauth_redirect_uri),
@@ -221,6 +243,7 @@ function parseHttpServer(
     return null;
   }
   const auth = readAuth(entry);
+  const headers = stringRecord(entry.headers);
   return validateCandidate(
     name,
     {
@@ -228,6 +251,7 @@ function parseHttpServer(
       transport: "http" as const,
       url,
       enabled: enabledFromEntry(entry),
+      ...(headers ? { headers } : {}),
       ...(auth ? { auth } : {}),
       ...(entry.preset === true ? { preset: true } : {}),
     },
@@ -245,10 +269,6 @@ function parseOneServer(
     return null;
   }
   const entry = value as Record<string, unknown>;
-  if (entry.headers && typeof entry.headers === "object") {
-    warnings.push(`Skipped '${name}': bearer/headers auth is not supported yet`);
-    return null;
-  }
 
   const command = optionalString(entry.command);
   const wantsStdio =
@@ -260,12 +280,11 @@ function parseOneServer(
 }
 
 /**
- * Accept common paste shapes:
- * - `{ "mcpServers": { "name": { "url": "..." } } }` (Claude/Cursor style)
+ * Accept common paste shapes aligned with FastMCP MCPConfig:
+ * - `{ "mcpServers": { "name": { "url": "..." } } }`
  * - `{ "name": { "command": "...", "args": [] } }` stdio
+ * - `{ "url", "auth": "oauth"|"<bearer>", "headers"? }`
  * - `[ { "name", "url"|"command", "enabled", "auth?" } ]` Paseo array
- *
- * bearer/headers entries are rejected with warnings.
  */
 export function parseMcpServersJson(raw: string): McpServersJsonParseResult {
   const warnings: string[] = [];

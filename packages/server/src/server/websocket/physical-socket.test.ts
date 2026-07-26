@@ -3,6 +3,7 @@ import {
   APPLICATION_SOCKET_LEASE_MS,
   ApplicationSocketLease,
   MAX_PHYSICAL_SOCKET_BUFFERED_BYTES,
+  isOutboundFrameTooLarge,
   sendBoundedPhysicalFrame,
 } from "./physical-socket.js";
 
@@ -65,4 +66,32 @@ test("the shared physical send boundary rejects binary above the hard bound", ()
   expect(accepted).toBe(false);
   expect(sent).toEqual([]);
   expect(terminated).toBe(true);
+});
+
+test("a single frame larger than the hard bound is dropped without high-water termination", () => {
+  const sent: Array<string | Uint8Array | ArrayBuffer> = [];
+  let terminated = false;
+  let dropped = false;
+  const socket = {
+    readyState: 1,
+    bufferedAmount: 0,
+    send: (data: string | Uint8Array | ArrayBuffer) => sent.push(data),
+  };
+
+  const accepted = sendBoundedPhysicalFrame({
+    socket,
+    frame: new Uint8Array(MAX_PHYSICAL_SOCKET_BUFFERED_BYTES + 1),
+    onHighWater: () => {
+      terminated = true;
+    },
+    onFrameTooLarge: () => {
+      dropped = true;
+    },
+  });
+
+  expect(isOutboundFrameTooLarge(MAX_PHYSICAL_SOCKET_BUFFERED_BYTES + 1)).toBe(true);
+  expect(accepted).toBe(false);
+  expect(sent).toEqual([]);
+  expect(dropped).toBe(true);
+  expect(terminated).toBe(false);
 });

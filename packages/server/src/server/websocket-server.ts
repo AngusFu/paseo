@@ -99,6 +99,7 @@ import {
   APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
   ApplicationSocketLease,
   MAX_PHYSICAL_SOCKET_BUFFERED_BYTES,
+  isOutboundFrameTooLarge,
   outboundFrameByteLength,
   physicalSocketHasCapacity,
   sendBoundedPhysicalFrame,
@@ -1019,11 +1020,6 @@ export class VoiceAssistantWebSocketServer {
   }
 
   private sendMessageToSockets(sockets: Iterable<WebSocketLike>, message: WSOutboundMessage): void {
-    const writableSockets = [...sockets].filter((ws) => this.ensureOutboundCapacity(ws, 0));
-    if (writableSockets.length === 0) {
-      return;
-    }
-
     let payload: string;
     try {
       payload = JSON.stringify(message);
@@ -1033,7 +1029,24 @@ export class VoiceAssistantWebSocketServer {
     }
 
     const payloadBytes = outboundFrameByteLength(payload);
-    for (const ws of writableSockets) {
+    if (isOutboundFrameTooLarge(payloadBytes)) {
+      this.logger.error(
+        {
+          payloadBytes,
+          maxBufferedBytes: MAX_PHYSICAL_SOCKET_BUFFERED_BYTES,
+          ...summarizeOutboundMessageForLog(message),
+        },
+        "ws_oversized_outbound_message_dropped",
+      );
+      return;
+    }
+
+    for (const ws of sockets) {
+      if (ws.readyState !== 1) continue;
+      if (!physicalSocketHasCapacity(ws, payloadBytes)) {
+        this.closeAtOutboundHighWater(ws);
+        continue;
+      }
       this.sendFrameToClient(ws, payload, payloadBytes, () => {
         this.runtimeMetrics.recordOutboundMessage(message, ws.bufferedAmount);
       });
@@ -1058,19 +1071,22 @@ export class VoiceAssistantWebSocketServer {
         frame,
         frameBytes,
         onHighWater: () => this.closeAtOutboundHighWater(ws),
+        onFrameTooLarge: () => {
+          const identity = this.socketIdentities.get(ws);
+          this.logger.error(
+            {
+              frameBytes,
+              maxBufferedBytes: MAX_PHYSICAL_SOCKET_BUFFERED_BYTES,
+              ...(identity ? toConnectionLogFields(identity) : {}),
+            },
+            "ws_oversized_outbound_frame_dropped",
+          );
+        },
       });
       if (sent) recordSent();
     } catch (err) {
       this.logger.warn({ err }, "ws_send_failed");
     }
-  }
-
-  private ensureOutboundCapacity(ws: WebSocketLike, frameBytes: number): boolean {
-    if (ws.readyState !== 1) return false;
-    if (physicalSocketHasCapacity(ws, frameBytes)) return true;
-
-    this.closeAtOutboundHighWater(ws);
-    return false;
   }
 
   private closeAtOutboundHighWater(ws: WebSocketLike): void {
@@ -1082,6 +1098,25 @@ export class VoiceAssistantWebSocketServer {
         maxBufferedBytes: MAX_PHYSICAL_SOCKET_BUFFERED_BYTES,
       },
     });
+  }
+
+  private pruneClosedSessionSockets(connection: SessionConnection, activeWs: WebSocketLike): void {
+    const staleSockets: WebSocketLike[] = [];
+    for (const socket of connection.sockets) {
+      if (socket !== activeWs && socket.readyState !== 1) {
+        staleSockets.push(socket);
+      }
+    }
+    for (const staleSocket of staleSockets) {
+      if (staleSocket === activeWs || staleSocket.readyState === 1) {
+        continue;
+      }
+      connection.sockets.delete(staleSocket);
+      this.sessions.delete(staleSocket);
+      this.applicationSocketLease.release(staleSocket);
+      connection.session.clearAgentTimelineSubscription(staleSocket);
+      this.socketIdentities.delete(staleSocket);
+    }
   }
 
   private closePhysicalSocket(params: ClosePhysicalSocketParams): void {
@@ -1399,6 +1434,7 @@ export class VoiceAssistantWebSocketServer {
         existing.clientCapabilities = newClientCapabilities;
         this.syncBrowserToolsClientRegistration(existing);
       }
+      this.pruneClosedSessionSockets(existing, ws);
       existing.sockets.add(ws);
       this.sessions.set(ws, existing);
       pending.identity.sessionId = existing.session.getSessionId();
@@ -2676,4 +2712,18 @@ function extractRequestInfoFromUnknownWsInbound(
   }
 
   return null;
+}
+
+function summarizeOutboundMessageForLog(message: WSOutboundMessage): {
+  outboundType: string;
+  sessionMessageType?: string;
+} {
+  if (message.type !== "session") {
+    return { outboundType: message.type };
+  }
+  const sessionMessage = message.message as { type?: string };
+  return {
+    outboundType: message.type,
+    ...(typeof sessionMessage.type === "string" ? { sessionMessageType: sessionMessage.type } : {}),
+  };
 }

@@ -53,10 +53,15 @@ interface BoundedPhysicalSocket {
   send: (data: string | Uint8Array | ArrayBuffer) => void;
 }
 
+export function isOutboundFrameTooLarge(frameBytes: number): boolean {
+  return frameBytes > MAX_PHYSICAL_SOCKET_BUFFERED_BYTES;
+}
+
 export function physicalSocketHasCapacity(
   socket: Pick<BoundedPhysicalSocket, "bufferedAmount">,
   frameBytes: number,
 ): boolean {
+  if (isOutboundFrameTooLarge(frameBytes)) return false;
   if (typeof socket.bufferedAmount !== "number") return true;
   return socket.bufferedAmount + frameBytes <= MAX_PHYSICAL_SOCKET_BUFFERED_BYTES;
 }
@@ -66,9 +71,20 @@ export function sendBoundedPhysicalFrame(params: {
   frame: string | Uint8Array | ArrayBuffer;
   frameBytes?: number;
   onHighWater: () => void;
+  onFrameTooLarge?: () => void;
 }): boolean {
-  const { socket, frame, frameBytes = outboundFrameByteLength(frame), onHighWater } = params;
+  const {
+    socket,
+    frame,
+    frameBytes = outboundFrameByteLength(frame),
+    onHighWater,
+    onFrameTooLarge,
+  } = params;
   if (socket.readyState !== 1) return false;
+  if (isOutboundFrameTooLarge(frameBytes)) {
+    onFrameTooLarge?.();
+    return false;
+  }
   if (!physicalSocketHasCapacity(socket, frameBytes)) {
     onHighWater();
     return false;

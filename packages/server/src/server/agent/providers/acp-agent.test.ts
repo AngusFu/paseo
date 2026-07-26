@@ -25,6 +25,9 @@ import {
   deriveModelDefinitionsFromACP,
   deriveModesFromACP,
   mapACPUsage,
+  mapACPUsageUpdate,
+  mergeAgentUsage,
+  parseContextWindowMaxFromAcpModelId,
   resolveACPModeSelection,
   resolveACPModelSelection,
   summarizeACPRequestError,
@@ -703,6 +706,122 @@ describe("mapACPUsage", () => {
       inputTokens: 11,
       outputTokens: 7,
       cachedInputTokens: 5,
+    });
+  });
+});
+
+describe("mapACPUsageUpdate", () => {
+  test("maps context window and USD cost from ACP usage_update", () => {
+    expect(
+      mapACPUsageUpdate({
+        size: 200_000,
+        used: 53_000,
+        cost: { amount: 0.045, currency: "USD" },
+      }),
+    ).toEqual({
+      contextWindowMaxTokens: 200_000,
+      contextWindowUsedTokens: 53_000,
+      totalCostUsd: 0.045,
+    });
+  });
+
+  test("ignores non-USD cost", () => {
+    expect(
+      mapACPUsageUpdate({
+        size: 128_000,
+        used: 12_000,
+        cost: { amount: 1.5, currency: "EUR" },
+      }),
+    ).toEqual({
+      contextWindowMaxTokens: 128_000,
+      contextWindowUsedTokens: 12_000,
+    });
+  });
+});
+
+describe("parseContextWindowMaxFromAcpModelId", () => {
+  test("parses Cursor-style bracketed model ids", () => {
+    expect(
+      parseContextWindowMaxFromAcpModelId("gpt-5.4[context=272k,reasoning=medium,fast=false]"),
+    ).toBe(272_000);
+  });
+
+  test("parses plain numeric and megabyte suffix values", () => {
+    expect(parseContextWindowMaxFromAcpModelId("model[context=200000]")).toBe(200_000);
+    expect(parseContextWindowMaxFromAcpModelId("model[context=1m,fast=true]")).toBe(1_000_000);
+  });
+
+  test("returns undefined when no context parameter is present", () => {
+    expect(parseContextWindowMaxFromAcpModelId("composer-2.5")).toBeUndefined();
+    expect(parseContextWindowMaxFromAcpModelId("model[reasoning=high]")).toBeUndefined();
+  });
+});
+
+describe("mergeAgentUsage", () => {
+  test("merges later patches over earlier usage fields", () => {
+    expect(
+      mergeAgentUsage(
+        { contextWindowMaxTokens: 272_000, contextWindowUsedTokens: 10_000 },
+        { contextWindowUsedTokens: 12_000, totalCostUsd: 0.02 },
+      ),
+    ).toEqual({
+      contextWindowMaxTokens: 272_000,
+      contextWindowUsedTokens: 12_000,
+      totalCostUsd: 0.02,
+    });
+  });
+});
+
+describe("ACPAgentSession usage updates", () => {
+  test("emits usage_updated when the agent sends usage_update", () => {
+    const session = createSession();
+    const internals = asInternals<ACPSessionInternals>(session);
+    const events: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => events.push(event));
+
+    internals.translateSessionUpdate({
+      sessionUpdate: "usage_update",
+      size: 200_000,
+      used: 53_000,
+      cost: { amount: 0.045, currency: "USD" },
+    });
+    unsubscribe();
+
+    expect(events).toContainEqual({
+      type: "usage_updated",
+      provider: "claude-acp",
+      usage: {
+        contextWindowMaxTokens: 200_000,
+        contextWindowUsedTokens: 53_000,
+        totalCostUsd: 0.045,
+      },
+    });
+  });
+
+  test("seeds contextWindowMaxTokens from bracketed model ids when usage_update has not arrived", () => {
+    const session = createSession();
+    const internals = asInternals<ACPSessionInternals>(session);
+    const events: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => events.push(event));
+
+    internals.translateSessionUpdate({
+      sessionUpdate: "config_option_update",
+      configOptions: [
+        selectConfigOption(
+          "model",
+          ["gpt-5.4[context=272k,reasoning=medium,fast=false]"],
+          "gpt-5.4[context=272k,reasoning=medium,fast=false]",
+        ),
+      ],
+    });
+    unsubscribe();
+
+    expect(events).toContainEqual({
+      type: "usage_updated",
+      provider: "claude-acp",
+      usage: {
+        contextWindowMaxTokens: 272_000,
+      },
     });
   });
 });

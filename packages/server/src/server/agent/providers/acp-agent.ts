@@ -582,6 +582,83 @@ export function mapACPUsage(usage: Usage | null | undefined): AgentUsage | undef
   };
 }
 
+function parseContextWindowTokenCount(value: string): number | undefined {
+  const normalized = value.trim().toLowerCase();
+  const match = normalized.match(/^(\d+(?:\.\d+)?)\s*([km])?$/);
+  if (!match) {
+    return undefined;
+  }
+  const base = Number(match[1]);
+  if (!Number.isFinite(base) || base <= 0) {
+    return undefined;
+  }
+  const suffix = match[2];
+  if (suffix === "k") {
+    return Math.round(base * 1_000);
+  }
+  if (suffix === "m") {
+    return Math.round(base * 1_000_000);
+  }
+  return Math.round(base);
+}
+
+export function parseContextWindowMaxFromAcpModelId(
+  modelId: string | null | undefined,
+): number | undefined {
+  if (!modelId) {
+    return undefined;
+  }
+  const bracketMatch = modelId.match(/\[([^\]]+)\]/);
+  if (!bracketMatch) {
+    return undefined;
+  }
+  const contextMatch = bracketMatch[1].match(/(?:^|,)\s*context\s*=\s*([^,]+)/i);
+  if (!contextMatch) {
+    return undefined;
+  }
+  return parseContextWindowTokenCount(contextMatch[1]);
+}
+
+export function mapACPUsageUpdate(update: UsageUpdate): AgentUsage {
+  const usage: AgentUsage = {};
+  if (Number.isFinite(update.size) && update.size > 0) {
+    usage.contextWindowMaxTokens = update.size;
+  }
+  if (Number.isFinite(update.used) && update.used >= 0) {
+    usage.contextWindowUsedTokens = update.used;
+  }
+  const cost = update.cost;
+  if (cost && cost.currency === "USD" && Number.isFinite(cost.amount) && cost.amount >= 0) {
+    usage.totalCostUsd = cost.amount;
+  }
+  return usage;
+}
+
+export function mergeAgentUsage(
+  base: AgentUsage | undefined,
+  patch: AgentUsage | undefined,
+): AgentUsage | undefined {
+  if (!base && !patch) {
+    return undefined;
+  }
+  const merged = { ...base, ...patch };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function hasDisplayableAgentUsage(usage: AgentUsage | undefined): usage is AgentUsage {
+  if (!usage) {
+    return false;
+  }
+  return (
+    usage.contextWindowMaxTokens !== undefined ||
+    usage.contextWindowUsedTokens !== undefined ||
+    usage.totalCostUsd !== undefined ||
+    usage.inputTokens !== undefined ||
+    usage.outputTokens !== undefined ||
+    usage.cachedInputTokens !== undefined
+  );
+}
+
 export function resolveACPModeSelection({
   modeId,
   availableModes,
@@ -1382,6 +1459,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private readonly extensionCommandsParser?: ACPExtensionCommandsParser;
   private autoAcceptEnabled: boolean;
   private currentTurnUsage: AgentUsage | undefined;
+  private sessionUsage: AgentUsage | undefined;
   private activeForegroundTurnId: string | null = null;
   private fallbackAssistantMessageId: string | null = null;
   private closed = false;
@@ -1892,6 +1970,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
           modelId,
         });
         this.currentModel = modelId;
+        this.syncModelContextWindowFallback();
         this.pushEvent({
           type: "model_changed",
           provider: this.provider,
@@ -1931,6 +2010,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       requestedValue: modelId,
       label: "model",
     });
+    this.syncModelContextWindowFallback();
     this.pushEvent({
       type: "model_changed",
       provider: this.provider,
@@ -2561,6 +2641,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       transformed.models?.currentModelId ?? deriveCurrentConfigValue(this.configOptions, "model");
     this.thinkingOptionId =
       deriveCurrentConfigValue(this.configOptions, "thought_level") ?? this.thinkingOptionId;
+    this.syncModelContextWindowFallback();
   }
 
   private transformConfigOptions(configOptions: SessionConfigOption[]): SessionConfigOption[] {
@@ -2832,6 +2913,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
         thinkingOptionId: this.thinkingOptionId,
       });
     }
+    if (nextModel !== null) {
+      this.syncModelContextWindowFallback();
+    }
     return events;
   }
 
@@ -2845,11 +2929,40 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   private handleUsageUpdate(update: UsageUpdate): void {
-    void update;
+    this.sessionUsage = mergeAgentUsage(this.sessionUsage, mapACPUsageUpdate(update));
+    this.currentTurnUsage = mergeAgentUsage(this.currentTurnUsage, this.sessionUsage);
+    this.emitSessionUsageUpdate();
+  }
+
+  private syncModelContextWindowFallback(): void {
+    const maxTokens = parseContextWindowMaxFromAcpModelId(this.currentModel);
+    if (maxTokens === undefined || this.sessionUsage?.contextWindowMaxTokens !== undefined) {
+      return;
+    }
+    this.sessionUsage = mergeAgentUsage(this.sessionUsage, {
+      contextWindowMaxTokens: maxTokens,
+    });
+    this.currentTurnUsage = mergeAgentUsage(this.currentTurnUsage, this.sessionUsage);
+    this.emitSessionUsageUpdate();
+  }
+
+  private emitSessionUsageUpdate(): void {
+    if (!hasDisplayableAgentUsage(this.sessionUsage)) {
+      return;
+    }
+    this.pushEvent({
+      type: "usage_updated",
+      provider: this.provider,
+      usage: this.sessionUsage,
+      turnId: this.activeForegroundTurnId ?? undefined,
+    });
   }
 
   private handlePromptResponse(response: PromptResponse, turnId: string): void {
-    this.currentTurnUsage = mapACPUsage(response.usage) ?? this.currentTurnUsage;
+    this.currentTurnUsage = mergeAgentUsage(
+      mergeAgentUsage(this.sessionUsage, this.currentTurnUsage),
+      mapACPUsage(response.usage),
+    );
 
     switch (response.stopReason) {
       case "cancelled":

@@ -75,6 +75,7 @@ import {
 } from "./provider-subagents/store.js";
 import {
   formatRetriableContinuePrompt,
+  isRetriableProviderError,
   retriableTurnBackoffMs,
   shouldRetryRetriableTurn,
 } from "./retriable-turn-hook.js";
@@ -4453,7 +4454,14 @@ export class AgentManager {
         // and dispatchStream(turn_completed) remain in the same turn — an
         // unconditional async + await would yield and race subscribers that
         // resolve on idle before turn_completed is broadcast.
-        return this.onStreamTurnCompleted({ agent, event, eventTurnId, isForegroundEvent });
+        return this.onStreamTurnCompleted({
+          agent,
+          event,
+          eventTurnId,
+          isForegroundEvent,
+          options,
+          flags,
+        });
       case "turn_failed":
         return this.onStreamTurnFailed({
           agent,
@@ -4461,6 +4469,7 @@ export class AgentManager {
           eventTurnId,
           isForegroundEvent,
           options,
+          flags,
         });
       case "turn_canceled":
         this.onStreamTurnCanceled({ agent, event, eventTurnId, isForegroundEvent, options });
@@ -4533,8 +4542,10 @@ export class AgentManager {
     event: Extract<AgentStreamEvent, { type: "turn_completed" }>;
     eventTurnId: string | undefined;
     isForegroundEvent: boolean;
+    options: { fromHistory?: boolean } | undefined;
+    flags: StreamEventFlags;
   }): Promise<void> | undefined {
-    const { agent, event, eventTurnId, isForegroundEvent } = params;
+    const { agent, event, eventTurnId, isForegroundEvent, options, flags } = params;
     this.logger.trace(
       {
         agentId: agent.id,
@@ -4548,17 +4559,10 @@ export class AgentManager {
     );
     agent.lastUsage = event.usage;
     agent.lastError = undefined;
-    this.clearRetriableTurnRetry(agent.id);
-    if (isForegroundEvent) {
-      void this.maybeScheduleGoalContinuation(agent).catch((error) => {
-        this.logger.warn(
-          { err: error, agentId: agent.id },
-          "agent.manager.goal_continuation.check_failed",
-        );
-      });
-      void this.refreshRuntimeInfo(agent);
-      return undefined;
+    if (isForegroundEvent && !options?.fromHistory) {
+      return this.handleForegroundTurnCompleted({ agent, event, eventTurnId, options, flags });
     }
+    this.clearRetriableTurnRetry(agent.id);
     if (agent.lifecycle !== "idle" && !agent.pendingReplacement) {
       (agent as ActiveManagedAgent).lifecycle = "idle";
       this.emitState(agent);
@@ -4567,14 +4571,48 @@ export class AgentManager {
     return undefined;
   }
 
+  private async handleForegroundTurnCompleted(params: {
+    agent: ActiveManagedAgent;
+    event: Extract<AgentStreamEvent, { type: "turn_completed" }>;
+    eventTurnId: string | undefined;
+    options: { fromHistory?: boolean } | undefined;
+    flags: StreamEventFlags;
+  }): Promise<void> {
+    const { agent, event, eventTurnId, options, flags } = params;
+    const lastText = await this.getLastAssistantMessageFromStores(agent.id);
+    if (lastText && isRetriableProviderError(lastText)) {
+      const armed = await this.tryArmRetriableTurnRetry({
+        agent,
+        error: lastText,
+        provider: event.provider,
+        eventTurnId,
+        options,
+        flags,
+      });
+      if (armed) {
+        return;
+      }
+    }
+
+    this.clearRetriableTurnRetry(agent.id);
+    void this.maybeScheduleGoalContinuation(agent).catch((error) => {
+      this.logger.warn(
+        { err: error, agentId: agent.id },
+        "agent.manager.goal_continuation.check_failed",
+      );
+    });
+    void this.refreshRuntimeInfo(agent);
+  }
+
   private async onStreamTurnFailed(params: {
     agent: ActiveManagedAgent;
     event: Extract<AgentStreamEvent, { type: "turn_failed" }>;
     eventTurnId: string | undefined;
     isForegroundEvent: boolean;
     options: { fromHistory?: boolean } | undefined;
+    flags: StreamEventFlags;
   }): Promise<void> {
-    const { agent, event, eventTurnId, isForegroundEvent, options } = params;
+    const { agent, event, eventTurnId, isForegroundEvent, options, flags } = params;
     this.logger.warn(
       {
         agentId: agent.id,
@@ -4591,30 +4629,19 @@ export class AgentManager {
       "handleStreamEvent: turn_failed",
     );
 
-    const previousAttempts = this.retriableTurnRetries.get(agent.id)?.attempt ?? 0;
-    const willRetry =
-      isForegroundEvent &&
-      !options?.fromHistory &&
-      shouldRetryRetriableTurn({
-        error: this.formatTurnFailedMessage(event),
-        attemptCount: previousAttempts,
-      });
-
-    if (willRetry) {
-      const attempt = previousAttempts + 1;
-      const delayMs = retriableTurnBackoffMs(attempt);
-      await this.appendSystemErrorTimelineMessage(
+    const errorMessage = this.formatTurnFailedMessage(event);
+    if (isForegroundEvent && !options?.fromHistory) {
+      const armed = await this.tryArmRetriableTurnRetry({
         agent,
-        event.provider,
-        `${this.formatTurnFailedMessage(event)}\n\nRetriable provider error — retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt}).`,
+        error: errorMessage,
+        provider: event.provider,
+        eventTurnId,
         options,
-      );
-      this.resolvePendingPermissionsForAgent(agent, event.provider, options, "Turn failed");
-      // Clear lastError so finalizeForegroundTurn keeps the agent busy for waiters
-      // instead of settling into a terminal error before the retry fires.
-      agent.lastError = undefined;
-      this.scheduleRetriableTurnRetry(agent.id, attempt, delayMs, event.error);
-      return;
+        flags,
+      });
+      if (armed) {
+        return;
+      }
     }
 
     this.clearRetriableTurnRetry(agent.id);
@@ -4640,6 +4667,57 @@ export class AgentManager {
           "agent.manager.goal_continuation.turn_failed_check_failed",
         );
       });
+    }
+  }
+
+  private async tryArmRetriableTurnRetry(params: {
+    agent: ActiveManagedAgent;
+    error: string;
+    provider: AgentProvider;
+    eventTurnId: string | undefined;
+    options: { fromHistory?: boolean } | undefined;
+    flags: StreamEventFlags;
+  }): Promise<boolean> {
+    const previousAttempts = this.retriableTurnRetries.get(params.agent.id)?.attempt ?? 0;
+    if (
+      !shouldRetryRetriableTurn({
+        error: params.error,
+        attemptCount: previousAttempts,
+      })
+    ) {
+      return false;
+    }
+
+    const attempt = previousAttempts + 1;
+    const delayMs = retriableTurnBackoffMs(attempt);
+    await this.appendSystemErrorTimelineMessage(
+      params.agent,
+      params.provider,
+      `${params.error.trim()}\n\nRetriable provider error — retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt}).`,
+      params.options,
+    );
+    this.resolvePendingPermissionsForAgent(
+      params.agent,
+      params.provider,
+      params.options,
+      "Turn failed",
+    );
+    // Clear lastError so finalizeForegroundTurn keeps the agent busy for waiters
+    // instead of settling into a terminal error before the retry fires.
+    params.agent.lastError = undefined;
+    this.scheduleRetriableTurnRetry(params.agent.id, attempt, delayMs, params.error);
+    params.flags.shouldDispatchEvent = false;
+    params.flags.shouldNotifyWaiters = false;
+    this.settleMatchingForegroundWaiters(params.agent, params.eventTurnId);
+    return true;
+  }
+
+  private settleMatchingForegroundWaiters(
+    agent: ActiveManagedAgent,
+    turnId: string | undefined,
+  ): void {
+    for (const waiter of this.runs.getMatchingWaiters(agent, turnId)) {
+      this.runs.settleWaiter(waiter);
     }
   }
 

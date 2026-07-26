@@ -15,8 +15,13 @@ import {
 } from "@/composer/acp-auto-approve";
 
 describe("isAcpProvider", () => {
-  test("returns true for built-in Copilot", () => {
+  test("returns true for manifest-native Copilot", () => {
     expect(isAcpProvider("copilot", null)).toBe(true);
+  });
+
+  test("returns true for catalog ACP providers even without config extends", () => {
+    expect(isAcpProvider("cursor", { providers: { cursor: { enabled: true } } })).toBe(true);
+    expect(isAcpProvider("codewhale", null)).toBe(true);
   });
 
   test("returns false for non-ACP providers", () => {
@@ -24,15 +29,11 @@ describe("isAcpProvider", () => {
     expect(isAcpProvider("claude", null)).toBe(false);
   });
 
-  test("returns true for built-in Cursor without config extends", () => {
-    expect(isAcpProvider("cursor", null)).toBe(true);
-  });
-
   test("returns true for custom providers extending acp", () => {
     expect(
-      isAcpProvider("cursor", {
+      isAcpProvider("my-agent", {
         providers: {
-          cursor: { extends: "acp", command: ["cursor-agent", "acp"] },
+          "my-agent": { extends: "acp", command: ["my-agent", "acp"] },
         },
       }),
     ).toBe(true);

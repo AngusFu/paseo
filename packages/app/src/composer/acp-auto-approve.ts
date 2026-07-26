@@ -1,22 +1,27 @@
 import type { AgentFeature, AgentProvider } from "@getpaseo/protocol/agent-types";
 import type { MutableDaemonConfig } from "@getpaseo/protocol/messages";
 import type { FormPreferences } from "@/create-agent-preferences/preferences";
+import { ACP_CATALOG_PROVIDER_IDS } from "@/data/acp-provider-catalog";
 
 export const ACP_AUTO_ACCEPT_FEATURE_ID = "auto_accept";
 
 /** Feature ids rendered by the composer floating toggle for ACP providers. */
 export const COMPOSER_MANAGED_ACP_FEATURE_IDS = [ACP_AUTO_ACCEPT_FEATURE_ID] as const;
 
-const BUILTIN_ACP_PROVIDER_IDS = new Set<AgentProvider>(["copilot", "cursor"]);
+/** Daemon-manifest ACP built-in not installed through the ACP catalog (`extends: "acp"`). */
+const MANIFEST_NATIVE_ACP_PROVIDER_IDS = new Set<AgentProvider>(["copilot"]);
 
 export function isAcpProvider(
   provider: AgentProvider | null | undefined,
   config: Pick<MutableDaemonConfig, "providers"> | null | undefined,
 ): boolean {
-  if (!provider) {
+  if (!provider || provider === "opencode") {
     return false;
   }
-  if (BUILTIN_ACP_PROVIDER_IDS.has(provider)) {
+  if (MANIFEST_NATIVE_ACP_PROVIDER_IDS.has(provider)) {
+    return true;
+  }
+  if (ACP_CATALOG_PROVIDER_IDS.has(provider)) {
     return true;
   }
   return config?.providers?.[provider]?.extends === "acp";

@@ -371,3 +371,6 @@ export const ACP_PROVIDER_CATALOG: AcpProviderCatalogEntry[] = CATALOG_DATA.map(
   params: "params" in entry ? entry.params : undefined,
   iconSvg: entry.iconId ? (ACP_PROVIDER_ICON_SVGS[entry.iconId] ?? null) : null,
 }));
+
+/** Provider ids shipped in the in-app ACP catalog (Cursor, CodeWhale, …). */
+export const ACP_CATALOG_PROVIDER_IDS = new Set(ACP_PROVIDER_CATALOG.map((entry) => entry.id));

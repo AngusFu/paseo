@@ -3,22 +3,24 @@ name: paseo-goal
 description: >-
   Cross-provider goal workflow — clarify intent, pick orchestration (Codex /goal, paseo-loop, or
   in-thread checkpoints), run until the condition is met. Triggers /paseo-goal, goal, keep going
-  until, 一直做到, clarify goal, write goal first.
+  until, 一直做到, clarify goal, write goal first, goal clear, cancel goal, stop goal, goal status.
 user-invocable: true
-argument-hint: "[--clarify] [<intent or condition>]"
+argument-hint: "[--clarify | clear | status] [<intent or condition>]"
 ---
 
 # Paseo Goal Skill
 
 Turn intent into a **verifiable completion condition**, then run until it holds. This skill **does not** add daemon slash commands — it orchestrates existing primitives:
 
-| Primitive                                    | When                                                       |
-| -------------------------------------------- | ---------------------------------------------------------- |
-| **Codex `/goal`**                            | Codex agent, same thread, native goals enabled             |
-| **[paseo-loop](skills/paseo-loop/SKILL.md)** | Isolated workers, babysit, background, default when unsure |
-| **In-thread checkpoints**                    | Non-Codex, user wants **this tab** continuously            |
-| **MCP `set_paseo_goal`**                     | Path C: daemon turn-end continuation for non-Codex in-tab  |
-| **`--clarify`**                              | Thin intent → goal doc first, **STOP, no code**            |
+| Primitive                                     | When                                                          |
+| --------------------------------------------- | ------------------------------------------------------------- |
+| **Codex `/goal`**                             | Codex agent, same thread, native goals enabled                |
+| **[paseo-loop](skills/paseo-loop/SKILL.md)**  | Isolated workers, babysit, background, default when unsure    |
+| **In-thread checkpoints**                     | Non-Codex, user wants **this tab** continuously               |
+| **MCP `set_paseo_goal`**                      | Path C: daemon turn-end continuation for non-Codex in-tab     |
+| **MCP `clear_paseo_goal` / `get_paseo_goal`** | Path C: stop or inspect the active in-tab goal                |
+| **`--clarify`**                               | Thin intent → goal doc first, **STOP, no code**               |
+| **`clear` / `status`**                        | Stop or inspect the active goal for the current orchestration |
 
 **User's arguments:** $ARGUMENTS
 
@@ -34,11 +36,13 @@ Turn intent into a **verifiable completion condition**, then run until it holds.
 | Input                                         | Action                                                                                      |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | Empty                                         | List `$PASEO_HOME/goals/docs/*.md` with status; offer resume via Kickoff or new `--clarify` |
+| `clear`, `--clear`, `cancel`, `stop`          | **Clear only** → § Clear (no new work)                                                      |
+| `status`, `--status`                          | **Status only** → § Status (read-only)                                                      |
 | `--clarify …`                                 | **Clarify only** → § Clarify                                                                |
 | Intent looks thin (< measurable end + verify) | Offer `--clarify` or run clarify inline before execute                                      |
 | Else                                          | **Execute** → § Orchestration                                                               |
 
-Strip `--clarify` from args when branching to clarify mode.
+Strip `--clarify` from args when branching to clarify mode. Treat `clear` / `status` as exact first-token matches (case-insensitive); do not treat them as goal conditions.
 
 ---
 
@@ -170,6 +174,49 @@ Producer never grades alone on large changes — the daemon evaluator runs a sep
 
 ---
 
+## Clear (`clear` / `cancel` / `stop`)
+
+**STOP after clear.** Do not start new work, re-register a goal, or run verify loops.
+
+Determine which orchestration is active for **this agent tab**, then clear in order:
+
+1. **Path C (daemon in-tab goal)** — call MCP **`clear_paseo_goal`** for the current agent.
+   - On success: print condition cleared, final status, iteration budget used.
+   - If none active: say **no active in-tab goal on this tab**.
+2. **Path A (Codex native goal)** — when provider is Codex with goals enabled, `send_agent_prompt` with **`/goal clear`** (out-of-band; do not cancel a running turn).
+   - If Codex reports no goal: say so explicitly.
+3. **Path B (paseo-loop)** — read the linked goal doc for `loop id` / `Orchestration chosen: paseo-loop`.
+   - Run **`paseo loop ls`** if needed, then **`paseo loop stop <id>`**.
+   - If no loop id is known, list recent loops and **`ask_question`** which to stop (≤4 options).
+
+**Goal doc:** if a doc slug is known, append Changelog `Cancelled by user` and set header/frontmatter `status: cancelled`.
+
+**Output (always):**
+
+1. Which path was cleared (C / A / B) or that nothing was active
+2. One-line confirmation
+3. If a goal doc was updated, its path
+
+---
+
+## Status (`status`)
+
+**Read-only.** Do not clear, re-register, or start work.
+
+Report active goal state for **this tab** using the same path detection as § Clear:
+
+| Path                  | How to inspect                                                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **C — daemon in-tab** | MCP **`get_paseo_goal`** → print `condition`, `status`, `iteration` / `maxIterations`, `lastEvaluationReason` when present           |
+| **A — Codex native**  | Codex agents: check whether a native goal is set (transcript / `/goal` state if visible). If none, say **no Codex goal on this tab** |
+| **B — paseo-loop**    | Goal doc loop id → **`paseo loop inspect <id>`**; else **`paseo loop ls`** and surface the most likely match                         |
+
+Also show the latest **`$PASEO_HOME/goals/docs/`** entry for this work when a doc slug is known (status, objective first line, last changelog entry).
+
+If nothing is active on any path, say so and offer **`/paseo-goal`** (empty) to pick a doc to resume or **`/paseo-goal --clarify`** for a new goal.
+
+---
+
 ## Empty `$ARGUMENTS`
 
 1. `ls` / read `$PASEO_HOME/goals/docs/`.
@@ -180,14 +227,16 @@ Producer never grades alone on large changes — the daemon evaluator runs a sep
 
 ## Compared to neighbors
 
-| User says                   | Use                                                     |
-| --------------------------- | ------------------------------------------------------- |
-| Goal / 一直做到 X / clarify | **This skill**                                          |
-| `--clarify` only            | **This skill § Clarify**                                |
-| Obvious loop/babysit/watch  | **paseo-loop** (or this skill routes there)             |
-| Codex native engine only    | **`/goal`** on Codex agent (this skill may route there) |
-| Every N minutes reminder    | **heartbeat**                                           |
-| Cron fresh agent            | **schedule**                                            |
+| User says                    | Use                                                     |
+| ---------------------------- | ------------------------------------------------------- |
+| Goal / 一直做到 X / clarify  | **This skill**                                          |
+| `--clarify` only             | **This skill § Clarify**                                |
+| Cancel / stop / clear goal   | **This skill § Clear** (`/paseo-goal clear`)            |
+| Goal status / what's running | **This skill § Status** (`/paseo-goal status`)          |
+| Obvious loop/babysit/watch   | **paseo-loop** (or this skill routes there)             |
+| Codex native engine only     | **`/goal`** on Codex agent (this skill may route there) |
+| Every N minutes reminder     | **heartbeat**                                           |
+| Cron fresh agent             | **schedule**                                            |
 
 ---
 

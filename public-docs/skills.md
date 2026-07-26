@@ -59,10 +59,14 @@ Cross-provider goal workflow: clarify fuzzy intent, then run until a verifiable 
 
 - **`--clarify`** — interview (via Paseo questions), write a goal doc under `$PASEO_HOME/goals/docs/`, **stop without coding**.
 - **Execute** — the agent picks orchestration: Codex native **`/goal`** (same thread), **paseo-loop** (isolated workers; default when unsure), or **in-thread continuation** on non-Codex when you want this tab continuously (daemon MCP **`set_paseo_goal`** / **`clear_paseo_goal`**).
+- **`clear`** — stop the active goal on this tab (MCP **`clear_paseo_goal`**, Codex **`/goal clear`**, or **`paseo loop stop`** when on a loop).
+- **`status`** — read-only snapshot of the active goal (MCP **`get_paseo_goal`**, loop inspect, or goal doc).
 
 ```
 /paseo-goal --clarify migrate auth module to the new session API
 /paseo-goal all tests in packages/server pass and lint is clean
+/paseo-goal clear
+/paseo-goal status
 ```
 
 See **paseo-loop** for explicit babysit/loop phrasing; this skill may route there automatically.

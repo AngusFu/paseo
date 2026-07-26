@@ -21,6 +21,37 @@ export function isAcpProvider(
   return config?.providers?.[provider]?.extends === "acp";
 }
 
+/** Distinguish Paseo-managed ACP auto_accept from OpenCode's homonymous toggle. */
+export function isComposerAcpAutoAcceptFeature(
+  feature: AgentFeature | null | undefined,
+): feature is AgentFeature & { type: "toggle" } {
+  if (!feature || feature.type !== "toggle" || feature.id !== ACP_AUTO_ACCEPT_FEATURE_ID) {
+    return false;
+  }
+  const description = feature.description ?? "";
+  if (description.includes("OpenCode")) {
+    return false;
+  }
+  if (description.includes("ACP")) {
+    return true;
+  }
+  return false;
+}
+
+export function shouldShowComposerAcpAutoAccept(input: {
+  provider: AgentProvider | null | undefined;
+  config: Pick<MutableDaemonConfig, "providers"> | null | undefined;
+  feature: AgentFeature | null | undefined;
+}): boolean {
+  if (input.provider === "opencode") {
+    return false;
+  }
+  if (isComposerAcpAutoAcceptFeature(input.feature)) {
+    return true;
+  }
+  return isAcpProvider(input.provider, input.config);
+}
+
 export function excludeComposerManagedAcpFeatures(
   features: AgentFeature[] | undefined,
 ): AgentFeature[] | undefined {

@@ -8,7 +8,10 @@ import { useDaemonConfig } from "@/hooks/use-daemon-config";
 import { useToast } from "@/contexts/toast-context";
 import { toErrorMessage } from "@/utils/error-messages";
 import { findAutoAcceptToggleFeature } from "@/composer/acp-auto-approve-toggle";
-import { ACP_AUTO_ACCEPT_FEATURE_ID, isAcpProvider } from "@/composer/acp-auto-approve";
+import {
+  ACP_AUTO_ACCEPT_FEATURE_ID,
+  shouldShowComposerAcpAutoAccept,
+} from "@/composer/acp-auto-approve";
 
 interface UseComposerAutoAcceptInput {
   serverId: string;
@@ -48,12 +51,17 @@ export function useComposerAutoAccept({
   );
 
   const effectiveProvider = provider ?? liveAgent?.provider ?? null;
-  const isAcp = isAcpProvider(effectiveProvider, config);
 
   const resolvedFeature = useMemo(
     () => findAutoAcceptToggleFeature(draftFeatures ?? liveAgent?.features),
     [draftFeatures, liveAgent?.features],
   );
+
+  const showComposerToggle = shouldShowComposerAcpAutoAccept({
+    provider: effectiveProvider,
+    config,
+    feature: resolvedFeature,
+  });
 
   useEffect(() => {
     if (optimisticValue === null || !resolvedFeature) {
@@ -65,14 +73,14 @@ export function useComposerAutoAccept({
   }, [optimisticValue, resolvedFeature]);
 
   const feature = useMemo(() => {
-    if (!isAcp || !resolvedFeature) {
+    if (!showComposerToggle || !resolvedFeature) {
       return null;
     }
     if (optimisticValue === null) {
       return resolvedFeature;
     }
     return { ...resolvedFeature, value: optimisticValue };
-  }, [isAcp, optimisticValue, resolvedFeature]);
+  }, [optimisticValue, resolvedFeature, showComposerToggle]);
 
   const toggle = useCallback(() => {
     if (!feature) {

@@ -66,7 +66,10 @@ import {
   formatThinkingOptionLabel,
   resolveAgentModelSelection,
 } from "@/composer/agent-controls/utils";
-import { excludeComposerManagedAcpFeatures, isAcpProvider } from "@/composer/acp-auto-approve";
+import {
+  excludeComposerManagedAcpFeatures,
+  shouldShowComposerAcpAutoAccept,
+} from "@/composer/acp-auto-approve";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
@@ -435,7 +438,14 @@ function ControlledAgentControls({
   const { theme } = useUnistyles();
   const { config } = useDaemonConfig(modelSelectorServerId);
   const visibleFeatures = useMemo(() => {
-    if (!isAcpProvider(provider, config)) {
+    const autoAcceptFeature = features?.find((feature) => feature.id === "auto_accept");
+    if (
+      !shouldShowComposerAcpAutoAccept({
+        provider,
+        config,
+        feature: autoAcceptFeature,
+      })
+    ) {
       return features;
     }
     return excludeComposerManagedAcpFeatures(features);

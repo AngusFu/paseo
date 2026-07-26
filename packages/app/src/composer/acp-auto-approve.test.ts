@@ -3,6 +3,8 @@ import {
   ACP_AUTO_ACCEPT_FEATURE_ID,
   excludeComposerManagedAcpFeatures,
   isAcpProvider,
+  isComposerAcpAutoAcceptFeature,
+  shouldShowComposerAcpAutoAccept,
 } from "@/composer/acp-auto-approve";
 
 describe("isAcpProvider", () => {
@@ -33,6 +35,7 @@ describe("excludeComposerManagedAcpFeatures", () => {
         type: "toggle" as const,
         id: ACP_AUTO_ACCEPT_FEATURE_ID,
         label: "Auto Approve",
+        description: "Automatically approves ACP tool permission prompts.",
         value: false,
       },
       {
@@ -45,5 +48,62 @@ describe("excludeComposerManagedAcpFeatures", () => {
     ];
 
     expect(excludeComposerManagedAcpFeatures(features)).toEqual([features[1]]);
+  });
+});
+
+describe("isComposerAcpAutoAcceptFeature", () => {
+  test("accepts ACP auto_accept and rejects OpenCode", () => {
+    expect(
+      isComposerAcpAutoAcceptFeature({
+        type: "toggle",
+        id: ACP_AUTO_ACCEPT_FEATURE_ID,
+        label: "Auto Approve",
+        description: "Automatically approves ACP tool permission prompts.",
+        value: false,
+      }),
+    ).toBe(true);
+    expect(
+      isComposerAcpAutoAcceptFeature({
+        type: "toggle",
+        id: ACP_AUTO_ACCEPT_FEATURE_ID,
+        label: "Auto Accept",
+        description: "Automatically approves OpenCode tool permission prompts.",
+        value: false,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("shouldShowComposerAcpAutoAccept", () => {
+  test("shows for cursor when feature metadata is ACP even without config extends", () => {
+    expect(
+      shouldShowComposerAcpAutoAccept({
+        provider: "cursor",
+        config: { providers: { cursor: { enabled: true } } },
+        feature: {
+          type: "toggle",
+          id: ACP_AUTO_ACCEPT_FEATURE_ID,
+          label: "Auto Approve",
+          description: "Automatically approves ACP tool permission prompts.",
+          value: false,
+        },
+      }),
+    ).toBe(true);
+  });
+
+  test("hides for OpenCode", () => {
+    expect(
+      shouldShowComposerAcpAutoAccept({
+        provider: "opencode",
+        config: null,
+        feature: {
+          type: "toggle",
+          id: ACP_AUTO_ACCEPT_FEATURE_ID,
+          label: "Auto Accept",
+          description: "Automatically approves OpenCode tool permission prompts.",
+          value: false,
+        },
+      }),
+    ).toBe(false);
   });
 });

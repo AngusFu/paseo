@@ -500,6 +500,9 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
       if (override.additionalModels) {
         providerConfig.additionalModels = override.additionalModels;
       }
+      if (override.extends) {
+        providerConfig.extends = override.extends;
+      }
       return [providerId, providerConfig];
     }),
   );

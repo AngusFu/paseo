@@ -3890,13 +3890,16 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       {
         title: "List FastMCP CLI servers",
         description:
-          "List Paseo FastMCP CLI servers (Host → FastMCP). Includes presets (atlassian/figma) and custom HTTP MCP servers.",
+          "List Paseo FastMCP CLI servers (Host → FastMCP). Includes presets (atlassian/figma) plus custom HTTP and stdio MCP servers.",
         inputSchema: {},
         outputSchema: {
           servers: z.array(
             z.object({
               name: z.string(),
-              url: z.string(),
+              transport: z.enum(["http", "stdio"]),
+              url: z.string().optional(),
+              command: z.string().optional(),
+              args: z.array(z.string()).optional(),
               enabled: z.boolean(),
               preset: z.boolean().optional(),
               hasOAuth: z.boolean(),
@@ -3907,21 +3910,26 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       async () => {
         const servers = await mcpCli.listServers();
         const summaries = servers.map((server) => {
+          const transport = server.transport === "stdio" ? "stdio" : "http";
           const row: {
             name: string;
-            url: string;
+            transport: "http" | "stdio";
+            url?: string;
+            command?: string;
+            args?: string[];
             enabled: boolean;
             preset?: boolean;
             hasOAuth: boolean;
           } = {
             name: server.name,
-            url: server.url,
+            transport,
             enabled: server.enabled,
             hasOAuth: server.auth?.kind === "oauth",
           };
-          if (server.preset) {
-            row.preset = true;
-          }
+          if (server.url) row.url = server.url;
+          if (server.command) row.command = server.command;
+          if (server.args?.length) row.args = server.args;
+          if (server.preset) row.preset = true;
           return row;
         });
         return {
@@ -3936,30 +3944,47 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       {
         title: "Upsert FastMCP CLI server",
         description:
-          "Create or update a Paseo FastMCP HTTP MCP server (Host → FastMCP). Use for remote URL MCP only — stdio/bearer not supported. OAuth fields optional for open/DCR endpoints; Atlassian/Figma need clientId.",
+          "Create or update a Paseo FastMCP server (Host → FastMCP). HTTP: pass url (OAuth optional for open endpoints). Stdio: pass transport=stdio + command/args. Bearer/headers not supported.",
         inputSchema: {
           name: z
             .string()
             .min(1)
             .regex(/^[a-zA-Z0-9._-]+$/)
             .describe("CLI name (also the launcher binary name)."),
-          url: z.string().min(1).describe("Remote HTTP MCP URL."),
+          transport: z
+            .enum(["http", "stdio"])
+            .optional()
+            .describe("Defaults to http when url is set, stdio when command is set."),
+          url: z.string().optional().describe("Remote HTTP MCP URL (http transport)."),
+          command: z.string().optional().describe("Executable for stdio MCP (stdio transport)."),
+          args: z.array(z.string()).optional().describe("Stdio command args."),
+          env: z.record(z.string(), z.string()).optional().describe("Extra env for stdio process."),
+          cwd: z.string().optional().describe("Working directory for stdio process."),
           enabled: z.boolean().optional().describe("Defaults to true."),
-          oauth: McpCliOAuthInputSchema.optional().describe("Optional OAuth client metadata."),
+          oauth: McpCliOAuthInputSchema.optional().describe(
+            "Optional OAuth client metadata (http only).",
+          ),
         },
         outputSchema: {
           server: z.object({
             name: z.string(),
-            url: z.string(),
+            transport: z.enum(["http", "stdio"]),
+            url: z.string().optional(),
+            command: z.string().optional(),
             enabled: z.boolean(),
             hasOAuth: z.boolean(),
           }),
         },
       },
-      async ({ name, url, enabled, oauth }) => {
+      async ({ name, transport, url, command, args, env, cwd, enabled, oauth }) => {
         const server = await mcpCli.upsertServer({
           name,
-          url,
+          ...(transport ? { transport } : {}),
+          ...(url ? { url } : {}),
+          ...(command ? { command } : {}),
+          ...(args?.length ? { args } : {}),
+          ...(env && Object.keys(env).length > 0 ? { env } : {}),
+          ...(cwd ? { cwd } : {}),
           enabled: enabled ?? true,
           ...(oauth
             ? {
@@ -3978,7 +4003,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           structuredContent: ensureValidJson({
             server: {
               name: server.name,
-              url: server.url,
+              transport: server.transport === "stdio" ? "stdio" : "http",
+              ...(server.url ? { url: server.url } : {}),
+              ...(server.command ? { command: server.command } : {}),
               enabled: server.enabled,
               hasOAuth: server.auth?.kind === "oauth",
             },
@@ -4014,7 +4041,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       {
         title: "Import FastMCP servers from local configs",
         description:
-          "Scan Claude/Cursor mcp.json and ~/.config/sciforum/oauth-clients.json on the daemon host and import HTTP MCP servers into FastMCP CLI. Skips stdio and bearer/headers entries.",
+          "Scan Claude/Cursor mcp.json and ~/.config/sciforum/oauth-clients.json on the daemon host and import HTTP + stdio MCP servers into FastMCP CLI. Skips bearer/headers entries.",
         inputSchema: {},
         outputSchema: {
           imported: z.number(),
@@ -4023,7 +4050,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           servers: z.array(
             z.object({
               name: z.string(),
-              url: z.string(),
+              transport: z.enum(["http", "stdio"]),
+              url: z.string().optional(),
+              command: z.string().optional(),
               enabled: z.boolean(),
               hasOAuth: z.boolean(),
             }),
@@ -4034,7 +4063,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         const result = await mcpCli.importLocalServers();
         const servers = result.saved.map((server) => ({
           name: server.name,
-          url: server.url,
+          transport: (server.transport === "stdio" ? "stdio" : "http") as "http" | "stdio",
+          ...(server.url ? { url: server.url } : {}),
+          ...(server.command ? { command: server.command } : {}),
           enabled: server.enabled,
           hasOAuth: server.auth?.kind === "oauth",
         }));

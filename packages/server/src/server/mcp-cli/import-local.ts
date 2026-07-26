@@ -5,6 +5,7 @@ import {
   McpCliServerConfigSchema,
   type McpCliServerConfig,
 } from "@getpaseo/protocol/mcp-cli/types";
+import { normalizeMcpCliServerConfig } from "./normalize.js";
 import { presetByName } from "./presets.js";
 
 export interface ImportLocalResult {
@@ -86,24 +87,19 @@ function authFromOauthRow(row: OauthClientRow): McpCliServerConfig["auth"] {
   return auth;
 }
 
-function buildServer(
-  name: string,
-  url: string,
-  auth: McpCliServerConfig["auth"],
-): McpCliServerConfig | null {
-  const candidate: McpCliServerConfig = {
-    name,
-    url,
-    enabled: true,
-  };
-  if (auth) {
-    candidate.auth = auth;
-  }
-  if (presetByName(name)) {
+function finalize(candidate: McpCliServerConfig): McpCliServerConfig | null {
+  if (presetByName(candidate.name)) {
     candidate.preset = true;
   }
   const parsed = McpCliServerConfigSchema.safeParse(candidate);
-  return parsed.success ? parsed.data : null;
+  if (!parsed.success) {
+    return null;
+  }
+  try {
+    return normalizeMcpCliServerConfig(parsed.data);
+  } catch {
+    return null;
+  }
 }
 
 function serverFromOauthRow(name: string, row: OauthClientRow): McpCliServerConfig | null {
@@ -111,7 +107,13 @@ function serverFromOauthRow(name: string, row: OauthClientRow): McpCliServerConf
   if (!url) {
     return null;
   }
-  return buildServer(name, url, authFromOauthRow(row));
+  return finalize({
+    name,
+    transport: "http",
+    url,
+    enabled: true,
+    ...(authFromOauthRow(row) ? { auth: authFromOauthRow(row) } : {}),
+  });
 }
 
 function authFromEntry(entry: Record<string, unknown>): McpCliServerConfig["auth"] {
@@ -131,10 +133,28 @@ function authFromEntry(entry: Record<string, unknown>): McpCliServerConfig["auth
   return authFromOauthRow(entry as OauthClientRow);
 }
 
-function skipReasonForEntry(entry: Record<string, unknown>): string | null {
-  if (typeof entry.command === "string" || entry.type === "stdio") {
-    return "stdio/command not supported";
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
   }
+  const args = value.filter((item): item is string => typeof item === "string");
+  return args.length > 0 ? args : undefined;
+}
+
+function stringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry === "string") {
+      out[key] = entry;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function skipReasonForEntry(entry: Record<string, unknown>): string | null {
   if (entry.headers && typeof entry.headers === "object") {
     return "bearer/headers not supported";
   }
@@ -149,11 +169,33 @@ function serverFromMcpEntry(name: string, value: unknown): McpCliServerConfig | 
   if (skipReasonForEntry(entry)) {
     return null;
   }
+
+  const command = optionalString(entry.command);
+  const isStdio = entry.type === "stdio" || entry.transport === "stdio" || Boolean(command);
+  if (isStdio && command) {
+    return finalize({
+      name,
+      transport: "stdio",
+      command,
+      enabled: true,
+      ...(stringArray(entry.args) ? { args: stringArray(entry.args) } : {}),
+      ...(stringRecord(entry.env) ? { env: stringRecord(entry.env) } : {}),
+      ...(optionalString(entry.cwd) ? { cwd: optionalString(entry.cwd) } : {}),
+    });
+  }
+
   const url = optionalString(entry.url) ?? optionalString(entry.serverUrl);
   if (!url) {
     return null;
   }
-  return buildServer(name, url, authFromEntry(entry));
+  const auth = authFromEntry(entry);
+  return finalize({
+    name,
+    transport: "http",
+    url,
+    enabled: true,
+    ...(auth ? { auth } : {}),
+  });
 }
 
 function mergeServers(into: Map<string, McpCliServerConfig>, next: McpCliServerConfig): void {
@@ -166,6 +208,11 @@ function mergeServers(into: Map<string, McpCliServerConfig>, next: McpCliServerC
     ...prev,
     ...next,
     auth: next.auth ?? prev.auth,
+    args: next.args ?? prev.args,
+    env: next.env ?? prev.env,
+    cwd: next.cwd ?? prev.cwd,
+    command: next.command ?? prev.command,
+    url: next.url ?? prev.url,
     enabled: prev.enabled || next.enabled,
     preset: Boolean(prev.preset || next.preset) || undefined,
   });
@@ -210,7 +257,7 @@ function ingestMcpServersFile(
     }
     const server = serverFromMcpEntry(name, value);
     if (!server) {
-      warnings.push(`Skipped '${name}' in ${path}: no HTTP url`);
+      warnings.push(`Skipped '${name}' in ${path}: no HTTP url or stdio command`);
       continue;
     }
     mergeServers(byName, server);
@@ -221,7 +268,7 @@ function ingestMcpServersFile(
 
 /**
  * Scan well-known Claude / Cursor / sciforum config paths on the daemon host
- * and return importable HTTP MCP server configs (stdio/headers skipped).
+ * and return importable HTTP + stdio MCP server configs (bearer/headers skipped).
  */
 export async function discoverLocalMcpServers(
   paths: readonly string[] = candidatePaths(),

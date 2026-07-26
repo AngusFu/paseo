@@ -3,21 +3,36 @@ import { spawn } from "node:child_process";
 import type { McpCliRuntimeStatus, McpCliServerConfig } from "@getpaseo/protocol/mcp-cli/types";
 import { discoverLocalMcpServers, type ImportLocalResult } from "./import-local.js";
 import { syncMcpCliLaunchers } from "./launchers.js";
+import { isMcpCliStdioServer } from "./normalize.js";
 import { mcpCliBinDir, mcpCliOauthClientsPath, mcpCliRoot } from "./paths.js";
 import { prependMcpCliBinPath } from "./path.js";
 import { formatMcpCliDaemonAppendPrompt } from "./prompt.js";
 import { getMcpCliRuntimeStatus, installMcpCliRuntime } from "./runtime.js";
 import { McpCliServerStore } from "./store.js";
 
-function oauthClientsRegistry(servers: readonly McpCliServerConfig[]): Record<string, unknown> {
+/** Registry consumed by fastmcp-cli.py (filename kept for back-compat). */
+export function oauthClientsRegistry(
+  servers: readonly McpCliServerConfig[],
+): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const server of servers) {
     if (!server.enabled) {
       continue;
     }
-    // Always write source so launchers can resolve URL. OAuth fields are optional
-    // (missing client → runner attempts DCR / open access).
+    if (isMcpCliStdioServer(server)) {
+      out[server.name] = {
+        transport: "stdio",
+        command: server.command,
+        ...(server.args?.length ? { args: server.args } : {}),
+        ...(server.env && Object.keys(server.env).length > 0 ? { env: server.env } : {}),
+        ...(server.cwd ? { cwd: server.cwd } : {}),
+      };
+      continue;
+    }
+    // HTTP: always write source so launchers can resolve URL. OAuth fields are
+    // optional (missing client → open HTTP, no OAuth wrapper in the runner).
     out[server.name] = {
+      transport: "http",
       source: server.url,
       ...(server.auth?.kind === "oauth" && server.auth.clientId
         ? {
@@ -100,8 +115,6 @@ export class McpCliService {
     if (!server.enabled) {
       return { ok: false, stdout: "", stderr: "", error: `Server '${name}' is disabled` };
     }
-    // OAuth is optional: open / DCR endpoints can run without a pasted clientId.
-    // Atlassian/Figma still need clientId for a successful Test.
     const status = await this.status();
     if (!status.ready) {
       return {

@@ -7,10 +7,27 @@ export type McpServersJsonParseResult =
   | { ok: true; servers: McpCliServerConfig[]; warnings: string[] }
   | { ok: false; error: string; warnings: string[] };
 
+function isStdio(server: McpCliServerConfig): boolean {
+  return server.transport === "stdio" || Boolean(server.command && !server.url);
+}
+
 /** Claude/Cursor-style export of the current Paseo FastMCP server list. */
 export function serializeMcpServersJson(servers: readonly McpCliServerConfig[]): string {
   const mcpServers: Record<string, Record<string, unknown>> = {};
   for (const server of servers) {
+    if (isStdio(server)) {
+      const entry: Record<string, unknown> = {
+        type: "stdio",
+        command: server.command,
+        enabled: server.enabled,
+      };
+      if (server.args?.length) entry.args = server.args;
+      if (server.env && Object.keys(server.env).length > 0) entry.env = server.env;
+      if (server.cwd) entry.cwd = server.cwd;
+      if (server.preset) entry.preset = true;
+      mcpServers[server.name] = entry;
+      continue;
+    }
     const entry: Record<string, unknown> = {
       url: server.url,
       enabled: server.enabled,
@@ -42,6 +59,27 @@ function optionalString(value: unknown): string | undefined {
     return undefined;
   }
   return value.trim();
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const args = value.filter((item): item is string => typeof item === "string");
+  return args.length > 0 ? args : undefined;
+}
+
+function stringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry === "string") {
+      out[key] = entry;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function collectEntries(parsed: unknown, warnings: string[]): NamedEntry[] | null {
@@ -129,6 +167,74 @@ function readAuth(entry: Record<string, unknown>): McpCliServerConfig["auth"] {
   });
 }
 
+function enabledFromEntry(entry: Record<string, unknown>): boolean {
+  return entry.enabled === undefined ? true : Boolean(entry.enabled);
+}
+
+function validateCandidate(
+  name: string,
+  candidate: unknown,
+  warnings: string[],
+): McpCliServerConfig | null {
+  const validated = McpCliServerConfigSchema.safeParse(candidate);
+  if (!validated.success) {
+    warnings.push(`Skipped '${name}': ${validated.error.issues[0]?.message ?? "invalid"}`);
+    return null;
+  }
+  return validated.data;
+}
+
+function parseStdioServer(
+  name: string,
+  entry: Record<string, unknown>,
+  warnings: string[],
+): McpCliServerConfig | null {
+  const command = optionalString(entry.command);
+  if (!command) {
+    warnings.push(`Skipped '${name}': stdio requires command`);
+    return null;
+  }
+  return validateCandidate(
+    name,
+    {
+      name,
+      transport: "stdio" as const,
+      command,
+      enabled: enabledFromEntry(entry),
+      ...(stringArray(entry.args) ? { args: stringArray(entry.args) } : {}),
+      ...(stringRecord(entry.env) ? { env: stringRecord(entry.env) } : {}),
+      ...(optionalString(entry.cwd) ? { cwd: optionalString(entry.cwd) } : {}),
+      ...(entry.preset === true ? { preset: true } : {}),
+    },
+    warnings,
+  );
+}
+
+function parseHttpServer(
+  name: string,
+  entry: Record<string, unknown>,
+  warnings: string[],
+): McpCliServerConfig | null {
+  const url = readUrl(entry);
+  if (!url) {
+    warnings.push(`Skipped '${name}': missing url or command`);
+    return null;
+  }
+  const auth = readAuth(entry);
+  return validateCandidate(
+    name,
+    {
+      name,
+      transport: "http" as const,
+      url,
+      enabled: enabledFromEntry(entry),
+      ...(auth ? { auth } : {}),
+      ...(entry.preset === true ? { preset: true } : {}),
+    },
+    warnings,
+  );
+}
+
 function parseOneServer(
   name: string,
   value: unknown,
@@ -139,44 +245,27 @@ function parseOneServer(
     return null;
   }
   const entry = value as Record<string, unknown>;
-  if (typeof entry.command === "string" || entry.type === "stdio") {
-    warnings.push(`Skipped '${name}': stdio/command MCP is not supported yet`);
-    return null;
-  }
   if (entry.headers && typeof entry.headers === "object") {
     warnings.push(`Skipped '${name}': bearer/headers auth is not supported yet`);
     return null;
   }
-  const url = readUrl(entry);
-  if (!url) {
-    warnings.push(`Skipped '${name}': missing url`);
-    return null;
-  }
 
-  const auth = readAuth(entry);
-  const candidate = {
-    name,
-    url,
-    enabled: entry.enabled === undefined ? true : Boolean(entry.enabled),
-    ...(auth ? { auth } : {}),
-    ...(entry.preset === true ? { preset: true } : {}),
-  };
-  const validated = McpCliServerConfigSchema.safeParse(candidate);
-  if (!validated.success) {
-    warnings.push(`Skipped '${name}': ${validated.error.issues[0]?.message ?? "invalid"}`);
-    return null;
+  const command = optionalString(entry.command);
+  const wantsStdio =
+    entry.type === "stdio" || entry.transport === "stdio" || Boolean(command && !readUrl(entry));
+  if (wantsStdio) {
+    return parseStdioServer(name, entry, warnings);
   }
-  return validated.data;
+  return parseHttpServer(name, entry, warnings);
 }
 
 /**
  * Accept common paste shapes:
  * - `{ "mcpServers": { "name": { "url": "..." } } }` (Claude/Cursor style)
- * - `{ "name": { "url": "..." } }` map
- * - `[ { "name", "url", "enabled", "auth?" } ]` Paseo array
+ * - `{ "name": { "command": "...", "args": [] } }` stdio
+ * - `[ { "name", "url"|"command", "enabled", "auth?" } ]` Paseo array
  *
- * stdio / command-based entries and bearer headers are rejected with warnings
- * (not supported in this MVP).
+ * bearer/headers entries are rejected with warnings.
  */
 export function parseMcpServersJson(raw: string): McpServersJsonParseResult {
   const warnings: string[] = [];
@@ -207,7 +296,7 @@ export function parseMcpServersJson(raw: string): McpServersJsonParseResult {
   if (servers.length === 0) {
     return {
       ok: false,
-      error: warnings[0] ?? "No importable HTTP MCP servers found",
+      error: warnings[0] ?? "No importable MCP servers found",
       warnings,
     };
   }

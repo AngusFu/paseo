@@ -13,7 +13,7 @@ describe("parseMcpServersJson", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.servers).toEqual([
-      { name: "figma", url: "https://mcp.figma.com/mcp", enabled: true },
+      { name: "figma", transport: "http", url: "https://mcp.figma.com/mcp", enabled: true },
     ]);
   });
 
@@ -33,7 +33,7 @@ describe("parseMcpServersJson", () => {
     expect(result.servers[0]?.auth).toMatchObject({ kind: "oauth", clientId: "cid" });
   });
 
-  it("warns and skips stdio / headers", () => {
+  it("imports stdio and skips headers", () => {
     const result = parseMcpServersJson(
       JSON.stringify({
         mcpServers: {
@@ -45,8 +45,12 @@ describe("parseMcpServersJson", () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.servers.map((s) => s.name)).toEqual(["ok"]);
-    expect(result.warnings.some((w) => w.includes("stdio"))).toBe(true);
+    expect(result.servers.map((s) => s.name).sort()).toEqual(["local", "ok"]);
+    expect(result.servers.find((s) => s.name === "local")).toMatchObject({
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "foo"],
+    });
     expect(result.warnings.some((w) => w.includes("headers"))).toBe(true);
   });
 
@@ -54,23 +58,37 @@ describe("parseMcpServersJson", () => {
     const json = serializeMcpServersJson([
       {
         name: "figma",
+        transport: "http",
         url: "https://mcp.figma.com/mcp",
         enabled: true,
         preset: true,
         auth: { kind: "oauth", clientId: "cid", scope: "mcp:connect" },
       },
+      {
+        name: "local",
+        transport: "stdio",
+        command: "npx",
+        args: ["-y", "foo"],
+        enabled: true,
+      },
     ]);
     expect(json).toContain('"mcpServers"');
     expect(json).toContain('"clientId": "cid"');
+    expect(json).toContain('"command": "npx"');
     const parsed = parseMcpServersJson(json);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(parsed.servers[0]).toMatchObject({
+    expect(parsed.servers.find((s) => s.name === "figma")).toMatchObject({
       name: "figma",
       url: "https://mcp.figma.com/mcp",
       enabled: true,
       preset: true,
       auth: { kind: "oauth", clientId: "cid", scope: "mcp:connect" },
+    });
+    expect(parsed.servers.find((s) => s.name === "local")).toMatchObject({
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "foo"],
     });
   });
 });

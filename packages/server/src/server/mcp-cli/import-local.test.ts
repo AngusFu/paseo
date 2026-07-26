@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { discoverLocalMcpServers } from "./import-local.js";
 
 describe("discoverLocalMcpServers", () => {
-  it("imports HTTP mcpServers and sciforum oauth-clients, skips stdio", async () => {
+  it("imports HTTP + stdio mcpServers and sciforum oauth-clients; skips headers", async () => {
     const dir = join(tmpdir(), `paseo-mcp-import-${process.pid}-${Date.now()}`);
     await mkdir(dir, { recursive: true });
     const mcpPath = join(dir, "mcp.json");
@@ -16,6 +16,7 @@ describe("discoverLocalMcpServers", () => {
         mcpServers: {
           open: { url: "https://example.com/mcp" },
           local: { command: "npx", args: ["-y", "x"] },
+          authed: { url: "https://x", headers: { Authorization: "Bearer t" } },
         },
       }),
       "utf8",
@@ -35,9 +36,15 @@ describe("discoverLocalMcpServers", () => {
 
     const result = await discoverLocalMcpServers([mcpPath, oauthPath]);
     expect(result.sources).toEqual([mcpPath, oauthPath]);
-    expect(result.servers.map((s) => s.name).sort()).toEqual(["figma", "open"]);
+    expect(result.servers.map((s) => s.name).sort()).toEqual(["figma", "local", "open"]);
     const figma = result.servers.find((s) => s.name === "figma");
     expect(figma?.auth).toMatchObject({ kind: "oauth", clientId: "cid", clientSecret: "sec" });
-    expect(result.warnings.some((w) => w.includes("stdio"))).toBe(true);
+    const local = result.servers.find((s) => s.name === "local");
+    expect(local).toMatchObject({
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "x"],
+    });
+    expect(result.warnings.some((w) => w.includes("headers"))).toBe(true);
   });
 });

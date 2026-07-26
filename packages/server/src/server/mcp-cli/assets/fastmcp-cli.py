@@ -228,13 +228,31 @@ def load_cfg(server: str) -> dict:
     if server not in all_cfg:
         die(f"unknown server '{server}' (have: {', '.join(all_cfg) or 'none'})")
     c = all_cfg[server]
+    transport = c.get("transport") or ("stdio" if c.get("command") and not c.get("source") else "http")
+    if transport == "stdio":
+        command = c.get("command")
+        if not command:
+            die(f"{server}: stdio config missing 'command'")
+        args = c.get("args") or []
+        if not isinstance(args, list):
+            die(f"{server}: stdio 'args' must be a list")
+        env = c.get("env") or {}
+        if not isinstance(env, dict):
+            die(f"{server}: stdio 'env' must be an object")
+        return {
+            "transport": "stdio",
+            "command": command,
+            "args": [str(a) for a in args],
+            "env": {str(k): str(v) for k, v in env.items()},
+            "cwd": c.get("cwd") or None,
+        }
     if not c.get("source"):
         die(f"{server}: oauth-clients.json missing 'source'")
-    # oauth_client_id is optional: missing → fastmcp OAuth DCR / open endpoint.
-    # Atlassian/Figma block DCR and need a pasted client_id.
+    # oauth_client_id optional: present → OAuth; absent → open HTTP (no auth wrapper).
     redir = c.get("oauth_redirect_uri") or ""
     m = re.search(r"localhost:(\d+)", redir)
     return {
+        "transport": "http",
         "url": c["source"],
         "client_id": c.get("oauth_client_id") or None,
         "client_secret": c.get("oauth_client_secret"),
@@ -367,11 +385,29 @@ def make_client(server: str):
             pass
 
     from fastmcp import Client
-    from fastmcp.client.transports import StreamableHttpTransport
+    from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
+
+    c = load_cfg(server)
+    if c.get("transport") == "stdio":
+        # CLI is one-shot per process; do not keep the child alive across contexts.
+        env = {**os.environ, **(c.get("env") or {})}
+        return Client(
+            StdioTransport(
+                command=c["command"],
+                args=c.get("args") or [],
+                env=env,
+                cwd=c.get("cwd") or None,
+                keep_alive=False,
+            )
+        )
+
+    # Open HTTP: no OAuth client → no auth wrapper (avoids DCR / browser on public endpoints).
+    if not c.get("client_id"):
+        return Client(StreamableHttpTransport(c["url"]))
+
     from fastmcp.client.auth import OAuth
     from key_value.aio.stores.disk import DiskStore
 
-    c = load_cfg(server)
     _attach_sdk_auth_logging()
     _patch_refresh_body_logging()
     _install_refresh_guard(server)  # passive-consumer hosts must never rotate the owner's token

@@ -4,6 +4,7 @@ import {
   McpCliServerConfigSchema,
   type McpCliServerConfig,
 } from "@getpaseo/protocol/mcp-cli/types";
+import { normalizeMcpCliServerConfig } from "./normalize.js";
 import { MCP_CLI_PRESETS, presetByName } from "./presets.js";
 import { mcpCliServersDir } from "./paths.js";
 
@@ -53,8 +54,13 @@ export class McpCliServerStore {
       }
       const raw = await readFile(join(dir, name), "utf8");
       const parsed = McpCliServerConfigSchema.safeParse(JSON.parse(raw));
-      if (parsed.success) {
-        servers.push(parsed.data);
+      if (!parsed.success) {
+        continue;
+      }
+      try {
+        servers.push(normalizeMcpCliServerConfig(parsed.data));
+      } catch {
+        // Skip corrupt / incomplete rows rather than failing the whole list.
       }
     }
     return servers;
@@ -66,7 +72,7 @@ export class McpCliServerStore {
   }
 
   async upsert(server: McpCliServerConfig): Promise<McpCliServerConfig> {
-    const parsed = McpCliServerConfigSchema.parse(server);
+    const parsed = normalizeMcpCliServerConfig(McpCliServerConfigSchema.parse(server));
     const preset = presetByName(parsed.name);
     const next: McpCliServerConfig = {
       ...parsed,

@@ -7,6 +7,7 @@ import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-moda
 import { SettingsTextArea } from "@/components/settings-textarea";
 import { Button } from "@/components/ui/button";
 import { Field, FormTextInput } from "@/components/ui/form-field";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/contexts/toast-context";
@@ -49,6 +50,79 @@ function runtimeStatusLabel(
 
 function defaultRedirectFor(name: string): string {
   return name === "atlassian" ? ATLASSIAN_DEFAULT_REDIRECT : "";
+}
+
+function isStdioServer(server: McpCliServerConfig): boolean {
+  return server.transport === "stdio" || Boolean(server.command && !server.url);
+}
+
+function formatStdioSummary(server: McpCliServerConfig): string {
+  const parts = [server.command ?? "", ...(server.args ?? [])].filter(Boolean);
+  return parts.join(" ") || "stdio";
+}
+
+function parseArgsLine(value: string): string[] | undefined {
+  const args = value
+    .trim()
+    .split(/\s+/)
+    .filter((part) => part.length > 0);
+  return args.length > 0 ? args : undefined;
+}
+
+function buildServerCardConfig(input: {
+  server: McpCliServerConfig;
+  enabled: boolean;
+  stdio: boolean;
+  url: string;
+  command: string;
+  argsLine: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+}): McpCliServerConfig {
+  const { server, enabled, stdio, url, command, argsLine, clientId, clientSecret, redirectUri } =
+    input;
+  if (stdio) {
+    const next: McpCliServerConfig = {
+      name: server.name,
+      transport: "stdio",
+      command: command.trim() || server.command || "",
+      enabled,
+    };
+    const args = parseArgsLine(argsLine);
+    if (args) next.args = args;
+    if (server.env) next.env = server.env;
+    if (server.cwd) next.cwd = server.cwd;
+    if (server.preset) next.preset = true;
+    return next;
+  }
+  return {
+    name: server.name,
+    transport: "http",
+    url: url.trim() || server.url || "",
+    enabled,
+    auth: buildOauthAuth(clientId, clientSecret, redirectUri),
+    ...(server.preset ? { preset: true } : {}),
+  };
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function serverCardFieldResetKey(server: McpCliServerConfig, stdio: boolean): string {
+  const oauth = server.auth?.kind === "oauth" ? server.auth : null;
+  return [
+    server.name,
+    stdio ? "stdio" : "http",
+    server.url ?? "",
+    server.command ?? "",
+    (server.args ?? []).join(" "),
+    server.enabled ? "1" : "0",
+    oauth?.clientId ?? "",
+    oauth?.clientSecret ?? "",
+    oauth?.redirectUri ?? "",
+  ].join("|");
 }
 
 function oauthFromServer(server: McpCliServerConfig): {
@@ -101,12 +175,15 @@ function ServerCard({
 }) {
   const { t } = useTranslation();
   const toast = useToast();
+  const stdio = isStdioServer(server);
   const initial = oauthFromServer(server);
   const [enabled, setEnabled] = useState(server.enabled);
   const [clientId, setClientId] = useState(initial.clientId);
   const [clientSecret, setClientSecret] = useState(initial.clientSecret);
   const [redirectUri, setRedirectUri] = useState(initial.redirectUri);
-  const [url, setUrl] = useState(server.url);
+  const [url, setUrl] = useState(server.url ?? "");
+  const [command, setCommand] = useState(server.command ?? "");
+  const [argsLine, setArgsLine] = useState((server.args ?? []).join(" "));
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
@@ -114,7 +191,9 @@ function ServerCard({
   useEffect(() => {
     const next = oauthFromServer(server);
     setEnabled(server.enabled);
-    setUrl(server.url);
+    setUrl(server.url ?? "");
+    setCommand(server.command ?? "");
+    setArgsLine((server.args ?? []).join(" "));
     setClientId(next.clientId);
     setClientSecret(next.clientSecret);
     setRedirectUri(next.redirectUri);
@@ -122,13 +201,19 @@ function ServerCard({
   }, [server]);
 
   const buildConfig = useCallback(
-    (nextEnabled: boolean): McpCliServerConfig => ({
-      ...server,
-      enabled: nextEnabled,
-      url: url.trim() || server.url,
-      auth: buildOauthAuth(clientId, clientSecret, redirectUri),
-    }),
-    [clientId, clientSecret, redirectUri, server, url],
+    (nextEnabled: boolean): McpCliServerConfig =>
+      buildServerCardConfig({
+        server,
+        enabled: nextEnabled,
+        stdio,
+        url,
+        command,
+        argsLine,
+        clientId,
+        clientSecret,
+        redirectUri,
+      }),
+    [argsLine, clientId, clientSecret, command, redirectUri, server, stdio, url],
   );
 
   const persist = useCallback(
@@ -138,7 +223,7 @@ function ServerCard({
         await onSave(next);
         toast.show(t("settings.hostSections.fastmcp.savedToast"), { variant: "success" });
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : String(err));
+        toast.error(errorMessage(err));
         throw err;
       } finally {
         setSaving(false);
@@ -170,11 +255,11 @@ function ServerCard({
         setTestResult(result);
         if (result.ok) {
           toast.show(result.message, { variant: "success" });
-        } else {
-          toast.error(result.message);
+          return;
         }
+        toast.error(result.message);
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         setTestResult({ ok: false, message });
         toast.error(message);
       } finally {
@@ -196,24 +281,12 @@ function ServerCard({
         await onDelete(server.name);
         toast.show(t("settings.hostSections.fastmcp.deletedToast"), { variant: "success" });
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : String(err));
+        toast.error(errorMessage(err));
       }
     })();
   }, [onDelete, server.name, t, toast]);
 
-  let testResultText: string | null = null;
-  if (testResult) {
-    testResultText = testResult.message;
-  }
-
-  const fieldResetKey = [
-    server.name,
-    server.url,
-    server.enabled ? "1" : "0",
-    server.auth?.kind === "oauth" ? server.auth.clientId : "",
-    server.auth?.kind === "oauth" ? (server.auth.clientSecret ?? "") : "",
-    server.auth?.kind === "oauth" ? (server.auth.redirectUri ?? "") : "",
-  ].join("|");
+  const summary = stdio ? formatStdioSummary(server) : (server.url ?? "");
 
   return (
     <View
@@ -224,7 +297,7 @@ function ServerCard({
         <View style={settingsStyles.rowContent}>
           <Text style={settingsStyles.rowTitle}>{server.name}</Text>
           <Text style={settingsStyles.rowHint} numberOfLines={2}>
-            {server.url}
+            {summary}
           </Text>
         </View>
         <Switch
@@ -238,18 +311,23 @@ function ServerCard({
       <ServerCardEditor
         serverName={server.name}
         isPreset={Boolean(server.preset)}
+        isStdio={stdio}
         busy={busy}
         saving={saving}
         testing={testing}
         enabled={enabled}
-        fieldResetKey={fieldResetKey}
+        fieldResetKey={serverCardFieldResetKey(server, stdio)}
         url={url}
+        command={command}
+        argsLine={argsLine}
         clientId={clientId}
         clientSecret={clientSecret}
         redirectUri={redirectUri}
-        testResultText={testResultText}
+        testResultText={testResult?.message ?? null}
         testOk={testResult?.ok ?? false}
         onUrlChange={setUrl}
+        onCommandChange={setCommand}
+        onArgsLineChange={setArgsLine}
         onClientIdChange={setClientId}
         onClientSecretChange={setClientSecret}
         onRedirectUriChange={setRedirectUri}
@@ -264,18 +342,23 @@ function ServerCard({
 function ServerCardEditor({
   serverName,
   isPreset,
+  isStdio,
   busy,
   saving,
   testing,
   enabled,
   fieldResetKey,
   url,
+  command,
+  argsLine,
   clientId,
   clientSecret,
   redirectUri,
   testResultText,
   testOk,
   onUrlChange,
+  onCommandChange,
+  onArgsLineChange,
   onClientIdChange,
   onClientSecretChange,
   onRedirectUriChange,
@@ -285,18 +368,23 @@ function ServerCardEditor({
 }: {
   serverName: string;
   isPreset: boolean;
+  isStdio: boolean;
   busy: boolean;
   saving: boolean;
   testing: boolean;
   enabled: boolean;
   fieldResetKey: string;
   url: string;
+  command: string;
+  argsLine: string;
   clientId: string;
   clientSecret: string;
   redirectUri: string;
   testResultText: string | null;
   testOk: boolean;
   onUrlChange: (value: string) => void;
+  onCommandChange: (value: string) => void;
+  onArgsLineChange: (value: string) => void;
   onClientIdChange: (value: string) => void;
   onClientSecretChange: (value: string) => void;
   onRedirectUriChange: (value: string) => void;
@@ -313,70 +401,111 @@ function ServerCardEditor({
 
   return (
     <View style={styles.serverBody}>
-      <Text style={settingsStyles.rowHint}>
-        {t("settings.hostSections.fastmcp.oauthPasteHint")}
-      </Text>
-      <Text style={settingsStyles.rowHint}>
-        {t("settings.hostSections.fastmcp.authOptionalHint")}
-      </Text>
+      {isStdio ? (
+        <>
+          <Field
+            label={t("settings.hostSections.fastmcp.command")}
+            testID={`fastmcp-${serverName}-command`}
+          >
+            <FormTextInput
+              size="sm"
+              initialValue={command}
+              resetKey={`${fieldResetKey}|command`}
+              onChangeText={onCommandChange}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={editable}
+              placeholder={t("settings.hostSections.fastmcp.commandPlaceholder")}
+            />
+          </Field>
+          <Field
+            label={t("settings.hostSections.fastmcp.args")}
+            testID={`fastmcp-${serverName}-args`}
+          >
+            <FormTextInput
+              size="sm"
+              initialValue={argsLine}
+              resetKey={`${fieldResetKey}|args`}
+              onChangeText={onArgsLineChange}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={editable}
+              placeholder={t("settings.hostSections.fastmcp.argsPlaceholder")}
+            />
+          </Field>
+          <Text style={settingsStyles.rowHint}>{t("settings.hostSections.fastmcp.argsHint")}</Text>
+        </>
+      ) : (
+        <>
+          <Text style={settingsStyles.rowHint}>
+            {t("settings.hostSections.fastmcp.oauthPasteHint")}
+          </Text>
+          <Text style={settingsStyles.rowHint}>
+            {t("settings.hostSections.fastmcp.authOptionalHint")}
+          </Text>
 
-      <Field label={t("settings.hostSections.fastmcp.url")} testID={`fastmcp-${serverName}-url`}>
-        <FormTextInput
-          size="sm"
-          initialValue={url}
-          resetKey={`${fieldResetKey}|url`}
-          onChangeText={onUrlChange}
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={editable}
-        />
-      </Field>
-      <Field
-        label={t("settings.hostSections.fastmcp.clientId")}
-        testID={`fastmcp-${serverName}-client-id`}
-      >
-        <FormTextInput
-          size="sm"
-          initialValue={clientId}
-          resetKey={`${fieldResetKey}|clientId`}
-          onChangeText={onClientIdChange}
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={editable}
-          placeholder={t("settings.hostSections.fastmcp.clientIdPlaceholder")}
-        />
-      </Field>
-      <Field
-        label={t("settings.hostSections.fastmcp.clientSecret")}
-        testID={`fastmcp-${serverName}-client-secret`}
-      >
-        <FormTextInput
-          size="sm"
-          initialValue={clientSecret}
-          resetKey={`${fieldResetKey}|clientSecret`}
-          onChangeText={onClientSecretChange}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-          editable={editable}
-          placeholder={t("settings.hostSections.fastmcp.clientSecretPlaceholder")}
-        />
-      </Field>
-      <Field
-        label={t("settings.hostSections.fastmcp.redirectUri")}
-        testID={`fastmcp-${serverName}-redirect`}
-      >
-        <FormTextInput
-          size="sm"
-          initialValue={redirectUri}
-          resetKey={`${fieldResetKey}|redirect`}
-          onChangeText={onRedirectUriChange}
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={editable}
-          placeholder={redirectPlaceholder}
-        />
-      </Field>
+          <Field
+            label={t("settings.hostSections.fastmcp.url")}
+            testID={`fastmcp-${serverName}-url`}
+          >
+            <FormTextInput
+              size="sm"
+              initialValue={url}
+              resetKey={`${fieldResetKey}|url`}
+              onChangeText={onUrlChange}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={editable}
+            />
+          </Field>
+          <Field
+            label={t("settings.hostSections.fastmcp.clientId")}
+            testID={`fastmcp-${serverName}-client-id`}
+          >
+            <FormTextInput
+              size="sm"
+              initialValue={clientId}
+              resetKey={`${fieldResetKey}|clientId`}
+              onChangeText={onClientIdChange}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={editable}
+              placeholder={t("settings.hostSections.fastmcp.clientIdPlaceholder")}
+            />
+          </Field>
+          <Field
+            label={t("settings.hostSections.fastmcp.clientSecret")}
+            testID={`fastmcp-${serverName}-client-secret`}
+          >
+            <FormTextInput
+              size="sm"
+              initialValue={clientSecret}
+              resetKey={`${fieldResetKey}|clientSecret`}
+              onChangeText={onClientSecretChange}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              editable={editable}
+              placeholder={t("settings.hostSections.fastmcp.clientSecretPlaceholder")}
+            />
+          </Field>
+          <Field
+            label={t("settings.hostSections.fastmcp.redirectUri")}
+            testID={`fastmcp-${serverName}-redirect`}
+          >
+            <FormTextInput
+              size="sm"
+              initialValue={redirectUri}
+              resetKey={`${fieldResetKey}|redirect`}
+              onChangeText={onRedirectUriChange}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={editable}
+              placeholder={redirectPlaceholder}
+            />
+          </Field>
+        </>
+      )}
 
       {testResultText ? (
         <Text
@@ -441,7 +570,10 @@ export function HostFastMcpPage({ serverId }: { serverId: string }) {
   const [jsonText, setJsonText] = useState(EMPTY_MCP_SERVERS_JSON);
   const [jsonBusy, setJsonBusy] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newTransport, setNewTransport] = useState<"http" | "stdio">("http");
   const [newUrl, setNewUrl] = useState("");
+  const [newCommand, setNewCommand] = useState("");
+  const [newArgsLine, setNewArgsLine] = useState("");
 
   const jsonHeader = useMemo<SheetHeader>(
     () => ({ title: t("settings.hostSections.fastmcp.jsonTitle") }),
@@ -609,22 +741,43 @@ export function HostFastMcpPage({ serverId }: { serverId: string }) {
   const handleAddServer = useCallback(() => {
     if (!client) return;
     const name = newName.trim();
-    const url = newUrl.trim();
-    if (!name || !url) {
-      toast.error(t("settings.hostSections.fastmcp.addValidation"));
-      return;
-    }
     if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
       toast.error(t("settings.hostSections.fastmcp.addNameInvalid"));
       return;
     }
+    let next: McpCliServerConfig;
+    if (newTransport === "stdio") {
+      const command = newCommand.trim();
+      if (!name || !command) {
+        toast.error(t("settings.hostSections.fastmcp.addValidationStdio"));
+        return;
+      }
+      next = {
+        name,
+        transport: "stdio",
+        command,
+        enabled: true,
+      };
+      const args = parseArgsLine(newArgsLine);
+      if (args) next.args = args;
+    } else {
+      const url = newUrl.trim();
+      if (!name || !url) {
+        toast.error(t("settings.hostSections.fastmcp.addValidation"));
+        return;
+      }
+      next = { name, transport: "http", url, enabled: true };
+    }
     setJsonBusy(true);
     void (async () => {
       try {
-        await handleSave({ name, url, enabled: true });
+        await handleSave(next);
         setAddOpen(false);
         setNewName("");
         setNewUrl("");
+        setNewCommand("");
+        setNewArgsLine("");
+        setNewTransport("http");
         toast.show(t("settings.hostSections.fastmcp.savedToast"), { variant: "success" });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : String(err));
@@ -632,7 +785,7 @@ export function HostFastMcpPage({ serverId }: { serverId: string }) {
         setJsonBusy(false);
       }
     })();
-  }, [client, handleSave, newName, newUrl, t, toast]);
+  }, [client, handleSave, newArgsLine, newCommand, newName, newTransport, newUrl, t, toast]);
 
   const handleImportLocal = useCallback(() => {
     if (!client) return;
@@ -876,17 +1029,65 @@ export function HostFastMcpPage({ serverId }: { serverId: string }) {
             testID="host-fastmcp-add-name"
           />
         </Field>
-        <Field label={t("settings.hostSections.fastmcp.url")}>
-          <FormTextInput
-            size="sm"
-            value={newUrl}
-            onChangeText={setNewUrl}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="https://…"
-            testID="host-fastmcp-add-url"
-          />
-        </Field>
+        <SegmentedControl
+          size="sm"
+          value={newTransport}
+          onValueChange={setNewTransport}
+          testID="host-fastmcp-add-transport"
+          options={[
+            {
+              value: "http",
+              label: t("settings.hostSections.fastmcp.transportHttp"),
+              testID: "host-fastmcp-add-transport-http",
+            },
+            {
+              value: "stdio",
+              label: t("settings.hostSections.fastmcp.transportStdio"),
+              testID: "host-fastmcp-add-transport-stdio",
+            },
+          ]}
+        />
+        {newTransport === "stdio" ? (
+          <>
+            <Field label={t("settings.hostSections.fastmcp.command")}>
+              <FormTextInput
+                size="sm"
+                value={newCommand}
+                onChangeText={setNewCommand}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder={t("settings.hostSections.fastmcp.commandPlaceholder")}
+                testID="host-fastmcp-add-command"
+              />
+            </Field>
+            <Field label={t("settings.hostSections.fastmcp.args")}>
+              <FormTextInput
+                size="sm"
+                value={newArgsLine}
+                onChangeText={setNewArgsLine}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder={t("settings.hostSections.fastmcp.argsPlaceholder")}
+                testID="host-fastmcp-add-args"
+              />
+            </Field>
+            <Text style={settingsStyles.rowHint}>
+              {t("settings.hostSections.fastmcp.argsHint")}
+            </Text>
+          </>
+        ) : (
+          <Field label={t("settings.hostSections.fastmcp.url")}>
+            <FormTextInput
+              size="sm"
+              value={newUrl}
+              onChangeText={setNewUrl}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder="https://…"
+              testID="host-fastmcp-add-url"
+            />
+          </Field>
+        )}
         <Text style={settingsStyles.rowHint}>{t("settings.hostSections.fastmcp.addHint")}</Text>
       </AdaptiveModalSheet>
     </View>

@@ -11,9 +11,22 @@ export const McpCliOAuthAuthSchema = z.object({
 
 export const McpCliServerAuthSchema = z.discriminatedUnion("kind", [McpCliOAuthAuthSchema]);
 
+export const McpCliTransportSchema = z.enum(["http", "stdio"]);
+
+/**
+ * Wire schema for a FastMCP CLI server row.
+ * `transport` / `url` / `command` are validated further in an explicit
+ * post-parse normalize step (http requires url; stdio requires command).
+ * Absent `transport` means http for back-compat with stored presets.
+ */
 export const McpCliServerConfigSchema = z.object({
   name: z.string().min(1),
-  url: z.string().min(1),
+  transport: McpCliTransportSchema.optional(),
+  url: z.string().optional(),
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  cwd: z.string().optional(),
   enabled: z.boolean(),
   auth: McpCliServerAuthSchema.optional(),
   /** True when this row comes from a built-in preset (atlassian/figma). */
@@ -22,6 +35,7 @@ export const McpCliServerConfigSchema = z.object({
 
 export type McpCliServerConfig = z.infer<typeof McpCliServerConfigSchema>;
 export type McpCliOAuthAuth = z.infer<typeof McpCliOAuthAuthSchema>;
+export type McpCliTransport = z.infer<typeof McpCliTransportSchema>;
 
 export const McpCliRuntimeComponentStateSchema = z.enum([
   "missing",

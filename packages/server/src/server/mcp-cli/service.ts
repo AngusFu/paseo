@@ -1,24 +1,28 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import type { McpCliRuntimeStatus, McpCliServerConfig } from "@getpaseo/protocol/mcp-cli/types";
 import { discoverLocalMcpServers, type ImportLocalResult } from "./import-local.js";
 import { syncMcpCliLaunchers } from "./launchers.js";
 import { isMcpCliStdioServer } from "./normalize.js";
-import { mcpCliBinDir, mcpCliOauthClientsPath, mcpCliRoot } from "./paths.js";
+import {
+  mcpCliBinDir,
+  mcpCliLegacyOauthClientsPath,
+  mcpCliMcpServersPath,
+  mcpCliRoot,
+} from "./paths.js";
 import { prependMcpCliBinPath } from "./path.js";
 import { formatMcpCliDaemonAppendPrompt } from "./prompt.js";
 import { getMcpCliRuntimeStatus, installMcpCliRuntime } from "./runtime.js";
 import { McpCliServerStore } from "./store.js";
 
 /**
- * Registry consumed by fastmcp-cli.py (filename `oauth-clients.json` kept for
- * back-compat). Entries follow FastMCP `MCPConfig` / Claude `mcpServers` shape:
- * stdio → command/args/env/cwd; remote → url/headers/auth.
+ * Enabled-server map for fastmcp-cli.py — FastMCP `MCPConfig` / Claude
+ * `mcpServers` shape (stdio → command/args/env/cwd; remote → url/headers/auth).
  *
  * Pre-registered OAuth (Atlassian/Figma) adds `oauth_client_*` extras that stock
  * FastMCP JSON cannot express; the runner only special-cases those.
  */
-export function oauthClientsRegistry(
+export function mcpServersRegistry(
   servers: readonly McpCliServerConfig[],
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -83,7 +87,7 @@ export class McpCliService {
   async install(): Promise<McpCliRuntimeStatus> {
     const status = await installMcpCliRuntime(this.paseoHome);
     const servers = await this.store.listMerged();
-    await this.persistOauthClients(servers);
+    await this.persistMcpServersRegistry(servers);
     await syncMcpCliLaunchers(this.paseoHome, servers);
     return status;
   }
@@ -95,7 +99,7 @@ export class McpCliService {
   async upsertServer(server: McpCliServerConfig): Promise<McpCliServerConfig> {
     const saved = await this.store.upsert(server);
     const servers = await this.store.listMerged();
-    await this.persistOauthClients(servers);
+    await this.persistMcpServersRegistry(servers);
     await syncMcpCliLaunchers(this.paseoHome, servers);
     return saved;
   }
@@ -103,7 +107,7 @@ export class McpCliService {
   async deleteServer(name: string): Promise<void> {
     await this.store.delete(name);
     const servers = await this.store.listMerged();
-    await this.persistOauthClients(servers);
+    await this.persistMcpServersRegistry(servers);
     await syncMcpCliLaunchers(this.paseoHome, servers);
   }
 
@@ -197,9 +201,19 @@ export class McpCliService {
     };
   }
 
-  private async persistOauthClients(servers: readonly McpCliServerConfig[]): Promise<void> {
+  private async persistMcpServersRegistry(servers: readonly McpCliServerConfig[]): Promise<void> {
     await mkdir(mcpCliRoot(this.paseoHome), { recursive: true });
-    const path = mcpCliOauthClientsPath(this.paseoHome);
-    await writeFile(path, `${JSON.stringify(oauthClientsRegistry(servers), null, 2)}\n`, "utf8");
+    const path = mcpCliMcpServersPath(this.paseoHome);
+    const tmp = `${path}.${process.pid}.tmp`;
+    await writeFile(tmp, `${JSON.stringify(mcpServersRegistry(servers), null, 2)}\n`, "utf8");
+    await rename(tmp, path);
+    // COMPAT(mcpServersRegistryRename): remove legacy filename once new registry exists.
+    try {
+      await unlink(mcpCliLegacyOauthClientsPath(this.paseoHome));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
   }
 }

@@ -24,7 +24,16 @@ export function mcpCliCacheDir(paseoHome: string): string {
   return join(mcpCliRoot(paseoHome), "cache");
 }
 
-export function mcpCliOauthClientsPath(paseoHome: string): string {
+/** FastMCP-shaped enabled-server registry consumed by fastmcp-cli.py. */
+export function mcpCliMcpServersPath(paseoHome: string): string {
+  return join(mcpCliRoot(paseoHome), "mcp-servers.json");
+}
+
+/**
+ * COMPAT(mcpServersRegistryRename): added in v0.1.105, drop after 2027-01-25
+ * when reading old homes that still have oauth-clients.json only.
+ */
+export function mcpCliLegacyOauthClientsPath(paseoHome: string): string {
   return join(mcpCliRoot(paseoHome), "oauth-clients.json");
 }
 

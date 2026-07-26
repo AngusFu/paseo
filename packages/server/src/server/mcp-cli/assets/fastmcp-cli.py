@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Paseo FastMCP CLI runner — one-shot shell CLIs for MCP servers.
 
-Config ($PASEO_HOME/mcp-cli/oauth-clients.json) follows FastMCP MCPConfig /
-Claude mcpServers shape. The runner prefers StdioMCPServer / RemoteMCPServer
-to_transport() so open HTTP, bearer, headers, auth=\"oauth\" (DCR), and stdio
-match stock FastMCP.
+Config ($PASEO_HOME/mcp-cli/mcp-servers.json) follows FastMCP MCPConfig /
+Claude mcpServers shape. This file is mostly a thin CLI shell over FastMCP
+Client + StdioMCPServer / RemoteMCPServer.to_transport() (open HTTP, bearer,
+headers, auth=\"oauth\" DCR, stdio).
 
-Special case only: pre-registered OAuth (oauth_client_id present — Atlassian /
-Figma block DCR). That path uses FastMCP OAuth(client_id=…) plus AS metadata
-pre-seed, refresh guard, and lock — workarounds for mcp-SDK cold-start refresh
-bugs. Secrets never printed.
+Polyfill only: pre-registered OAuth (oauth_client_id — Atlassian / Figma block
+DCR; AS metadata / token endpoints differ from stock). That path uses FastMCP
+OAuth(client_id=…) plus metadata pre-seed, refresh guard, and lock. Secrets
+never printed.
 
 Native MCP surface — tool + flag names are the server's own (camelCase):
 
@@ -23,12 +23,20 @@ Canonical copy: packages/server/src/server/mcp-cli/assets/fastmcp-cli.py
 """
 import asyncio, difflib, fcntl, json, os, re, shutil, subprocess, sys, textwrap, time, traceback
 
-# Paseo layout: $PASEO_HOME/mcp-cli/{oauth-clients.json,cache/,...}
+# Paseo layout: $PASEO_HOME/mcp-cli/{mcp-servers.json,cache/,...}
 # Launchers pass PASEO_MCP_CLI_ROOT; fall back to ~/.paseo/mcp-cli for manual runs.
 _ROOT = os.path.expanduser(os.environ.get("PASEO_MCP_CLI_ROOT") or "~/.paseo/mcp-cli")
-CONFIG = os.path.join(_ROOT, "oauth-clients.json")
+# COMPAT(mcpServersRegistryRename): prefer mcp-servers.json; fall back to oauth-clients.json.
+_CONFIG_NEW = os.path.join(_ROOT, "mcp-servers.json")
+_CONFIG_LEGACY = os.path.join(_ROOT, "oauth-clients.json")
 STORE_DIR = os.path.join(_ROOT, "cache", "oauth")
 SCHEMA_DIR = os.path.join(_ROOT, "cache", "schema")
+
+
+def _config_path() -> str:
+    if os.path.exists(_CONFIG_NEW):
+        return _CONFIG_NEW
+    return _CONFIG_LEGACY
 CACHE_TTL = 86400  # refetch tool schemas at least daily (server may add tools/required fields)
 META_TTL = 7 * 86400  # AS metadata (token_endpoint etc) is stable; weekly refetch, stale fallback
 MISS_TTL = 300  # failed discovery negative-cache: don't re-storm well-knowns on every call
@@ -217,13 +225,14 @@ def term_score(term: str, name: str, name_words, desc: str) -> int:
 
 
 def _load_registry() -> dict:
-    if not os.path.exists(CONFIG):
-        die(f"oauth config not found: {CONFIG} — save a server in Host → FastMCP first")
-    return json.load(open(CONFIG))
+    path = _config_path()
+    if not os.path.exists(path):
+        die(f"MCP server registry not found: {_CONFIG_NEW} — save a server in Host → FastMCP first")
+    return json.load(open(path))
 
 
 def load_raw(server: str) -> dict:
-    """Load one server row from oauth-clients.json (FastMCP mcpServers-shaped)."""
+    """Load one server row from mcp-servers.json (FastMCP mcpServers-shaped)."""
     all_cfg = _load_registry()
     if server not in all_cfg:
         die(f"unknown server '{server}' (have: {', '.join(all_cfg) or 'none'})")
@@ -237,11 +246,11 @@ def load_raw(server: str) -> dict:
 
 
 def load_cfg(server: str) -> dict:
-    """Normalize registry row for the pre-registered OAuth special path."""
+    """Normalize registry row for the pre-registered OAuth polyfill path."""
     c = load_raw(server)
     url = c.get("url")
     if not url:
-        die(f"{server}: oauth-clients.json missing 'url' (or legacy 'source')")
+        die(f"{server}: registry missing 'url' (or legacy 'source')")
     redir = c.get("oauth_redirect_uri") or ""
     m = re.search(r"localhost:(\d+)", redir)
     return {

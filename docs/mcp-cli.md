@@ -2,14 +2,21 @@
 
 Paseo-managed per-server shell CLIs for MCP servers. Host Settings → FastMCP configures runtime and servers; agents and Paseo terminals get `$PASEO_HOME/mcp-cli/bin` on PATH.
 
-Config and the Python runner follow **FastMCP `MCPConfig`** / Claude-Cursor `mcpServers` shapes. Stock FastMCP covers open HTTP, bearer, headers, `auth: "oauth"` (DCR), and stdio. Paseo only special-cases **pre-registered OAuth** (Atlassian / Figma `oauth_client_id`) where providers block DCR and mcp-SDK cold-start refresh needs patches.
+## Mental model
 
-Supports:
+`fastmcp-cli.py` is:
+
+1. **CLI shell** over stock FastMCP (`Client` + `StdioMCPServer` / `RemoteMCPServer.to_transport()`): open HTTP, bearer, headers, `auth: "oauth"` (DCR), stdio.
+2. **OAuth polyfill** only when `oauth_client_id` is set (Atlassian / Figma): pre-registered client + AS metadata pre-seed / refresh guard / lock, because those providers block DCR and their metadata/token endpoints diverge from the stock mcp-SDK path.
+
+Do not invent extra concepts for open HTTP — registry row is just `{ "url": "…" }`.
+
+## Supports
 
 - **HTTP open / no-auth** (`url` only)
 - **HTTP + headers / bearer** (FastMCP `headers` or `auth: "<token>"`)
 - **HTTP + OAuth DCR** (`auth: "oauth"`)
-- **HTTP + pre-registered OAuth** (presets / `oauth_client_id` + metadata patches)
+- **HTTP + pre-registered OAuth** (presets / `oauth_client_id` + polyfill)
 - **Stdio** (`command` / `args` / optional `env` / `cwd` — env overlays MCP SDK allowlist)
 
 Presets ship for Atlassian + Figma. Add others via **Add**, **JSON** import, or **Import from host**. Bearer/headers have no dedicated Host form yet — use JSON / Import / agent tools.
@@ -19,15 +26,17 @@ Presets ship for Atlassian + Figma. Add others via **Add**, **JSON** import, or 
 ```
 $PASEO_HOME/mcp-cli/
   runtime.json
-  fastmcp-cli.py          # vendored runner
-  oauth-clients.json      # FastMCP-shaped registry (filename kept for back-compat)
+  fastmcp-cli.py          # vendored runner (CLI shell + OAuth polyfill)
+  mcp-servers.json        # FastMCP-shaped registry (enabled servers only)
   venv/                   # uv-managed Python + fastmcp
   servers/{name}.json     # Paseo server rows (enabled, preset, structured auth)
   bin/{name}              # sh launchers only — never ~/.local/bin
   cache/                  # schema + OAuth DiskStore
 ```
 
-### Registry shape (`oauth-clients.json`)
+`COMPAT(mcpServersRegistryRename)`: older homes used `oauth-clients.json`. Runner still reads it if `mcp-servers.json` is missing; the next upsert/install writes the new file and removes the legacy one. External import still scans `~/.config/sciforum/oauth-clients.json` (third-party path, unchanged).
+
+### Registry shape (`mcp-servers.json`)
 
 Enabled servers only, FastMCP-aligned:
 
@@ -53,7 +62,7 @@ Enabled servers only, FastMCP-aligned:
 }
 ```
 
-Legacy rows with `source` instead of `url` are still accepted by the runner.
+Legacy rows with `source` instead of `url` are still accepted by the runner (`COMPAT(source→url)`).
 
 ## Capability
 
@@ -76,7 +85,7 @@ Legacy rows with `source` instead of `url` are still accepted by the runner.
 - **HTTP open**: no `auth` → FastMCP `RemoteMCPServer.to_transport()` (Streamable HTTP).
 - **HTTP bearer/headers**: FastMCP `auth` string and/or `headers`.
 - **HTTP OAuth DCR**: `auth: "oauth"` without `oauth_client_id` → stock FastMCP OAuth.
-- **HTTP pre-registered OAuth**: `oauth_client_id` present → FastMCP `OAuth(client_id=…)` plus AS metadata pre-seed / refresh guard / lock. First Test / CLI call may open a **browser on the daemon host**. Tokens land in `$PASEO_HOME/mcp-cli/cache/`.
+- **HTTP pre-registered OAuth (polyfill)**: `oauth_client_id` present → FastMCP `OAuth(client_id=…)` plus AS metadata pre-seed / refresh guard / lock. First Test / CLI call may open a **browser on the daemon host**. Tokens land in `$PASEO_HOME/mcp-cli/cache/`.
 - **Stdio**: FastMCP `StdioMCPServer.to_transport()` with `keep_alive=false`. Env is MCP SDK default allowlist plus optional config `env` overlay (not a full `os.environ` copy).
 - Phone configures only; OAuth callback runs on the host. Headless / Docker hosts are unsupported for browser OAuth.
 - Secrets are plaintext JSON (same trust model as schedule env). Do not log secrets; Test responses must not echo them; UI masks secret fields. Never commit `$PASEO_HOME` / `.dev/paseo-home` secrets into git.

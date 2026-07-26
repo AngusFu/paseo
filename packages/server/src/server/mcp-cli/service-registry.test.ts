@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { oauthClientsRegistry } from "./service.js";
+import { mcpServersRegistry } from "./service.js";
 
-describe("oauthClientsRegistry", () => {
+describe("mcpServersRegistry", () => {
   it("writes FastMCP-shaped http open, oauth, bearer, headers, and stdio rows", () => {
-    const registry = oauthClientsRegistry([
+    const registry = mcpServersRegistry([
       { name: "open", transport: "http", url: "https://example.com/mcp", enabled: true },
       {
         name: "figma",

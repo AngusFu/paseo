@@ -86,6 +86,7 @@ import {
   type DiffContextCompare,
   type DiffContextExpansionController,
 } from "@/git/use-diff-context-expansion";
+import { useLazyCheckoutDiffFiles } from "@/git/use-lazy-checkout-diff-files";
 import { buildDiffTree, collectDirPaths, compressSingleChildChains } from "@/git/diff-tree";
 import { DiffFolderRow } from "@/git/diff-folder-row";
 import {
@@ -1546,6 +1547,119 @@ function useDiffContextExpanders(
   return { displayFile, expanders };
 }
 
+function DiffTooLargeStatus({
+  loadAttempted,
+  isLoadingHunks,
+  isLoadFailed,
+  lazyHunksSupported,
+  onLoadHunks,
+  onRetryLoad,
+}: {
+  loadAttempted: boolean;
+  isLoadingHunks: boolean;
+  isLoadFailed: boolean;
+  lazyHunksSupported: boolean;
+  onLoadHunks?: () => void;
+  onRetryLoad?: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <View style={styles.statusMessageContainer}>
+      <Text style={styles.statusMessageText}>
+        {loadAttempted ? t("workspace.git.diff.tooLargeStill") : t("workspace.git.diff.tooLarge")}
+      </Text>
+      {lazyHunksSupported && onLoadHunks && !loadAttempted ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onLoadHunks}
+          style={styles.lazyHunksManualButton}
+          disabled={isLoadingHunks}
+        >
+          {isLoadingHunks ? (
+            <View style={styles.lazyHunksLoadingRow}>
+              <ActivityIndicator size="small" />
+              <Text style={styles.lazyHunksManualButtonText}>
+                {t("workspace.git.diff.loadingHunks")}
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.lazyHunksManualButtonText}>
+              {t("workspace.git.diff.loadLargeDiff")}
+            </Text>
+          )}
+        </Pressable>
+      ) : null}
+      {isLoadFailed && onRetryLoad ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onRetryLoad}
+          style={styles.lazyHunksManualButton}
+          disabled={isLoadingHunks}
+        >
+          <Text style={styles.lazyHunksManualButtonText}>
+            {t("workspace.git.diff.loadFailedRetry")}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function DiffDeferredHunksStatus({
+  isLoadingHunks,
+  isLoadFailed,
+  lazyHunksUnavailable,
+  onRetryLoad,
+}: {
+  isLoadingHunks: boolean;
+  isLoadFailed: boolean;
+  lazyHunksUnavailable: boolean;
+  onRetryLoad?: () => void;
+}) {
+  const { t } = useTranslation();
+
+  if (isLoadingHunks) {
+    return (
+      <View style={styles.statusMessageContainer}>
+        <View style={styles.lazyHunksLoadingRow}>
+          <ActivityIndicator size="small" />
+          <Text style={styles.statusMessageText}>{t("workspace.git.diff.loadingHunks")}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (isLoadFailed) {
+    return (
+      <View style={styles.statusMessageContainer}>
+        <Text style={styles.statusMessageText}>{t("workspace.git.diff.lazyHunksFailed")}</Text>
+        {onRetryLoad ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={onRetryLoad}
+            style={styles.lazyHunksManualButton}
+          >
+            <Text style={styles.lazyHunksManualButtonText}>
+              {t("workspace.git.diff.loadFailedRetry")}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.statusMessageContainer}>
+      <Text style={styles.statusMessageText}>
+        {lazyHunksUnavailable
+          ? t("workspace.git.diff.lazyHunksUnavailable")
+          : t("workspace.git.diff.loadingHunks")}
+      </Text>
+    </View>
+  );
+}
+
 export function DiffFileBody({
   file,
   layout,
@@ -1554,6 +1668,13 @@ export function DiffFileBody({
   textMetricsStyle,
   reviewActions,
   contextExpansion,
+  isLoadingHunks = false,
+  isLoadFailed = false,
+  loadAttempted = false,
+  lazyHunksUnavailable = false,
+  lazyHunksSupported = false,
+  loadFile,
+  retryFile,
   onBodyHeightChange,
   testID,
 }: {
@@ -1564,6 +1685,13 @@ export function DiffFileBody({
   textMetricsStyle: TextStyle;
   reviewActions?: InlineReviewActions;
   contextExpansion?: DiffContextExpansionController | null;
+  isLoadingHunks?: boolean;
+  isLoadFailed?: boolean;
+  loadAttempted?: boolean;
+  lazyHunksUnavailable?: boolean;
+  lazyHunksSupported?: boolean;
+  loadFile?: (path: string, options?: { manual?: boolean }) => void;
+  retryFile?: (path: string, options?: { manual?: boolean }) => void;
   onBodyHeightChange?: (file: ParsedDiffFile, height: number) => void;
   testID?: string;
 }) {
@@ -1571,6 +1699,13 @@ export function DiffFileBody({
   const [bodyWidth, setBodyWidth] = useState(0);
   const [hoveredReviewTargetKey, setHoveredReviewTargetKey] = useState<string | null>(null);
   const { t } = useTranslation();
+  const manualLoad = file.status === "too_large";
+  const handleLoadHunks = useCallback(() => {
+    loadFile?.(file.path, { manual: manualLoad });
+  }, [file.path, loadFile, manualLoad]);
+  const handleRetryLoad = useCallback(() => {
+    retryFile?.(file.path, { manual: manualLoad });
+  }, [file.path, manualLoad, retryFile]);
   // Loaded context is folded into the hunks, so every renderer below draws it as
   // ordinary context; only the expander rows are new.
   const { displayFile, expanders } = useDiffContextExpanders(file, contextExpansion);
@@ -1602,15 +1737,35 @@ export function DiffFileBody({
       testID={testID}
     >
       {(() => {
-        if (file.status === "too_large" || file.status === "binary") {
+        if (file.status === "binary") {
           return (
             <View style={styles.statusMessageContainer}>
-              <Text style={styles.statusMessageText}>
-                {file.status === "binary"
-                  ? t("workspace.git.diff.binaryFile")
-                  : t("workspace.git.diff.tooLarge")}
-              </Text>
+              <Text style={styles.statusMessageText}>{t("workspace.git.diff.binaryFile")}</Text>
             </View>
+          );
+        }
+
+        if (file.status === "too_large" && file.hunks.length === 0) {
+          return (
+            <DiffTooLargeStatus
+              loadAttempted={loadAttempted}
+              isLoadingHunks={isLoadingHunks}
+              isLoadFailed={isLoadFailed}
+              lazyHunksSupported={lazyHunksSupported}
+              onLoadHunks={loadFile ? handleLoadHunks : undefined}
+              onRetryLoad={retryFile ? handleRetryLoad : undefined}
+            />
+          );
+        }
+
+        if (file.hunksDeferred && file.hunks.length === 0) {
+          return (
+            <DiffDeferredHunksStatus
+              isLoadingHunks={isLoadingHunks}
+              isLoadFailed={isLoadFailed}
+              lazyHunksUnavailable={lazyHunksUnavailable}
+              onRetryLoad={retryFile ? handleRetryLoad : undefined}
+            />
           );
         }
 
@@ -2496,6 +2651,8 @@ interface DiffBodyContentProps {
   diffListRef: RefObject<FlatList<DiffFlatItem> | null>;
   handleDiffListLayout: (event: LayoutChangeEvent) => void;
   handleDiffListScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  onViewableItemsChanged?: FlatListProps<DiffFlatItem>["onViewableItemsChanged"];
+  viewabilityConfig?: FlatListProps<DiffFlatItem>["viewabilityConfig"];
   onContentSizeChange: (width: number, height: number) => void;
   showDesktopWebScrollbar: boolean;
   checkingRepositoryLabel: string;
@@ -2524,6 +2681,8 @@ function DiffBodyContent({
   diffListRef,
   handleDiffListLayout,
   handleDiffListScroll,
+  onViewableItemsChanged,
+  viewabilityConfig,
   onContentSizeChange,
   showDesktopWebScrollbar,
   checkingRepositoryLabel,
@@ -2605,6 +2764,8 @@ function DiffBodyContent({
       testID="git-diff-scroll"
       onLayout={handleDiffListLayout}
       onScroll={handleDiffListScroll}
+      onViewableItemsChanged={onViewableItemsChanged}
+      viewabilityConfig={viewabilityConfig}
       onContentSizeChange={onContentSizeChange}
       scrollEventThrottle={16}
       showsVerticalScrollIndicator={!showDesktopWebScrollbar}
@@ -2648,6 +2809,7 @@ interface SharedDiffViewProps {
       };
 }
 
+/** Shared diff list for commit history and other callers. Lazy hunk loading is wired in {@link GitDiffPane} only. */
 export function SharedDiffView({
   files,
   displayPreferences,
@@ -3317,6 +3479,23 @@ function buildDiffContextCompare(input: {
   return { mode: diffMode, ...(baseRef ? { baseRef } : {}) };
 }
 
+function buildCheckoutDiffFetchCompare(input: {
+  branchCompare: BranchCompareState | null;
+  diffMode: "uncommitted" | "base";
+  baseRef: string | undefined;
+  hideWhitespace: boolean;
+  diffTool: DiffToolId;
+  gitAlgorithm?: GitDiffAlgorithm;
+}) {
+  const shared = buildDiffContextCompare(input);
+  return {
+    ...shared,
+    ignoreWhitespace: input.hideWhitespace,
+    ...(input.diffTool !== "git" ? { tool: input.diffTool } : {}),
+    ...(input.diffTool === "git" && input.gitAlgorithm ? { gitAlgorithm: input.gitAlgorithm } : {}),
+  };
+}
+
 interface UseDiffPaneBranchCompareInput {
   serverId: string;
   cwd: string;
@@ -3930,6 +4109,25 @@ export function GitDiffPane({
     () => buildDiffContextCompare({ branchCompare, diffMode, baseRef }),
     [baseRef, branchCompare, diffMode],
   );
+  const checkoutDiffFetchCompare = useMemo(
+    () =>
+      buildCheckoutDiffFetchCompare({
+        branchCompare,
+        diffMode,
+        baseRef,
+        hideWhitespace: changesPreferences.hideWhitespace,
+        diffTool: changesPreferences.diffTool,
+        gitAlgorithm: changesPreferences.gitAlgorithm,
+      }),
+    [
+      baseRef,
+      branchCompare,
+      changesPreferences.diffTool,
+      changesPreferences.gitAlgorithm,
+      changesPreferences.hideWhitespace,
+      diffMode,
+    ],
+  );
   const contextExpansion = useDiffContextExpansion({
     serverId,
     cwd,
@@ -3970,13 +4168,6 @@ export function GitDiffPane({
   const reviewActions = useInlineReviewController({
     reviewDraftKey,
   });
-  const reviewAttachment = useReviewAttachmentSnapshot({
-    key: reviewDraftKey,
-    diffFiles: files,
-    cwd,
-    mode: diffMode,
-    baseRef,
-  });
   const workspaceAttachmentScopeKey = useMemo(
     () => buildWorkspaceAttachmentScopeKey({ serverId, workspaceId, cwd }),
     [cwd, serverId, workspaceId],
@@ -3987,22 +4178,6 @@ export function GitDiffPane({
   const clearWorkspaceAttachments = useWorkspaceAttachmentsStore(
     (state) => state.clearWorkspaceAttachments,
   );
-
-  useEffect(() => {
-    setWorkspaceAttachments({
-      scopeKey: workspaceAttachmentScopeKey,
-      attachments: reviewAttachment ? [reviewAttachment] : [],
-    });
-
-    return () => {
-      clearWorkspaceAttachments({ scopeKey: workspaceAttachmentScopeKey });
-    };
-  }, [
-    clearWorkspaceAttachments,
-    reviewAttachment,
-    setWorkspaceAttachments,
-    workspaceAttachmentScopeKey,
-  ]);
   const {
     githubFeaturesEnabled,
     forge,
@@ -4049,6 +4224,38 @@ export function GitDiffPane({
     (state) => state.setDiffExpandedPathsForWorkspace,
   );
   const expandedPaths = useMemo(() => new Set(expandedPathsArray ?? []), [expandedPathsArray]);
+  const lazyDiffFiles = useLazyCheckoutDiffFiles({
+    serverId,
+    cwd,
+    compare: checkoutDiffFetchCompare,
+    files,
+    enabled: shouldEnableCheckoutDiff({ paneEnabled: enabled !== false, isGit }),
+  });
+  const displayFiles = lazyDiffFiles.files;
+  const reviewAttachment = useReviewAttachmentSnapshot({
+    key: reviewDraftKey,
+    diffFiles: displayFiles,
+    cwd,
+    mode: diffMode,
+    baseRef,
+  });
+
+  useEffect(() => {
+    setWorkspaceAttachments({
+      scopeKey: workspaceAttachmentScopeKey,
+      attachments: reviewAttachment ? [reviewAttachment] : [],
+    });
+
+    return () => {
+      clearWorkspaceAttachments({ scopeKey: workspaceAttachmentScopeKey });
+    };
+  }, [
+    clearWorkspaceAttachments,
+    reviewAttachment,
+    setWorkspaceAttachments,
+    workspaceAttachmentScopeKey,
+  ]);
+
   // The Changes view groups files into a directory tree on every form factor,
   // consistent with the Files explorer (which is also a tree on mobile).
   const collapsedFoldersArray = usePanelStore((state) =>
@@ -4059,7 +4266,10 @@ export function GitDiffPane({
   );
   // Build the directory tree once per files-change; collapse/expand toggles only
   // re-flatten it (they don't change tree shape).
-  const compressedTree = useMemo(() => compressSingleChildChains(buildDiffTree(files)), [files]);
+  const compressedTree = useMemo(
+    () => compressSingleChildChains(buildDiffTree(displayFiles)),
+    [displayFiles],
+  );
   // Every directory path currently in the tree — used by "collapse all folders" and to
   // filter stale collapse state.
   const allFolderPaths = useMemo(() => collectDirPaths(compressedTree), [compressedTree]);
@@ -4096,19 +4306,50 @@ export function GitDiffPane({
   const statusBodyHeightEstimate = diffBodyChromeHeight + SPACING[4] * 2 + diffBodyLineHeight;
   const { flatItems, stickyHeaderIndices } = useMemo(() => {
     const { items, stickyHeaderIndices: stickyIndices } = buildDiffFlatItems({
-      files,
+      files: displayFiles,
       viewMode,
       tree: compressedTree,
       collapsedFolders,
       expandedPaths,
     });
     return { flatItems: items, stickyHeaderIndices: stickyIndices };
-  }, [compressedTree, collapsedFolders, expandedPaths, files, viewMode]);
+  }, [compressedTree, collapsedFolders, displayFiles, expandedPaths, viewMode]);
+
+  const flatItemsRef = useRef(flatItems);
+  flatItemsRef.current = flatItems;
+  const viewabilityConfig = useMemo(
+    () => ({
+      itemVisiblePercentThreshold: 20,
+      minimumViewTime: 80,
+    }),
+    [],
+  );
+  const handleViewableItemsChanged = useCallback<
+    NonNullable<FlatListProps<DiffFlatItem>["onViewableItemsChanged"]>
+  >(
+    ({ viewableItems }) => {
+      const paths: string[] = [];
+      for (const token of viewableItems) {
+        if (token.index == null) {
+          continue;
+        }
+        const item = flatItemsRef.current[token.index];
+        if (item?.type === "body") {
+          paths.push(item.file.path);
+        }
+      }
+      lazyDiffFiles.scheduleLoadsForPaths(paths);
+    },
+    [lazyDiffFiles],
+  );
 
   const getBodyHeightKey = useCallback(
     (file: ParsedDiffFile): string => {
       if (file.status === "too_large" || file.status === "binary") {
         return `${effectiveLayout}:${wrapLines ? "wrap" : "scroll"}:${diffBodyTypographyKey}:${file.path}:${file.status}`;
+      }
+      if (file.hunksDeferred && file.hunks.length === 0) {
+        return `${effectiveLayout}:${wrapLines ? "wrap" : "scroll"}:${diffBodyTypographyKey}:${file.path}:deferred`;
       }
 
       return [
@@ -4130,6 +4371,9 @@ export function GitDiffPane({
   const estimateBodyHeight = useCallback(
     (file: ParsedDiffFile): number => {
       if (file.status === "too_large" || file.status === "binary") {
+        return statusBodyHeightEstimate;
+      }
+      if (file.hunksDeferred && file.hunks.length === 0) {
         return statusBodyHeightEstimate;
       }
 
@@ -4398,6 +4642,15 @@ export function GitDiffPane({
           textMetricsStyle={diffTextMetricsStyle}
           reviewActions={reviewActions}
           contextExpansion={contextExpansion}
+          isLoadingHunks={lazyDiffFiles.isFileLoading(item.file.path)}
+          isLoadFailed={lazyDiffFiles.isFileLoadFailed(item.file.path)}
+          loadAttempted={lazyDiffFiles.isFileLoadAttempted(item.file.path)}
+          lazyHunksUnavailable={
+            item.file.hunksDeferred === true && !lazyDiffFiles.lazyFilesSupported
+          }
+          lazyHunksSupported={lazyDiffFiles.lazyFilesSupported}
+          loadFile={lazyDiffFiles.loadFile}
+          retryFile={lazyDiffFiles.retryFile}
           onBodyHeightChange={handleBodyHeightChange}
           testID={`diff-file-${item.fileIndex}-body`}
         />
@@ -4418,6 +4671,7 @@ export function GitDiffPane({
       handleHeaderHeightChange,
       handleToggleExpanded,
       handleToggleFolder,
+      lazyDiffFiles,
       reviewActions,
       viewMode,
       wrapLines,
@@ -4550,6 +4804,8 @@ export function GitDiffPane({
       diffListRef={diffListRef}
       handleDiffListLayout={handleDiffListLayout}
       handleDiffListScroll={handleDiffListScroll}
+      onViewableItemsChanged={handleViewableItemsChanged}
+      viewabilityConfig={viewabilityConfig}
       onContentSizeChange={scrollbar.onContentSizeChange}
       showDesktopWebScrollbar={showDesktopWebScrollbar}
       checkingRepositoryLabel={t("workspace.git.diff.checkingRepository")}
@@ -5216,6 +5472,23 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     color: theme.colors.foregroundMuted,
     fontStyle: "italic",
+  },
+  lazyHunksLoadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  lazyHunksManualButton: {
+    marginTop: theme.spacing[2],
+    alignSelf: "flex-start",
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: theme.spacing[1],
+    borderRadius: theme.borderRadius.base,
+    backgroundColor: theme.colors.surface2,
+  },
+  lazyHunksManualButtonText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.foreground,
   },
   tooltipText: {
     fontSize: theme.fontSize.xs,

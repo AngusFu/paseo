@@ -34,6 +34,7 @@ import {
   CheckoutRenameBranchResponseSchema,
   CheckoutSetBaseRefResponseSchema,
   CheckoutDiffContextResponseSchema,
+  CheckoutDiffFileResponseSchema,
   parseServerInfoStatusPayload,
   RenameTerminalResponseSchema,
   RestartRequestedStatusPayloadSchema,
@@ -427,6 +428,7 @@ type CheckoutSwitchBranchPayload = CheckoutSwitchBranchResponse["payload"];
 export type RenameBranchResult = z.infer<typeof CheckoutRenameBranchResponseSchema>["payload"];
 export type SetBaseRefResult = z.infer<typeof CheckoutSetBaseRefResponseSchema>["payload"];
 export type DiffContextResult = z.infer<typeof CheckoutDiffContextResponseSchema>["payload"];
+export type CheckoutDiffFileResult = z.infer<typeof CheckoutDiffFileResponseSchema>["payload"];
 type StashSavePayload = StashSaveResponse["payload"];
 type StashPopPayload = StashPopResponse["payload"];
 type StashListPayload = StashListResponse["payload"];
@@ -1105,6 +1107,12 @@ export interface DiffContextInput {
   /** Inclusive 1-based range on the new side of the diff. */
   startLine: number;
   endLine: number;
+  requestId?: string;
+}
+export interface CheckoutDiffFileInput {
+  cwd: string;
+  path: string;
+  compare: CheckoutDiffCompare;
   requestId?: string;
 }
 export interface RenameTerminalInput {
@@ -4224,6 +4232,20 @@ export class DaemonClient {
         endLine: input.endLine,
       },
       responseType: "checkout.diff.context.response",
+    });
+  }
+
+  /** Structured hunks for one file in a live checkout diff subscription. */
+  async readCheckoutDiffFile(input: CheckoutDiffFileInput): Promise<CheckoutDiffFileResult> {
+    return this.sendCorrelatedSessionRequest({
+      requestId: input.requestId,
+      message: {
+        type: "checkout.diff.file.request",
+        cwd: input.cwd,
+        path: input.path,
+        compare: input.compare,
+      },
+      responseType: "checkout.diff.file.response",
     });
   }
 

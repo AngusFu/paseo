@@ -459,7 +459,14 @@ describe("CheckoutSession", () => {
       expect(emitted).toEqual([
         {
           type: "subscribe_checkout_diff_response",
-          payload: { subscriptionId: "s1", cwd: "/repo", files: [], error: null, requestId: "r8" },
+          payload: {
+            subscriptionId: "s1",
+            compare: { mode: "uncommitted" },
+            cwd: "/repo",
+            files: [],
+            error: null,
+            requestId: "r8",
+          },
         },
       ]);
       expect(subscriptions).toHaveLength(1);
@@ -474,6 +481,7 @@ describe("CheckoutSession", () => {
         type: "checkout_diff_update",
         payload: {
           subscriptionId: "s1",
+          compare: { mode: "uncommitted" },
           cwd: "/repo",
           files: [],
           error: { code: "UNKNOWN", message: "transient" },
@@ -486,6 +494,75 @@ describe("CheckoutSession", () => {
       });
 
       expect(subscriptions[0].unsubscribeCalls).toBe(1);
+    });
+
+    it("strips hunks from subscription payloads and marks lazyHunks", async () => {
+      const { subscriber } = createFakeDiffSubscriber({
+        cwd: "/repo",
+        files: [
+          {
+            path: "a.txt",
+            isNew: false,
+            isDeleted: false,
+            additions: 1,
+            deletions: 1,
+            hunks: [
+              {
+                oldStart: 1,
+                oldCount: 1,
+                newStart: 1,
+                newCount: 1,
+                lines: [{ type: "add", content: "+x", oldLineNumber: null, newLineNumber: 1 }],
+              },
+            ],
+          },
+        ],
+        error: null,
+      });
+      const { checkout, emitted } = makeCheckoutSession({ diff: subscriber });
+
+      await checkout.handleSubscribeDiffRequest({
+        type: "subscribe_checkout_diff_request",
+        subscriptionId: "s1",
+        cwd: "/repo",
+        compare: { mode: "uncommitted" },
+        requestId: "r8",
+      });
+
+      expect(emitted[0]?.payload).toMatchObject({
+        lazyHunks: true,
+        files: [
+          {
+            path: "a.txt",
+            hunks: [],
+            hunksDeferred: true,
+          },
+        ],
+      });
+    });
+
+    it("rejects invalid paths on checkout diff file requests", async () => {
+      const { checkout, emitted } = makeCheckoutSession();
+
+      await checkout.handleCheckoutDiffFileRequest({
+        type: "checkout.diff.file.request",
+        cwd: "/repo",
+        path: "../escape",
+        compare: { mode: "uncommitted" },
+        requestId: "r-file",
+      });
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toMatchObject({
+        type: "checkout.diff.file.response",
+        payload: {
+          cwd: "/repo",
+          path: "../escape",
+          file: null,
+          requestId: "r-file",
+        },
+      });
+      expect(emitted[0]?.payload.error).toBeTruthy();
     });
 
     it("replaces an existing subscription when the same id subscribes again", async () => {

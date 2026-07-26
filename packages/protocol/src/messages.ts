@@ -2106,6 +2106,14 @@ export const CheckoutDiffContextRequestSchema = z.object({
   requestId: z.string(),
 });
 
+export const CheckoutDiffFileRequestSchema = z.object({
+  type: z.literal("checkout.diff.file.request"),
+  cwd: z.string(),
+  path: z.string(),
+  compare: CheckoutDiffCompareSchema,
+  requestId: z.string(),
+});
+
 export const CheckoutSetBaseRefRequestSchema = z.object({
   type: z.literal("checkout.baseRef.set.request"),
   cwd: z.string(),
@@ -2419,6 +2427,8 @@ export const ParsedDiffFileSchema = z.object({
   deletions: z.number(),
   hunks: z.array(DiffHunkSchema),
   status: z.enum(["ok", "too_large", "binary"]).optional(),
+  // Hunks were omitted from the subscription payload; fetch via checkout.diff.file.
+  hunksDeferred: z.boolean().optional(),
   // Which diff engine actually produced this file's hunks; lets a single file fall back to
   // git while the rest of the diff uses the requested tool.
   diffTool: z.enum(["git", "difftastic", "vscode"]).optional(),
@@ -2801,6 +2811,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   CheckoutRenameBranchRequestSchema,
   CheckoutSetBaseRefRequestSchema,
   CheckoutDiffContextRequestSchema,
+  CheckoutDiffFileRequestSchema,
   StashSaveRequestSchema,
   StashPopRequestSchema,
   StashListRequestSchema,
@@ -3187,6 +3198,8 @@ export const ServerInfoStatusPayloadSchema = z
         workflowRunPause: z.boolean().optional(),
         // COMPAT(diffContextExpand): added in v0.1.106, drop the gate when floor >= v0.1.106.
         diffContextExpand: z.boolean().optional(),
+        // COMPAT(checkoutDiffLazyFile): added in v0.1.105, drop the gate when floor >= v0.1.105.
+        checkoutDiffLazyFile: z.boolean().optional(),
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
         localLlm: z.boolean().optional(),
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
@@ -4551,6 +4564,14 @@ const CheckoutDiffSubscriptionPayloadSchema = z.object({
   cwd: z.string(),
   files: z.array(ParsedDiffFileSchema),
   error: CheckoutErrorSchema.nullable(),
+  // Echo of the subscribe compare input for client/debug logging; old daemons omit.
+  compare: CheckoutDiffCompareSchema.optional(),
+  // True when hunks were omitted from the subscription for lazy per-file loading.
+  lazyHunks: z.boolean().optional(),
+  // True only when the file list itself had to be trimmed to fit the WS frame limit.
+  wireTruncated: z.boolean().optional(),
+  totalFileCount: z.number().int().nonnegative().optional(),
+  filesOmitted: z.number().int().nonnegative().optional(),
 });
 
 export const SubscribeCheckoutDiffResponseSchema = z.object({
@@ -4947,6 +4968,17 @@ export const CheckoutDiffContextResponseSchema = z.object({
     // retire its expand affordance instead of offering a no-op.
     reachedStart: z.boolean(),
     reachedEnd: z.boolean(),
+    error: CheckoutErrorSchema.nullable(),
+  }),
+});
+
+export const CheckoutDiffFileResponseSchema = z.object({
+  type: z.literal("checkout.diff.file.response"),
+  payload: z.object({
+    requestId: z.string(),
+    cwd: z.string(),
+    path: z.string(),
+    file: ParsedDiffFileSchema.nullable(),
     error: CheckoutErrorSchema.nullable(),
   }),
 });
@@ -5666,6 +5698,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   CheckoutRenameBranchResponseSchema,
   CheckoutSetBaseRefResponseSchema,
   CheckoutDiffContextResponseSchema,
+  CheckoutDiffFileResponseSchema,
   StashSaveResponseSchema,
   StashPopResponseSchema,
   StashListResponseSchema,
@@ -6248,6 +6281,8 @@ export type CheckoutRenameBranchResponse = z.infer<typeof CheckoutRenameBranchRe
 export type CheckoutSetBaseRefRequest = z.infer<typeof CheckoutSetBaseRefRequestSchema>;
 export type CheckoutDiffContextRequest = z.infer<typeof CheckoutDiffContextRequestSchema>;
 export type CheckoutDiffContextResponse = z.infer<typeof CheckoutDiffContextResponseSchema>;
+export type CheckoutDiffFileRequest = z.infer<typeof CheckoutDiffFileRequestSchema>;
+export type CheckoutDiffFileResponse = z.infer<typeof CheckoutDiffFileResponseSchema>;
 export type CheckoutSetBaseRefResponse = z.infer<typeof CheckoutSetBaseRefResponseSchema>;
 export type StashSaveRequest = z.infer<typeof StashSaveRequestSchema>;
 export type StashSaveResponse = z.infer<typeof StashSaveResponseSchema>;

@@ -2165,6 +2165,8 @@ export class Session {
         return this.checkoutSession.handleCheckoutSetBaseRefRequest(msg);
       case "checkout.diff.context.request":
         return this.checkoutSession.handleCheckoutDiffContextRequest(msg);
+      case "checkout.diff.file.request":
+        return this.checkoutSession.handleCheckoutDiffFileRequest(msg);
       case "checkout_commit_request":
         return this.checkoutSession.handleCheckoutCommitRequest(msg);
       case "checkout_merge_request":

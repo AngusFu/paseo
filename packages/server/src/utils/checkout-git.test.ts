@@ -24,6 +24,7 @@ import {
   getCheckoutSnapshotFacts,
   getCurrentBranch,
   getCheckoutDiff,
+  getCheckoutDiffFile,
   getCheckoutShortstat,
   getPullRequestStatus,
   getCheckoutStatus,
@@ -518,6 +519,11 @@ describe("checkout git utilities", () => {
     const diff = await getCheckoutDiff(repoDir, { mode: "uncommitted" });
     expect(diff.diff).toContain("-hello");
     expect(diff.diff).toContain("+updated");
+
+    const singleFile = await getCheckoutDiffFile(repoDir, "file.txt", { mode: "uncommitted" });
+    expect(singleFile?.path).toBe("file.txt");
+    expect(singleFile?.hunks.length).toBeGreaterThan(0);
+    expect(await getCheckoutDiffFile(repoDir, "missing.txt", { mode: "uncommitted" })).toBeNull();
 
     await commitAll(repoDir, "update file");
 

@@ -10,6 +10,7 @@ import type {
   CheckoutRefreshRequest,
   CheckoutRenameBranchRequest,
   CheckoutDiffContextRequest,
+  CheckoutDiffFileRequest,
   CheckoutSetBaseRefRequest,
   CheckoutStatusRequest,
   SessionInboundMessage,
@@ -23,6 +24,7 @@ import type {
   CheckoutDiffSubscription,
   CheckoutDiffSubscriptionRequest,
 } from "../../checkout-diff-manager.js";
+import { prepareCheckoutDiffSnapshotForWire } from "../../checkout-diff-wire-limit.js";
 import { toCheckoutError } from "../../checkout-git-utils.js";
 import {
   buildCheckoutPrStatusPayloadFromSnapshot,
@@ -52,6 +54,7 @@ import {
   pushCurrentBranch,
   listCheckoutCommits,
   getCommitFileDiff,
+  getCheckoutDiffFile,
 } from "../../../utils/checkout-git.js";
 import { readDiffContextLines } from "../../../utils/diff-context.js";
 import { execCommand } from "../../../utils/spawn.js";
@@ -417,10 +420,7 @@ export class CheckoutSession {
         (snapshot) => {
           this.host.emit({
             type: "checkout_diff_update",
-            payload: {
-              subscriptionId: msg.subscriptionId,
-              ...snapshot,
-            },
+            payload: this.buildCheckoutDiffWirePayload(msg.subscriptionId, msg.compare, snapshot),
           });
         },
       );
@@ -428,8 +428,11 @@ export class CheckoutSession {
       this.host.emit({
         type: "subscribe_checkout_diff_response",
         payload: {
-          subscriptionId: msg.subscriptionId,
-          ...subscription.initial,
+          ...this.buildCheckoutDiffWirePayload(
+            msg.subscriptionId,
+            msg.compare,
+            subscription.initial,
+          ),
           requestId: msg.requestId,
         },
       });
@@ -446,6 +449,19 @@ export class CheckoutSession {
     const unsubscribe = this.diffSubscriptions.get(msg.subscriptionId);
     this.diffSubscriptions.delete(msg.subscriptionId);
     unsubscribe?.();
+  }
+
+  private buildCheckoutDiffWirePayload(
+    subscriptionId: string,
+    compare: SubscribeCheckoutDiffRequest["compare"],
+    snapshot: CheckoutDiffSnapshotPayload,
+  ): Extract<SessionOutboundMessage, { type: "checkout_diff_update" }>["payload"] {
+    const fitted = prepareCheckoutDiffSnapshotForWire(snapshot, { compare });
+    return {
+      subscriptionId,
+      compare,
+      ...fitted,
+    };
   }
 
   async handleRefreshRequest(msg: CheckoutRefreshRequest): Promise<void> {
@@ -633,6 +649,32 @@ export class CheckoutSession {
           lines: [],
           reachedStart: false,
           reachedEnd: false,
+          error: toCheckoutError(error),
+          requestId,
+        },
+      });
+    }
+  }
+
+  async handleCheckoutDiffFileRequest(msg: CheckoutDiffFileRequest): Promise<void> {
+    const { cwd, path, compare, requestId } = msg;
+    const resolvedCwd = expandTilde(cwd);
+    try {
+      if (path.length === 0 || isAbsolute(path) || path.split(/[\\/]/).includes("..")) {
+        throw new Error(`Invalid path: ${path}`);
+      }
+      const file = await getCheckoutDiffFile(resolvedCwd, path, compare);
+      this.host.emit({
+        type: "checkout.diff.file.response",
+        payload: { cwd: resolvedCwd, path, file, error: null, requestId },
+      });
+    } catch (error) {
+      this.host.emit({
+        type: "checkout.diff.file.response",
+        payload: {
+          cwd: resolvedCwd,
+          path,
+          file: null,
           error: toCheckoutError(error),
           requestId,
         },

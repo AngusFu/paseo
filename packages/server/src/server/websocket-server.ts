@@ -1552,6 +1552,8 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(localLlm): added in v0.1.110, drop the gate when floor >= v0.1.110.
         // COMPAT(diffContextExpand): added in v0.1.106, drop the gate when floor >= v0.1.106.
         diffContextExpand: true,
+        // COMPAT(checkoutDiffLazyFile): added in v0.1.105, drop the gate when floor >= v0.1.105.
+        checkoutDiffLazyFile: true,
         localLlm: true,
         ...(this.daemonRuntimeConfig?.webUiEnabled ? { webUi: true } : {}),
         // COMPAT(questionWaitSocket): added in v0.1.114, remove gate after 2027-01-25.
@@ -2714,16 +2716,53 @@ function extractRequestInfoFromUnknownWsInbound(
   return null;
 }
 
-function summarizeOutboundMessageForLog(message: WSOutboundMessage): {
-  outboundType: string;
-  sessionMessageType?: string;
-} {
+function summarizeOutboundMessageForLog(message: WSOutboundMessage): Record<string, unknown> {
   if (message.type !== "session") {
     return { outboundType: message.type };
   }
-  const sessionMessage = message.message as { type?: string };
-  return {
+  const sessionMessage = message.message as { type?: string; payload?: Record<string, unknown> };
+  const summary: Record<string, unknown> = {
     outboundType: message.type,
     ...(typeof sessionMessage.type === "string" ? { sessionMessageType: sessionMessage.type } : {}),
   };
+
+  if (
+    sessionMessage.type === "subscribe_checkout_diff_response" ||
+    sessionMessage.type === "checkout_diff_update"
+  ) {
+    const payload = sessionMessage.payload;
+    if (payload && typeof payload.cwd === "string") {
+      summary.checkoutDiffCwd = payload.cwd;
+      summary.checkoutDiffFileCount = Array.isArray(payload.files)
+        ? payload.files.length
+        : undefined;
+      if (payload.lazyHunks === true) {
+        summary.checkoutDiffLazyHunks = true;
+      }
+      if (payload.wireTruncated === true) {
+        summary.checkoutDiffWireTruncated = true;
+      }
+      if (typeof payload.totalFileCount === "number") {
+        summary.checkoutDiffTotalFileCount = payload.totalFileCount;
+      }
+      if (typeof payload.filesOmitted === "number") {
+        summary.checkoutDiffFilesOmitted = payload.filesOmitted;
+      }
+      const compare = payload.compare as Record<string, unknown> | undefined;
+      if (compare && typeof compare.mode === "string") {
+        summary.checkoutDiffCompareMode = compare.mode;
+        if (typeof compare.baseRef === "string") {
+          summary.checkoutDiffCompareBaseRef = compare.baseRef;
+        }
+        if (typeof compare.fromRef === "string") {
+          summary.checkoutDiffCompareFromRef = compare.fromRef;
+        }
+        if (typeof compare.toRef === "string") {
+          summary.checkoutDiffCompareToRef = compare.toRef;
+        }
+      }
+    }
+  }
+
+  return summary;
 }

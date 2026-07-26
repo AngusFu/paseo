@@ -212,6 +212,91 @@ interface CheckoutFileChange {
   isUntracked?: boolean;
 }
 
+function parseCheckoutNameStatusLine(line: string): CheckoutFileChange | null {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const tabParts = trimmed.split("\t");
+  const rawStatus = (tabParts[0] ?? "").trim();
+  if (!rawStatus) {
+    return null;
+  }
+
+  if (rawStatus.startsWith("R") || rawStatus.startsWith("C")) {
+    const oldPath = tabParts[1];
+    const newPath = tabParts[2];
+    if (!newPath) {
+      return null;
+    }
+    return {
+      path: newPath,
+      ...(oldPath ? { oldPath } : {}),
+      status: rawStatus,
+      isNew: false,
+      isDeleted: false,
+    };
+  }
+
+  const filePath = tabParts[1];
+  if (!filePath) {
+    return null;
+  }
+  const code = rawStatus[0];
+  return {
+    path: filePath,
+    status: rawStatus,
+    isNew: code === "A",
+    isDeleted: code === "D",
+  };
+}
+
+async function resolveCheckoutFileChangeForPath(
+  cwd: string,
+  refs: CheckoutDiffRefs,
+  path: string,
+  ignoreWhitespace = false,
+  gitAlgorithm?: GitDiffAlgorithm,
+): Promise<CheckoutFileChange | null> {
+  const { stdout: nameStatusOut } = await runGitCommand(
+    buildGitDiffArgs({
+      ignoreWhitespace,
+      gitAlgorithm,
+      extra: ["--name-status", ...getCheckoutDiffRefArgs(refs), "--", `:(literal)${path}`],
+    }),
+    { cwd, envOverlay: READ_ONLY_GIT_ENV },
+  );
+
+  for (const line of nameStatusOut.split("\n")) {
+    const change = parseCheckoutNameStatusLine(line);
+    if (change?.path === path) {
+      return change;
+    }
+  }
+
+  if (refs.includeUntracked) {
+    const { stdout: untrackedOut } = await runGitCommand(
+      ["ls-files", "--others", "--exclude-standard", "--", path],
+      { cwd, envOverlay: READ_ONLY_GIT_ENV },
+    );
+    const untrackedPath = untrackedOut
+      .split("\n")
+      .map((entry) => entry.trim())
+      .find(Boolean);
+    if (untrackedPath === path) {
+      return {
+        path,
+        status: "U",
+        isNew: true,
+        isDeleted: false,
+        isUntracked: true,
+      };
+    }
+  }
+
+  return null;
+}
+
 interface CheckoutDiffRefs {
   baseRef: string;
   targetRef?: string;
@@ -495,35 +580,10 @@ async function listCheckoutFileChanges(
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean)) {
-    // `--name-status` uses TAB separators, which preserves filenames with spaces.
-    const tabParts = line.split("\t");
-    const rawStatus = (tabParts[0] ?? "").trim();
-    if (!rawStatus) continue;
-
-    if (rawStatus.startsWith("R") || rawStatus.startsWith("C")) {
-      const oldPath = tabParts[1];
-      const newPath = tabParts[2];
-      if (newPath) {
-        changes.push({
-          path: newPath,
-          ...(oldPath ? { oldPath } : {}),
-          status: rawStatus,
-          isNew: false,
-          isDeleted: false,
-        });
-      }
-      continue;
+    const change = parseCheckoutNameStatusLine(line);
+    if (change) {
+      changes.push(change);
     }
-
-    const path = tabParts[1];
-    if (!path) continue;
-    const code = rawStatus[0];
-    changes.push({
-      path,
-      status: rawStatus,
-      isNew: code === "A",
-      isDeleted: code === "D",
-    });
   }
 
   if (refs.includeUntracked) {
@@ -2404,6 +2464,108 @@ export async function getCommitFileDiff({
   // is nothing textual to render, so report them as absent.
   if (file.hunks.length === 0 && /^Binary files .* differ$/m.test(stdout)) {
     return null;
+  }
+
+  return file;
+}
+
+export async function getCheckoutDiffFile(
+  cwd: string,
+  path: string,
+  compare: CheckoutDiffCompare,
+  context?: CheckoutContext,
+): Promise<ParsedDiffFile | null> {
+  await requireGitRepo(cwd);
+
+  const refsForDiff = await resolveCheckoutDiffRefs(cwd, compare, context);
+  if (!refsForDiff) {
+    return null;
+  }
+
+  const ignoreWhitespace = compare.ignoreWhitespace === true;
+  const requestedTool: DiffToolName = compare.tool ?? "git";
+  const gitAlgorithm = requestedTool === "git" ? compare.gitAlgorithm : undefined;
+
+  let effectiveRefsForDiff = refsForDiff;
+  let change: CheckoutFileChange | null;
+  try {
+    change = await resolveCheckoutFileChangeForPath(
+      cwd,
+      effectiveRefsForDiff,
+      path,
+      ignoreWhitespace,
+      gitAlgorithm,
+    );
+  } catch (error) {
+    if (!isUnbornHeadDiffError(error)) {
+      throw error;
+    }
+    effectiveRefsForDiff = { ...refsForDiff, baseRef: EMPTY_TREE_OBJECT_ID };
+    change = await resolveCheckoutFileChangeForPath(
+      cwd,
+      effectiveRefsForDiff,
+      path,
+      ignoreWhitespace,
+      gitAlgorithm,
+    );
+  }
+
+  if (!change) {
+    return null;
+  }
+
+  const structured: ParsedDiffFile[] = [];
+  const appendDiff = () => {};
+
+  if (change.isUntracked) {
+    await processUntrackedChange({
+      cwd,
+      change,
+      ignoreWhitespace,
+      includeStructured: true,
+      structured,
+      appendDiff,
+    });
+  } else {
+    const trackedDiff = await processTrackedChanges({
+      cwd,
+      refsForDiff: effectiveRefsForDiff,
+      trackedChanges: [change],
+      ignoreWhitespace,
+      gitAlgorithm,
+      appendDiff,
+    });
+    await appendStructuredTrackedDiffs({
+      cwd,
+      trackedChanges: [change],
+      trackedChangeByPath: trackedDiff.trackedChangeByPath,
+      trackedNumstatByPath: trackedDiff.trackedNumstatByPath,
+      trackedPlaceholderByPath: trackedDiff.trackedPlaceholderByPath,
+      trackedDiffText: trackedDiff.trackedDiffText,
+      refsForDiff: effectiveRefsForDiff,
+      ignoreWhitespace,
+      structured,
+      appendDiff,
+      appendTrackedPlaceholderComment: () => {},
+    });
+  }
+
+  let file = structured[0] ?? null;
+  if (!file) {
+    return null;
+  }
+
+  if (requestedTool !== "git" && file.status !== "binary" && file.status !== "too_large") {
+    await applyDiffEnginesToStructured({
+      cwd,
+      refsForDiff: effectiveRefsForDiff,
+      tool: requestedTool,
+      ignoreWhitespace,
+      changesByPath: new Map([[change.path, change]]),
+      structured: [file],
+      logger: context?.logger,
+    });
+    file = structured[0] ?? file;
   }
 
   return file;

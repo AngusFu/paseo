@@ -103,6 +103,7 @@ Legacy rows with `source` instead of `url` are still accepted by the runner (`CO
 
 - Shared helper `prependMcpCliBinPath` — agent launch env and Paseo terminal env.
 - Inject only when `$PASEO_HOME/mcp-cli/bin` **exists** (after Detect/Install). Agents use the daemon’s configured `paseoHome` directly; terminals get the same home via bootstrap (`process.env.PASEO_HOME`) + explicit `paseoHome` on create (worker fork included).
+- **Gotcha:** agent launch overlays are sparse (`PASEO_AGENT_ID` / workspace id only). `prependMcpCliBinPath` must inherit `process.env.PATH` when the overlay has no PATH — otherwise `createExternalProcessEnv` replaces the child’s PATH with only `mcp-cli/bin` and provider CLIs (Cursor ACP, etc.) hang on create. Terminals already pass a full base env, so they were fine.
 - Paseo does **not** edit the user’s shell rc. For zsh PTY terminals, shell integration sets `PASEO_MCP_CLI_BIN` and re-prepends that dir after `.zshenv` / on `precmd` so mise/asdf/`.zshrc` PATH rewrites don’t hide the CLIs.
 - `daemonAppendSystemPrompt` includes short usage lines for enabled CLIs.
 - Launch overlay strips same-name keys from `mcpServers` on create **and** resume/reload. Stored user config is unchanged; strip is launch-only. Enabled CLI wins over plugin.

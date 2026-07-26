@@ -85,6 +85,19 @@ async function pathExists(p: string): Promise<boolean> {
     .catch(() => false);
 }
 
+describe("PASEO_SKILL_NAMES", () => {
+  it("covers every skill shipped under repo skills/", async () => {
+    const repoSkillsDir = path.resolve(__dirname, "../../../../../skills");
+    const shipped = (await fs.readdir(repoSkillsDir, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    const allowlisted = new Set<string>(PASEO_SKILL_NAMES);
+    const missing = shipped.filter((name) => !allowlisted.has(name));
+    expect(missing).toEqual([]);
+  });
+});
+
 describe("getSkillsStatus", () => {
   let sandbox: Sandbox;
 

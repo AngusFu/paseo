@@ -35,6 +35,7 @@ export const PASEO_SKILL_NAMES = [
   "paseo-chat",
   "paseo-committee",
   "paseo-create-workflow",
+  "paseo-goal",
   "paseo-handoff",
   "paseo-loop",
   "paseo-setup-config",

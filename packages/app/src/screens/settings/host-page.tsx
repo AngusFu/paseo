@@ -71,7 +71,7 @@ import type { Theme } from "@/styles/theme";
 import { getProviderIcon } from "@/components/provider-icons";
 import { BrowserToolsOptInCard } from "./browser-tools-card";
 import { DictationModelCard } from "./dictation-model-card";
-import { LocalLlmCard } from "./local-llm-card";
+import { ProseStopLocalLlmSection } from "./local-llm-card";
 import { hasDaemonReconnectedAfter, type DaemonConnectionMarker } from "./daemon-reconnect";
 import { restartDaemonFromSettings } from "./daemon-restart";
 
@@ -386,7 +386,6 @@ export function HostSettingsPage({
 
       {!isLocalDaemon ? <UpdateDaemonCard key={host.serverId} host={host} /> : null}
 
-      <LocalLlmCard serverId={serverId} />
       <DictationModelCard serverId={serverId} />
       <ProseStopCard serverId={serverId} />
 
@@ -1216,6 +1215,7 @@ function ProseStopCard({ serverId }: { serverId: string }) {
             testID="host-page-prose-stop-prevention-prompt-switch"
           />
         </View>
+        <ProseStopLocalLlmSection serverId={serverId} />
       </View>
     </SettingsSection>
   );

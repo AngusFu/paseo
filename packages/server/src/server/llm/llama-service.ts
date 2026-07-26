@@ -2,7 +2,7 @@ import type { LlmLocalModelState } from "@getpaseo/protocol/llm/rpc-schemas";
 import type pino from "pino";
 
 const DOWNLOAD_STUB_MESSAGE =
-  "Configure Local AI in host settings (base URL and model). Built-in model download is no longer available.";
+  "Configure Local AI under Host settings → Prose stop (Ollama base URL). Built-in model download is no longer available.";
 
 export interface LocalLlmConfig {
   baseUrl?: string;
@@ -23,6 +23,9 @@ export interface LlmChatHistoryItem {
   text: string;
 }
 
+/** Fixed Ollama tag — Local AI is prose-check classification only. */
+export const LOCAL_LLM_PROSE_CHECK_MODEL = "qwen2.5:0.5b";
+
 export function normalizeLocalLlmBaseUrl(raw: string): string {
   let url = raw.trim().replace(/\/+$/, "");
   if (!url.endsWith("/v1")) {
@@ -38,7 +41,9 @@ export function resolveLocalLlmConfig(config: LocalLlmConfig | null | undefined)
 } {
   const baseUrl = config?.baseUrl?.trim() || null;
   const apiKey = config?.apiKey?.trim() || null;
-  const model = config?.model?.trim() || null;
+  // Ignore whatever model string is persisted — prose check always uses the
+  // small fixed tag. Absent a base URL, report model null so status stays absent.
+  const model = baseUrl ? LOCAL_LLM_PROSE_CHECK_MODEL : null;
   return { baseUrl, apiKey, model };
 }
 

@@ -41,17 +41,30 @@ describe("resolveLocalLlmConfig", () => {
     });
   });
 
-  it("trims whitespace from fields", () => {
+  it("trims base URL / API key and forces the prose-check model", () => {
     expect(
       resolveLocalLlmConfig({
         baseUrl: " http://localhost:11434 ",
         apiKey: " secret ",
-        model: " qwen2.5:0.5b ",
+        model: " some-other:tag ",
       }),
     ).toEqual({
       baseUrl: "http://localhost:11434",
       apiKey: "secret",
       model: "qwen2.5:0.5b",
+    });
+  });
+
+  it("keeps model null when base URL is missing", () => {
+    expect(
+      resolveLocalLlmConfig({
+        apiKey: "secret",
+        model: "qwen2.5:0.5b",
+      }),
+    ).toEqual({
+      baseUrl: null,
+      apiKey: "secret",
+      model: null,
     });
   });
 });
@@ -258,7 +271,7 @@ describe("LlamaService.startDownload", () => {
     );
     await expect(service.getStatus()).resolves.toMatchObject({
       status: "error",
-      message: expect.stringContaining("host settings"),
+      message: expect.stringContaining("Host settings"),
     });
   });
 });

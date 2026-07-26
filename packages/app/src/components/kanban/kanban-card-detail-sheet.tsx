@@ -3,7 +3,7 @@ import { Pressable, Text, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight, Copy, Pencil, Play, Rocket, RotateCw } from "lucide-react-native";
+import { ArrowUpRight, Copy, Pencil, Play, Rocket } from "lucide-react-native";
 import equal from "fast-deep-equal";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStoreWithEqualityFn } from "zustand/traditional";
@@ -42,7 +42,6 @@ import {
   useKanbanCardComments,
   useKanbanCardDetail,
 } from "@/hooks/use-kanban-card-detail";
-import { useKanbanCardSummary } from "@/hooks/use-kanban-card-summary";
 import { useKanbanWriteback } from "@/hooks/use-kanban-writeback";
 import { useKanbanSources } from "@/hooks/use-kanban-sources";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
@@ -64,7 +63,6 @@ import { requireWorkspaceDirectory } from "@/utils/workspace-directory";
 
 const THEME_ICON_SIZE = 16;
 const LINK_ICON_SIZE = 14;
-const SUMMARY_REFRESH_ICON_SIZE = 14;
 // Card detail carries a description, comments and attachments, so it earns far
 // more room than the default sheet. The card still fills 100% of the (padded)
 // viewport below this cap, so it stays responsive on narrower windows.
@@ -658,12 +656,6 @@ function LoadedBody({
 
       {detail && detail.labels.length > 0 ? <LabelChips labels={detail.labels} /> : null}
 
-      <CardSummarySection
-        serverId={serverId}
-        cardId={card.id}
-        descriptionMarkdown={detail?.descriptionMarkdown ?? null}
-      />
-
       <DescriptionSection
         descriptionMarkdown={descriptionMarkdown}
         fallbackAttachments={fallbackAttachments}
@@ -899,61 +891,6 @@ function CardMetaGroup({ detail }: { detail: KanbanCardDetail | null }): ReactEl
           value={formatTimeAgo(new Date(detail.updatedAt))}
         />
       ) : null}
-    </View>
-  );
-}
-
-// AI summary of the tracker description, generated on-demand by the daemon's
-// local LLM in the app's language. Renders nothing when the host lacks the
-// capability or the body is too thin; failures fall back to just the
-// description below (the card title is always in the sheet header).
-function CardSummarySection({
-  serverId,
-  cardId,
-  descriptionMarkdown,
-}: {
-  serverId: string | null;
-  cardId: string;
-  descriptionMarkdown: string | null;
-}): ReactElement | null {
-  const { t } = useTranslation();
-  const { eligible, summary, isLoading, isError, refresh } = useKanbanCardSummary(
-    serverId,
-    cardId,
-    descriptionMarkdown,
-  );
-
-  if (!eligible) {
-    return null;
-  }
-
-  let body: ReactElement;
-  if (isLoading) {
-    body = <Text style={styles.mutedText}>{t("kanban.cardDetail.summaryGenerating")}</Text>;
-  } else if (summary) {
-    body = <Text style={styles.summaryText}>{summary}</Text>;
-  } else if (isError) {
-    body = <Text style={styles.mutedText}>{t("kanban.cardDetail.summaryFailed")}</Text>;
-  } else {
-    return null;
-  }
-
-  return (
-    <View style={styles.section} testID="kanban-card-summary">
-      <View style={styles.summaryHeader}>
-        <Text style={styles.sectionLabel}>{t("kanban.cardDetail.summary")}</Text>
-        <Pressable
-          onPress={refresh}
-          disabled={isLoading}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={t("kanban.cardDetail.summaryRegenerate")}
-          testID="kanban-card-summary-refresh"
-        >
-          <RotateCw size={SUMMARY_REFRESH_ICON_SIZE} color={styles.summaryRefresh.color} />
-        </Pressable>
-      </View>
-      {body}
     </View>
   );
 }
@@ -1755,19 +1692,6 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
-  },
-  summaryHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  summaryText: {
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.sm,
-    lineHeight: theme.fontSize.sm * 1.5,
-  },
-  summaryRefresh: {
-    color: theme.colors.foregroundMuted,
   },
   mutedText: {
     color: theme.colors.foregroundMuted,

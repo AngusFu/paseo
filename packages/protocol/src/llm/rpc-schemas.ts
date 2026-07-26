@@ -1,9 +1,9 @@
 import { z } from "zod";
 
 // Local LLM service RPCs (docs/rpc-namespacing.md). The daemon proxies a
-// user-configured OpenAI-compatible HTTP backend for lightweight generate
-// calls — independent from agents. First consumer: natural-language → cron in
-// the schedule form.
+// user-configured OpenAI-compatible HTTP backend (typically Ollama) for
+// lightweight generate calls. Sole consumer: prose-stop classification
+// (fixed model qwen2.5:0.5b).
 
 // ---------------------------------------------------------------------------
 // Model state

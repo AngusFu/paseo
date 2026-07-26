@@ -47,7 +47,6 @@ import { useWorkflowRun } from "@/hooks/use-workflow-run";
 import { useWorkflowRunLogs } from "@/hooks/use-workflow-run-logs";
 import { useWorkflowRuns } from "@/hooks/use-workflow-runs";
 import { buildSelectableProviderSelectorProviders } from "@/provider-selection/provider-selection";
-import { PromptOptimizeButton } from "@/components/prompt-optimize-button";
 import { useHostFeature } from "@/runtime/host-features";
 import {
   useHostRuntimeClient,
@@ -867,17 +866,6 @@ function WorkflowDispatchSheet({
   // when there is one — which is what the daemon derives for title-less dispatches.
   const workspaceTitleBody =
     workspaceTitleEdit ?? workflowWorkspaceNameFromPrompt(task) ?? definition.name;
-  // AdaptiveTextInput is uncontrolled (seeded from initialValue); bump the key
-  // to remount it whenever the optimize button replaces the draft externally.
-  const [taskResetKey, setTaskResetKey] = useState(0);
-  const replaceTask = useCallback(
-    (text: string) => {
-      setTask(text);
-      setTaskResetKey((key) => key + 1);
-    },
-    [setTask],
-  );
-
   const cwdTriggerLabel = cwdLabel ?? (cwd ? shortenPath(cwd) : t("workflows.projectPlaceholder"));
   const cwdHint = cwd && cwdLabel && shortenPath(cwd) !== cwdLabel ? shortenPath(cwd) : undefined;
   // An existing workspace supplies its own directory, so the cwd half of
@@ -1058,7 +1046,6 @@ function WorkflowDispatchSheet({
               <FormTextInput
                 value={task}
                 initialValue={task}
-                resetKey={taskResetKey}
                 onChangeText={setTask}
                 placeholder={t("workflows.taskPlaceholder")}
                 multiline
@@ -1067,14 +1054,6 @@ function WorkflowDispatchSheet({
                 style={styles.taskInput}
                 testID="workflow-dispatch-task-input"
               />
-              <View style={styles.taskOptimizeSlot}>
-                <PromptOptimizeButton
-                  serverId={serverId}
-                  draft={task}
-                  onReplace={replaceTask}
-                  disabled={isDispatching}
-                />
-              </View>
             </View>
           </Field>
         </View>
@@ -1809,11 +1788,6 @@ const styles = StyleSheet.create((theme) => ({
   },
   taskInputWrap: {
     position: "relative",
-  },
-  taskOptimizeSlot: {
-    position: "absolute",
-    right: theme.spacing[2],
-    bottom: theme.spacing[2],
   },
   descriptionInput: {
     minHeight: 88,

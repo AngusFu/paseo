@@ -491,27 +491,27 @@ Get the session ID from the agent JSON (`persistence.sessionId`), then:
 ~/.codex/sessions/{YYYY}/{MM}/{DD}/rollout-{timestamp}-{session-id}.jsonl
 ```
 
-## Local LLM (OpenAI-compatible backend)
+## Local LLM (prose-check only)
 
-Lightweight AI features (prompt optimize, natural-language cron, kanban summaries, the built-in assistant) call the daemon's `llm.local.*` RPCs, which proxy a user-configured OpenAI-compatible HTTP backend. Configure it in **Host settings → Local AI model**:
+The daemon's `llm.local.*` RPCs proxy an OpenAI-compatible HTTP backend (typically
+[Ollama](https://ollama.com)). **The only consumer is prose-stop classification**
+— configure it under **Host settings → Prose stop → Local AI (Ollama)**.
 
-- **Base URL** — e.g. `http://127.0.0.1:11434/v1` for [Ollama](https://ollama.com)
-- **Model** — any model name the backend accepts (Ollama example: pull a small model with `ollama pull qwen3.5:0.8b`, then enter `qwen3.5:0.8b`)
+- **Base URL** — e.g. `http://127.0.0.1:11434/v1`
+- **Model** — fixed to `qwen2.5:0.5b` (not user-selectable)
 - **API key** — optional; leave blank for local servers without auth
-
-Example with Ollama:
 
 ```bash
 ollama serve          # default listen on 127.0.0.1:11434
-ollama pull qwen3.5:0.8b
+ollama pull qwen2.5:0.5b
 ```
 
-Then set base URL `http://127.0.0.1:11434/v1` and model `qwen3.5:0.8b` in host settings. Use **Test** to verify connectivity.
+Then set base URL `http://127.0.0.1:11434/v1` in host settings and use **Test**.
 
 Ad-hoc RPC smoke test (requires a running backend):
 
 ```bash
-LOCAL_LLM_BASE_URL=http://127.0.0.1:11434/v1 LOCAL_LLM_MODEL=qwen3.5:0.8b \
+LOCAL_LLM_BASE_URL=http://127.0.0.1:11434/v1 LOCAL_LLM_MODEL=qwen2.5:0.5b \
   npx tsx packages/server/src/server/llm-e2e-adhoc.ts
 ```
 
@@ -548,7 +548,7 @@ Diagnoses version mismatches and native module issues.
 Foreground `turn_completed` runs a turn-end gate that detects waiting-for-user chat prose
 (e.g. “let me know”, “要 push 即可”) and auto-nudges the agent to re-ask via `ask_question`.
 
-- **Default on** — `MutableDaemonConfig.proseStop.enabled` (Host settings toggle near Local AI).
+- **Default on** — `MutableDaemonConfig.proseStop.enabled` (Host settings → Prose stop; Local AI fields live in the same card).
 - **Prevention prompt (default on)** — `proseStop.preventionPrompt` injects a short
   `daemonAppendSystemPrompt` fragment (`prevention-prompt.ts`) so agents avoid prose waits
   up front. Independent of the turn-end gate; applies on create/reload.

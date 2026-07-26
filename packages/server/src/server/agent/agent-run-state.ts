@@ -8,8 +8,6 @@ export interface ForegroundTurnWaiter {
   settled: boolean;
   settledPromise: Promise<void>;
   resolveSettled: () => void;
-  /** Wakes a blocked ForegroundTurnStream when settling without a terminal event. */
-  wake?: () => void;
 }
 
 export interface PendingForegroundRun {
@@ -131,7 +129,6 @@ export class AgentRunState {
     }
     waiter.settled = true;
     waiter.resolveSettled();
-    waiter.wake?.();
   }
 
   getMatchingWaiters(
@@ -219,7 +216,6 @@ export class ForegroundTurnStream {
       settled: false,
       settledPromise,
       resolveSettled,
-      wake: () => this.wake(),
       callback: (event) => {
         this.queue.push(event);
         this.wake();

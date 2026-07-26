@@ -158,9 +158,10 @@ export function AdaptiveRenameModal({
             style={styles.actionButton}
             onPress={handleSubmitVoid}
             disabled={submitDisabled}
+            loading={isPending}
             testID={submitTestID}
           >
-            {isPending ? t("renameModal.saving") : (submitLabel ?? t("renameModal.rename"))}
+            {submitLabel ?? t("renameModal.rename")}
           </Button>
         </View>
       </View>

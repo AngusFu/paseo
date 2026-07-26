@@ -802,9 +802,7 @@ function ProjectConfigForm({
           loading={saveMutation.isPending}
           onPress={handleSave}
         >
-          {saveMutation.isPending
-            ? t("settings.project.actions.saving")
-            : t("settings.project.actions.save")}
+          {t("settings.project.actions.save")}
         </Button>
       </View>
 

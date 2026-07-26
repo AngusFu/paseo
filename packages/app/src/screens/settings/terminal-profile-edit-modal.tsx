@@ -226,11 +226,10 @@ export function TerminalProfileEditModal({
             style={styles.actionButton}
             onPress={handleSave}
             disabled={isPending}
+            loading={isPending}
             testID="terminal-profile-save-button"
           >
-            {isPending
-              ? t("settings.host.terminalProfiles.saving")
-              : t("settings.host.terminalProfiles.save")}
+            {t("settings.host.terminalProfiles.save")}
           </Button>
         </View>
       </View>

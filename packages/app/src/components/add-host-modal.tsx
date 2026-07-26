@@ -645,10 +645,11 @@ export function AddHostModal({ visible, onClose, onCancel, onSaved }: AddHostMod
           variant="default"
           onPress={handleSavePress}
           disabled={isSaving}
+          loading={isSaving}
           leftIcon={connectIcon}
           testID="direct-host-submit"
         >
-          {isSaving ? t("pairing.direct.actions.connecting") : t("pairing.direct.actions.connect")}
+          {t("pairing.direct.actions.connect")}
         </Button>
       </View>
     </AdaptiveModalSheet>

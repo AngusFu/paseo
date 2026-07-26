@@ -217,12 +217,13 @@ export function PairLinkModal({ visible, onClose, onCancel, onSaved }: PairLinkM
           variant="default"
           onPress={handleSavePress}
           disabled={isSaving}
+          loading={isSaving}
           testID="pair-link-submit"
           accessibilityRole="button"
           accessibilityLabel={t("pairing.link.actions.pair")}
           leftIcon={pairIcon}
         >
-          {isSaving ? t("pairing.link.actions.pairing") : t("pairing.link.actions.pair")}
+          {t("pairing.link.actions.pair")}
         </Button>
       </View>
     </AdaptiveModalSheet>

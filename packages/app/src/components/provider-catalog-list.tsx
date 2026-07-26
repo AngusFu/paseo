@@ -53,9 +53,6 @@ interface CatalogRowProps {
 
 function CatalogRow({ entry, installing, onInstall }: CatalogRowProps) {
   const { t } = useTranslation();
-  const actionLabel = installing
-    ? t("providerCatalog.actions.adding")
-    : t("providerCatalog.actions.add");
   const handleInstall = useCallback(() => {
     onInstall(entry);
   }, [entry, onInstall]);
@@ -113,7 +110,7 @@ function CatalogRow({ entry, installing, onInstall }: CatalogRowProps) {
         style={styles.actionButton}
         testID={`install-provider-${entry.id}`}
       >
-        {actionLabel}
+        {t("providerCatalog.actions.add")}
       </Button>
     </View>
   );

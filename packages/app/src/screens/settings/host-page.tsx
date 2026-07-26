@@ -1323,11 +1323,10 @@ function AppendSystemPromptCard({ serverId }: { serverId: string }) {
               size="sm"
               onPress={handleSave}
               disabled={!hasChanges || isSaving}
+              loading={isSaving}
               testID="host-page-append-system-prompt-save"
             >
-              {isSaving
-                ? t("settings.host.orchestration.systemPrompt.saving")
-                : t("settings.host.orchestration.systemPrompt.save")}
+              {t("settings.host.orchestration.systemPrompt.save")}
             </Button>
           </View>
         </AdaptiveModalSheet>

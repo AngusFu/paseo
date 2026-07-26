@@ -760,6 +760,7 @@ export function BrowserPane({
   const webviewHostRef = useRef<HTMLDivElement | null>(null);
   const devtoolsHostRef = useRef<HTMLDivElement | null>(null);
   const [inlineDevtoolsOpen, setInlineDevtoolsOpen] = useState(false);
+  const devtoolsPresentationRef = useRef<"closed" | "inline" | "detached">("closed");
   const [devtoolsHeight, setDevtoolsHeight] = useState(DEVTOOLS_DEFAULT_HEIGHT);
   const urlInputRef = useRef<WebTextInput | null>(null);
   const initialUrlRef = useRef(browser?.url ?? "https://example.com");
@@ -1650,7 +1651,9 @@ export function BrowserPane({
 
   const handleOpenDetachedDevTools = useCallback(() => {
     const currentBrowserId = browserIdRef.current;
-    // Detached mode is the fallback; opening it supersedes any inline session.
+    // Mark detached before clearing inline state so the inline lifecycle effect
+    // does not close the detached window we are about to open.
+    devtoolsPresentationRef.current = "detached";
     setInlineDevtoolsOpen(false);
     const openDevTools = getDesktopHost()?.browser?.openDevTools;
     if (typeof openDevTools !== "function") {
@@ -1671,7 +1674,11 @@ export function BrowserPane({
   }, []);
 
   const handleToggleInlineDevTools = useCallback(() => {
-    setInlineDevtoolsOpen((open) => !open);
+    setInlineDevtoolsOpen((open) => {
+      const next = !open;
+      devtoolsPresentationRef.current = next ? "inline" : "closed";
+      return next;
+    });
   }, []);
 
   const handleDevtoolsResizeStart = useCallback((event: RNPointerEvent) => {
@@ -1730,16 +1737,29 @@ export function BrowserPane({
   // geometry: it keeps an EMPTY placeholder box in the layout, measures its
   // on-screen rect, and streams that rect to main so the overlay lands exactly
   // over the box. See main.ts `paseo:browser:open-inline-devtools`.
+  // Retained tabs stay mounted when hidden, but the main-process DevTools overlay
+  // is window-global — tear it down whenever this pane stops being interactive.
   useEffect(() => {
-    if (!isElectronRuntime() || !inlineDevtoolsOpen) {
-      return;
-    }
-    const host = devtoolsHostRef.current;
-    if (!host) {
+    if (!isElectronRuntime()) {
       return;
     }
     const currentBrowserId = browserId;
     const bridge = getDesktopHost()?.browser;
+
+    if (!inlineDevtoolsOpen || !isInteractive) {
+      if (devtoolsPresentationRef.current !== "detached") {
+        devtoolsPresentationRef.current = "closed";
+        void bridge?.closeDevTools?.(currentBrowserId).catch(() => undefined);
+      }
+      return;
+    }
+
+    devtoolsPresentationRef.current = "inline";
+
+    const host = devtoolsHostRef.current;
+    if (!host) {
+      return;
+    }
 
     const measureBounds = (): { x: number; y: number; width: number; height: number } | null => {
       // getBoundingClientRect is in CSS px relative to the window content area,
@@ -1791,9 +1811,12 @@ export function BrowserPane({
       resizeObserver.disconnect();
       window.removeEventListener("resize", syncBounds, true);
       window.removeEventListener("scroll", syncBounds, true);
-      void bridge?.closeDevTools?.(currentBrowserId).catch(() => undefined);
+      if (devtoolsPresentationRef.current === "inline") {
+        devtoolsPresentationRef.current = "closed";
+        void bridge?.closeDevTools?.(currentBrowserId).catch(() => undefined);
+      }
     };
-  }, [browserId, inlineDevtoolsOpen]);
+  }, [browserId, inlineDevtoolsOpen, isInteractive]);
 
   const setDevtoolsHostNode = useCallback((node: HTMLDivElement | null) => {
     devtoolsHostRef.current = node;

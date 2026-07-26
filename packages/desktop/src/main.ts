@@ -501,6 +501,10 @@ ipcMain.handle("paseo:browser:open-devtools", (event, browserId: unknown) => {
     isDevToolsOpened: contents.isDevToolsOpened(),
     registeredBrowserIds: listRegisteredPaseoBrowserIds(),
   });
+  closeInlineDevtoolsForBrowser(browserId);
+  if (contents.isDevToolsOpened()) {
+    contents.closeDevTools();
+  }
   contents.openDevTools({ mode: "detach" });
   const result = {
     ok: true,
@@ -657,6 +661,10 @@ ipcMain.handle("paseo:browser:open-inline-devtools", (event, rawInput: unknown) 
       existing.view.setBounds(bounds);
     } catch {}
     return { ok: true, reason: "already-open", browserId, webContentsId: guest.id };
+  }
+
+  if (guest.isDevToolsOpened()) {
+    guest.closeDevTools();
   }
 
   // Fresh, never-navigated host WebContents (no options => own WebContents).

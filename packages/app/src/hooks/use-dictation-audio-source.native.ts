@@ -13,6 +13,7 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
   const onPcmSegmentRef = useRef(config.onPcmSegment);
   const onErrorRef = useRef(config.onError);
   const onInterruptionRef = useRef(config.onInterruption);
+  const onVolumeLevelRef = useRef(config.onVolumeLevel);
   const [volume, setVolume] = useState(0);
   const engineRef = useRef<ReturnType<typeof createAudioEngine> | null>(null);
 
@@ -26,6 +27,7 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
         onPcmSegmentRef.current(Buffer.from(pcm).toString("base64"));
       },
       onVolumeLevel: (level) => {
+        onVolumeLevelRef.current?.(level);
         setVolume(level);
       },
       onError: (error) => {
@@ -42,7 +44,8 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
     onPcmSegmentRef.current = config.onPcmSegment;
     onErrorRef.current = config.onError;
     onInterruptionRef.current = config.onInterruption;
-  }, [config.onPcmSegment, config.onError, config.onInterruption]);
+    onVolumeLevelRef.current = config.onVolumeLevel;
+  }, [config.onPcmSegment, config.onError, config.onInterruption, config.onVolumeLevel]);
 
   const start = useCallback(async () => {
     const engine = getOrCreateEngine();

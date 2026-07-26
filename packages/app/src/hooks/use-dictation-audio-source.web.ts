@@ -172,11 +172,13 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
 
   const onPcmSegmentRef = useRef(config.onPcmSegment);
   const onErrorRef = useRef(config.onError);
+  const onVolumeLevelRef = useRef(config.onVolumeLevel);
 
   useEffect(() => {
     onPcmSegmentRef.current = config.onPcmSegment;
     onErrorRef.current = config.onError;
-  }, [config.onPcmSegment, config.onError]);
+    onVolumeLevelRef.current = config.onVolumeLevel;
+  }, [config.onPcmSegment, config.onError, config.onVolumeLevel]);
 
   const refs = useRef<{
     stream: MediaStream | null;
@@ -305,6 +307,7 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
         }
         const rms = Math.sqrt(sumSquares / Math.max(1, input.length));
         const normalized = Math.min(1, Math.max(0, rms * 2));
+        onVolumeLevelRef.current?.(normalized);
         setVolume(normalized);
 
         const next = resampleToPcm16(input, context.sampleRate, outputRate);

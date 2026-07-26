@@ -6,6 +6,7 @@ import { useDictationAudioSource } from "@/hooks/use-dictation-audio-source";
 import { generateMessageId } from "@/types/stream";
 import { AttemptGuard } from "@/utils/attempt-guard";
 import { DICTATION_VAD_CONFIG } from "@/voice/dictation-vad-config";
+import { INITIAL_DICTATION_VAD_STATE, tickDictationVad } from "@/voice/dictation-vad";
 import {
   DURATION_TICK_MS,
   PCM_DICTATION_FORMAT,
@@ -228,9 +229,14 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
     [reportError, stopDurationTracking],
   );
 
+  const volumeLevelRef = useRef(0);
+
   const audio = useDictationAudioSource({
     onPcmSegment: (audioData) => {
       senderRef.current?.enqueueSegment(audioData);
+    },
+    onVolumeLevel: (level) => {
+      volumeLevelRef.current = level;
     },
     onError: (err) => {
       onErrorRef.current?.(err);
@@ -359,7 +365,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
     const attemptId = attemptGuardRef.current.next();
 
     try {
-      await audio.stop();
+      await audioStopRef.current();
       attemptGuardRef.current.assertCurrent(attemptId);
 
       setStatus("uploading");
@@ -384,13 +390,17 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       actionGateRef.current.confirming = false;
     }
   }, [
-    audio,
     canConfirm,
     handleDictationFailure,
     handleStreamingTranscriptionSuccess,
     stopDurationTracking,
     ensureFinalTranscript,
   ]);
+
+  const confirmDictationRef = useRef(confirmDictation);
+  useEffect(() => {
+    confirmDictationRef.current = confirmDictation;
+  }, [confirmDictation]);
 
   const retryFailedDictation = useCallback(async () => {
     if (!senderRef.current?.hasSegments()) {
@@ -432,17 +442,12 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
     clearStreamingState();
   }, [clearStreamingState]);
 
-  const volumeRef = useRef(audio.volume);
-  volumeRef.current = audio.volume;
-
   useEffect(() => {
     if (!autoConfirmOnSilence || !isRecording || isProcessing) {
       return;
     }
 
-    let hasSpeech = false;
-    let speechStartedAt: number | null = null;
-    let lastSpeechAt = 0;
+    let vadState = INITIAL_DICTATION_VAD_STATE;
     let autoConfirmTriggered = false;
 
     const interval = setInterval(() => {
@@ -450,36 +455,18 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
         return;
       }
 
-      const now = Date.now();
-      const level = volumeRef.current;
-      if (level >= DICTATION_VAD_CONFIG.volumeThreshold) {
-        if (!hasSpeech) {
-          hasSpeech = true;
-          speechStartedAt = now;
-        }
-        lastSpeechAt = now;
-        return;
-      }
-
-      if (!hasSpeech || speechStartedAt === null || lastSpeechAt === 0) {
-        return;
-      }
-
-      const speechMs = lastSpeechAt - speechStartedAt;
-      if (speechMs < DICTATION_VAD_CONFIG.minSpeechMs) {
-        return;
-      }
-
-      if (now - lastSpeechAt >= DICTATION_VAD_CONFIG.silenceDurationMs) {
+      const result = tickDictationVad(vadState, volumeLevelRef.current, Date.now());
+      vadState = result.next;
+      if (result.shouldConfirm) {
         autoConfirmTriggered = true;
-        void confirmDictation();
+        void confirmDictationRef.current();
       }
     }, DICTATION_VAD_CONFIG.pollIntervalMs);
 
     return () => {
       clearInterval(interval);
     };
-  }, [autoConfirmOnSilence, confirmDictation, isProcessing, isRecording]);
+  }, [autoConfirmOnSilence, isProcessing, isRecording]);
 
   const reset = useCallback(() => {
     setIsRecording(false);

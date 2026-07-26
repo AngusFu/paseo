@@ -15,6 +15,7 @@ import {
   ListRenderItemInfo,
   Pressable,
   Text,
+  TextInput,
   View,
   type PressableStateCallbackType,
   type StyleProp,
@@ -24,7 +25,7 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { WORKSPACE_SECONDARY_HEADER_HEIGHT } from "@/constants/layout";
 import * as Clipboard from "expo-clipboard";
-import { ChevronDown, Eye, EyeOff, RotateCw } from "lucide-react-native";
+import { ChevronDown, Eye, EyeOff, RotateCw, Search } from "lucide-react-native";
 import { MaterialFileIcon } from "@/components/material-file-icon";
 import {
   TreeChevron,
@@ -42,7 +43,9 @@ import { buildWorkspaceExplorerStateKey } from "@/hooks/use-file-explorer-action
 import { usePanelStore, type SortOption } from "@/stores/panel-store";
 import { formatTimeAgo } from "@/utils/time";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
+import { expandedPathsForReveal } from "@/file-explorer/search";
 import { filterVisibleExplorerEntries, isHiddenExplorerPath } from "@/file-explorer/visibility";
+import { useFileExplorerSearch } from "@/hooks/use-file-explorer-search";
 import { useWebScrollViewScrollbar } from "@/components/use-web-scrollbar";
 import { isWeb } from "@/constants/platform";
 import { useWorkspaceFileDragSource } from "@/attachments/use-workspace-file-drag-source";
@@ -68,6 +71,7 @@ interface TreeRowItemProps {
   workspaceId?: string | null;
   entry: ExplorerEntry;
   depth: number;
+  displayName?: string;
   isExpanded: boolean;
   isSelected: boolean;
   loading: boolean;
@@ -98,6 +102,7 @@ function TreeRowItem({
   workspaceId,
   entry,
   depth,
+  displayName,
   isExpanded,
   isSelected,
   loading,
@@ -109,6 +114,7 @@ function TreeRowItem({
 }: TreeRowItemProps) {
   const { t } = useTranslation();
   const isDirectory = entry.kind === "directory";
+  const label = displayName ?? entry.name;
   const dragSourceRef = useWorkspaceFileDragSource({
     enabled: !isDirectory,
     serverId,
@@ -142,27 +148,28 @@ function TreeRowItem({
   }, [onAddToChat, entry.path]);
 
   const metaHeader = useMemo(
-    () => (
-      <View style={styles.contextMetaBlock}>
-        <View style={styles.contextMetaRow}>
-          <Text style={styles.contextMetaLabel} numberOfLines={1}>
-            {t("workspace.fileExplorer.context.size")}
-          </Text>
-          <Text style={styles.contextMetaValue} numberOfLines={1} ellipsizeMode="tail">
-            {formatFileSize({ size: entry.size })}
-          </Text>
+    () =>
+      displayName == null ? (
+        <View style={styles.contextMetaBlock}>
+          <View style={styles.contextMetaRow}>
+            <Text style={styles.contextMetaLabel} numberOfLines={1}>
+              {t("workspace.fileExplorer.context.size")}
+            </Text>
+            <Text style={styles.contextMetaValue} numberOfLines={1} ellipsizeMode="tail">
+              {formatFileSize({ size: entry.size })}
+            </Text>
+          </View>
+          <View style={styles.contextMetaRow}>
+            <Text style={styles.contextMetaLabel} numberOfLines={1}>
+              {t("workspace.fileExplorer.context.modified")}
+            </Text>
+            <Text style={styles.contextMetaValue} numberOfLines={1} ellipsizeMode="tail">
+              {formatTimeAgo(new Date(entry.modifiedAt))}
+            </Text>
+          </View>
         </View>
-        <View style={styles.contextMetaRow}>
-          <Text style={styles.contextMetaLabel} numberOfLines={1}>
-            {t("workspace.fileExplorer.context.modified")}
-          </Text>
-          <Text style={styles.contextMetaValue} numberOfLines={1} ellipsizeMode="tail">
-            {formatTimeAgo(new Date(entry.modifiedAt))}
-          </Text>
-        </View>
-      </View>
-    ),
-    [entry.modifiedAt, entry.size, t],
+      ) : null,
+    [displayName, entry.modifiedAt, entry.size, t],
   );
 
   const entryInfoStyle = useMemo(
@@ -184,7 +191,7 @@ function TreeRowItem({
           })()}
         </View>
         <Text style={styles.entryName} numberOfLines={1}>
-          {entry.name}
+          {label}
         </Text>
       </View>
       <FileActionsMenu
@@ -211,6 +218,7 @@ interface FileExplorerPaneProps {
 interface TreeRow {
   entry: ExplorerEntry;
   depth: number;
+  displayName?: string;
 }
 
 export function FileExplorerPane({
@@ -223,6 +231,7 @@ export function FileExplorerPane({
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
   const showDesktopWebScrollbar = isWeb && !isMobile;
+  const [searchQuery, setSearchQuery] = useState("");
 
   const normalizedWorkspaceRoot = useMemo(() => workspaceRoot.trim(), [workspaceRoot]);
   const workspaceStateKey = useMemo(
@@ -234,6 +243,7 @@ export function FileExplorerPane({
     [normalizedWorkspaceRoot, workspaceId],
   );
   const hasWorkspaceScope = Boolean(workspaceStateKey && normalizedWorkspaceRoot);
+  const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
   const explorerState = useSessionStore((state) =>
     workspaceStateKey && state.sessions[serverId]
       ? state.sessions[serverId]?.fileExplorer.get(workspaceStateKey)
@@ -252,6 +262,13 @@ export function FileExplorerPane({
   });
   const sortOption = usePanelStore((state) => state.explorerSortOption);
   const showHiddenFiles = usePanelStore((state) => state.explorerShowHiddenFiles);
+  const search = useFileExplorerSearch({
+    client,
+    workspaceRoot: normalizedWorkspaceRoot,
+    query: searchQuery,
+    sortOption,
+    showHiddenFiles,
+  });
   const setSortOption = usePanelStore((state) => state.setExplorerSortOption);
   const toggleExplorerShowHiddenFiles = usePanelStore(
     (state) => state.toggleExplorerShowHiddenFiles,
@@ -287,6 +304,7 @@ export function FileExplorerPane({
 
   useEffect(() => {
     hasInitializedRef.current = false;
+    setSearchQuery("");
   }, [workspaceStateKey]);
 
   useEffect(() => {
@@ -330,13 +348,47 @@ export function FileExplorerPane({
 
   const handleEntryPress = useCallback(
     (entry: ExplorerEntry) => {
+      if (search.hasQuery) {
+        if (entry.kind === "file") {
+          handleOpenFile(entry);
+          setSearchQuery("");
+          return;
+        }
+        if (!workspaceStateKey) {
+          return;
+        }
+        setSearchQuery("");
+        const revealPaths = expandedPathsForReveal(entry.path);
+        setExpandedPathsForWorkspace(workspaceStateKey, revealPaths);
+        selectExplorerEntry(entry.path);
+        void (async () => {
+          for (const path of revealPaths) {
+            if (!directories.has(path)) {
+              await requestDirectoryListing(path, {
+                recordHistory: false,
+                setCurrentPath: false,
+              });
+            }
+          }
+        })();
+        return;
+      }
       if (entry.kind === "directory") {
         handleToggleDirectory(entry);
         return;
       }
       handleOpenFile(entry);
     },
-    [handleOpenFile, handleToggleDirectory],
+    [
+      directories,
+      handleOpenFile,
+      handleToggleDirectory,
+      requestDirectoryListing,
+      search.hasQuery,
+      selectExplorerEntry,
+      setExpandedPathsForWorkspace,
+      workspaceStateKey,
+    ],
   );
 
   const handleCopyPath = useCallback(
@@ -408,6 +460,7 @@ export function FileExplorerPane({
     () => resolveTreeRows({ directories, expandedPaths, sortOption, showHiddenFiles }),
     [directories, expandedPaths, showHiddenFiles, sortOption],
   );
+  const listRows = search.hasQuery ? search.rows : treeRows;
 
   const showInitialLoading = resolveShowInitialLoading({
     directories,
@@ -474,11 +527,16 @@ export function FileExplorerPane({
   return (
     <View style={styles.container}>
       <FileExplorerPaneContent
-        error={error}
-        showInitialLoading={showInitialLoading}
+        error={search.hasQuery ? search.error : error}
+        showInitialLoading={!search.hasQuery && showInitialLoading}
         showBackFromError={showBackFromError}
-        treeRows={treeRows}
+        treeRows={listRows}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        isSearchActive={search.hasQuery}
+        isSearching={search.isSearching}
         currentSortLabel={currentSortLabel}
+        sortDisabled={search.hasQuery}
         isRefreshFetching={isRefreshFetching}
         showDesktopWebScrollbar={showDesktopWebScrollbar}
         treeListRef={treeListRef}
@@ -501,7 +559,12 @@ interface FileExplorerPaneContentProps {
   showInitialLoading: boolean;
   showBackFromError: boolean;
   treeRows: TreeRow[];
+  searchQuery: string;
+  onSearchQueryChange: (value: string) => void;
+  isSearchActive: boolean;
+  isSearching: boolean;
   currentSortLabel: string;
+  sortDisabled: boolean;
   isRefreshFetching: boolean;
   showDesktopWebScrollbar: boolean;
   treeListRef: RefObject<FlatList<TreeRow> | null>;
@@ -524,7 +587,12 @@ function FileExplorerPaneContent(props: FileExplorerPaneContentProps) {
     showInitialLoading,
     showBackFromError,
     treeRows,
+    searchQuery,
+    onSearchQueryChange,
+    isSearchActive,
+    isSearching,
     currentSortLabel,
+    sortDisabled,
     isRefreshFetching,
     showDesktopWebScrollbar,
     treeListRef,
@@ -544,9 +612,12 @@ function FileExplorerPaneContent(props: FileExplorerPaneContentProps) {
   const hiddenFilesToggleAccessibilityLabel = showHiddenFiles
     ? t("workspace.fileExplorer.actions.hideHiddenFiles")
     : t("workspace.fileExplorer.actions.showHiddenFiles");
-  const emptyLabel = showHiddenFiles
-    ? t("workspace.fileExplorer.empty.noFiles")
-    : t("workspace.fileExplorer.empty.noVisibleFiles");
+  let emptyLabel = t("workspace.fileExplorer.empty.noVisibleFiles");
+  if (isSearchActive) {
+    emptyLabel = t("workspace.fileExplorer.search.noMatches");
+  } else if (showHiddenFiles) {
+    emptyLabel = t("workspace.fileExplorer.empty.noFiles");
+  }
   const hiddenFilesToggleStyle = useCallback(
     (state: PressableStateCallbackType) => [
       iconButtonStyleProp(state),
@@ -586,11 +657,63 @@ function FileExplorerPaneContent(props: FileExplorerPaneContentProps) {
     );
   }
 
+  let treeContent: ReactElement;
+  if (isSearchActive && isSearching) {
+    treeContent = (
+      <View style={styles.centerState}>
+        <ActivityIndicator size="small" />
+        <Text style={styles.loadingText}>{t("workspace.fileExplorer.search.searching")}</Text>
+      </View>
+    );
+  } else if (treeRows.length === 0) {
+    treeContent = (
+      <View style={styles.centerState}>
+        <Text style={styles.emptyText}>{emptyLabel}</Text>
+      </View>
+    );
+  } else {
+    treeContent = (
+      <FlatList
+        ref={treeListRef}
+        style={styles.treeList}
+        data={treeRows}
+        renderItem={renderTreeRow}
+        keyExtractor={treeRowKeyExtractor}
+        testID="file-explorer-tree-scroll"
+        contentContainerStyle={styles.entriesContent}
+        onLayout={scrollbar.onLayout}
+        onScroll={scrollbar.onScroll}
+        onContentSizeChange={scrollbar.onContentSizeChange}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={!showDesktopWebScrollbar}
+        initialNumToRender={24}
+        maxToRenderPerBatch={40}
+        windowSize={12}
+      />
+    );
+  }
+
   return (
     <View style={[styles.treePane, styles.treePaneFill]}>
+      <View style={styles.searchRow} testID="files-search-row">
+        <Search size={14} color={theme.colors.foregroundMuted} />
+        <TextInput
+          value={searchQuery}
+          onChangeText={onSearchQueryChange}
+          placeholder={t("workspace.fileExplorer.search.placeholder")}
+          placeholderTextColor={theme.colors.foregroundMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          accessibilityLabel={t("workspace.fileExplorer.search.accessibilityLabel")}
+          // @ts-expect-error - outlineStyle is web-only
+          style={[styles.searchInput, isWeb && { outlineStyle: "none" }]}
+          testID="files-search-input"
+        />
+      </View>
       <View style={styles.paneHeader} testID="files-pane-header">
         <Pressable
           onPress={handleSortCycle}
+          disabled={sortDisabled}
           style={sortTriggerStyleProp}
           testID="files-sort-trigger"
         >
@@ -638,29 +761,7 @@ function FileExplorerPaneContent(props: FileExplorerPaneContentProps) {
           </Pressable>
         </View>
       </View>
-      {treeRows.length === 0 ? (
-        <View style={styles.centerState}>
-          <Text style={styles.emptyText}>{emptyLabel}</Text>
-        </View>
-      ) : (
-        <FlatList
-          ref={treeListRef}
-          style={styles.treeList}
-          data={treeRows}
-          renderItem={renderTreeRow}
-          keyExtractor={treeRowKeyExtractor}
-          testID="file-explorer-tree-scroll"
-          contentContainerStyle={styles.entriesContent}
-          onLayout={scrollbar.onLayout}
-          onScroll={scrollbar.onScroll}
-          onContentSizeChange={scrollbar.onContentSizeChange}
-          scrollEventThrottle={16}
-          showsVerticalScrollIndicator={!showDesktopWebScrollbar}
-          initialNumToRender={24}
-          maxToRenderPerBatch={40}
-          windowSize={12}
-        />
-      )}
+      {treeContent}
       {treeRows.length > 0 ? scrollbar.overlay : null}
     </View>
   );
@@ -896,6 +997,7 @@ function TreeRowDispatcher({
       workspaceId={workspaceId}
       entry={entry}
       depth={depth}
+      displayName={info.item.displayName}
       isExpanded={isExpanded}
       isSelected={isSelected}
       loading={loading}
@@ -1071,6 +1173,23 @@ const styles = StyleSheet.create((theme) => ({
   sortTriggerText: {
     fontSize: theme.fontSize.xs,
     color: theme.colors.foregroundMuted,
+  },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+    paddingTop: theme.spacing[2],
+    paddingBottom: theme.spacing[1],
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: theme.spacing[1],
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
   },
   headerActions: {
     flexDirection: "row",

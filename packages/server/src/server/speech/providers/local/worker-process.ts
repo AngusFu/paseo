@@ -127,7 +127,7 @@ function getTtsProvider(config: LocalSpeechWorkerConfig): SherpaOnnxTTS {
   const modelDir = getLocalSpeechModelDir(config.modelsDir, ttsModelId(config));
   const created = new SherpaOnnxTTS(
     {
-      preset: ttsModelId(config),
+      modelId: ttsModelId(config),
       modelDir,
       speakerId: config.voiceTtsSpeakerId,
       speed: config.voiceTtsSpeed,

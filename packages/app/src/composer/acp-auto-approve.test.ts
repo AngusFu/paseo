@@ -9,6 +9,7 @@ import {
   migrateGlobalAcpAutoApprovePreferences,
   readGlobalAcpAutoApprove,
   resolveComposerAutoAcceptFeature,
+  resolveComposerAutoAcceptSettledValue,
   resolveGlobalAcpAutoAcceptFeatureValues,
   shouldShowComposerAcpAutoAccept,
 } from "@/composer/acp-auto-approve";
@@ -167,6 +168,40 @@ describe("readGlobalAcpAutoApprove", () => {
       }),
     ).toBe(true);
   });
+
+  test("does not infer global off from legacy per-provider false only", () => {
+    expect(
+      readGlobalAcpAutoApprove({
+        providerPreferences: {
+          copilot: { featureValues: { [ACP_AUTO_ACCEPT_FEATURE_ID]: false } },
+        },
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe("resolveComposerAutoAcceptSettledValue", () => {
+  test("prefers draft feature values over global in draft mode", () => {
+    expect(
+      resolveComposerAutoAcceptSettledValue({
+        optimisticValue: null,
+        draftMode: true,
+        globalAutoApprove: true,
+        resolvedFeatureValue: false,
+      }),
+    ).toBe(false);
+  });
+
+  test("prefers global over stale live session values", () => {
+    expect(
+      resolveComposerAutoAcceptSettledValue({
+        optimisticValue: null,
+        draftMode: false,
+        globalAutoApprove: true,
+        resolvedFeatureValue: false,
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("resolveGlobalAcpAutoAcceptFeatureValues", () => {
@@ -199,6 +234,23 @@ describe("migrateGlobalAcpAutoApprovePreferences", () => {
         providerPreferences: {
           cursor: {},
           copilot: { featureValues: { fast_mode: true } },
+        },
+      },
+    });
+  });
+
+  test("strips ambiguous legacy false-only auto_accept without setting global off", () => {
+    expect(
+      migrateGlobalAcpAutoApprovePreferences({
+        providerPreferences: {
+          copilot: { featureValues: { [ACP_AUTO_ACCEPT_FEATURE_ID]: false } },
+        },
+      }),
+    ).toEqual({
+      changed: true,
+      preferences: {
+        providerPreferences: {
+          copilot: {},
         },
       },
     });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/shallow";
 import type { AgentFeature, AgentProvider } from "@getpaseo/protocol/agent-types";
 import { useSessionStore } from "@/stores/session-store";
@@ -11,6 +11,7 @@ import {
   ACP_AUTO_ACCEPT_FEATURE_ID,
   readGlobalAcpAutoApprove,
   resolveComposerAutoAcceptFeature,
+  resolveComposerAutoAcceptSettledValue,
   shouldShowComposerAcpAutoAccept,
 } from "@/composer/acp-auto-approve";
 
@@ -38,6 +39,7 @@ export function useComposerAutoAccept({
   const toast = useToast();
   const { preferences, updatePreferences } = useFormPreferences();
   const [optimisticValue, setOptimisticValue] = useState<boolean | null>(null);
+  const lastSyncedGlobalRef = useRef<{ agentId: string; value: boolean } | null>(null);
   const liveAgent = useSessionStore(
     useShallow((state) => {
       if (!agentId) {
@@ -73,11 +75,13 @@ export function useComposerAutoAccept({
     if (!resolvedFeature) {
       return undefined;
     }
-    if (optimisticValue !== null) {
-      return optimisticValue;
-    }
-    return globalAutoApprove ?? resolvedFeature.value;
-  }, [globalAutoApprove, optimisticValue, resolvedFeature]);
+    return resolveComposerAutoAcceptSettledValue({
+      optimisticValue,
+      draftMode: Boolean(draftOnSetFeature),
+      globalAutoApprove,
+      resolvedFeatureValue: resolvedFeature.value,
+    });
+  }, [draftOnSetFeature, globalAutoApprove, optimisticValue, resolvedFeature]);
 
   useEffect(() => {
     if (optimisticValue === null || settledValue === undefined) {
@@ -89,15 +93,30 @@ export function useComposerAutoAccept({
   }, [optimisticValue, settledValue]);
 
   useEffect(() => {
+    if (agentId && lastSyncedGlobalRef.current?.agentId !== agentId) {
+      lastSyncedGlobalRef.current = null;
+    }
+  }, [agentId]);
+
+  useEffect(() => {
     if (draftOnSetFeature || !client || !agentId || !resolvedFeature) {
       return;
     }
     if (globalAutoApprove === undefined || globalAutoApprove === resolvedFeature.value) {
+      if (globalAutoApprove !== undefined) {
+        lastSyncedGlobalRef.current = { agentId, value: globalAutoApprove };
+      }
       return;
     }
+    const lastSynced = lastSyncedGlobalRef.current;
+    if (lastSynced?.agentId === agentId && lastSynced.value === globalAutoApprove) {
+      return;
+    }
+    lastSyncedGlobalRef.current = { agentId, value: globalAutoApprove };
     void client
       .setAgentFeature(agentId, ACP_AUTO_ACCEPT_FEATURE_ID, globalAutoApprove)
       .catch((error) => {
+        lastSyncedGlobalRef.current = null;
         console.warn("[useComposerAutoAccept] sync global auto_accept failed", error);
       });
   }, [agentId, client, draftOnSetFeature, globalAutoApprove, resolvedFeature]);

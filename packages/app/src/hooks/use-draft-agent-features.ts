@@ -152,13 +152,7 @@ export function useDraftAgentFeatures(input: {
     }
   }, [availableFeatures, availableFeaturesRaw, localFeatureValues]);
 
-  const effectiveFeatureValues = useMemo(() => {
-    const merged = mergeFeatureValueLayers(
-      globalAcpFeatureValues,
-      mergeFeatureValueLayers(persistedFeatureValues, featureValues),
-    );
-    return Object.keys(merged).length > 0 ? merged : undefined;
-  }, [featureValues, globalAcpFeatureValues, persistedFeatureValues]);
+  const effectiveFeatureValues = Object.keys(featureValues).length > 0 ? featureValues : undefined;
 
   const setFeatureValue = useCallback(
     (featureId: string, value: unknown) => {

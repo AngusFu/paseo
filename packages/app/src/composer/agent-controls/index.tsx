@@ -35,6 +35,7 @@ import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { resolveProviderDefinition } from "@/utils/provider-definitions";
 import {
   buildFavoriteModelKey,
+  mergeGlobalAcpAutoApprove,
   mergeProviderPreferences,
   toggleFavoriteModel,
   useFormPreferences,
@@ -67,6 +68,7 @@ import {
   resolveAgentModelSelection,
 } from "@/composer/agent-controls/utils";
 import {
+  ACP_AUTO_ACCEPT_FEATURE_ID,
   excludeComposerManagedAcpFeatures,
   shouldShowComposerAcpAutoAccept,
 } from "@/composer/acp-auto-approve";
@@ -1615,19 +1617,27 @@ export const AgentControls = memo(function AgentControls({
       if (!client || !agentProvider) {
         return;
       }
-      void updatePreferences((current) =>
-        mergeProviderPreferences({
-          preferences: current,
-          provider: agentProvider,
-          updates: {
-            featureValues: {
-              [featureId]: value,
+      if (featureId === ACP_AUTO_ACCEPT_FEATURE_ID) {
+        void updatePreferences((current) =>
+          mergeGlobalAcpAutoApprove(current, value === true),
+        ).catch((error) => {
+          console.warn("[AgentControls] persist global auto_accept failed", error);
+        });
+      } else {
+        void updatePreferences((current) =>
+          mergeProviderPreferences({
+            preferences: current,
+            provider: agentProvider,
+            updates: {
+              featureValues: {
+                [featureId]: value,
+              },
             },
-          },
-        }),
-      ).catch((error) => {
-        console.warn("[AgentControls] persist feature preference failed", error);
-      });
+          }),
+        ).catch((error) => {
+          console.warn("[AgentControls] persist feature preference failed", error);
+        });
+      }
       void client.setAgentFeature(agentId, featureId, value).catch((error) => {
         console.warn("[AgentControls] setAgentFeature failed", error);
         toast.error(toErrorMessage(error));

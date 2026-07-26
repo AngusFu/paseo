@@ -73,22 +73,16 @@ export function readGlobalAcpAutoApprove(
   }
 
   let sawTrue = false;
-  let sawFalse = false;
   for (const providerPrefs of Object.values(preferences.providerPreferences ?? {})) {
-    const value = providerPrefs.featureValues?.[ACP_AUTO_ACCEPT_FEATURE_ID];
-    if (value === true) {
+    if (providerPrefs.featureValues?.[ACP_AUTO_ACCEPT_FEATURE_ID] === true) {
       sawTrue = true;
-    }
-    if (value === false) {
-      sawFalse = true;
+      break;
     }
   }
   if (sawTrue) {
     return true;
   }
-  if (sawFalse) {
-    return false;
-  }
+  // Ambiguous legacy state: per-provider false does not imply a global off.
   return undefined;
 }
 
@@ -135,6 +129,21 @@ export function resolveComposerAutoAcceptFeature(
     return fromDraft;
   }
   return findComposerAutoAcceptFeature(liveFeatures);
+}
+
+export function resolveComposerAutoAcceptSettledValue(input: {
+  optimisticValue: boolean | null;
+  draftMode: boolean;
+  globalAutoApprove: boolean | undefined;
+  resolvedFeatureValue: boolean;
+}): boolean {
+  if (input.optimisticValue !== null) {
+    return input.optimisticValue;
+  }
+  if (input.draftMode) {
+    return input.resolvedFeatureValue;
+  }
+  return input.globalAutoApprove ?? input.resolvedFeatureValue;
 }
 
 // COMPAT(globalAcpAutoApprove): added in v0.1.105, drop when client floor >= v0.1.105 + 6mo

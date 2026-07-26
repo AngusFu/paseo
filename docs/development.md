@@ -559,6 +559,45 @@ Foreground `turn_completed` runs a turn-end gate that detects waiting-for-user c
 - **Re-entry** — first WAIT gets the full nudge; a second consecutive WAIT still runs the
   gate and injects a short warning (not another full nudge), then clears the cycle.
 
+## Upstream port tracker
+
+Fork tracks [`getpaseo/paseo`](https://github.com/getpaseo/paseo) `main` via subject-level cherry-picks onto `AngusFu/paseo` `main`. Compare with:
+
+```bash
+git fetch upstream main
+git merge-base main upstream/main   # shared ancestor
+git log upstream/main --oneline -20 # spot-check recent upstream
+```
+
+Last reconciled: **2026-07-26**. Batches **6**, **7a**, and **7b** are merged into fork `main` (composer/Changes/workspace-git/ACP/web-chat stickiness, etc.).
+
+### Intentionally not ported
+
+| Area                                                                                                                       | Reason                                                                                                                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Hub** (`#2035`, `#2208`, `#2395`, hub test cleanup `#2233`)                                                              | Fork does not ship Hub integration.                                                                                                                                        |
+| **Desktop auto-update UX** (`Always revalidate…`, 0.1.108/0.1.109 notices, revert)                                         | Fork ships its own desktop/update channel; skip upstream desktop update prompts.                                                                                           |
+| **Release/chore noise** (lockfile/Nix hash, `chore(release):`, changelog prep, ACP catalog refresh commits, merge commits) | Versioning and release cadence differ; port feature/fix subjects only when needed.                                                                                         |
+| **`fix(app): stop updates after chat teardown (#1997)`**                                                                   | Upstream targets the history virtualizer delayed-scroll teardown path; fork web chat strategy has no equivalent virtualizer lifecycle — patch does not apply meaningfully. |
+
+### Remaining actionable upstream (subject not on fork)
+
+As of merge-base `860fcb2e35` → `upstream/main`:
+
+| Commit                                     | Subject                                          | Notes                                                                         |
+| ------------------------------------------ | ------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `7bd4afe84`                                | `docs(providers): add Codex setup guide (#2389)` | Adds `public-docs/codex.md` — low risk doc port.                              |
+| `f86226a196`                               | `chore: update ACP provider catalog`             | Catalog pin bump; take when refreshing ACP providers.                         |
+| `5db070a4d9`                               | `docs: promote 0.1.106 release notes`            | Upstream release notes only.                                                  |
+| `51fea4b7e0`                               | `docs: clarify mobile beta release note`         | Upstream release notes only.                                                  |
+| `5ae53c7e55` / `144f951a79` / `d28e174b38` | `ops(relay): …`                                  | Upstream Fly relay ops; fork relay deploy may differ — review before porting. |
+
+Everything else in `git log $(git merge-base main upstream/main)..upstream/main` either matches on fork by subject or falls into the skip table above.
+
+### Known fork gaps (not upstream ports)
+
+- **Retriable turn retry:** daemon retries only on `turn_failed`. Cursor often surfaces `RetriableError` in the assistant stream and still ends with `turn_completed`, so no automatic retry fires. Fix belongs in server turn-completion handling, not an upstream cherry-pick.
+
 ## Typecheck
 
 Always run typecheck after changes:

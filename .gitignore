@@ -95,3 +95,12 @@ app.json
 
 # agents-workflow local CLI runtime state (journals, run artifacts)
 .aw/
+
+# Cursor / local connect artifacts
+.cursor/
+.cc-connect/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo

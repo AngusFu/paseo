@@ -88,12 +88,16 @@ import {
 import { resolveAgentControlsMode } from "@/composer/agent-controls/mode";
 import { useKeyboardShiftStyle } from "@/hooks/use-keyboard-shift-style";
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
-import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispatcher";
+import type {
+  KeyboardActionDefinition,
+  KeyboardActionId,
+} from "@/keyboard/keyboard-action-dispatcher";
 import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
 import { submitAgentInput } from "@/composer/submit";
 import { ComposerKeyboardScopeProvider } from "@/composer/keyboard-scope";
 import { useAppSettings } from "@/hooks/use-settings";
 import { isWeb, isNative } from "@/constants/platform";
+import { VOICE_MODE_UI_ENABLED } from "@/constants/voice-features";
 import type { ForgeSearchItem } from "@getpaseo/protocol/messages";
 import type {
   AttachmentMetadata,
@@ -441,6 +445,7 @@ interface AttemptStartRealtimeVoiceArgs {
 }
 
 function attemptStartRealtimeVoice(args: AttemptStartRealtimeVoiceArgs): void {
+  if (!VOICE_MODE_UI_ENABLED) return;
   const { voice, isConnected, hasAgent, serverId, agentId, toastErrorRef } = args;
   if (!voice || !isConnected || !hasAgent) return;
   if (voice.isVoiceSwitching) return;
@@ -962,7 +967,11 @@ function ComposerRightControlsSlot({
 }: ComposerRightControlsSlotProps) {
   const hideVoiceForCompactInput = isCompact && hasSendableContent;
   const showVoiceModeButton =
-    !isVoiceModeForAgent && hasAgent && !isAgentRunning && !hideVoiceForCompactInput;
+    VOICE_MODE_UI_ENABLED &&
+    !isVoiceModeForAgent &&
+    hasAgent &&
+    !isAgentRunning &&
+    !hideVoiceForCompactInput;
   const shouldShowCancelButton = isAgentRunning && !hasSendableContent && !isProcessing;
   if (!showVoiceModeButton && !shouldShowCancelButton) return null;
   return (
@@ -1599,18 +1608,24 @@ export function Composer({
     ],
   );
 
-  useKeyboardActionHandler({
-    handlerId: keyboardHandlerIdRef.current,
-    actions: [
+  const composerKeyboardActions = useMemo((): readonly KeyboardActionId[] => {
+    const base: KeyboardActionId[] = [
       "agent.interrupt",
       "message-input.focus",
       "message-input.send",
       "message-input.dictation-toggle",
       "message-input.dictation-cancel",
       "message-input.dictation-confirm",
-      "message-input.voice-toggle",
-      "message-input.voice-mute-toggle",
-    ],
+    ];
+    if (VOICE_MODE_UI_ENABLED) {
+      base.push("message-input.voice-toggle", "message-input.voice-mute-toggle");
+    }
+    return base;
+  }, []);
+
+  useKeyboardActionHandler({
+    handlerId: keyboardHandlerIdRef.current,
+    actions: composerKeyboardActions,
     enabled: isPaneFocused,
     priority: resolveKeyboardPriority(isMessageInputFocused),
     isActive: () => isPaneFocused,

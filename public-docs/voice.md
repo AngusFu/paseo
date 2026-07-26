@@ -25,7 +25,7 @@ This keeps credentials and execution in your environment and avoids introducing 
 
 ## Local Speech
 
-Local speech defaults to STT language `zh` and model ID `sense-voice-zh-en-ja-ko-yue-int8` (Chinese-capable SenseVoice), with TTS `kokoro-int8-multi-lang-v1_1` (speaker 3 / first Chinese female voice). When the STT language is English (or another non-Chinese tag), the default STT model falls back to `parakeet-tdt-0.6b-v2-int8` and TTS falls back to `kokoro-en-v0_19`.
+Local speech defaults to STT language `zh` and model ID `sense-voice-zh-en-ja-ko-yue-int8` (Chinese-capable SenseVoice). When the STT language is English (or another non-Chinese tag), the default STT model falls back to `parakeet-tdt-0.6b-v2-int8`. Local TTS defaults to `kokoro-en-v0_19` (English only). Voice mode UI is currently hidden in the app; dictation remains available with client-side silence detection (auto-confirm after ~8s of silence).
 
 Missing models are downloaded at daemon startup into `$PASEO_HOME/models/local-speech`. Downloads happen only for missing files.
 
@@ -41,12 +41,9 @@ Missing models are downloaded at daemon startup into `$PASEO_HOME/models/local-s
 
 ### Local TTS models and language support
 
-| Model ID                      | Languages                                                                                                                                                               |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kokoro-int8-multi-lang-v1_1` | Chinese + English (default when voice language is Chinese / Cantonese). Mixed zh/en text in one utterance. 103 speakers (sid 3–57 Chinese female, 58–102 Chinese male). |
-| `kokoro-en-v0_19`             | English only (default for non-Chinese voice languages).                                                                                                                 |
-
-**For Chinese voice replies, keep the default multilingual Kokoro model** — or set `features.voiceMode.stt.language` to `zh` / `zh-CN` / `yue` so the default resolver picks it. Sherpa-onnx does not ship CosyVoice; this Kokoro v1.1-zh build is the supported local Chinese TTS path in Paseo today.
+| Model ID          | Languages                         |
+| ----------------- | --------------------------------- |
+| `kokoro-en-v0_19` | English only (default local TTS). |
 
 ```json
 {
@@ -58,7 +55,7 @@ Missing models are downloaded at daemon startup into `$PASEO_HOME/models/local-s
     "voiceMode": {
       "llm": { "provider": "claude", "model": "haiku" },
       "stt": { "provider": "local", "model": "sense-voice-zh-en-ja-ko-yue-int8", "language": "zh" },
-      "tts": { "provider": "local", "model": "kokoro-int8-multi-lang-v1_1", "speakerId": 3 }
+      "tts": { "provider": "local", "model": "kokoro-en-v0_19", "speakerId": 0 }
     }
   },
   "providers": {

@@ -3,16 +3,26 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { AgentProvider, AgentSessionConfig } from "@getpaseo/protocol/agent-types";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
-import { mergeProviderPreferences, useFormPreferences } from "./use-form-preferences";
+import { useDaemonConfig } from "@/hooks/use-daemon-config";
+import {
+  ACP_AUTO_ACCEPT_FEATURE_ID,
+  resolveGlobalAcpAutoAcceptFeatureValues,
+} from "@/composer/acp-auto-approve";
+import {
+  mergeGlobalAcpAutoApprove,
+  mergeProviderPreferences,
+  useFormPreferences,
+} from "./use-form-preferences";
 import {
   applyFeatureValues,
+  mergeFeatureValueLayers,
   pruneFeatureValues,
   resolveFeatureValues,
 } from "./feature-preferences";
 
 type DraftFeatureConfig = Pick<
   AgentSessionConfig,
-  "provider" | "cwd" | "modeId" | "model" | "thinkingOptionId"
+  "provider" | "cwd" | "modeId" | "model" | "thinkingOptionId" | "featureValues"
 >;
 
 export function useDraftAgentFeatures(input: {
@@ -32,6 +42,7 @@ export function useDraftAgentFeatures(input: {
   );
   const client = useHostRuntimeClient(serverId ?? "");
   const isConnected = useHostRuntimeIsConnected(serverId ?? "");
+  const { config } = useDaemonConfig(serverId ?? "");
   const { preferences, updatePreferences } = useFormPreferences();
   const normalizedCwd = cwd?.trim() || "";
   const normalizedProvider = provider ?? null;
@@ -39,6 +50,18 @@ export function useDraftAgentFeatures(input: {
   const persistedFeatureValues = useMemo(
     () => (provider ? (preferences.providerPreferences?.[provider]?.featureValues ?? {}) : {}),
     [preferences.providerPreferences, provider],
+  );
+  const globalAcpFeatureValues = useMemo(
+    () => resolveGlobalAcpAutoAcceptFeatureValues(preferences, normalizedProvider, config),
+    [config, normalizedProvider, preferences],
+  );
+  const draftFeatureValuesForQuery = useMemo(
+    () =>
+      mergeFeatureValueLayers(
+        globalAcpFeatureValues,
+        mergeFeatureValueLayers(persistedFeatureValues, localFeatureValues),
+      ),
+    [globalAcpFeatureValues, localFeatureValues, persistedFeatureValues],
   );
 
   const draftConfig = useMemo<DraftFeatureConfig | null>(() => {
@@ -52,8 +75,18 @@ export function useDraftAgentFeatures(input: {
       ...(modeId ? { modeId } : {}),
       ...(modelId ? { model: modelId } : {}),
       ...(thinkingOptionId ? { thinkingOptionId } : {}),
+      ...(Object.keys(draftFeatureValuesForQuery).length > 0
+        ? { featureValues: draftFeatureValuesForQuery }
+        : {}),
     };
-  }, [modeId, modelId, normalizedCwd, normalizedProvider, thinkingOptionId]);
+  }, [
+    draftFeatureValuesForQuery,
+    modeId,
+    modelId,
+    normalizedCwd,
+    normalizedProvider,
+    thinkingOptionId,
+  ]);
 
   const featuresQuery = useQuery({
     queryKey: [
@@ -64,6 +97,7 @@ export function useDraftAgentFeatures(input: {
       modeId ?? null,
       modelId ?? null,
       thinkingOptionId ?? null,
+      preferences.acpAutoApprove ?? null,
     ],
     enabled: Boolean(serverId && client && isConnected && draftConfig),
     staleTime: 5 * 60 * 1000,
@@ -82,12 +116,15 @@ export function useDraftAgentFeatures(input: {
   const availableFeatures = useMemo(() => availableFeaturesRaw ?? [], [availableFeaturesRaw]);
   const featureValues = useMemo(
     () =>
-      resolveFeatureValues({
-        features: availableFeatures,
-        persistedFeatureValues,
-        localFeatureValues,
-      }),
-    [availableFeatures, localFeatureValues, persistedFeatureValues],
+      mergeFeatureValueLayers(
+        globalAcpFeatureValues,
+        resolveFeatureValues({
+          features: availableFeatures,
+          persistedFeatureValues,
+          localFeatureValues,
+        }),
+      ),
+    [availableFeatures, globalAcpFeatureValues, localFeatureValues, persistedFeatureValues],
   );
 
   const features = useMemo(() => {
@@ -115,7 +152,14 @@ export function useDraftAgentFeatures(input: {
     }
   }, [availableFeatures, availableFeaturesRaw, localFeatureValues]);
 
-  const effectiveFeatureValues = Object.keys(featureValues).length > 0 ? featureValues : undefined;
+  const effectiveFeatureValues = useMemo(() => {
+    const merged = mergeFeatureValueLayers(
+      globalAcpFeatureValues,
+      mergeFeatureValueLayers(persistedFeatureValues, featureValues),
+    );
+    return Object.keys(merged).length > 0 ? merged : undefined;
+  }, [featureValues, globalAcpFeatureValues, persistedFeatureValues]);
+
   const setFeatureValue = useCallback(
     (featureId: string, value: unknown) => {
       setLocalFeatureValues((current) => {
@@ -125,6 +169,14 @@ export function useDraftAgentFeatures(input: {
 
         return { ...current, [featureId]: value };
       });
+      if (featureId === ACP_AUTO_ACCEPT_FEATURE_ID) {
+        void updatePreferences((current) =>
+          mergeGlobalAcpAutoApprove(current, value === true),
+        ).catch((error) => {
+          console.warn("[useDraftAgentFeatures] persist global auto_accept failed", error);
+        });
+        return;
+      }
       if (!provider) {
         return;
       }

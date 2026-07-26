@@ -4,6 +4,7 @@ import {
   parseFormPreferences,
   type FormPreferences,
 } from "./preferences";
+import { migrateGlobalAcpAutoApprovePreferences } from "@/composer/acp-auto-approve";
 import type { CreateAgentPreferenceStorage } from "./storage";
 
 export type FormPreferenceUpdate =
@@ -23,9 +24,14 @@ export class CreateAgentPreferencesService {
       return this.preferences;
     }
     if (!this.loadPromise) {
-      this.loadPromise = this.storage.read().then((stored) => {
-        this.preferences = parseFormPreferences(stored);
+      this.loadPromise = this.storage.read().then(async (stored) => {
+        const parsed = parseFormPreferences(stored);
+        const { preferences: migrated, changed } = migrateGlobalAcpAutoApprovePreferences(parsed);
+        this.preferences = migrated;
         this.isLoaded = true;
+        if (changed) {
+          await this.storage.write(migrated);
+        }
         return this.preferences;
       });
     }
@@ -50,7 +56,9 @@ export class CreateAgentPreferencesService {
     await previousWrite;
     const current = await this.load();
     const next = typeof update === "function" ? update(current) : { ...current, ...update };
-    this.preferences = parseFormPreferences(next);
+    this.preferences = migrateGlobalAcpAutoApprovePreferences(
+      parseFormPreferences(next),
+    ).preferences;
     this.isLoaded = true;
     await this.storage.write(this.preferences);
     return this.preferences;

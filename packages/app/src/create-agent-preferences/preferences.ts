@@ -34,6 +34,8 @@ const formPreferencesSchema = z.object({
     )
     .optional(),
   isolation: z.enum(["local", "worktree"]).optional(),
+  /** Global auto-approve for ACP tool permissions across all ACP providers. */
+  acpAutoApprove: z.boolean().optional(),
 });
 
 export type ProviderPreferences = z.infer<typeof providerPreferencesSchema>;

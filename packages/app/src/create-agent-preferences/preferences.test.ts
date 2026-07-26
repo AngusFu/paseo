@@ -5,6 +5,7 @@ import {
   mergeProviderPreferences,
   parseFormPreferences,
 } from "./preferences";
+import { mergeGlobalAcpAutoApprove } from "@/composer/acp-auto-approve";
 import { FakeCreateAgentPreferenceStorage } from "./test-utils/fake-preference-storage";
 
 describe("create agent preferences", () => {
@@ -139,5 +140,13 @@ describe("create agent preferences", () => {
 
   it("rejects an unknown isolation value as invalid stored preferences", () => {
     expect(parseFormPreferences({ provider: "codex", isolation: "sandbox" })).toEqual({});
+  });
+
+  it("stores global ACP auto approve separately from provider feature values", () => {
+    expect(mergeGlobalAcpAutoApprove({ provider: "cursor" }, true)).toEqual({
+      provider: "cursor",
+      acpAutoApprove: true,
+    });
+    expect(parseFormPreferences({ acpAutoApprove: false }).acpAutoApprove).toBe(false);
   });
 });

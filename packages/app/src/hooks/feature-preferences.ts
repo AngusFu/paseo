@@ -58,3 +58,17 @@ export function resolveFeatureValues(args: {
 
   return next;
 }
+
+/** Merge persisted defaults with resolved draft values so create-agent still receives preferences before features load. */
+export function mergeFeatureValueLayers(
+  persistedFeatureValues: Record<string, unknown>,
+  resolvedFeatureValues: Record<string, unknown>,
+): Record<string, unknown> {
+  if (
+    Object.keys(persistedFeatureValues).length === 0 &&
+    Object.keys(resolvedFeatureValues).length === 0
+  ) {
+    return {};
+  }
+  return { ...persistedFeatureValues, ...resolvedFeatureValues };
+}

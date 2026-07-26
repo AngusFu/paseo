@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveFeatureValues } from "./feature-preferences";
+import { mergeFeatureValueLayers, resolveFeatureValues } from "./feature-preferences";
 
 describe("feature-preferences", () => {
   const features = [
@@ -49,5 +49,15 @@ describe("feature-preferences", () => {
       fast_mode: false,
       plan_mode: false,
     });
+  });
+
+  it("merges persisted defaults ahead of resolved draft values for create-agent", () => {
+    expect(
+      mergeFeatureValueLayers({ auto_accept: true }, { auto_accept: false, fast_mode: true }),
+    ).toEqual({
+      auto_accept: false,
+      fast_mode: true,
+    });
+    expect(mergeFeatureValueLayers({ auto_accept: true }, {})).toEqual({ auto_accept: true });
   });
 });

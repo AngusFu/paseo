@@ -11,6 +11,7 @@ import {
   type FormPreferences,
   type ProviderPreferences,
 } from "@/create-agent-preferences/preferences";
+import { mergeGlobalAcpAutoApprove } from "@/composer/acp-auto-approve";
 import {
   createAgentPreferencesService,
   type FormPreferenceUpdate,
@@ -20,7 +21,13 @@ const FORM_PREFERENCES_QUERY_KEY = ["form-preferences"];
 
 export type { FavoriteModelPreference, FavoriteModelRow, FormPreferences, ProviderPreferences };
 
-export { buildFavoriteModelKey, isFavoriteModel, mergeProviderPreferences, toggleFavoriteModel };
+export {
+  buildFavoriteModelKey,
+  isFavoriteModel,
+  mergeGlobalAcpAutoApprove,
+  mergeProviderPreferences,
+  toggleFavoriteModel,
+};
 
 async function loadFormPreferences(): Promise<FormPreferences> {
   return createAgentPreferencesService.load();

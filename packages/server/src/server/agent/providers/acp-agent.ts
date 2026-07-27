@@ -125,6 +125,7 @@ import {
   normalizePlanMarkdown,
   resolveImplementationModeId,
 } from "../plan-execute-question.js";
+import { composeSystemPromptParts } from "../system-prompt.js";
 
 function assertChildWithPipes(
   child: ChildProcess,
@@ -1466,6 +1467,8 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private historyPending = false;
   private replayingHistory = false;
   private bootstrapThreadEventPending = false;
+  /** Host/per-agent system append; injected into the first ACP prompt of this session. */
+  private pendingAcpSystemPromptAppend: string | undefined;
   private readonly terminateProcess: ProcessTerminator;
 
   constructor(config: AgentSessionConfig, options: ACPAgentSessionOptions) {
@@ -1492,6 +1495,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.launchEnv = options.launchEnv;
     this.initialHandle = options.handle;
     this.config = { ...config, provider: options.provider };
+    this.pendingAcpSystemPromptAppend = resolveACPSystemPromptAppend(this.config);
     this.autoAcceptEnabled = isACPAutoAcceptEnabled(this.config);
     this.currentMode = config.modeId ?? null;
     this.currentModel = config.model ?? null;
@@ -1642,7 +1646,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       .prompt({
         sessionId: this.sessionId,
         messageId,
-        prompt: toACPContentBlocks(prompt),
+        prompt: this.buildACPPromptBlocks(prompt),
       })
       .then((response) => {
         this.handlePromptResponse(response, turnId);
@@ -3014,6 +3018,16 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     }
   }
 
+  private buildACPPromptBlocks(prompt: AgentPromptInput): ContentBlock[] {
+    let blocks = toACPContentBlocks(prompt);
+    const append = this.pendingAcpSystemPromptAppend;
+    if (!append) {
+      return blocks;
+    }
+    this.pendingAcpSystemPromptAppend = undefined;
+    return injectACPSystemPromptIntoBlocks(blocks, append);
+  }
+
   private emitSubmittedUserMessage(
     prompt: AgentPromptInput,
     messageId: string,
@@ -3343,6 +3357,33 @@ function normalizeMcpServers(servers?: Record<string, McpServerConfig>): McpServ
       })),
     } satisfies McpServer;
   });
+}
+
+export function resolveACPSystemPromptAppend(
+  config: Pick<AgentSessionConfig, "systemPrompt" | "daemonAppendSystemPrompt">,
+): string | undefined {
+  return composeSystemPromptParts(config.systemPrompt, config.daemonAppendSystemPrompt);
+}
+
+export function formatACPSystemPromptInjection(append: string): string {
+  return `# Paseo host instructions\n\n${append.trim()}`;
+}
+
+export function injectACPSystemPromptIntoBlocks(
+  blocks: ContentBlock[],
+  append: string,
+): ContentBlock[] {
+  const injection = formatACPSystemPromptInjection(append);
+  if (blocks.length === 0) {
+    return [{ type: "text", text: injection }];
+  }
+
+  const [first, ...rest] = blocks;
+  if (first.type === "text") {
+    return [{ type: "text", text: `${injection}\n\n${first.text}` }, ...rest];
+  }
+
+  return [{ type: "text", text: injection }, first, ...rest];
 }
 
 function toACPContentBlocks(prompt: AgentPromptInput): ContentBlock[] {

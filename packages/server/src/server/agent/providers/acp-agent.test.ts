@@ -24,12 +24,15 @@ import {
   createLoggedNdJsonStream,
   deriveModelDefinitionsFromACP,
   deriveModesFromACP,
+  formatACPSystemPromptInjection,
+  injectACPSystemPromptIntoBlocks,
   mapACPUsage,
   mapACPUsageUpdate,
   mergeAgentUsage,
   parseContextWindowMaxFromAcpModelId,
   resolveACPModeSelection,
   resolveACPModelSelection,
+  resolveACPSystemPromptAppend,
   summarizeACPRequestError,
 } from "./acp-agent.js";
 import type { ProcessTerminator, TreeKillTarget } from "../../../utils/tree-kill.js";
@@ -84,6 +87,81 @@ describe("buildACPClientCapabilities", () => {
       terminal: true,
       _meta: { source: "provider" },
     });
+  });
+});
+
+describe("ACP system prompt injection", () => {
+  test("resolveACPSystemPromptAppend composes per-agent and daemon append parts", () => {
+    expect(
+      resolveACPSystemPromptAppend({
+        systemPrompt: "Agent prompt",
+        daemonAppendSystemPrompt: "Host append",
+      }),
+    ).toBe("Agent prompt\n\nHost append");
+    expect(resolveACPSystemPromptAppend({})).toBeUndefined();
+  });
+
+  test("injectACPSystemPromptIntoBlocks prepends host instructions without altering timeline source", () => {
+    expect(injectACPSystemPromptIntoBlocks([], "Prefer terse replies.")).toEqual([
+      {
+        type: "text",
+        text: formatACPSystemPromptInjection("Prefer terse replies."),
+      },
+    ]);
+    expect(
+      injectACPSystemPromptIntoBlocks([{ type: "text", text: "hello" }], "Prefer terse replies."),
+    ).toEqual([
+      {
+        type: "text",
+        text: `${formatACPSystemPromptInjection("Prefer terse replies.")}\n\nhello`,
+      },
+    ]);
+  });
+
+  test("startTurn injects daemon append on the first prompt only", async () => {
+    const session = new ACPAgentSession(
+      {
+        provider: "cursor-acp",
+        cwd: "/tmp/paseo-acp-test",
+        daemonAppendSystemPrompt: "Use ask_question for decisions.",
+      },
+      {
+        provider: "cursor-acp",
+        logger: createTestLogger(),
+        defaultCommand: ["cursor-acp"],
+        defaultModes: [],
+        capabilities: {
+          supportsStreaming: true,
+          supportsSessionPersistence: true,
+          supportsDynamicModes: true,
+          supportsMcpServers: true,
+          supportsReasoningStream: true,
+          supportsToolInvocations: true,
+        },
+      },
+    );
+    const prompt = vi.fn(async () => ({ stopReason: "end_turn" as const }));
+    asInternals<ACPSessionInternals>(session).sessionId = "session-1";
+    asInternals<ACPSessionInternals>(session).connection = { prompt };
+
+    await session.startTurn("hello");
+    expect(prompt).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        prompt: [
+          {
+            type: "text",
+            text: `${formatACPSystemPromptInjection("Use ask_question for decisions.")}\n\nhello`,
+          },
+        ],
+      }),
+    );
+
+    await session.startTurn("again");
+    expect(prompt).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        prompt: [{ type: "text", text: "again" }],
+      }),
+    );
   });
 });
 

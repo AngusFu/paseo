@@ -89,6 +89,10 @@ export const BLOCKING_PATTERN_SOURCES: readonly string[] = [
   "(直接|随时|尽管|就)(说|讲|吱一声|喊我)([^明结论清楚的了]|$)",
   "(直接|随时|尽管)告诉我",
   "(说|讲|告诉我|吱一声)(一声)?(即可|就行|就好)",
+  // 5th gap (2026-07-27): 「要开迁的时候说一声优先哪几条就行」— say-verb and
+  // soft-close are NOT adjacent (content in between). Adjacent pattern above misses.
+  // Keep this on 说一声/吱一声/… quantifier forms — bare 「说…就行」is ordinary narration.
+  "(说一声|吱一声|告知我|讲一声).{0,24}(即可|就行|就好)",
   "你?(说|讲)一声我?就",
   // condition-clause-first + 即可 after ACTION
   // Use 想要/要继续/要我… — bare `(想|要)` also matches the 要 inside 需要
@@ -97,6 +101,10 @@ export const BLOCKING_PATTERN_SOURCES: readonly string[] = [
   // use 要继续/要我/想要/需要我 instead so 需要时… cannot match.
   "(想要|想|要继续|要我|需要我|如果要|若要)[^。！？]{0,25}(告诉我|跟我说|知会|喊我)",
   "(要继续|要我|想要|想继续|需要我)[^。！？]{0,25}(说一声|吱一声)",
+  // Same family with soft-close after a gap, but anchored on condition-要 without
+  // matching 需要/只要/…要 (lookbehind). Catches 「要开迁的时候说一声…就行」even if
+  // the gap pattern above is later tightened.
+  "(?<![主需重必只想])要[^。！？]{0,30}(说一声|吱一声).{0,24}(即可|就行|就好)",
   // Line-local "要 X 即可" handoff. Negative lookbehind so 需要/只要/…要 do not count.
   "^(?:想要|(?<![主需重必只想])要)[^。！？]{0,25}即可[。.！!]?$",
   // offer-if-wanted

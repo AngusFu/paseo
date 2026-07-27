@@ -95,6 +95,9 @@ describe("prose-stop regex fixtures (from test-check-prose-stop.sh)", () => {
     await expectDecision("先到这里。\n\n随时告诉我。", "block");
     await expectDecision("方案写好了。\n\n你说一声我就做。", "block");
     await expectDecision("改完了。\n\n需要别的尽管说。", "block");
+    // 5th gap: soft-close not adjacent to 说一声 (2026-07-27)
+    await expectDecision("对照表如上。\n\n要开迁的时候说一声优先哪几条就行。", "block");
+    await expectDecision("先到这里。\n\n说一声你想迁哪几条就行。", "block");
     await expectDecision("文档里直接说明了原因。", "allow");
     await expectDecision("我直接说结论:这条是假阳。", "allow");
     await expectDecision("报错信息直接说清楚为什么失败。", "allow");

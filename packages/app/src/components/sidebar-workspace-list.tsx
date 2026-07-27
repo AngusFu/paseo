@@ -1,8 +1,8 @@
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import {
   View,
   Text,
   Pressable,
-  ActivityIndicator,
   ScrollView,
   type GestureResponderEvent,
   type PressableStateCallbackType,
@@ -146,7 +146,7 @@ const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedGitPullRequest = withUnistyles(GitPullRequest);
 const ThemedPin = withUnistyles(Pin);
 const ThemedPinOff = withUnistyles(PinOff);
-const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
+const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 const ThemedCircleAlert = withUnistyles(CircleAlert);
 const ThemedSyncedLoader = withUnistyles(SyncedLoader);
 const ThemedPlus = withUnistyles(Plus);
@@ -814,7 +814,7 @@ function ProjectLeadingVisualStatus({
   if (isArchiving) {
     return (
       <View style={styles.projectLeadingVisualSlot}>
-        <ThemedActivityIndicator size={8} uniProps={foregroundMutedColorMapping} />
+        <ThemedLoadingSpinner size={8} uniProps={foregroundMutedColorMapping} />
       </View>
     );
   }
@@ -923,7 +923,7 @@ function NewWorktreeButton({
           >
             {({ hovered, pressed }) =>
               loading ? (
-                <ThemedActivityIndicator size={14} uniProps={foregroundMutedColorMapping} />
+                <ThemedLoadingSpinner size={14} uniProps={foregroundMutedColorMapping} />
               ) : (
                 <ThemedPlus
                   size={15}

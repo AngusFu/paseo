@@ -8,9 +8,18 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { ActivityIndicator } from "react-native";
+import { withUnistyles } from "react-native-unistyles";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { useWebElementScrollbar } from "@/components/use-web-scrollbar";
+import { useStableEvent } from "@/hooks/use-stable-event";
+import type { Theme } from "@/styles/theme";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
 import { createStreamStrategy } from "./strategy";
+import {
+  createHistoryStartPaginationState,
+  evaluateHistoryStartPagination,
+  rearmHistoryStartPagination,
+} from "./history-start-pagination";
 
 interface CreateWebStreamStrategyInput {
   isMobileBreakpoint: boolean;
@@ -25,8 +34,11 @@ const USER_SCROLL_DELTA_EPSILON = 1;
 const BOTTOM_OVERSCROLL_TOLERANCE_PX = 2;
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
 const AUTO_SCROLL_RESUME_THRESHOLD_PX = 1;
-const HISTORY_START_THRESHOLD_PX = 96;
-import { useWebElementScrollbar } from "@/components/use-web-scrollbar";
+
+const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
+const foregroundMutedColorMapping = (theme: Theme) => ({
+  color: theme.colors.foregroundMuted,
+});
 
 const historyStartSlotStyle: CSSProperties = {
   display: "flex",
@@ -107,6 +119,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     onNearHistoryStart,
     isLoadingOlderHistory,
     hasOlderHistory,
+    olderHistoryProgressKey,
     scrollEnabled,
     isMobileBreakpoint,
   } = props;
@@ -137,6 +150,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   // scroll anchoring hold the row in place while streaming pin resumes after.
   const suppressAutoStickUntilRef = useRef(0);
   const historyStartReadyRef = useRef(false);
+  const historyStartPaginationStateRef = useRef(createHistoryStartPaginationState());
   const showDesktopWebScrollbar = !isMobileBreakpoint;
   const scrollbarOverlay = useWebElementScrollbar(scrollContainerRef, {
     enabled: showDesktopWebScrollbar,
@@ -154,6 +168,26 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const hasRouteBottomAnchorRequest = routeBottomAnchorRequest !== null;
   const activationKey = routeBottomAnchorRequest?.requestKey ?? props.agentId;
   const isActivationReady = !hasRouteBottomAnchorRequest || isAuthoritativeHistoryReady;
+
+  const evaluateHistoryStart = useStableEvent(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+    const bottomAnchorSettled =
+      !followOutputRef.current || isScrollContainerNearBottom(scrollContainer);
+    const result = evaluateHistoryStartPagination(historyStartPaginationStateRef.current, {
+      distanceFromHistoryStart: scrollContainer.scrollTop,
+      hasOlderHistory,
+      isLoadingOlderHistory,
+      isReady: historyStartReadyRef.current && bottomAnchorSettled,
+      progressKey: olderHistoryProgressKey,
+    });
+    historyStartPaginationStateRef.current = result.state;
+    if (result.shouldLoad) {
+      onNearHistoryStart();
+    }
+  });
 
   const cancelPendingStickToBottom = useCallback(() => {
     const pendingFrame = pendingAutoScrollFrameRef.current;
@@ -234,6 +268,12 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     const scrolledDown =
       currentScrollTop > lastKnownScrollTopRef.current + USER_SCROLL_DELTA_EPSILON;
 
+    if (scrolledUp && !isLoadingOlderHistory) {
+      historyStartPaginationStateRef.current = rearmHistoryStartPagination(
+        historyStartPaginationStateRef.current,
+      );
+    }
+
     if (!followOutputRef.current && isAtBottom && scrolledDown) {
       setFollowOutput(true);
       pendingUserScrollUpIntentRef.current = false;
@@ -252,24 +292,29 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
 
     lastKnownScrollTopRef.current = currentScrollTop;
     updateScrollMetrics();
-    if (
-      historyStartReadyRef.current &&
-      hasOlderHistory &&
-      currentScrollTop <= HISTORY_START_THRESHOLD_PX
-    ) {
-      onNearHistoryStart();
-    }
-  }, [cancelPendingStickToBottom, hasOlderHistory, onNearHistoryStart, updateScrollMetrics]);
+    evaluateHistoryStart();
+  }, [
+    cancelPendingStickToBottom,
+    evaluateHistoryStart,
+    isLoadingOlderHistory,
+    updateScrollMetrics,
+  ]);
 
   useEffect(() => {
+    historyStartPaginationStateRef.current = createHistoryStartPaginationState();
     const frame = window.requestAnimationFrame(() => {
       historyStartReadyRef.current = true;
+      evaluateHistoryStart();
     });
     return () => {
       window.cancelAnimationFrame(frame);
       historyStartReadyRef.current = false;
     };
-  }, [props.agentId]);
+  }, [evaluateHistoryStart, props.agentId]);
+
+  useEffect(() => {
+    evaluateHistoryStart();
+  }, [evaluateHistoryStart, hasOlderHistory, isLoadingOlderHistory, olderHistoryProgressKey]);
 
   useLayoutEffect(() => {
     if (!isActivationReady) {
@@ -498,7 +543,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     }
     return (
       <div style={historyStartSlotStyle} data-testid="load-older-history-spinner">
-        <ActivityIndicator size="small" />
+        <ThemedLoadingSpinner size="small" uniProps={foregroundMutedColorMapping} />
       </div>
     );
   }, [isLoadingOlderHistory]);

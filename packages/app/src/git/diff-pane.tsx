@@ -18,7 +18,6 @@ import { DiffStat } from "@/components/diff-stat";
 import {
   View,
   Text,
-  ActivityIndicator,
   Pressable,
   FlatList,
   type LayoutChangeEvent,
@@ -1578,7 +1577,7 @@ function DiffTooLargeStatus({
         >
           {isLoadingHunks ? (
             <View style={styles.lazyHunksLoadingRow}>
-              <ActivityIndicator size="small" />
+              <ThemedLoadingSpinner size="small" uniProps={foregroundMutedIconColorMapping} />
               <Text style={styles.lazyHunksManualButtonText}>
                 {t("workspace.git.diff.loadingHunks")}
               </Text>
@@ -1623,7 +1622,7 @@ function DiffDeferredHunksStatus({
     return (
       <View style={styles.statusMessageContainer}>
         <View style={styles.lazyHunksLoadingRow}>
-          <ActivityIndicator size="small" />
+          <ThemedLoadingSpinner size="small" uniProps={foregroundMutedIconColorMapping} />
           <Text style={styles.statusMessageText}>{t("workspace.git.diff.loadingHunks")}</Text>
         </View>
       </View>
@@ -1980,7 +1979,7 @@ type PressableStyleFn = (
 const foregroundMutedIconColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 const ThemedMaximize2 = withUnistyles(Maximize2);
-const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
+const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 const ThemedAlignJustify = withUnistyles(AlignJustify);
 const ThemedColumns2 = withUnistyles(Columns2);
 const ThemedPilcrow = withUnistyles(Pilcrow);
@@ -2346,7 +2345,6 @@ function DiffOptionsMenu({
 }
 
 const ThemedRotateCw = withUnistyles(RotateCw);
-const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 
 const GIT_ALGORITHMS: readonly GitDiffAlgorithm[] = ["histogram", "myers", "patience"];
 
@@ -2705,7 +2703,7 @@ function DiffBodyContent({
   if (isStatusLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ThemedActivityIndicator size="large" uniProps={foregroundMutedIconColorMapping} />
+        <ThemedLoadingSpinner size="large" uniProps={foregroundMutedIconColorMapping} />
         <Text style={loadingTextStyle}>{checkingRepositoryLabel}</Text>
       </View>
     );
@@ -2731,7 +2729,7 @@ function DiffBodyContent({
   if (isDiffLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ThemedActivityIndicator size="large" uniProps={foregroundMutedIconColorMapping} />
+        <ThemedLoadingSpinner size="large" uniProps={foregroundMutedIconColorMapping} />
       </View>
     );
   }

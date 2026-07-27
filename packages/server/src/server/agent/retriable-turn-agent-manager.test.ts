@@ -186,6 +186,17 @@ class RetriableTurnFailedWithUserMessageSession extends RetriableTurnTestSession
   }
 }
 
+class RetriableTurnFailedWithoutTimelineUserMessageSession extends RetriableTurnTestSession {
+  emitTurn(turnId: string): void {
+    this.pushEvent({
+      type: "turn_failed",
+      provider: this.provider,
+      turnId,
+      error: RETRIABLE_ERROR,
+    });
+  }
+}
+
 class RetriableTurnTestClient implements AgentClient {
   readonly provider = "codex" as const;
   readonly capabilities = TEST_CAPABILITIES;
@@ -413,5 +424,48 @@ test("retriable retry continue prompt includes the latest user message", async (
     expect(prompts[1]).toContain("Do not switch to an earlier task");
   } finally {
     rmSync(workdir, { recursive: true, force: true });
+    vi.useRealTimers();
+  }
+});
+
+test("retriable retry uses streamAgent prompt when timeline has no user_message yet", async () => {
+  vi.useFakeTimers();
+  const workdir = mkdtempSync(join(tmpdir(), "retriable-turn-pending-prompt-"));
+  try {
+    const client = new RetriableTurnTestClient(
+      RetriableTurnFailedWithoutTimelineUserMessageSession,
+    );
+    const manager = new AgentManager({
+      clients: { codex: client },
+      registry: new AgentStorage(join(workdir, "agents"), logger),
+      logger,
+      idFactory: () => "00000000-0000-4000-8000-000000000305",
+    });
+    manager.setPaseoToolsEnabled(false);
+
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+
+    const drainPromise = (async () => {
+      for await (const _event of manager.streamAgent(agent.id, "early codex failure")) {
+        // Drain the failed turn until the foreground waiter settles.
+      }
+    })();
+    await vi.advanceTimersByTimeAsync(0);
+    await drainPromise;
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const prompts = client.lastSession?.startedPrompts ?? [];
+    expect(prompts[0]).toBe("early codex failure");
+    expect(prompts[1]).toContain("Latest user message to continue:");
+    expect(prompts[1]).toContain("early codex failure");
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+    vi.useRealTimers();
   }
 });

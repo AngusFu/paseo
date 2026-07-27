@@ -65,7 +65,12 @@ import { limitAgentTimelineItemContent } from "./agent-timeline-content.js";
 import { AgentRunState, type ForegroundTurnWaiter } from "./agent-run-state.js";
 import { getAgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
 import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
-import { formatSystemNotificationPrompt, isSystemInjectedEnvelope } from "./agent-prompt.js";
+import {
+  extractRealUserPromptText,
+  findLastRealUserMessageText,
+  formatSystemNotificationPrompt,
+  isSystemInjectedEnvelope,
+} from "./agent-prompt.js";
 import { stripInternalPaseoMcpServer, withRuntimePaseoMcpServer } from "./runtime-mcp-config.js";
 import { resolveCreateAgentTitles } from "./create-agent-title.js";
 import type { PaseoToolCatalogFactory } from "./tools/types.js";
@@ -2190,7 +2195,7 @@ export class AgentManager {
     // Unanswered CreatePlan execute CTAs drop when the user sends a later message.
     this.dismissPlanExecutePermissionsForAgent(agent, "Superseded by a new user message");
 
-    const pendingRun = this.runs.createPendingRun(agentId);
+    const pendingRun = this.runs.createPendingRun(agentId, extractRealUserPromptText(prompt));
 
     const streamForwarder = async function* streamForwarder(this: AgentManager) {
       let turnId: string;
@@ -4722,7 +4727,7 @@ export class AgentManager {
     // Keep the first-armed user prompt across backoff attempts so later retries
     // don't drift after system continue nudges land in provider history.
     const lastUserPrompt =
-      previous?.lastUserPrompt ?? this.getLastRealUserMessageText(params.agent.id);
+      previous?.lastUserPrompt ?? (await this.resolveRetriableTurnUserPrompt(params.agent.id));
     const lastItem = await this.getLastItemFromStores(params.agent.id);
     const errorAlreadyVisible =
       lastItem?.type === "assistant_message" &&
@@ -4770,23 +4775,25 @@ export class AgentManager {
     return true;
   }
 
-  /** Latest non-system user_message text from the live timeline (newest first). */
-  private getLastRealUserMessageText(agentId: string): string | null {
-    const items = this.timelineStore.getItems(agentId);
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index];
-      if (!item || item.type !== "user_message") {
-        continue;
-      }
-      if (isSystemInjectedEnvelope(item.text)) {
-        continue;
-      }
-      const text = item.text.trim();
-      if (text.length > 0) {
-        return text;
-      }
+  /** Prefer the in-flight streamAgent prompt; fall back to timeline user_message rows. */
+  private async resolveRetriableTurnUserPrompt(agentId: string): Promise<string | null> {
+    const pending = this.runs.getPendingRun(agentId);
+    if (pending?.foregroundPromptText) {
+      return pending.foregroundPromptText;
     }
-    return null;
+    return await this.getLastRealUserMessageTextFromStores(agentId);
+  }
+
+  private async getLastRealUserMessageTextFromStores(agentId: string): Promise<string | null> {
+    const live = findLastRealUserMessageText(this.timelineStore.getItems(agentId));
+    if (live) {
+      return live;
+    }
+    if (!this.durableTimelineStore) {
+      return null;
+    }
+    const rows = await this.durableTimelineStore.getCommittedRows(agentId);
+    return findLastRealUserMessageText(rows.map((row) => row.item));
   }
 
   private settleMatchingForegroundWaiters(

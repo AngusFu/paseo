@@ -523,9 +523,10 @@ Both terminal paths are covered:
   assistant message (common Cursor ACP behavior) — same retry path; the
   completed turn is not broadcast as success.
 
-The continue nudge embeds the latest real user message (captured when the retry
-first arms) so the model resumes that request instead of drifting to an earlier
-task.
+The continue nudge embeds the latest real user message (prefer the in-flight
+`streamAgent` prompt captured on the pending foreground run; fall back to the
+newest timeline `user_message` when the retry first arms) so the model resumes
+that request instead of drifting to an earlier task.
 
 **Verify in daemon.log:** `agent.manager.retriable_turn.retry` (scheduled),
 `agent.manager.retriable_turn.retry_failed` (retry `streamAgent` blocked).

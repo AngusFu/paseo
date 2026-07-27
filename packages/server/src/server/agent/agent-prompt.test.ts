@@ -5,6 +5,8 @@ import { createTestLogger } from "../../test-utils/test-logger.js";
 import { AgentManager } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
 import {
+  extractRealUserPromptText,
+  findLastRealUserMessageText,
   formatSystemNotificationPrompt,
   isSystemInjectedEnvelope,
   sendPromptToAgent,
@@ -153,6 +155,24 @@ function createFinishNotificationScenario(
 test("isSystemInjectedEnvelope matches the envelope formatSystemNotificationPrompt produces", () => {
   expect(isSystemInjectedEnvelope(formatSystemNotificationPrompt("child finished"))).toBe(true);
   expect(isSystemInjectedEnvelope("hello world")).toBe(false);
+});
+
+test("extractRealUserPromptText ignores system envelopes and empty text", () => {
+  expect(extractRealUserPromptText("finish the bug")).toBe("finish the bug");
+  expect(extractRealUserPromptText(formatSystemNotificationPrompt("retry"))).toBeNull();
+  expect(
+    extractRealUserPromptText([{ type: "image", data: "AA==", mimeType: "image/png" }]),
+  ).toBeNull();
+});
+
+test("findLastRealUserMessageText skips system envelopes", () => {
+  expect(
+    findLastRealUserMessageText([
+      { type: "user_message", text: "first" },
+      { type: "user_message", text: formatSystemNotificationPrompt("retry") },
+      { type: "user_message", text: "latest" },
+    ]),
+  ).toBe("latest");
 });
 
 test("sendPromptToAgent forwards the client message id as run options", async () => {

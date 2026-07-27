@@ -17,6 +17,8 @@ export interface PendingForegroundRun {
   kind: "foreground";
   turnId: string | null;
   started: boolean;
+  /** Real user text from streamAgent(prompt) — used when arming retriable retry. */
+  foregroundPromptText: string | null;
   settled: boolean;
   settledPromise: Promise<void>;
   resolveSettled: () => void;
@@ -42,8 +44,11 @@ export interface ForegroundRunAgentState {
 export class AgentRunState {
   private readonly runs = new Map<string, TrackedAgentRun>();
 
-  createPendingRun(agentId: string): PendingForegroundRun {
-    const pendingRun = createPendingForegroundRun();
+  createPendingRun(
+    agentId: string,
+    foregroundPromptText: string | null = null,
+  ): PendingForegroundRun {
+    const pendingRun = createPendingForegroundRun(foregroundPromptText);
     this.runs.set(agentId, pendingRun);
     return pendingRun;
   }
@@ -262,14 +267,20 @@ export class ForegroundTurnStream {
   }
 }
 
-function createPendingForegroundRun(): PendingForegroundRun {
-  return createTrackedRun({ kind: "foreground", turnId: null, started: false });
+function createPendingForegroundRun(foregroundPromptText: string | null): PendingForegroundRun {
+  return createTrackedRun({
+    kind: "foreground",
+    turnId: null,
+    started: false,
+    foregroundPromptText,
+  });
 }
 
 function createTrackedRun(input: {
   kind: "foreground";
   turnId: null;
   started: false;
+  foregroundPromptText: string | null;
 }): PendingForegroundRun;
 function createTrackedRun(input: {
   kind: "autonomous";
@@ -278,7 +289,7 @@ function createTrackedRun(input: {
 }): AutonomousAgentRun;
 function createTrackedRun(
   input:
-    | { kind: "foreground"; turnId: null; started: false }
+    | { kind: "foreground"; turnId: null; started: false; foregroundPromptText: string | null }
     | { kind: "autonomous"; turnId: string | null; started: true },
 ): TrackedAgentRun {
   let resolveSettled!: () => void;

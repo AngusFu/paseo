@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import type { AgentPromptInput, AgentRunOptions } from "./agent-sdk-types.js";
+import type { AgentTimelineItem } from "./agent-sdk-types.js";
 import type { AgentManager, ManagedAgent } from "./agent-manager.js";
 import type { AgentStorage } from "./agent-storage.js";
 import { ensureAgentLoaded } from "./agent-loading.js";
@@ -117,6 +118,46 @@ const SYSTEM_ENVELOPE_PATTERN = /^<paseo-system>\n[\s\S]*\n<\/paseo-system>$/;
 
 export function isSystemInjectedEnvelope(text: string): boolean {
   return SYSTEM_ENVELOPE_PATTERN.test(text);
+}
+
+/** Text blocks from a foreground prompt, excluding system-injected envelopes. */
+export function extractRealUserPromptText(prompt: AgentPromptInput): string | null {
+  if (typeof prompt === "string") {
+    const text = prompt.trim();
+    if (text.length === 0 || isSystemInjectedEnvelope(text)) {
+      return null;
+    }
+    return text;
+  }
+
+  const text = prompt
+    .filter(
+      (block): block is Extract<(typeof prompt)[number], { type: "text" }> => block.type === "text",
+    )
+    .map((block) => block.text)
+    .join("")
+    .trim();
+  if (text.length === 0 || isSystemInjectedEnvelope(text)) {
+    return null;
+  }
+  return text;
+}
+
+export function findLastRealUserMessageText(items: readonly AgentTimelineItem[]): string | null {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (!item || item.type !== "user_message") {
+      continue;
+    }
+    if (isSystemInjectedEnvelope(item.text)) {
+      continue;
+    }
+    const text = item.text.trim();
+    if (text.length > 0) {
+      return text;
+    }
+  }
+  return null;
 }
 
 export interface SendPromptToAgentParams {

@@ -11,6 +11,8 @@ import { AgentStorage } from "../agent-storage.js";
 import type { CreatePaseoWorktreeWorkflowResult } from "../../worktree-session.js";
 import { createAgentCommand } from "./create.js";
 import type { ManagedAgent } from "../agent-manager.js";
+import { collectManagedAgentFeatureValues } from "../create-agent-features.js";
+import { resolveDefaultAgentCreateConfig } from "../create-agent-mode.js";
 
 const logger = createTestLogger();
 
@@ -203,6 +205,81 @@ test("mcp create accepts provider-only internal input and leaves model undefined
     expect.objectContaining({
       provider: "claude",
       model: undefined,
+    }),
+    undefined,
+    expect.objectContaining({
+      workspaceId: "ws-create-test",
+    }),
+  );
+});
+
+test("mcp create inherits caller featureValues when child settings omit auto_accept", async () => {
+  const parentSnapshot = {
+    id: "parent-1",
+    provider: "cursor",
+    cwd: "/tmp/paseo-create-test",
+    currentModeId: "agent",
+    config: { featureValues: { auto_accept: true } },
+    features: [{ type: "toggle", id: "auto_accept", label: "Auto approve", value: true }],
+    runtimeInfo: null,
+  } as ManagedAgent;
+  const childSnapshot = {
+    id: "child-1",
+    provider: "cursor",
+    cwd: "/tmp/paseo-create-test",
+    runtimeInfo: null,
+  } as ManagedAgent;
+  const createAgent = vi.fn(async () => childSnapshot);
+  const stub = createProviderSnapshotManagerStub();
+  stub.resolveCreateConfig.mockImplementation(async (input) =>
+    resolveDefaultAgentCreateConfig({
+      provider: input.provider,
+      requestedMode: input.requestedMode,
+      featureValues: input.featureValues,
+      parent: input.parent
+        ? {
+            provider: input.parent.provider,
+            modeId: input.parent.currentModeId,
+            isUnattended: false,
+            featureValues: collectManagedAgentFeatureValues(input.parent),
+          }
+        : null,
+      unattended: input.unattended ?? false,
+      availableModes: [{ id: "agent", label: "Agent" }],
+    }),
+  );
+  const dependencies: Parameters<typeof createAgentCommand>[0] = {
+    agentManager: {
+      createAgent,
+      getAgent: vi.fn((id: string) => (id === "parent-1" ? parentSnapshot : childSnapshot)),
+    } as unknown as Parameters<typeof createAgentCommand>[0]["agentManager"],
+    agentStorage: {} as Parameters<typeof createAgentCommand>[0]["agentStorage"],
+    logger: createTestLogger(),
+    providerSnapshotManager: stub.manager,
+  };
+
+  await createAgentCommand(dependencies, {
+    kind: "mcp",
+    provider: "cursor",
+    callerAgentId: "parent-1",
+    cwd: "/tmp/paseo-create-test",
+    workspaceId: "ws-create-test",
+    title: "child worker",
+    initialPrompt: "go",
+    background: true,
+    notifyOnFinish: false,
+    features: { fast: "true" },
+  });
+
+  expect(stub.resolveCreateConfig).toHaveBeenCalledWith(
+    expect.objectContaining({
+      featureValues: { fast: "true" },
+      parent: parentSnapshot,
+    }),
+  );
+  expect(createAgent).toHaveBeenCalledWith(
+    expect.objectContaining({
+      featureValues: { auto_accept: true, fast: "true" },
     }),
     undefined,
     expect.objectContaining({

@@ -57,8 +57,18 @@ The receiving agent has zero context. Include:
 Prepare the handoff in a dedicated workspace:
 
 1. Select the current workspace or call `create_workspace` with the requested isolation.
-2. Call `create_agent` with a `[Handoff] <task>` title, the briefing as initial prompt, and the selected `workspaceId` when explicit placement is needed.
-3. Return the agent and workspace to the user, explaining that it remains in your subagent track until they detach it manually.
+2. Call `create_agent` with a `[Handoff] <task>` title, the briefing as initial prompt, the selected `workspaceId` when explicit placement is needed, and explicit unattended settings when the receiver should run shell commands without permission prompts:
+
+```json
+{
+  "settings": {
+    "modeId": "agent",
+    "features": { "auto_accept": true, "fast": "true" }
+  }
+}
+```
+
+Use `inspect_provider` for provider-specific feature ids. For investigate-only handoffs that must not run shell commands, omit `auto_accept` or use plan mode instead (see **paseo** / **paseo-advisor**). 3. Return the agent and workspace to the user, explaining that it remains in your subagent track until they detach it manually.
 
 Do not encode independence as a create mode and do not invoke CLI or wire-level detach operations. Detach is a user gesture in the subagents track.
 

@@ -6,6 +6,7 @@ import type {
   ResolveAgentCreateConfigInput,
   ResolveAgentCreateConfigResult,
 } from "./agent-sdk-types.js";
+import { mergeCreateAgentFeatureValues } from "./create-agent-features.js";
 
 export interface ResolveCreateAgentModeInput {
   requestedMode: string | undefined;
@@ -85,6 +86,8 @@ export function resolveDefaultAgentCreateConfig(
   input: ResolveAgentCreateConfigInput,
 ): ResolveAgentCreateConfigResult {
   const availableModeIds = input.availableModes?.map((mode) => mode.id);
+  const inheritedFeatureValues =
+    input.parent?.provider === input.provider ? input.parent.featureValues : undefined;
   return {
     modeId: resolveAndValidateCreateAgentMode({
       requestedMode: input.requestedMode,
@@ -94,7 +97,7 @@ export function resolveDefaultAgentCreateConfig(
       availableModes: availableModeIds,
       targetUnattendedMode: input.availableModes?.find(isUnattendedMode)?.id,
     }),
-    featureValues: input.featureValues,
+    featureValues: mergeCreateAgentFeatureValues(inheritedFeatureValues, input.featureValues),
   };
 }
 

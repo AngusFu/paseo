@@ -119,6 +119,7 @@ export interface AgentCreateConfigParent {
   provider: AgentProvider;
   modeId: string | null;
   isUnattended: boolean;
+  featureValues?: Record<string, unknown>;
 }
 
 export interface ResolveAgentCreateConfigInput {

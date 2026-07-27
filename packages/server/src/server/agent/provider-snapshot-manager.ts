@@ -16,6 +16,7 @@ import type {
   ProviderSnapshotEntry,
 } from "./agent-sdk-types.js";
 import type { ManagedAgent } from "./agent-manager.js";
+import { collectManagedAgentFeatureValues } from "./create-agent-features.js";
 import type { WorkspaceGitService } from "../workspace-git-service.js";
 import type { ManagedProcessRegistry } from "../managed-processes/managed-processes.js";
 import type {
@@ -474,6 +475,7 @@ export class ProviderSnapshotManager {
     return {
       provider: parent.provider,
       modeId: parent.currentModeId,
+      featureValues: collectManagedAgentFeatureValues(parent),
       isUnattended: definition.isCreateConfigUnattended({
         modeId: parent.currentModeId,
         config: parent.config,

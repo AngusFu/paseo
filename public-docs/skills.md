@@ -88,6 +88,8 @@ Spins up a single agent as an advisor, a second opinion on the current task. Use
 
 The advisor gives a judgment. You decide what to do. The advisor prompt is analysis-only and ends with a no-edits instruction.
 
+On ACP providers, plan mode disables auto-approve even when `auto_accept` is on — orchestrators should explain that tradeoff and ask which mode to use before creating the advisor (see the **paseo-advisor** skill).
+
 ```
 /paseo-advisor did I miss anything in this migration plan?
 /paseo-advisor --provider claude/opus what is the UX risk in this flow?

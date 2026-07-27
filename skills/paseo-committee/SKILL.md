@@ -49,7 +49,13 @@ Write a problem-level prompt:
 - Explicit: "do root cause analysis"
 - Explicit: "state assumptions, ask why three levels deep, check whether you're patching a symptom or removing the problem"
 
-Create both agents in parallel via Paseo with `[Committee] <task>` titles and the same prompt. Wait for both — not just whichever finishes first.
+### Session settings (ACP providers)
+
+On Cursor/Copilot/ACP providers, **`auto_accept` does not auto-approve while the session is in plan-like mode** — even with auto approve on, plan mode still surfaces permission prompts. See **paseo-advisor** for the full tradeoff table.
+
+**Before creating committee members**, ask which setup the user wants (via **paseo-ask**) unless they already specified. Apply the same choice to both members.
+
+Create both agents in parallel via Paseo with `[Committee] <task>` titles, the same prompt, and the chosen `settings` on each. Wait for both — not just whichever finishes first.
 
 Read both responses. Challenge them — do not accept at face value:
 

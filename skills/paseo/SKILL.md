@@ -39,6 +39,19 @@ paseo script stop <name> [--cwd <path> | --workspace <workspace-id>]
 
 Initial runtime settings live under `settings`: `modeId`, `thinkingOptionId`, and provider-specific `features`. For Codex fast mode, pass `settings: { features: { "fast_mode": true } }` when creating the agent.
 
+**ACP auto-approve vs plan mode:** On Cursor/Copilot/ACP providers, `features.auto_accept: true` does **not** auto-approve tool permissions while the session is in a plan-like mode (`plan`, read-only modes). Plan mode and agent mode + auto approve are both valid; they trade provider-enforced read-only vs unattended permission handling. Orchestration skills (`paseo-advisor`, `paseo-committee`) should explain this and **ask before `create_agent`** (via **paseo-ask**) unless the user already picked a mode. Omitting `settings.modeId` inherits the caller's current mode (same provider) — which can silently combine inherited `plan` with inherited `auto_accept`. Example agent + auto approve settings:
+
+```json
+{
+  "settings": {
+    "modeId": "agent",
+    "features": { "auto_accept": true, "fast": "true" }
+  }
+}
+```
+
+Example plan mode settings: `{ "settings": { "modeId": "plan" } }`. Adjust feature ids via `inspect_provider` (Cursor `fast` is the string `"true"`).
+
 Agent-scoped creation always creates your subagent. Omit `workspaceId` to use your current workspace; pass a workspace returned by `create_workspace` for isolated delegation. Placement never changes parentage.
 
 Detach is an explicit user action in the subagents track, not an agent tool. A cross-workspace child remains your subagent even though it also appears as a normal tab in its workspace.

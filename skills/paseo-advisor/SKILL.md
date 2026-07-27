@@ -13,7 +13,7 @@ Single agent. Reads the situation you're in. Gives a judgment. You decide what t
 
 ## Prerequisites
 
-Read the **paseo** skill. Before choosing a provider, read `~/.paseo/orchestration-preferences.json` unless the user explicitly named a provider in this request. Do not create the advisor until you have read it.
+Read the **paseo** skill. Before choosing a provider, read `~/.paseo/orchestration-preferences.json` unless the user explicitly named a provider in this request. Do not create the advisor until you have read it. When you need to ask about session mode, read **paseo-ask** and use the ask ladder — not chat prose.
 
 ## Picking the advisor
 
@@ -55,9 +55,56 @@ Invoke the `<name>` skill against this task. Load it via the Skill tool before d
 
 Pass through any remaining arguments after the skill name as the skill's own input. The advisor — not you — runs the skill; you're still just the orchestrator handing it the work.
 
+## Session settings (ACP providers)
+
+On Cursor/Copilot/ACP providers, **`auto_accept` does not auto-approve tool permissions while the session is in a plan-like mode** (`plan`, read-only modes). Turning on auto approve while staying in plan mode still surfaces permission prompts — that combination is a common surprise.
+
+Two legitimate setups for analysis-only advisors:
+
+| Setup                    | Typical `settings`                                      | Tradeoff                                                                                               |
+| ------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Plan mode**            | `modeId: "plan"` (+ optional features)                  | Provider-enforced read-only; tool permissions usually need manual approval even if `auto_accept` is on |
+| **Agent + auto approve** | `modeId: "agent"`, `features: { auto_accept: true, … }` | Tool permissions can auto-approve; read-only enforced in the prompt, not by the provider               |
+
+**Before `create_agent`**, ask which setup the user wants unless they already specified (e.g. "use plan", "unattended", "auto approve"). Use **paseo-ask** — native AskUserQuestion or MCP `ask_question`; do not ask in chat prose. If the review may run shell commands (`glab`, CI checks, …), say so in the question.
+
+If you skip the ask and omit `settings.modeId`, a same-provider child **inherits the caller's current mode** (and often `auto_accept`) — e.g. caller in `plan` with auto approve on yields plan + manual permission prompts. Do not silently pick plan because the task is read-only; either ask, or pass explicit `settings.modeId` and tell the user what you chose.
+
+Example options:
+
+- **Plan mode** — provider read-only; I'll approve permissions if they come up
+- **Agent + auto approve** — unattended; read-only via briefing only
+
+Example settings after the choice (adjust feature ids via `inspect_provider` for the chosen provider; Cursor `fast` is the string `"true"`):
+
+Plan mode:
+
+```json
+{
+  "settings": {
+    "modeId": "plan",
+    "features": { "fast": "true" }
+  }
+}
+```
+
+Agent + auto approve:
+
+```json
+{
+  "settings": {
+    "modeId": "agent",
+    "features": {
+      "auto_accept": true,
+      "fast": "true"
+    }
+  }
+}
+```
+
 ## Launch and synthesize
 
-Create the advisor agent via Paseo with a `[Advisor] <topic>` title and the briefing as the initial prompt. Wait for it to finish. Read its response. Synthesize for the user — the advisor's verdict + your recommendation.
+Create the advisor agent via Paseo with a `[Advisor] <topic>` title, the briefing as the initial prompt, and the session settings from the user's choice. Wait for it to finish. Read its response. Synthesize for the user — the advisor's verdict + your recommendation.
 
 ## Persistent advisor
 

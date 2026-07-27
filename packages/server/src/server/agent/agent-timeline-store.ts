@@ -253,6 +253,16 @@ export class InMemoryAgentTimelineStore {
     return state.rows[state.rows.length - 1]?.item ?? null;
   }
 
+  updateLastAssistantMessage(agentId: string, text: string): AgentTimelineRow {
+    const state = this.requireState(agentId);
+    const lastRow = state.rows[state.rows.length - 1];
+    if (!lastRow || lastRow.item.type !== "assistant_message") {
+      throw new Error(`Agent '${agentId}' has no assistant_message row to update`);
+    }
+    lastRow.item = { ...lastRow.item, text };
+    return cloneRow(lastRow);
+  }
+
   getLastAssistantMessage(agentId: string): string | null {
     const rows = this.requireState(agentId).rows;
     const chunks: string[] = [];

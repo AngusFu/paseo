@@ -79,6 +79,8 @@ import {
   isRetriableProviderError,
   retriableTurnBackoffMs,
   shouldRetryRetriableTurn,
+  formatRetriableTurnRetryNotice,
+  isSameRetriableErrorVisible,
 } from "./retriable-turn-hook.js";
 import { checkProseStopWithLlama } from "./prose-stop/check.js";
 import {
@@ -4717,12 +4719,31 @@ export class AgentManager {
     // don't drift after system continue nudges land in provider history.
     const lastUserPrompt =
       previous?.lastUserPrompt ?? this.getLastRealUserMessageText(params.agent.id);
-    await this.appendSystemErrorTimelineMessage(
-      params.agent,
-      params.provider,
-      `${params.error.trim()}\n\nRetriable provider error — retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt}).`,
-      params.options,
-    );
+    const lastItem = await this.getLastItemFromStores(params.agent.id);
+    const errorAlreadyVisible =
+      lastItem?.type === "assistant_message" &&
+      isSameRetriableErrorVisible(lastItem.text, params.error);
+    const notice = formatRetriableTurnRetryNotice({
+      error: params.error,
+      attempt,
+      delayMs,
+      errorAlreadyVisible,
+    });
+    if (errorAlreadyVisible && lastItem?.type === "assistant_message") {
+      await this.extendLastAssistantTimelineMessage(
+        params.agent,
+        params.provider,
+        notice,
+        params.options,
+      );
+    } else {
+      await this.appendSystemErrorTimelineMessage(
+        params.agent,
+        params.provider,
+        notice,
+        params.options,
+      );
+    }
     this.resolvePendingPermissionsForAgent(
       params.agent,
       params.provider,
@@ -5159,6 +5180,47 @@ export class AgentManager {
 
     const item: AgentTimelineItem = { type: "assistant_message", text };
     const row = this.recordTimeline(agent.id, item);
+    this.dispatchStream(
+      agent.id,
+      {
+        type: "timeline",
+        item,
+        provider,
+      },
+      {
+        seq: row.seq,
+        epoch: this.timelineStore.getEpoch(agent.id),
+        timestamp: row.timestamp,
+      },
+    );
+  }
+
+  private async extendLastAssistantTimelineMessage(
+    agent: ActiveManagedAgent,
+    provider: AgentProvider,
+    suffix: string,
+    options?: { fromHistory?: boolean },
+  ): Promise<void> {
+    if (options?.fromHistory) {
+      return;
+    }
+
+    const normalizedSuffix = suffix.trim();
+    if (!normalizedSuffix) {
+      return;
+    }
+
+    const lastItem = await this.getLastItemFromStores(agent.id);
+    if (lastItem?.type !== "assistant_message") {
+      return;
+    }
+    if (lastItem.text.includes(normalizedSuffix)) {
+      return;
+    }
+
+    const updatedText = `${lastItem.text.trim()}\n\n${normalizedSuffix}`;
+    const row = this.timelineStore.updateLastAssistantMessage(agent.id, updatedText);
+    const item: AgentTimelineItem = { type: "assistant_message", text: updatedText };
     this.dispatchStream(
       agent.id,
       {

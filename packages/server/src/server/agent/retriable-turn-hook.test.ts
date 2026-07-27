@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   formatRetriableContinuePrompt,
+  formatRetriableTurnRetryNotice,
   isRetriableProviderError,
+  isSameRetriableErrorVisible,
   RETRIABLE_TURN_MAX_ATTEMPTS,
   retriableTurnBackoffMs,
   shouldRetryRetriableTurn,
@@ -71,5 +73,35 @@ describe("retriable-turn-hook", () => {
     expect(prompt).toContain("Latest user message to continue:");
     expect(prompt).toContain("完了报错");
     expect(prompt).toContain("Do not switch to an earlier task");
+  });
+
+  it("omits duplicated provider error text when it is already visible", () => {
+    const notice = formatRetriableTurnRetryNotice({
+      error: "Error: RetriableError: [unavailable] PING timed out",
+      attempt: 1,
+      delayMs: 2_000,
+      errorAlreadyVisible: true,
+    });
+    expect(notice).toBe("Retriable provider error — retrying in 2s (attempt 1).");
+    expect(notice).not.toContain("PING timed out");
+  });
+
+  it("includes provider error text when it is not already visible", () => {
+    const notice = formatRetriableTurnRetryNotice({
+      error: "Error: RetriableError: [unavailable] PING timed out",
+      attempt: 1,
+      delayMs: 2_000,
+    });
+    expect(notice).toContain("PING timed out");
+    expect(notice).toContain("Retriable provider error — retrying in 2s (attempt 1).");
+  });
+
+  it("treats streamed retriable assistant text as the same visible error", () => {
+    expect(
+      isSameRetriableErrorVisible(
+        "Error: RetriableError: [unavailable] PING timed out",
+        "Error: RetriableError: [unavailable] PING timed out",
+      ),
+    ).toBe(true);
   });
 });

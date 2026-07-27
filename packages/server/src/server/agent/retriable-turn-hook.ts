@@ -39,6 +39,31 @@ export function clipRetriableContinueUserPrompt(text: string): string {
   return `${normalized.slice(0, RETRIABLE_CONTINUE_USER_PROMPT_MAX_CHARS - 1)}…`;
 }
 
+export function formatRetriableTurnRetryNotice(args: {
+  error: string;
+  attempt: number;
+  delayMs: number;
+  errorAlreadyVisible?: boolean;
+}): string {
+  const retryLine = `Retriable provider error — retrying in ${Math.round(args.delayMs / 1000)}s (attempt ${args.attempt}).`;
+  if (args.errorAlreadyVisible) {
+    return retryLine;
+  }
+  const trimmedError = args.error.trim();
+  return trimmedError.length > 0 ? `${trimmedError}\n\n${retryLine}` : retryLine;
+}
+
+export function isSameRetriableErrorVisible(lastAssistantText: string, error: string): boolean {
+  const last = lastAssistantText.trim();
+  const normalizedError = error.trim();
+  if (last.length === 0 || normalizedError.length === 0) {
+    return false;
+  }
+  return (
+    last === normalizedError || last.includes(normalizedError) || normalizedError.includes(last)
+  );
+}
+
 export function formatRetriableContinuePrompt(args: {
   error: string;
   attempt: number;

@@ -75,7 +75,7 @@ class CaptureConfigClient implements AgentClient {
 }
 
 describe("orchestrated auto_accept at create (in-process dev harness)", () => {
-  test("forces auto_accept true for delegated agents despite explicit false", async () => {
+  test("preserves explicit auto_accept false for delegated subagents", async () => {
     const workdir = mkdtempSync(join(tmpdir(), "orch-auto-approve-"));
     const client = new CaptureConfigClient();
     let nextId = 0;
@@ -100,8 +100,8 @@ describe("orchestrated auto_accept at create (in-process dev harness)", () => {
         },
       );
 
-      expect(agent.config.featureValues?.auto_accept).toBe(true);
-      expect(client.createdConfigs[0]?.featureValues?.auto_accept).toBe(true);
+      expect(agent.config.featureValues?.auto_accept).toBe(false);
+      expect(client.createdConfigs[0]?.featureValues?.auto_accept).toBe(false);
     } finally {
       rmSync(workdir, { recursive: true, force: true });
     }

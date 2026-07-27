@@ -171,14 +171,17 @@ For these agents the daemon:
 - Skips prose-stop nudge and the prose-stop **prevention** `daemonAppendSystemPrompt` block
 - Does not register MCP `ask_question` on their tool catalog (and `askAgentQuestion` rejects if called)
 - Skips `broadcastAgentAttention` (same as delegated agents before workflow)
-- Stamps ACP `auto_accept: true` at create when omitted (`applyOrchestratedAcpAutoAccept`), independent of the desktop Auto Approve toggle. ACP sessions coerce wire values like `"true"` when reading the toggle (`parseACPAutoAcceptFeatureValue` in `acp-agent.ts`). Orchestrated agents **always** get `auto_accept: true` in stored config — explicit overrides from flow scripts or inherited parent values are ignored.
+
+**Workflow agents only** (`isWorkflowAgent`): daemon create stamps ACP `auto_accept: true` via `applyOrchestratedAcpAutoAccept` — not overridable, independent of the desktop Auto Approve toggle. The workflow engine and dispatch arg merge apply the same rule. ACP sessions coerce wire values like `"true"` when reading the toggle (`parseACPAutoAcceptFeatureValue` in `acp-agent.ts`).
+
+**Paseo subagents** (`isDelegatedAgent`): tool permissions are **not** forced to auto-accept. The parent agent can approve via `notifyOnFinish` → system notification → MCP `respond_to_permission`; the user can approve in the App; or the global desktop Auto Approve toggle / inherited caller `featureValues` may enable `auto_accept` through the normal daemon default path.
 
 **Out of scope (for now):**
 
 - **Provider-native AskUserQuestion** — Claude/Cursor native question permissions are not gated here; a workflow agent can still block in `finishWorkflowAgent` when `waitForAgentEvent` returns `permission`.
 - **Schedule / loop workers** — `unattended: true` schedule targets and loop internal workers are not orchestrated-background agents unless they carry the labels above. Schedules still get prose-stop and MCP `ask_question`; loop workers are `internal` (ask_question already blocked).
 
-Workflow dispatch and the agents-workflow engine also **force** `auto_accept: true` on every `agent()` call and dispatch args merge. Foreground root agents keep prose-stop and ask_question unchanged.
+Foreground root agents keep prose-stop and ask_question unchanged.
 
 ## Storage
 

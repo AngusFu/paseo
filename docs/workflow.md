@@ -134,7 +134,9 @@ Dispatch args conventionally include:
   provider-specific — e.g. Cursor uses `{ fast: "true" }`, not `fast_mode`.
   Workflow runs **force** `auto_accept: true` on every engine `agent()` call and
   in dispatch arg merges (flow scripts cannot turn it off). Daemon create for
-  workflow-labelled agents applies the same rule via `applyOrchestratedAcpAutoAccept`.
+  workflow-labelled agents (`isWorkflowAgent`) applies the same rule via
+  `applyOrchestratedAcpAutoAccept`. Parent-delegated subagents are out of scope —
+  they keep parent/UI permission paths unless the global Auto Approve toggle applies.
   ACP-managed providers honor the toggle at permission time; OpenCode uses the
   same `auto_accept` feature id on its permission path.
 - `workspaceTitle` — optional sidebar title for the one Paseo workspace minted

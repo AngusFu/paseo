@@ -50,7 +50,7 @@ describe("applyDaemonAcpAutoAcceptDefault", () => {
 });
 
 describe("applyOrchestratedAcpAutoAccept", () => {
-  it("adds auto_accept for delegated agents even when daemon default is off", () => {
+  it("does not force auto_accept for delegated subagents", () => {
     expect(
       applyOrchestratedAcpAutoAccept(
         "cursor",
@@ -58,7 +58,7 @@ describe("applyOrchestratedAcpAutoAccept", () => {
         { [PARENT_AGENT_ID_LABEL]: "parent-1" },
         { cursor: { extends: "acp" } },
       ),
-    ).toEqual({ fast: "true", [ACP_AUTO_ACCEPT_FEATURE_ID]: true });
+    ).toEqual({ fast: "true" });
   });
 
   it("no-ops for foreground agents", () => {
@@ -85,7 +85,7 @@ describe("applyOrchestratedAcpAutoAccept", () => {
     ).toEqual({ fast: "true", [ACP_AUTO_ACCEPT_FEATURE_ID]: true });
   });
 
-  it("forces auto_accept true even when explicitly false", () => {
+  it("preserves explicit false on delegated subagents", () => {
     expect(
       applyOrchestratedAcpAutoAccept(
         "cursor",
@@ -93,15 +93,15 @@ describe("applyOrchestratedAcpAutoAccept", () => {
         { [PARENT_AGENT_ID_LABEL]: "parent-1" },
         { cursor: { extends: "acp" } },
       ),
-    ).toEqual({ [ACP_AUTO_ACCEPT_FEATURE_ID]: true });
+    ).toEqual({ [ACP_AUTO_ACCEPT_FEATURE_ID]: false });
   });
 
-  it("forces auto_accept for opencode subagents", () => {
+  it("forces auto_accept true for workflow agents even when explicitly false", () => {
     expect(
       applyOrchestratedAcpAutoAccept(
         "opencode",
         { [ACP_AUTO_ACCEPT_FEATURE_ID]: false },
-        { [PARENT_AGENT_ID_LABEL]: "parent-1" },
+        { "paseo.workflow-run-id": "run-1" },
         {},
       ),
     ).toEqual({ [ACP_AUTO_ACCEPT_FEATURE_ID]: true });

@@ -192,6 +192,7 @@ import {
   type TerminalProfileInput,
 } from "@/screens/workspace/terminals/use-workspace-terminals";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
+import { useSyncAcpAutoApproveToDaemon } from "@/hooks/use-sync-acp-auto-approve-daemon";
 import {
   getTerminalProfileIcon,
   resolveTerminalProfiles,
@@ -1773,6 +1774,7 @@ function WorkspaceScreenContent({
   const toggleFocusMode = usePanelStore((state) => state.toggleFocusMode);
 
   const normalizedServerId = useMemo(() => trimNonEmpty(decodeSegment(serverId)) ?? "", [serverId]);
+  useSyncAcpAutoApproveToDaemon(normalizedServerId || null);
 
   const normalizedWorkspaceId = useMemo(
     () => resolveWorkspaceRouteId({ routeWorkspaceId: workspaceId }) ?? "",

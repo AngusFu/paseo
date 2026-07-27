@@ -318,6 +318,9 @@ export const MutableDaemonConfigSchema = z
         preventionPrompt: z.boolean().default(true),
       })
       .default({ enabled: true, preventionPrompt: true }),
+    // Host-wide ACP auto-approve default mirrored from the desktop composer toggle.
+    // Applied at agent create when auto_accept is not set explicitly.
+    acpAutoApprove: z.boolean().optional(),
     // OpenAI-compatible local LLM backend (Ollama, LM Studio, etc.). When
     // baseUrl and model are absent, llm.local.* features stay unavailable.
     localLlm: z
@@ -354,6 +357,7 @@ export const MutableDaemonConfigPatchSchema = z
         preventionPrompt: z.boolean().optional(),
       })
       .optional(),
+    acpAutoApprove: z.boolean().optional(),
     localLlm: z
       .object({
         baseUrl: z.string().optional(),

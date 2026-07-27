@@ -35,7 +35,7 @@ export function useComposerAutoAccept({
   toggle: () => void;
 } {
   const client = useHostRuntimeClient(serverId);
-  const { config } = useDaemonConfig(serverId);
+  const { config, patchConfig } = useDaemonConfig(serverId);
   const toast = useToast();
   const { preferences, updatePreferences } = useFormPreferences();
   const [optimisticValue, setOptimisticValue] = useState<boolean | null>(null);
@@ -139,6 +139,9 @@ export function useComposerAutoAccept({
         console.warn("[useComposerAutoAccept] persist global auto_accept failed", error);
       },
     );
+    void patchConfig({ acpAutoApprove: nextValue }).catch((error) => {
+      console.warn("[useComposerAutoAccept] sync daemon acpAutoApprove failed", error);
+    });
     if (draftOnSetFeature) {
       draftOnSetFeature(ACP_AUTO_ACCEPT_FEATURE_ID, nextValue);
       return;
@@ -151,7 +154,7 @@ export function useComposerAutoAccept({
       console.warn("[useComposerAutoAccept] setAgentFeature failed", error);
       toast.error(toErrorMessage(error));
     });
-  }, [agentId, client, draftOnSetFeature, feature, toast, updatePreferences]);
+  }, [agentId, client, draftOnSetFeature, feature, patchConfig, toast, updatePreferences]);
 
   return {
     feature,

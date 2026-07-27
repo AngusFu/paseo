@@ -258,6 +258,7 @@ export const PersistedConfigSchema = z
           })
           .passthrough()
           .optional(),
+        acpAutoApprove: z.boolean().optional(),
         localLlm: z
           .object({
             baseUrl: z.string().optional(),

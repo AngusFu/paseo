@@ -94,6 +94,10 @@ import {
 } from "./prose-stop/nudge-prompt.js";
 import { PROSE_STOP_PREVENTION_PROMPT } from "./prose-stop/prevention-prompt.js";
 import {
+  applyDaemonAcpAutoAcceptDefault,
+  type DaemonProviderOverrideLike,
+} from "./acp-auto-approve-default.js";
+import {
   McpCliService,
   prependMcpCliBinPath,
   stripMcpServersMatchingCliNames,
@@ -323,6 +327,11 @@ export interface AgentManagerOptions {
   getProseStopEnabled?: () => boolean;
   /** When true, inject PROSE_STOP_PREVENTION_PROMPT into daemonAppendSystemPrompt. */
   getProseStopPreventionPromptEnabled?: () => boolean;
+  /** Host-wide ACP auto-approve default mirrored from the desktop composer toggle. */
+  getAcpAutoApproveDefault?: () => boolean | undefined;
+  getDaemonProviderOverrides?: () =>
+    | Readonly<Record<string, DaemonProviderOverrideLike>>
+    | undefined;
   /** Used for FastMCP CLI PATH prepend + daemonAppend + mcpServers strip. */
   paseoHome?: string;
   getLlamaService?: () => LlamaService | null;
@@ -713,6 +722,10 @@ export class AgentManager {
   private getProseStopEnabled: () => boolean = () => true;
   /** Off until bootstrap wires config — keeps unit tests focused on user append. */
   private getProseStopPreventionPromptEnabled: () => boolean = () => false;
+  private getAcpAutoApproveDefault: () => boolean | undefined = () => undefined;
+  private getDaemonProviderOverrides: () =>
+    | Readonly<Record<string, DaemonProviderOverrideLike>>
+    | undefined = () => undefined;
   private paseoHome: string | null = null;
   private getLlamaService: () => LlamaService | null = () => null;
   private goalService: GoalService | null = null;
@@ -832,6 +845,10 @@ export class AgentManager {
     getProseStopEnabled?: () => boolean;
     getProseStopPreventionPromptEnabled?: () => boolean;
     getLlamaService?: () => LlamaService | null;
+    getAcpAutoApproveDefault?: () => boolean | undefined;
+    getDaemonProviderOverrides?: () =>
+      | Readonly<Record<string, DaemonProviderOverrideLike>>
+      | undefined;
   }): void {
     if (options.getProseStopEnabled) {
       this.getProseStopEnabled = options.getProseStopEnabled;
@@ -841,6 +858,12 @@ export class AgentManager {
     }
     if (options.getLlamaService) {
       this.getLlamaService = options.getLlamaService;
+    }
+    if (options.getAcpAutoApproveDefault) {
+      this.getAcpAutoApproveDefault = options.getAcpAutoApproveDefault;
+    }
+    if (options.getDaemonProviderOverrides) {
+      this.getDaemonProviderOverrides = options.getDaemonProviderOverrides;
     }
   }
 
@@ -5583,6 +5606,13 @@ export class AgentManager {
     if (!normalized.modeId) {
       normalized.modeId = await this.resolveDefaultModeId(normalized, options.env);
     }
+
+    normalized.featureValues = applyDaemonAcpAutoAcceptDefault(
+      normalized.provider,
+      normalized.featureValues,
+      this.getAcpAutoApproveDefault(),
+      this.getDaemonProviderOverrides(),
+    );
 
     return normalized;
   }

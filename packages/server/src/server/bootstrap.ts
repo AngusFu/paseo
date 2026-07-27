@@ -128,6 +128,7 @@ import type { LocalSpeechProviderConfig } from "./speech/providers/local/config.
 import type { RequestedSpeechProviders } from "./speech/speech-types.js";
 import { createSpeechService } from "./speech/speech-runtime.js";
 import { AgentManager } from "./agent/agent-manager.js";
+import type { DaemonProviderOverrideLike } from "./agent/acp-auto-approve-default.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { QuestionStore } from "./question/store.js";
 import { createQuestionWaitSocket } from "./question/wait-socket.js";
@@ -1692,6 +1693,11 @@ export async function createPaseoDaemon(
               getProseStopPreventionPromptEnabled: () =>
                 daemonConfigStore.get().proseStop.preventionPrompt !== false,
               getLlamaService: () => wsServer?.getLlamaService() ?? null,
+              getAcpAutoApproveDefault: () => daemonConfigStore.get().acpAutoApprove,
+              getDaemonProviderOverrides: () =>
+                daemonConfigStore.get().providers as Readonly<
+                  Record<string, DaemonProviderOverrideLike>
+                >,
             });
             if (relayEnabled) {
               const offer = await createConnectionOfferV2({

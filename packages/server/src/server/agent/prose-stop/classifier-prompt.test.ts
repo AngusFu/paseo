@@ -36,5 +36,7 @@ describe("prose-stop classifier prompt", () => {
     expect(fewShotLabel("要提交即可。")).toBe("WAIT");
     expect(fewShotLabel("需要的话我可以帮你 push。")).toBe("WAIT");
     expect(fewShotLabel("要改规则再说一声。")).toBe("WAIT");
+    expect(fewShotLabel("对照表如上。\n\n要开迁的时候说一声优先哪几条就行。")).toBe("WAIT");
+    expect(fewShotLabel("先到这里。\n\n说一声你想迁哪几条就行。")).toBe("WAIT");
   });
 });

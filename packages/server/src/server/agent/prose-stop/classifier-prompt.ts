@@ -12,9 +12,10 @@ Default to DONE. Only WAIT when the closing clearly hands the next step to the h
 
 WAIT (must be explicit):
 - permission / consent ask (…吗? / shall I…? / want me to…?)
-- "say the word" / "ping me" / "随时告诉我" / "再说一声即可"
+- "say the word" / "ping me" / "随时告诉我" / "再说一声即可" / "说一声…就行"
 - bare "要…即可" with no command to run
 - offer-if-wanted ("需要的话我可以…")
+- handing the next choice to the human even without "?" ("要开迁的时候说一声优先哪几条就行")
 
 DONE (including when tone is soft or open-ended):
 - finished report, explanation, how-to, path listing, status ack
@@ -60,6 +61,8 @@ export const PROSE_CLASSIFIER_FEW_SHOTS: readonly ProseClassifierShot[] = [
   ...shot("分支已合并。\n\n删掉这个吗?", "WAIT"),
   ...shot("Two options:\n\n- shall I delete the branch?\n- keep it", "WAIT"),
   ...shot("要改规则再说一声。", "WAIT"),
+  ...shot("对照表如上。\n\n要开迁的时候说一声优先哪几条就行。", "WAIT"),
+  ...shot("先到这里。\n\n说一声你想迁哪几条就行。", "WAIT"),
   // DONE — reports / how-to / short acks (common false positives)
   ...shot("已提交，工作区干净。", "DONE"),
   ...shot("Suite green.", "DONE"),

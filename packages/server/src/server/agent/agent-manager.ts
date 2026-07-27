@@ -4929,6 +4929,19 @@ export class AgentManager {
     }
 
     if (result.decision !== "block") {
+      // LLM path used to be silent on DONE/allow — hard to debug false negatives
+      // (regex miss → local LLM prefers DONE when unsure). Log when LLM spoke.
+      if (result.source === "llm" || result.llmVerdict === "DONE") {
+        this.logger.info(
+          {
+            agentId: agent.id,
+            source: result.source,
+            llmVerdict: result.llmVerdict,
+            closingText: result.closingText.slice(0, 160),
+          },
+          "agent.manager.prose_stop.allow",
+        );
+      }
       this.proseStopActive.delete(agent.id);
       return;
     }

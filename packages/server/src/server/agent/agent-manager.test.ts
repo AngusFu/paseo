@@ -16,7 +16,11 @@ import {
 import { AgentStorage } from "./agent-storage.js";
 import { QuestionStore } from "../question/store.js";
 import { toAgentPayload } from "./agent-projections.js";
-import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
+import {
+  PARENT_AGENT_ID_LABEL,
+  WORKFLOW_AGENT_LABEL,
+  WORKFLOW_RUN_ID_LABEL,
+} from "@getpaseo/protocol/agent-labels";
 import { formatSystemNotificationPrompt } from "./agent-prompt.js";
 import { ensureAgentLoaded, ensureUnarchivedAgentLoaded } from "./agent-loading.js";
 import type { StoredAgentRecord } from "./agent-storage.js";
@@ -5764,6 +5768,53 @@ test("onAgentAttention is not called for delegated child agents", async () => {
   expect(attentionCalls).toEqual([]);
 });
 
+test("onAgentAttention is not called for workflow agents", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const storagePath = join(workdir, "agents");
+  const storage = new AgentStorage(storagePath, logger);
+  const attentionCalls: string[] = [];
+  let nextId = 0;
+  const manager = new AgentManager({
+    clients: {
+      codex: new TestAgentClient(),
+    },
+    registry: storage,
+    logger,
+    idFactory: () => `00000000-0000-4000-8000-${String(++nextId).padStart(12, "0")}`,
+    onAgentAttention: ({ agentId }) => {
+      attentionCalls.push(agentId);
+    },
+  });
+
+  const agent = await manager.createAgent(
+    {
+      provider: "codex",
+      cwd: workdir,
+      title: "Workflow Agent",
+    },
+    undefined,
+    { labels: { [WORKFLOW_RUN_ID_LABEL]: "run-1" }, workspaceId: undefined },
+  );
+
+  await manager.runAgent(agent.id, "hello");
+
+  expect(attentionCalls).toEqual([]);
+
+  attentionCalls.length = 0;
+  const workflowMarkerAgent = await manager.createAgent(
+    {
+      provider: "codex",
+      cwd: workdir,
+      title: "Workflow Marker Agent",
+    },
+    undefined,
+    { labels: { [WORKFLOW_AGENT_LABEL]: "1" }, workspaceId: undefined },
+  );
+  await manager.runAgent(workflowMarkerAgent.id, "hello again");
+
+  expect(attentionCalls).toEqual([]);
+});
+
 test("clearAgentAttention on errored agent stays cleared until a new error transition", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-attention-error-"));
   const storagePath = join(workdir, "agents");
@@ -8565,6 +8616,40 @@ const ASK_QUESTION_QUESTIONS = [
     options: [{ label: "staging" }, { label: "production" }],
   },
 ];
+
+test("askAgentQuestion rejects orchestrated agents", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-ask-question-"));
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient("codex") },
+    registry: new AgentStorage(join(workdir, "agents"), logger),
+    logger,
+  });
+  try {
+    const delegated = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+      labels: { [PARENT_AGENT_ID_LABEL]: "parent-1" },
+    });
+    await expect(
+      manager.askAgentQuestion({
+        agentId: delegated.id,
+        questions: ASK_QUESTION_QUESTIONS,
+      }),
+    ).rejects.toThrow("ask_question is not available to orchestrated agents");
+
+    const workflow = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+      labels: { [WORKFLOW_RUN_ID_LABEL]: "run-1" },
+    });
+    await expect(
+      manager.askAgentQuestion({
+        agentId: workflow.id,
+        questions: ASK_QUESTION_QUESTIONS,
+      }),
+    ).rejects.toThrow("ask_question is not available to orchestrated agents");
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
 
 test("askAgentQuestion surfaces a question permission and returns the user's answer", async () => {
   const { manager, agentId, cleanup } = await createAskQuestionFixture();

@@ -766,8 +766,38 @@ export function deriveModelDefinitionsFromACP(
 
 export const ACP_AUTO_ACCEPT_FEATURE_ID = "auto_accept";
 
+/** Wire/create paths may store booleans as strings (MCP settings.features). */
+export function parseACPAutoAcceptFeatureValue(value: unknown): boolean | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1") {
+      return true;
+    }
+    if (normalized === "false" || normalized === "0") {
+      return false;
+    }
+  }
+  if (typeof value === "number") {
+    if (value === 1) {
+      return true;
+    }
+    if (value === 0) {
+      return false;
+    }
+  }
+  return undefined;
+}
+
 export function isACPAutoAcceptEnabled(config: AgentSessionConfig): boolean {
-  return config.featureValues?.[ACP_AUTO_ACCEPT_FEATURE_ID] === true;
+  return (
+    parseACPAutoAcceptFeatureValue(config.featureValues?.[ACP_AUTO_ACCEPT_FEATURE_ID]) === true
+  );
 }
 
 export function buildACPAutoAcceptFeature(config: AgentSessionConfig): AgentFeature {
@@ -2070,7 +2100,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
 
   async setFeature(featureId: string, value: unknown): Promise<void> {
     if (featureId === ACP_AUTO_ACCEPT_FEATURE_ID) {
-      const enabled = value === true;
+      const enabled = parseACPAutoAcceptFeatureValue(value) === true;
       this.autoAcceptEnabled = enabled;
       this.config.featureValues = {
         ...this.config.featureValues,

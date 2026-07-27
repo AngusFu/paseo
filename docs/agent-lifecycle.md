@@ -171,7 +171,14 @@ For these agents the daemon:
 - Skips prose-stop nudge and the prose-stop **prevention** `daemonAppendSystemPrompt` block
 - Does not register MCP `ask_question` on their tool catalog (and `askAgentQuestion` rejects if called)
 - Skips `broadcastAgentAttention` (same as delegated agents before workflow)
-- Stamps ACP `auto_accept: true` at create when omitted (`applyOrchestratedAcpAutoAccept`), independent of the desktop Auto Approve toggle
+- Stamps ACP `auto_accept: true` at create when omitted (`applyOrchestratedAcpAutoAccept`), independent of the desktop Auto Approve toggle. ACP sessions coerce wire values like `"true"` when reading the toggle (`parseACPAutoAcceptFeatureValue` in `acp-agent.ts`).
+
+**Out of scope (for now):**
+
+- **Provider-native AskUserQuestion** — Claude/Cursor native question permissions are not gated here; a workflow agent can still block in `finishWorkflowAgent` when `waitForAgentEvent` returns `permission`.
+- **Schedule / loop workers** — `unattended: true` schedule targets and loop internal workers are not orchestrated-background agents unless they carry the labels above. Schedules still get prose-stop and MCP `ask_question`; loop workers are `internal` (ask_question already blocked).
+
+**Footgun:** flow scripts may pass explicit `auto_accept: false`. Orchestrated agents still skip prose-stop and MCP `ask_question`, so a permission hang is harder to recover from — avoid turning auto-approve off in unattended flows unless you mean it.
 
 Workflow dispatch and the agents-workflow engine also default `auto_accept: true` in `featureValues` so flow scripts do not need to repeat it. Foreground root agents keep prose-stop and ask_question unchanged.
 

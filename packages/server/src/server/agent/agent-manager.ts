@@ -1377,6 +1377,7 @@ export class AgentManager {
     try {
       const importedConfig = await this.normalizeConfig(
         stripInternalPaseoMcpServer(imported.config),
+        { labels: input.labels },
       );
       const timelineRows = buildImportedTimelineRows(imported.timeline);
       const initialTitle = resolveImportedAgentTitle(importedConfig, timelineRows);

@@ -1398,6 +1398,38 @@ describe("ACPAgentSession Zed parity", () => {
     expect(events.some((event) => event.type === "permission_requested")).toBe(false);
   });
 
+  test("auto-approves ACP tool permissions when auto_accept is the string true", async () => {
+    const session = createSessionWithConfig({
+      provider: "cursor-acp",
+      modeId: "default",
+      featureValues: { auto_accept: "true" },
+    });
+    asInternals<ACPSessionInternals>(session).sessionId = "session-1";
+    asInternals<ACPSessionInternals>(session).availableModes = [
+      { id: "default", label: "Default" },
+    ];
+    asInternals<ACPSessionInternals>(session).currentMode = "default";
+
+    await expect(
+      session.requestPermission({
+        sessionId: "session-1",
+        toolCall: {
+          toolCallId: "tool-1",
+          title: "Run git status",
+          kind: "execute",
+          status: "pending",
+        },
+        options: [
+          { optionId: "allow-once", name: "Allow", kind: "allow_once" },
+          { optionId: "allow-always", name: "Always", kind: "allow_always" },
+          { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+        ],
+      } satisfies RequestPermissionRequest),
+    ).resolves.toEqual({
+      outcome: { outcome: "selected", optionId: "allow-always" },
+    });
+  });
+
   test("does not auto-approve switch_mode permissions when auto_accept is enabled", async () => {
     const session = createSessionWithConfig({
       provider: "cursor-acp",

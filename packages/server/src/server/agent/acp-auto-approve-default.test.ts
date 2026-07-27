@@ -73,4 +73,26 @@ describe("applyOrchestratedAcpAutoAccept", () => {
       ),
     ).toEqual({ fast: "true" });
   });
+
+  it("adds auto_accept for workflow-agent label", () => {
+    expect(
+      applyOrchestratedAcpAutoAccept(
+        "cursor",
+        { fast: "true" },
+        { "paseo.workflow-agent": "1" },
+        { cursor: { extends: "acp" } },
+      ),
+    ).toEqual({ fast: "true", [ACP_AUTO_ACCEPT_FEATURE_ID]: true });
+  });
+
+  it("preserves explicit auto_accept false", () => {
+    expect(
+      applyOrchestratedAcpAutoAccept(
+        "cursor",
+        { [ACP_AUTO_ACCEPT_FEATURE_ID]: false },
+        { [PARENT_AGENT_ID_LABEL]: "parent-1" },
+        { cursor: { extends: "acp" } },
+      ),
+    ).toEqual({ [ACP_AUTO_ACCEPT_FEATURE_ID]: false });
+  });
 });

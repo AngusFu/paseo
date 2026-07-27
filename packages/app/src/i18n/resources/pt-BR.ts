@@ -959,8 +959,9 @@ export const ptBR: TranslationResources = {
         openIn: "Abrir workspace em {{target}}",
         openFileIn: "Abrir {{fileName}} em {{target}}",
         failedOpen: "Falha ao abrir workspace",
-        codeServerStart: "Iniciar code-server",
-        codeServerStop: "Parar code-server",
+        vscodeWeb: "VS Code Web",
+        codeServerStart: "Iniciar VS Code Web",
+        codeServerStop: "Parar VS Code Web",
       },
       pr: {
         actions: {

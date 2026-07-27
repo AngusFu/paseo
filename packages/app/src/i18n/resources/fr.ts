@@ -967,8 +967,9 @@ export const fr: TranslationResources = {
         openIn: "Espace de travail ouvert dans{{target}}",
         openFileIn: "Open {{fileName}} in {{target}}",
         failedOpen: "Échec de l'ouverture de l'espace de travail",
-        codeServerStart: "Démarrer code-server",
-        codeServerStop: "Arrêter code-server",
+        vscodeWeb: "VS Code Web",
+        codeServerStart: "Démarrer VS Code Web",
+        codeServerStop: "Arrêter VS Code Web",
       },
       pr: {
         actions: {

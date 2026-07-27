@@ -946,8 +946,9 @@ export const en = {
         openIn: "Open workspace in {{target}}",
         openFileIn: "Open {{fileName}} in {{target}}",
         failedOpen: "Failed to open workspace",
-        codeServerStart: "Start code-server",
-        codeServerStop: "Stop code-server",
+        vscodeWeb: "VS Code Web",
+        codeServerStart: "Start VS Code Web",
+        codeServerStop: "Stop VS Code Web",
       },
       pr: {
         actions: {

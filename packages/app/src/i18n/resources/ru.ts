@@ -958,8 +958,9 @@ export const ru: TranslationResources = {
         openIn: "Открыть рабочую область в{{target}}",
         openFileIn: "Open {{fileName}} in {{target}}",
         failedOpen: "Не удалось открыть рабочую область",
-        codeServerStart: "Запустить code-server",
-        codeServerStop: "Остановить code-server",
+        vscodeWeb: "VS Code Web",
+        codeServerStart: "Запустить VS Code Web",
+        codeServerStop: "Остановить VS Code Web",
       },
       pr: {
         actions: {

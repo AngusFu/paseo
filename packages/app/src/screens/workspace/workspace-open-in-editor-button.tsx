@@ -8,7 +8,7 @@ import {
   type PressableStateCallbackType,
 } from "react-native";
 import { useMutation } from "@tanstack/react-query";
-import { Check, ChevronDown, Globe, Play, Square } from "lucide-react-native";
+import { Check, ChevronDown } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { EditorTargetIcon } from "@/components/icons/editor-target-icon";
 import { Button } from "@/components/ui/button";
@@ -54,13 +54,18 @@ const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedEditorTargetIcon = withUnistyles(EditorTargetIcon);
 const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedCheckIcon = withUnistyles(Check);
-const ThemedGlobeIcon = withUnistyles(Globe);
 
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 function renderForgeOpenTargetIcon(icon: string): ReactElement {
   return <ForgeBrandIcon iconKind={icon} size={16} uniProps={mutedColorMapping} />;
+}
+
+function renderEditorOpenTargetIcon(
+  icon: Parameters<typeof EditorTargetIcon>[0]["icon"],
+): ReactElement {
+  return <ThemedEditorTargetIcon icon={icon} size={16} uniProps={mutedColorMapping} />;
 }
 
 interface OpenTargetMenuItemProps {
@@ -132,6 +137,19 @@ export function WorkspaceOpenInEditorButton({
     cwd: shouldQueryCheckout ? cwd : "",
   });
 
+  const vscodeWebIcon = useMemo(() => {
+    const vscodeTarget = desktopOpenTargets.find((target) => target.id === "vscode");
+    if (vscodeTarget) {
+      return vscodeTarget.icon;
+    }
+    return { kind: "symbol", name: "terminal" } as const;
+  }, [desktopOpenTargets]);
+
+  const codeServerToggleIcon = useMemo(
+    () => renderEditorOpenTargetIcon(vscodeWebIcon),
+    [vscodeWebIcon],
+  );
+
   const targets = useMemo<OpenTarget[]>(() => {
     const planned = planWorkspaceOpenTargets({
       workspaceDirectory: cwd,
@@ -155,7 +173,7 @@ export function WorkspaceOpenInEditorButton({
       return {
         id: target.id,
         label: target.label,
-        icon: <ThemedEditorTargetIcon icon={target.icon} size={16} uniProps={mutedColorMapping} />,
+        icon: renderEditorOpenTargetIcon(target.icon),
         onOpen: () => openDesktopTarget(target.openInput),
       };
     });
@@ -165,8 +183,8 @@ export function WorkspaceOpenInEditorButton({
     if (isCodeServerAvailable) {
       planned.push({
         id: "code-server",
-        label: "code-server",
-        icon: <ThemedGlobeIcon size={16} uniProps={mutedColorMapping} />,
+        label: t("workspace.git.openInEditor.vscodeWeb"),
+        icon: renderEditorOpenTargetIcon(vscodeWebIcon),
         onOpen: () => openInCodeServer(cwd),
       });
     }
@@ -182,6 +200,8 @@ export function WorkspaceOpenInEditorButton({
     isDesktopOpenAvailable,
     isLocalDaemon,
     resolvedFile,
+    t,
+    vscodeWebIcon,
   ]);
 
   const targetIds = useMemo(() => targets.map((target) => target.id), [targets]);
@@ -314,7 +334,7 @@ export function WorkspaceOpenInEditorButton({
                 size="sm"
                 variant="outline"
                 loading={isTogglingCodeServer}
-                leftIcon={isCodeServerRunning ? Square : Play}
+                leftIcon={codeServerToggleIcon}
                 onPress={handleCodeServerToggle}
                 accessibilityLabel={codeServerToggleLabel}
                 testID="workspace-code-server-toggle"

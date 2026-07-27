@@ -1,6 +1,6 @@
 import { useCallback, useMemo, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
-import { Globe } from "lucide-react-native";
+import { AppWindow } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { HeaderToggleButton } from "@/components/headers/header-toggle-button";
 import {
@@ -17,7 +17,7 @@ interface WorkspaceOpenWebUiButtonProps {
   serverId: string;
 }
 
-const ThemedGlobe = withUnistyles(Globe);
+const ThemedAppWindow = withUnistyles(AppWindow);
 
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
@@ -75,7 +75,7 @@ export function WorkspaceOpenWebUiButton({
     >
       {({ hovered, pressed }) => {
         const colorMapping = hovered || pressed ? foregroundColorMapping : mutedColorMapping;
-        return <ThemedGlobe size={16} uniProps={colorMapping} />;
+        return <ThemedAppWindow size={16} uniProps={colorMapping} />;
       }}
     </HeaderToggleButton>
   );

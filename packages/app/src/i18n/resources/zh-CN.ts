@@ -927,8 +927,9 @@ export const zhCN: TranslationResources = {
         openIn: "在 {{target}} 中打开 workspace",
         openFileIn: "在 {{target}} 中打开 {{fileName}}",
         failedOpen: "打开 workspace 失败",
-        codeServerStart: "启动 code-server",
-        codeServerStop: "停止 code-server",
+        vscodeWeb: "VS Code Web",
+        codeServerStart: "启动 VS Code Web",
+        codeServerStop: "停止 VS Code Web",
       },
       pr: {
         actions: {

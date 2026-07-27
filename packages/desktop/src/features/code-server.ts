@@ -2,14 +2,19 @@ import { execFileSync, spawn as nodeSpawn } from "node:child_process";
 import { existsSync as nodeExistsSync } from "node:fs";
 import { connect as netConnect } from "node:net";
 import { ipcMain } from "electron";
-import { createExternalProcessEnv, resolveExecutable } from "./editor-targets/runtime.js";
+import { createExternalProcessEnv } from "./editor-targets/runtime.js";
+import { createCodeServerProxy, type CodeServerProxy } from "./code-server-proxy.js";
+import { buildServeWebArguments, resolveVSCodeServeWebLaunch } from "./vscode-serve-web-launch.js";
 
-// A single, machine-global `code serve-web` instance. It serves any local
-// folder over http://127.0.0.1:19490/?folder=<abs-path>, so one process backs
-// every workspace. The port is fixed so the URL is stable and predictable.
+// A single, machine-global `code serve-web` instance listens on the upstream port.
+// The desktop app exposes a local proxy on the public port that forces
+// Accept-Language to English so serve-web UI stays English regardless of
+// Paseo or browser locale settings.
 const CODE_SERVER_HOST = "127.0.0.1";
-const CODE_SERVER_PORT = 19490;
-const CODE_SERVER_URL = `http://${CODE_SERVER_HOST}:${CODE_SERVER_PORT}`;
+const CODE_SERVER_UPSTREAM_PORT = 19490;
+const CODE_SERVER_PROXY_PORT = 19491;
+const CODE_SERVER_URL = `http://${CODE_SERVER_HOST}:${CODE_SERVER_PROXY_PORT}`;
+const DEFAULT_ACCEPT_LANGUAGE = "en-US,en;q=0.9";
 const READY_TIMEOUT_MS = 20_000;
 const READY_POLL_INTERVAL_MS = 250;
 const STOP_TIMEOUT_MS = 3_000;
@@ -37,6 +42,33 @@ interface IpcHandlerRegistry {
 // child handle: the `code` launcher reparents serve-web into its own process
 // group, so a process-group kill misses it, and an orphan can outlive a restart.
 let spawnedByUs = false;
+let codeServerProxy: CodeServerProxy | null = null;
+
+function getCodeServerProxy(): CodeServerProxy {
+  if (!codeServerProxy) {
+    codeServerProxy = createCodeServerProxy({
+      listenHost: CODE_SERVER_HOST,
+      listenPort: CODE_SERVER_PROXY_PORT,
+      upstreamHost: CODE_SERVER_HOST,
+      upstreamPort: CODE_SERVER_UPSTREAM_PORT,
+      acceptLanguage: DEFAULT_ACCEPT_LANGUAGE,
+    });
+  }
+  return codeServerProxy;
+}
+
+async function ensureCodeServerProxy(): Promise<void> {
+  await getCodeServerProxy().start();
+}
+
+async function stopCodeServerProxy(): Promise<void> {
+  if (!codeServerProxy) {
+    return;
+  }
+  const activeProxy = codeServerProxy;
+  codeServerProxy = null;
+  await activeProxy.stop();
+}
 
 function probePort(port: number, host: string): Promise<boolean> {
   return new Promise((resolve) => {
@@ -104,7 +136,7 @@ async function waitForReady(child: ReturnType<typeof nodeSpawn>): Promise<void> 
     if (exited) {
       throw new Error("code serve-web exited before it became ready");
     }
-    if (await probePort(CODE_SERVER_PORT, CODE_SERVER_HOST)) {
+    if (await probePort(CODE_SERVER_UPSTREAM_PORT, CODE_SERVER_HOST)) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, READY_POLL_INTERVAL_MS));
@@ -113,8 +145,8 @@ async function waitForReady(child: ReturnType<typeof nodeSpawn>): Promise<void> 
 }
 
 export async function getCodeServerStatus(): Promise<CodeServerStatus> {
-  const running = await probePort(CODE_SERVER_PORT, CODE_SERVER_HOST);
-  return { running, url: CODE_SERVER_URL, port: CODE_SERVER_PORT };
+  const running = await probePort(CODE_SERVER_UPSTREAM_PORT, CODE_SERVER_HOST);
+  return { running, url: CODE_SERVER_URL, port: CODE_SERVER_PROXY_PORT };
 }
 
 export async function startCodeServer(
@@ -125,37 +157,39 @@ export async function startCodeServer(
   const existsSync = dependencies.existsSync ?? nodeExistsSync;
   const spawn = dependencies.spawn ?? nodeSpawn;
 
+  await ensureCodeServerProxy();
+
   // Already reachable (ours or externally launched) — nothing to do.
-  if (await probePort(CODE_SERVER_PORT, CODE_SERVER_HOST)) {
-    return { running: true, url: CODE_SERVER_URL, port: CODE_SERVER_PORT };
+  if (await probePort(CODE_SERVER_UPSTREAM_PORT, CODE_SERVER_HOST)) {
+    return { running: true, url: CODE_SERVER_URL, port: CODE_SERVER_PROXY_PORT };
   }
 
-  const executable = resolveExecutable(["code"], { env, pathExists: existsSync, platform });
-  if (!executable) {
-    throw new Error("VS Code CLI (`code`) was not found on PATH");
+  const launch = resolveVSCodeServeWebLaunch({
+    platform,
+    env,
+    pathExists: existsSync,
+  });
+  if (!launch) {
+    throw new Error("VS Code serve-web was not found (install VS Code or add `code` to PATH)");
+  }
+
+  const childEnv = createExternalProcessEnv(launch.env);
+  if (launch.env.ELECTRON_RUN_AS_NODE === "1") {
+    childEnv.ELECTRON_RUN_AS_NODE = "1";
   }
 
   const child = spawn(
-    executable,
-    [
-      // Pin the UI to English regardless of the OS locale — a localized VS Code
-      // web UI is jarring here. Global `code` option, must precede the `serve-web`
-      // subcommand.
-      "--locale",
-      "en-US",
-      "serve-web",
-      "--host",
-      CODE_SERVER_HOST,
-      "--port",
-      String(CODE_SERVER_PORT),
-      "--without-connection-token",
-      "--accept-server-license-terms",
-    ],
+    launch.executable,
+    buildServeWebArguments({
+      launch,
+      host: CODE_SERVER_HOST,
+      port: CODE_SERVER_UPSTREAM_PORT,
+    }),
     {
       // Detach so a crash in the Electron main process does not SIGHUP serve-web
       // mid-session; we clean it up explicitly by port on stop/quit.
       detached: platform !== "win32",
-      env: createExternalProcessEnv(env),
+      env: childEnv,
       stdio: "ignore",
     },
   );
@@ -164,15 +198,14 @@ export async function startCodeServer(
   try {
     await waitForReady(child);
   } catch (error) {
-    await stopByPort(platform);
+    await stopCodeServer({ platform });
     throw error;
   }
-  return { running: true, url: CODE_SERVER_URL, port: CODE_SERVER_PORT };
+  return { running: true, url: CODE_SERVER_URL, port: CODE_SERVER_PROXY_PORT };
 }
 
-async function stopByPort(platform: NodeJS.Platform): Promise<void> {
-  spawnedByUs = false;
-  const pids = findPortListenerPids(CODE_SERVER_PORT, platform);
+async function stopUpstreamByPort(platform: NodeJS.Platform): Promise<void> {
+  const pids = findPortListenerPids(CODE_SERVER_UPSTREAM_PORT, platform);
   if (pids.length === 0) {
     return;
   }
@@ -180,20 +213,22 @@ async function stopByPort(platform: NodeJS.Platform): Promise<void> {
 
   const deadline = Date.now() + STOP_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (!(await probePort(CODE_SERVER_PORT, CODE_SERVER_HOST))) {
+    if (!(await probePort(CODE_SERVER_UPSTREAM_PORT, CODE_SERVER_HOST))) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, READY_POLL_INTERVAL_MS));
   }
   // Escalate to SIGKILL for anything that ignored SIGTERM.
-  killPids(findPortListenerPids(CODE_SERVER_PORT, platform), platform, true);
+  killPids(findPortListenerPids(CODE_SERVER_UPSTREAM_PORT, platform), platform, true);
 }
 
 export async function stopCodeServer(
   dependencies: CodeServerDependencies = {},
 ): Promise<CodeServerStatus> {
   const platform = dependencies.platform ?? process.platform;
-  await stopByPort(platform);
+  spawnedByUs = false;
+  await stopUpstreamByPort(platform);
+  await stopCodeServerProxy();
   return await getCodeServerStatus();
 }
 
@@ -212,9 +247,13 @@ export function registerCodeServerHandlers(
 // quit path cannot await. Only fires if we started it (never touches a serve-web
 // the user launched independently).
 export function shutdownCodeServer(): void {
-  if (!spawnedByUs) {
-    return;
+  if (spawnedByUs) {
+    spawnedByUs = false;
+    killPids(
+      findPortListenerPids(CODE_SERVER_UPSTREAM_PORT, process.platform),
+      process.platform,
+      false,
+    );
   }
-  spawnedByUs = false;
-  killPids(findPortListenerPids(CODE_SERVER_PORT, process.platform), process.platform, false);
+  void stopCodeServerProxy().catch(() => undefined);
 }

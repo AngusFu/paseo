@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { afterEach, expect, test, vi } from "vitest";
+import { PARENT_AGENT_ID_LABEL, WORKFLOW_RUN_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { AgentManager } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
@@ -201,6 +202,47 @@ test("maybeScheduleGoalContinuation skips prose-stop when a goal is active", asy
     }
     await new Promise((resolve) => setTimeout(resolve, 10));
 
+    expect(checkProseStopWithLlama).not.toHaveBeenCalled();
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("maybeScheduleGoalContinuation skips prose-stop for orchestrated agents", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "goal-hook-prose-stop-"));
+  try {
+    let nextId = 0;
+    const manager = new AgentManager({
+      clients: { codex: new ProseStopTestClient() },
+      registry: new AgentStorage(join(workdir, "agents"), logger),
+      logger,
+      idFactory: () => `00000000-0000-4000-8000-${String(++nextId).padStart(12, "0")}`,
+    });
+    manager.configureProseStop({
+      getProseStopEnabled: () => true,
+      getLlamaService: () => ({}) as never,
+    });
+    manager.setGoalService(createGoalServiceStub(false));
+    manager.setPaseoToolsEnabled(false);
+
+    const delegated = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+      labels: { [PARENT_AGENT_ID_LABEL]: "parent-1" },
+    });
+    for await (const _event of manager.streamAgent(delegated.id, "finish this task")) {
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(checkProseStopWithLlama).not.toHaveBeenCalled();
+
+    checkProseStopWithLlama.mockClear();
+
+    const workflow = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+      labels: { [WORKFLOW_RUN_ID_LABEL]: "run-1" },
+    });
+    for await (const _event of manager.streamAgent(workflow.id, "finish this task")) {
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(checkProseStopWithLlama).not.toHaveBeenCalled();
   } finally {
     rmSync(workdir, { recursive: true, force: true });

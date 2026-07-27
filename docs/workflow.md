@@ -132,6 +132,8 @@ Dispatch args conventionally include:
   toggle/select (Claude `fast_mode`, Codex `fast_mode` + `plan_mode`, Cursor
   ACP `fast`, Copilot `agent`, OpenCode auto-accept, …). Keys are
   provider-specific — e.g. Cursor uses `{ fast: "true" }`, not `fast_mode`.
+  Workflow runs default `auto_accept: true` when omitted (engine +
+  dispatch args + daemon create for workflow-labelled agents).
 - `workspaceTitle` — optional sidebar title for the one Paseo workspace minted
   for the run (dispatch field or args; always prefixed with `⚙️ `). When it is
   absent the body is derived from the prompt, not from the definition name —

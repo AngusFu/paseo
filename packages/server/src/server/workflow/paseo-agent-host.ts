@@ -8,6 +8,7 @@ import type {
   PaseoAgentHostRequest,
   PaseoAgentHostResult,
 } from "@getpaseo/agents-workflow";
+import { WORKFLOW_AGENT_LABEL } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
 import { formatProviderModel, type BoundCreateAgentCommand } from "../agent/create-agent/create.js";
 import type { AgentManager } from "../agent/agent-manager.js";
@@ -60,7 +61,7 @@ async function createWorkflowAgent(
     mode: request.modeId,
     features: request.featureValues,
     labels: {
-      "paseo.workflow-agent": "1",
+      [WORKFLOW_AGENT_LABEL]: "1",
       ...request.labels,
     },
     unattended: true,

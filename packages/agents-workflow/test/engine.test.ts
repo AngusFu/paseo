@@ -4,7 +4,7 @@ import { test, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createEngine, extractMeta } from "../src/engine.js";
+import { createEngine, extractMeta, resolveAgentFeatureValues } from "../src/engine.js";
 import { MockBackend } from "../src/backends/mock.js";
 import { Journal } from "../src/journal.js";
 import { z } from "zod";
@@ -18,6 +18,17 @@ test("extractMeta splits meta and body", () => {
   const { meta, body } = extractMeta(wrap("return 1 + 1;"));
   expect(meta.name).toBe("t");
   expect(body.includes("export const meta")).toBe(false);
+});
+
+test("resolveAgentFeatureValues defaults auto_accept to true", () => {
+  expect(resolveAgentFeatureValues({})).toEqual({ auto_accept: true });
+  expect(resolveAgentFeatureValues({ featureValues: { fast: true } })).toEqual({
+    fast: true,
+    auto_accept: true,
+  });
+  expect(resolveAgentFeatureValues({ featureValues: { auto_accept: false } })).toEqual({
+    auto_accept: false,
+  });
 });
 
 test("extractMeta tolerates braces inside meta strings", () => {

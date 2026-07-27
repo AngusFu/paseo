@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyDaemonAcpAutoAcceptDefault,
+  applyOrchestratedAcpAutoAccept,
   isDaemonManagedAcpAutoAcceptProvider,
 } from "./acp-auto-approve-default.js";
 import { ACP_AUTO_ACCEPT_FEATURE_ID } from "./providers/acp-agent.js";
+import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 
 describe("isDaemonManagedAcpAutoAcceptProvider", () => {
   it("includes copilot and custom extends:acp providers", () => {
@@ -43,6 +45,32 @@ describe("applyDaemonAcpAutoAcceptDefault", () => {
       applyDaemonAcpAutoAcceptDefault("cursor", { fast: "true" }, undefined, {
         cursor: { extends: "acp" },
       }),
+    ).toEqual({ fast: "true" });
+  });
+});
+
+describe("applyOrchestratedAcpAutoAccept", () => {
+  it("adds auto_accept for delegated agents even when daemon default is off", () => {
+    expect(
+      applyOrchestratedAcpAutoAccept(
+        "cursor",
+        { fast: "true" },
+        { [PARENT_AGENT_ID_LABEL]: "parent-1" },
+        { cursor: { extends: "acp" } },
+      ),
+    ).toEqual({ fast: "true", [ACP_AUTO_ACCEPT_FEATURE_ID]: true });
+  });
+
+  it("no-ops for foreground agents", () => {
+    expect(
+      applyOrchestratedAcpAutoAccept(
+        "cursor",
+        { fast: "true" },
+        {},
+        {
+          cursor: { extends: "acp" },
+        },
+      ),
     ).toEqual({ fast: "true" });
   });
 });

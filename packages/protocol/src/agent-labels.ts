@@ -15,6 +15,22 @@ export function isDelegatedAgent(agent: AgentLabelSource): boolean {
   return getParentAgentIdFromLabels(agent.labels) !== null;
 }
 
+/** Stamped by workflow host create on every engine-spawned workflow agent. */
+export const WORKFLOW_AGENT_LABEL = "paseo.workflow-agent";
+
+export function isWorkflowAgent(agent: AgentLabelSource): boolean {
+  if (getWorkflowRunIdFromLabels(agent.labels) !== null) {
+    return true;
+  }
+  const marker = agent.labels?.[WORKFLOW_AGENT_LABEL];
+  return marker === "1" || marker === "true";
+}
+
+/** Subagents and workflow agents run unattended — skip prose-stop and ask_question. */
+export function isOrchestratedBackgroundAgent(agent: AgentLabelSource): boolean {
+  return isDelegatedAgent(agent) || isWorkflowAgent(agent);
+}
+
 // Stamped by the daemon's workflow service on every agent a workflow run
 // spawns. Lets clients group a run's agents under one entry instead of a
 // tab per agent.

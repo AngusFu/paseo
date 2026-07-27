@@ -7,7 +7,7 @@ import {
 } from "@getpaseo/protocol/agent-lifecycle";
 import {
   getParentAgentIdFromLabels,
-  isDelegatedAgent,
+  isOrchestratedBackgroundAgent,
   PARENT_AGENT_ID_LABEL,
 } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
@@ -95,6 +95,7 @@ import {
 import { PROSE_STOP_PREVENTION_PROMPT } from "./prose-stop/prevention-prompt.js";
 import {
   applyDaemonAcpAutoAcceptDefault,
+  applyOrchestratedAcpAutoAccept,
   type DaemonProviderOverrideLike,
 } from "./acp-auto-approve-default.js";
 import {
@@ -191,6 +192,7 @@ interface PreparedSessionConfig {
 interface NormalizeConfigOptions {
   resolveDefaultModel?: boolean;
   env?: Record<string, string>;
+  labels?: Record<string, string>;
 }
 
 interface TimeoutOptions {
@@ -1215,6 +1217,7 @@ export class AgentManager {
       config,
       resolvedAgentId,
       options?.env,
+      options?.labels,
     );
     this.requireEnabledProvider(storedConfig.provider);
     const client = await this.requireAvailableClient({
@@ -1291,6 +1294,8 @@ export class AgentManager {
     const { storedConfig, launchConfig } = await this.prepareSessionConfig(
       mergedConfig,
       resolvedAgentId,
+      undefined,
+      options?.labels,
     );
 
     const client = this.requireClient(handle.provider);
@@ -1351,6 +1356,8 @@ export class AgentManager {
         cwd: input.cwd,
       },
       resolvedAgentId,
+      undefined,
+      input.labels,
     );
     const launchContext = await this.buildLaunchContext(
       resolvedAgentId,
@@ -1437,7 +1444,12 @@ export class AgentManager {
       ...overrides,
       provider,
     } as AgentSessionConfig;
-    const { storedConfig, launchConfig } = await this.prepareSessionConfig(refreshConfig, agentId);
+    const { storedConfig, launchConfig } = await this.prepareSessionConfig(
+      refreshConfig,
+      agentId,
+      undefined,
+      existing.labels,
+    );
     const launchContext = await this.buildLaunchContext(
       agentId,
       client,
@@ -2493,6 +2505,9 @@ export class AgentManager {
     const agent = this.requireAgent(input.agentId);
     if (agent.internal) {
       throw new Error("ask_question is not available to internal agents");
+    }
+    if (isOrchestratedBackgroundAgent(agent)) {
+      throw new Error("ask_question is not available to orchestrated agents");
     }
     const requestId = `mcp-question-${this.idFactory()}`;
     // COMPAT(askQuestionAskUserQuestionDisguise): added in v0.1.105, remove after
@@ -4883,6 +4898,11 @@ export class AgentManager {
   private async maybeScheduleProseStopNudge(agent: ActiveManagedAgent): Promise<void> {
     this.clearProseStopPendingNudge(agent.id);
 
+    if (isOrchestratedBackgroundAgent(agent)) {
+      this.proseStopActive.delete(agent.id);
+      return;
+    }
+
     if (!this.getProseStopEnabled()) {
       this.proseStopActive.delete(agent.id);
       return;
@@ -5479,7 +5499,7 @@ export class AgentManager {
     agent: ManagedAgent,
     reason: "finished" | "error" | "permission",
   ): void {
-    if (isDelegatedAgent(agent)) {
+    if (isOrchestratedBackgroundAgent(agent)) {
       return;
     }
 
@@ -5613,6 +5633,12 @@ export class AgentManager {
       this.getAcpAutoApproveDefault(),
       this.getDaemonProviderOverrides(),
     );
+    normalized.featureValues = applyOrchestratedAcpAutoAccept(
+      normalized.provider,
+      normalized.featureValues,
+      options.labels,
+      this.getDaemonProviderOverrides(),
+    );
 
     return normalized;
   }
@@ -5654,28 +5680,34 @@ export class AgentManager {
     config: AgentSessionConfig,
     agentId: string,
     env?: Record<string, string>,
+    labels?: Record<string, string>,
   ): Promise<PreparedSessionConfig> {
-    const storedConfig = await this.normalizeConfig(stripInternalPaseoMcpServer(config), { env });
+    const storedConfig = await this.normalizeConfig(stripInternalPaseoMcpServer(config), {
+      env,
+      labels,
+    });
     let launchConfig = withRuntimePaseoMcpServer({
       config: storedConfig,
       agentId,
       mcpBaseUrl: this.mcpBaseUrl,
       mcpAuthToken: this.mcpAuthToken,
     });
-    launchConfig = await this.applyDaemonAppendSystemPrompt(launchConfig);
+    launchConfig = await this.applyDaemonAppendSystemPrompt(launchConfig, labels);
     launchConfig = await this.applyMcpCliLaunchOverlay(launchConfig);
     return { storedConfig, launchConfig };
   }
 
   private async applyDaemonAppendSystemPrompt(
     config: AgentSessionConfig,
+    labels?: Record<string, string>,
   ): Promise<AgentSessionConfig> {
     const parts: string[] = [];
     const userAppend = this.appendSystemPrompt.trim();
     if (userAppend.length > 0) {
       parts.push(userAppend);
     }
-    if (this.getProseStopPreventionPromptEnabled()) {
+    const skipProseStopPrevention = labels != null && isOrchestratedBackgroundAgent({ labels });
+    if (this.getProseStopPreventionPromptEnabled() && !skipProseStopPrevention) {
       parts.push(PROSE_STOP_PREVENTION_PROMPT.trim());
     }
     if (this.paseoHome) {

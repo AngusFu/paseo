@@ -85,7 +85,10 @@ export function resolveAgentFeatureValues(
   if (opts.fast != null) {
     merged.fast_mode = opts.fast;
   }
-  return Object.keys(merged).length > 0 ? merged : undefined;
+  if (merged.auto_accept === undefined) {
+    merged.auto_accept = true;
+  }
+  return merged;
 }
 
 export type AgentFn = (prompt: string, opts?: AgentCallOpts) => Promise<unknown>;

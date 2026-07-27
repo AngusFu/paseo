@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isOrchestratedBackgroundAgent } from "@getpaseo/protocol/agent-labels";
 import { ensureValidJson } from "../../json-utils.js";
 import type { Logger } from "pino";
 
@@ -1297,140 +1298,146 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     });
   }
 
-  const AskQuestionOptionSchema = z.object({
-    label: z.string().min(1).describe("Option label shown to the user."),
-    description: z
-      .string()
-      .optional()
-      .describe("Optional one-line explanation of what choosing this option means."),
-  });
-  const AskQuestionItemSchema = z.object({
-    question: z.string().min(1).describe("The full question to ask the user."),
-    header: z
-      .string()
-      .min(1)
-      .describe(
-        "Short label/category for this question. Also the key in the returned answers map.",
-      ),
-    options: z
-      .array(AskQuestionOptionSchema)
-      .default([])
-      .describe("Selectable options. Leave empty for a free-text answer."),
-    multiSelect: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe("Allow selecting more than one option."),
-    allowOther: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe("Allow a free-text 'Other' answer in addition to the options."),
-    allowEmpty: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe("Allow submitting without an answer for this question."),
-    placeholder: z.string().optional().describe("Placeholder for the free-text input."),
-  });
-  registerTool(
-    "ask_question",
-    {
-      title: "Ask the user a question",
-      description:
-        "Ask the user one or more multiple-choice (or free-text) questions and block until they answer in the Paseo app/web/desktop UI. Use this when you need a decision or clarification and your own environment has no question tool. Returns the user's answers keyed by each question's header, or dismissed=true if the user dismissed it.",
-      inputSchema: {
-        title: z.string().optional().describe("Optional short title shown above the questions."),
-        questions: z
-          .array(AskQuestionItemSchema)
-          .min(1, "at least one question is required")
-          .describe("Questions to ask. Prefer 1-4 questions with 2-4 options each."),
+  const toolSessionCaller = callerAgentId ? agentManager.getAgent(callerAgentId) : null;
+  const orchestratedCaller =
+    toolSessionCaller != null && isOrchestratedBackgroundAgent(toolSessionCaller);
+
+  if (!orchestratedCaller) {
+    const AskQuestionOptionSchema = z.object({
+      label: z.string().min(1).describe("Option label shown to the user."),
+      description: z
+        .string()
+        .optional()
+        .describe("Optional one-line explanation of what choosing this option means."),
+    });
+    const AskQuestionItemSchema = z.object({
+      question: z.string().min(1).describe("The full question to ask the user."),
+      header: z
+        .string()
+        .min(1)
+        .describe(
+          "Short label/category for this question. Also the key in the returned answers map.",
+        ),
+      options: z
+        .array(AskQuestionOptionSchema)
+        .default([])
+        .describe("Selectable options. Leave empty for a free-text answer."),
+      multiSelect: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Allow selecting more than one option."),
+      allowOther: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Allow a free-text 'Other' answer in addition to the options."),
+      allowEmpty: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Allow submitting without an answer for this question."),
+      placeholder: z.string().optional().describe("Placeholder for the free-text input."),
+    });
+    registerTool(
+      "ask_question",
+      {
+        title: "Ask the user a question",
+        description:
+          "Ask the user one or more multiple-choice (or free-text) questions and block until they answer in the Paseo app/web/desktop UI. Use this when you need a decision or clarification and your own environment has no question tool. Returns the user's answers keyed by each question's header, or dismissed=true if the user dismissed it.",
+        inputSchema: {
+          title: z.string().optional().describe("Optional short title shown above the questions."),
+          questions: z
+            .array(AskQuestionItemSchema)
+            .min(1, "at least one question is required")
+            .describe("Questions to ask. Prefer 1-4 questions with 2-4 options each."),
+        },
+        outputSchema: {
+          answers: z
+            .record(z.string(), z.string())
+            .describe(
+              "Answers keyed by each question's header. Multi-select joins labels with ', '.",
+            ),
+          dismissed: z
+            .boolean()
+            .describe("True if the user dismissed the question without answering."),
+          timedOut: z
+            .boolean()
+            .optional()
+            .describe(
+              "True when the MCP tools/call wait was aborted/timed out. Not a user dismiss — follow paseo-ask and wait the same questionId.",
+            ),
+          questionId: z
+            .string()
+            .optional()
+            .describe("Durable Question Inbox id when available (use with paseo question wait)."),
+        },
       },
-      outputSchema: {
-        answers: z
-          .record(z.string(), z.string())
-          .describe(
-            "Answers keyed by each question's header. Multi-select joins labels with ', '.",
-          ),
-        dismissed: z
-          .boolean()
-          .describe("True if the user dismissed the question without answering."),
-        timedOut: z
-          .boolean()
-          .optional()
-          .describe(
-            "True when the MCP tools/call wait was aborted/timed out. Not a user dismiss — follow paseo-ask and wait the same questionId.",
-          ),
-        questionId: z
-          .string()
-          .optional()
-          .describe("Durable Question Inbox id when available (use with paseo question wait)."),
-      },
-    },
-    async (args, context) => {
-      if (!callerAgentId) {
-        throw new Error("ask_question requires an agent-scoped tool session");
-      }
-      const result = await agentManager.askAgentQuestion({
-        agentId: callerAgentId,
-        questions: args.questions,
-        ...(args.title ? { title: args.title } : {}),
-        ...(context?.signal ? { signal: context.signal } : {}),
-      });
-      if (result.outcome === "timed_out") {
-        return {
-          content: [],
-          structuredContent: ensureValidJson({
-            answers: {},
-            dismissed: false,
-            timedOut: true,
-            ...(result.questionId ? { questionId: result.questionId } : {}),
-          }),
-        };
-      }
-      if (result.outcome === "dismissed") {
-        return {
-          content: [],
-          structuredContent: ensureValidJson({
-            answers: {},
-            dismissed: true,
-            timedOut: false,
-            ...(result.questionId ? { questionId: result.questionId } : {}),
-          }),
-        };
-      }
-      const response = result.response;
-      if (!response || response.behavior !== "allow") {
-        return {
-          content: [],
-          structuredContent: ensureValidJson({
-            answers: {},
-            dismissed: true,
-            timedOut: false,
-            ...(result.questionId ? { questionId: result.questionId } : {}),
-          }),
-        };
-      }
-      const rawAnswers = response.updatedInput?.answers;
-      const answers: Record<string, string> = {};
-      if (rawAnswers && typeof rawAnswers === "object") {
-        for (const [key, value] of Object.entries(rawAnswers as Record<string, unknown>)) {
-          if (typeof value === "string") {
-            answers[key] = value;
+      async (args, context) => {
+        if (!callerAgentId) {
+          throw new Error("ask_question requires an agent-scoped tool session");
+        }
+        const result = await agentManager.askAgentQuestion({
+          agentId: callerAgentId,
+          questions: args.questions,
+          ...(args.title ? { title: args.title } : {}),
+          ...(context?.signal ? { signal: context.signal } : {}),
+        });
+        if (result.outcome === "timed_out") {
+          return {
+            content: [],
+            structuredContent: ensureValidJson({
+              answers: {},
+              dismissed: false,
+              timedOut: true,
+              ...(result.questionId ? { questionId: result.questionId } : {}),
+            }),
+          };
+        }
+        if (result.outcome === "dismissed") {
+          return {
+            content: [],
+            structuredContent: ensureValidJson({
+              answers: {},
+              dismissed: true,
+              timedOut: false,
+              ...(result.questionId ? { questionId: result.questionId } : {}),
+            }),
+          };
+        }
+        const response = result.response;
+        if (!response || response.behavior !== "allow") {
+          return {
+            content: [],
+            structuredContent: ensureValidJson({
+              answers: {},
+              dismissed: true,
+              timedOut: false,
+              ...(result.questionId ? { questionId: result.questionId } : {}),
+            }),
+          };
+        }
+        const rawAnswers = response.updatedInput?.answers;
+        const answers: Record<string, string> = {};
+        if (rawAnswers && typeof rawAnswers === "object") {
+          for (const [key, value] of Object.entries(rawAnswers as Record<string, unknown>)) {
+            if (typeof value === "string") {
+              answers[key] = value;
+            }
           }
         }
-      }
-      return {
-        content: [],
-        structuredContent: ensureValidJson({
-          answers,
-          dismissed: false,
-          timedOut: false,
-          ...(result.questionId ? { questionId: result.questionId } : {}),
-        }),
-      };
-    },
-  );
+        return {
+          content: [],
+          structuredContent: ensureValidJson({
+            answers,
+            dismissed: false,
+            timedOut: false,
+            ...(result.questionId ? { questionId: result.questionId } : {}),
+          }),
+        };
+      },
+    );
+  }
 
   const requireGoalService = (): GoalService => {
     if (!goalService) {

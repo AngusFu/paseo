@@ -12,6 +12,7 @@ import type {
   AgentSessionConfig,
 } from "../agent-sdk-types.js";
 import { PROSE_STOP_PREVENTION_PROMPT } from "./prevention-prompt.js";
+import { PARENT_AGENT_ID_LABEL, WORKFLOW_RUN_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 
 const logger = createTestLogger();
 
@@ -128,5 +129,35 @@ describe("prose-stop prevention prompt injection", () => {
     expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe(
       PROSE_STOP_PREVENTION_PROMPT.trim(),
     );
+  });
+
+  test("skips prevention prompt for orchestrated agents", async () => {
+    const workdir = mkdtempSync(join(tmpdir(), "prevention-prompt-"));
+    dirs.push(workdir);
+    const client = new CaptureClient();
+    let nextId = 0;
+    const manager = new AgentManager({
+      clients: { codex: client },
+      registry: new AgentStorage(join(workdir, "agents"), logger),
+      logger,
+      appendSystemPrompt: "User daemon append.",
+      getProseStopPreventionPromptEnabled: () => true,
+      idFactory: () => `00000000-0000-4000-8000-${String(++nextId).padStart(12, "0")}`,
+    });
+
+    await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+      labels: { [WORKFLOW_RUN_ID_LABEL]: "run-1" },
+    });
+
+    expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe("User daemon append.");
+
+    client.createdConfigs.length = 0;
+    await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+      labels: { [PARENT_AGENT_ID_LABEL]: "parent-1" },
+    });
+
+    expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe("User daemon append.");
   });
 });

@@ -159,6 +159,22 @@ A parent that spawns many subagents will see the track grow. Managed Paseo subag
 
 Closing a subagent's tab on one client doesn't affect other clients' layouts. This is the expected behavior of decoupled tabs and is consistent with how layouts have always worked. Archive remains the global gesture for cross-client cleanup.
 
+## Orchestrated background agents
+
+Some managed agents run **unattended** under an orchestrator — they should not block on chat prose or user questions. The daemon detects them with `isOrchestratedBackgroundAgent()` in `@getpaseo/protocol/agent-labels`:
+
+- **Paseo subagents** — `labels["paseo.parent-agent-id"]` (`isDelegatedAgent`)
+- **Workflow agents** — `labels["paseo.workflow-run-id"]` or `labels["paseo.workflow-agent"]` (`isWorkflowAgent`)
+
+For these agents the daemon:
+
+- Skips prose-stop nudge and the prose-stop **prevention** `daemonAppendSystemPrompt` block
+- Does not register MCP `ask_question` on their tool catalog (and `askAgentQuestion` rejects if called)
+- Skips `broadcastAgentAttention` (same as delegated agents before workflow)
+- Stamps ACP `auto_accept: true` at create when omitted (`applyOrchestratedAcpAutoAccept`), independent of the desktop Auto Approve toggle
+
+Workflow dispatch and the agents-workflow engine also default `auto_accept: true` in `featureValues` so flow scripts do not need to repeat it. Foreground root agents keep prose-stop and ask_question unchanged.
+
 ## Storage
 
 ```

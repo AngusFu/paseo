@@ -179,7 +179,10 @@ function readArgFeatureValues(args: Record<string, unknown>): Record<string, unk
   if (fast != null) {
     featureValues.fast_mode = fast;
   }
-  return Object.keys(featureValues).length > 0 ? featureValues : undefined;
+  if (featureValues.auto_accept === undefined) {
+    featureValues.auto_accept = true;
+  }
+  return featureValues;
 }
 
 /** The prompt text a dispatch carries, under whichever key the caller used. */

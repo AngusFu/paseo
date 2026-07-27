@@ -140,6 +140,24 @@ class RetriableTurnCompletedSession extends RetriableTurnTestSession {
   }
 }
 
+/** Successful answer that mentions RetriableError in documentation — must not re-arm retry. */
+class RetriableTurnCompletedExplainerSession extends RetriableTurnTestSession {
+  emitTurn(turnId: string): void {
+    const text = [
+      "## 问题原因",
+      "Provider 会流式输出 `Error: RetriableError: [unavailable] PING timed out`",
+      "然后发 turn_completed。",
+    ].join("\n");
+    this.pushEvent({
+      type: "timeline",
+      provider: this.provider,
+      turnId,
+      item: { type: "assistant_message", text },
+    });
+    this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+  }
+}
+
 /** First turn records the user message then fails; later turns complete cleanly. */
 class RetriableTurnFailedWithUserMessageSession extends RetriableTurnTestSession {
   emitTurn(turnId: string, promptText: string): void {
@@ -292,6 +310,37 @@ test("arms retriable retry when provider finishes with turn_completed after stre
         item.text.includes("Retriable provider error — retrying"),
     );
     expect(retryNotice).toBeDefined();
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("does not arm retriable retry when turn_completed text only quotes RetriableError", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "retriable-turn-explainer-"));
+  try {
+    const manager = new AgentManager({
+      clients: { codex: new RetriableTurnTestClient(RetriableTurnCompletedExplainerSession) },
+      registry: new AgentStorage(join(workdir, "agents"), logger),
+      logger,
+      idFactory: () => "00000000-0000-4000-8000-000000000305",
+    });
+    manager.setPaseoToolsEnabled(false);
+
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+
+    await drainForegroundTurn(manager, agent.id);
+
+    const timeline = manager.getTimeline(agent.id);
+    expect(
+      timeline.some(
+        (item) =>
+          item.type === "assistant_message" &&
+          item.text.includes("Retriable provider error — retrying"),
+      ),
+    ).toBe(false);
+    expect(manager.getAgent(agent.id)?.lifecycle).toBe("idle");
   } finally {
     rmSync(workdir, { recursive: true, force: true });
   }

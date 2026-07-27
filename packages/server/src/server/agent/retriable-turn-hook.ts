@@ -14,6 +14,25 @@ export function isRetriableProviderError(message: string): boolean {
   return RETRIABLE_ERROR_PATTERN.test(message);
 }
 
+/** First line looks like provider error output (not a normal answer quoting errors). */
+const RETRIABLE_ASSISTANT_ERROR_LEAD = /^(?:Error:\s*)?(?:RetriableError|ConnectError):/i;
+
+/**
+ * turn_completed path: last assistant text must be error-shaped, not a successful
+ * reply that happens to mention RetriableError in documentation.
+ */
+export function isRetriableErrorAssistantMessage(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return false;
+  }
+  const firstLine = trimmed.split(/\n/)[0]?.trim() ?? trimmed;
+  if (!RETRIABLE_ASSISTANT_ERROR_LEAD.test(firstLine)) {
+    return false;
+  }
+  return isRetriableProviderError(trimmed);
+}
+
 /** Attempt is 1-based (first retry after the original failure = 1). */
 export function retriableTurnBackoffMs(attempt: number): number {
   const safeAttempt = Math.max(1, Math.floor(attempt));

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatRetriableContinuePrompt,
   formatRetriableTurnRetryNotice,
+  isRetriableErrorAssistantMessage,
   isRetriableProviderError,
   isSameRetriableErrorVisible,
   RETRIABLE_TURN_MAX_ATTEMPTS,
@@ -34,6 +35,32 @@ describe("retriable-turn-hook", () => {
   it("rejects ordinary model failures", () => {
     expect(isRetriableProviderError("invalid model id")).toBe(false);
     expect(isRetriableProviderError("permission denied")).toBe(false);
+  });
+
+  it("does not treat explanatory assistant text as a retriable turn_completed failure", () => {
+    const doc = [
+      "## 问题原因",
+      "Provider 会流式输出 `Error: RetriableError: [unavailable] PING timed out`",
+      "然后发 turn_completed。",
+    ].join("\n");
+    expect(isRetriableProviderError(doc)).toBe(true);
+    expect(isRetriableErrorAssistantMessage(doc)).toBe(false);
+  });
+
+  it("does not treat a commit question as a retriable turn_completed failure", () => {
+    expect(isRetriableErrorAssistantMessage("要我把这两处一起 commit 吗？")).toBe(false);
+  });
+
+  it("accepts streamed provider error assistant messages on turn_completed", () => {
+    expect(
+      isRetriableErrorAssistantMessage("Error: RetriableError: [unavailable] PING timed out"),
+    ).toBe(true);
+    expect(
+      isRetriableErrorAssistantMessage("RetriableError: [resource_exhausted] Rate limit exceeded"),
+    ).toBe(true);
+    expect(isRetriableErrorAssistantMessage("ConnectError: [unavailable] PING timed out")).toBe(
+      true,
+    );
   });
 
   it("uses exponential backoff capped at 60s", () => {

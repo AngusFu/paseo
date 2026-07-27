@@ -76,7 +76,7 @@ import {
 } from "./provider-subagents/store.js";
 import {
   formatRetriableContinuePrompt,
-  isRetriableProviderError,
+  isRetriableErrorAssistantMessage,
   retriableTurnBackoffMs,
   shouldRetryRetriableTurn,
   formatRetriableTurnRetryNotice,
@@ -4604,7 +4604,11 @@ export class AgentManager {
   }): Promise<void> {
     const { agent, event, eventTurnId, options, flags } = params;
     const lastText = await this.getLastAssistantMessageFromStores(agent.id);
-    if (lastText && isRetriableProviderError(lastText)) {
+    if (
+      lastText &&
+      isRetriableErrorAssistantMessage(lastText) &&
+      !this.hasPendingQuestionPermission(agent)
+    ) {
       const armed = await this.tryArmRetriableTurnRetry({
         agent,
         error: lastText,
@@ -4747,7 +4751,7 @@ export class AgentManager {
     this.resolvePendingPermissionsForAgent(
       params.agent,
       params.provider,
-      params.options,
+      { ...params.options, retainQuestions: true },
       "Turn failed",
     );
     // Clear lastError so finalizeForegroundTurn keeps the agent busy for waiters
@@ -4792,6 +4796,16 @@ export class AgentManager {
     for (const waiter of this.runs.getMatchingWaiters(agent, turnId)) {
       this.runs.settleWaiter(waiter);
     }
+  }
+
+  /** Foreground turn is waiting on AskUserQuestion / ask_question — not a transport failure. */
+  private hasPendingQuestionPermission(agent: ActiveManagedAgent): boolean {
+    for (const request of agent.pendingPermissions.values()) {
+      if (request.kind === "question") {
+        return true;
+      }
+    }
+    return false;
   }
 
   private clearRetriableTurnRetry(agentId: string): void {
@@ -5087,10 +5101,13 @@ export class AgentManager {
   private resolvePendingPermissionsForAgent(
     agent: ActiveManagedAgent,
     provider: AgentProvider,
-    options: { fromHistory?: boolean } | undefined,
+    options: { fromHistory?: boolean; retainQuestions?: boolean } | undefined,
     message: string,
   ): void {
-    for (const [requestId] of agent.pendingPermissions) {
+    for (const [requestId, request] of agent.pendingPermissions) {
+      if (options?.retainQuestions && request.kind === "question") {
+        continue;
+      }
       // MCP `ask_question` waiters own their own resolution/dispatch.
       if (this.settleMcpQuestion(agent.id, requestId, null)) {
         continue;

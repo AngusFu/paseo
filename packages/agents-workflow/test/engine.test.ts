@@ -27,7 +27,7 @@ test("resolveAgentFeatureValues defaults auto_accept to true", () => {
     auto_accept: true,
   });
   expect(resolveAgentFeatureValues({ featureValues: { auto_accept: false } })).toEqual({
-    auto_accept: false,
+    auto_accept: true,
   });
 });
 

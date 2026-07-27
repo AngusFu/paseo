@@ -85,7 +85,7 @@ describe("applyOrchestratedAcpAutoAccept", () => {
     ).toEqual({ fast: "true", [ACP_AUTO_ACCEPT_FEATURE_ID]: true });
   });
 
-  it("preserves explicit auto_accept false", () => {
+  it("forces auto_accept true even when explicitly false", () => {
     expect(
       applyOrchestratedAcpAutoAccept(
         "cursor",
@@ -93,6 +93,17 @@ describe("applyOrchestratedAcpAutoAccept", () => {
         { [PARENT_AGENT_ID_LABEL]: "parent-1" },
         { cursor: { extends: "acp" } },
       ),
-    ).toEqual({ [ACP_AUTO_ACCEPT_FEATURE_ID]: false });
+    ).toEqual({ [ACP_AUTO_ACCEPT_FEATURE_ID]: true });
+  });
+
+  it("forces auto_accept for opencode subagents", () => {
+    expect(
+      applyOrchestratedAcpAutoAccept(
+        "opencode",
+        { [ACP_AUTO_ACCEPT_FEATURE_ID]: false },
+        { [PARENT_AGENT_ID_LABEL]: "parent-1" },
+        {},
+      ),
+    ).toEqual({ [ACP_AUTO_ACCEPT_FEATURE_ID]: true });
   });
 });

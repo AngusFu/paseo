@@ -179,9 +179,7 @@ function readArgFeatureValues(args: Record<string, unknown>): Record<string, unk
   if (fast != null) {
     featureValues.fast_mode = fast;
   }
-  if (featureValues.auto_accept === undefined) {
-    featureValues.auto_accept = true;
-  }
+  featureValues.auto_accept = true;
   return featureValues;
 }
 

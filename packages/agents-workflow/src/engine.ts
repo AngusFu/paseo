@@ -85,9 +85,7 @@ export function resolveAgentFeatureValues(
   if (opts.fast != null) {
     merged.fast_mode = opts.fast;
   }
-  if (merged.auto_accept === undefined) {
-    merged.auto_accept = true;
-  }
+  merged.auto_accept = true;
   return merged;
 }
 

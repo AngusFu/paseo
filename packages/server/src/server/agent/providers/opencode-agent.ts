@@ -57,6 +57,7 @@ import {
   isDefaultAgentCreateConfigUnattended,
   resolveDefaultAgentCreateConfig,
 } from "../create-agent-mode.js";
+import { parseACPAutoAcceptFeatureValue } from "./acp-agent.js";
 import {
   checkProviderLaunchAvailable,
   createProviderEnvSpec,
@@ -146,7 +147,9 @@ const DEFAULT_MODES: AgentMode[] = [
 ];
 
 function isOpenCodeAutoAcceptEnabled(config: AgentSessionConfig): boolean {
-  return config.featureValues?.[OPENCODE_AUTO_ACCEPT_FEATURE_ID] === true;
+  return (
+    parseACPAutoAcceptFeatureValue(config.featureValues?.[OPENCODE_AUTO_ACCEPT_FEATURE_ID]) === true
+  );
 }
 
 function withOpenCodeAutoAcceptFeature(
@@ -3885,7 +3888,7 @@ class OpenCodeAgentSession implements AgentSession {
       throw new Error(`Unsupported OpenCode feature '${featureId}'`);
     }
 
-    const enabled = value === true;
+    const enabled = parseACPAutoAcceptFeatureValue(value) === true;
     this.autoAcceptEnabled = enabled;
     this.config.featureValues = {
       ...this.config.featureValues,

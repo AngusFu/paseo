@@ -132,11 +132,11 @@ Dispatch args conventionally include:
   toggle/select (Claude `fast_mode`, Codex `fast_mode` + `plan_mode`, Cursor
   ACP `fast`, Copilot `agent`, OpenCode auto-accept, …). Keys are
   provider-specific — e.g. Cursor uses `{ fast: "true" }`, not `fast_mode`.
-  Workflow runs default `auto_accept: true` when omitted (engine +
-  dispatch args + daemon create for workflow-labelled agents). The daemon
-  create stamp applies to **ACP-managed providers** (`copilot`, custom
-  `extends: "acp"` profiles). OpenCode uses its own `unattended` /
-  `auto_accept` path; Codex/Claude non-ACP providers ignore the ACP toggle.
+  Workflow runs **force** `auto_accept: true` on every engine `agent()` call and
+  in dispatch arg merges (flow scripts cannot turn it off). Daemon create for
+  workflow-labelled agents applies the same rule via `applyOrchestratedAcpAutoAccept`.
+  ACP-managed providers honor the toggle at permission time; OpenCode uses the
+  same `auto_accept` feature id on its permission path.
 - `workspaceTitle` — optional sidebar title for the one Paseo workspace minted
   for the run (dispatch field or args; always prefixed with `⚙️ `). When it is
   absent the body is derived from the prompt, not from the definition name —

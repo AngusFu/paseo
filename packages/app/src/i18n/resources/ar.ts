@@ -2040,6 +2040,7 @@ export const ar: TranslationResources = {
         sendMessage: "أرسل رسالة",
         queueMessage: "رسالة قائمة الانتظار",
         muteUnmuteVoiceMode: "كتم وضع الصوت /unmute",
+        switchProject: "تبديل المشروع",
       },
       helpNotes: {
         showKeyboardShortcuts: "متاح عندما لا يكون التركيز في حقل نص أو محطة طرفية.",

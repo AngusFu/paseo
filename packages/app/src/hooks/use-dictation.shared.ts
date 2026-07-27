@@ -2,17 +2,31 @@ import { i18n } from "@/i18n/i18next";
 
 export type DictationStatus = "idle" | "recording" | "uploading" | "failed";
 
+export interface DictationTranscriptMeta {
+  requestId: string;
+  /** True when silence VAD confirmed the turn — composer should insert and send. */
+  autoSend?: boolean;
+}
+
 export interface UseDictationOptions {
   client: import("@getpaseo/client/internal/daemon-client").DaemonClient | null;
-  onTranscript: (text: string, meta: { requestId: string }) => void;
+  onTranscript: (text: string, meta: DictationTranscriptMeta) => void;
   onPartialTranscript?: (text: string, meta: { requestId: string }) => void;
   onError?: (error: Error) => void;
   onPermanentFailure?: (error: Error, context: { requestId: string }) => void;
   canStart?: () => boolean;
   canConfirm?: () => boolean;
   enableDuration?: boolean;
-  /** Auto-insert transcript after sustained silence (client-side VAD). */
+  /**
+   * Auto-confirm after sustained silence (client-side VAD).
+   * Silence confirms report `autoSend: true` on the transcript meta.
+   */
   autoConfirmOnSilence?: boolean;
+}
+
+export interface ConfirmDictationOptions {
+  /** When true, the resulting transcript meta includes `autoSend: true`. */
+  autoSend?: boolean;
 }
 
 export interface UseDictationResult {
@@ -26,7 +40,7 @@ export interface UseDictationResult {
   status: DictationStatus;
   startDictation: () => Promise<void>;
   cancelDictation: () => Promise<void>;
-  confirmDictation: () => Promise<void>;
+  confirmDictation: (options?: ConfirmDictationOptions) => Promise<void>;
   retryFailedDictation: () => Promise<void>;
   discardFailedDictation: () => void;
   reset: () => void;

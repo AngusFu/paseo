@@ -188,6 +188,9 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
     });
   }, [client]);
 
+  // Set when silence VAD arms confirm; consumed when the transcript is delivered.
+  const silenceAutoSendRef = useRef(false);
+
   const handleStreamingTranscriptionSuccess = useCallback(
     (text: string, requestId: string) => {
       setIsProcessing(false);
@@ -198,11 +201,13 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       const transcriptText =
         text.trim().length > 0 ? text.trim() : latestPartialTranscriptRef.current.trim();
       clearStreamingState();
+      const autoSend = silenceAutoSendRef.current;
+      silenceAutoSendRef.current = false;
 
       if (!transcriptText) {
         return;
       }
-      onTranscriptRef.current?.(transcriptText, { requestId });
+      onTranscriptRef.current?.(transcriptText, { requestId, autoSend });
     },
     [clearStreamingState],
   );
@@ -212,6 +217,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       const normalized = toError(failure);
       const failureId = generateMessageId();
       stopDurationTracking();
+      silenceAutoSendRef.current = false;
       setIsProcessing(false);
       isProcessingRef.current = false;
       isRecordingRef.current = false;
@@ -339,63 +345,68 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       setIsProcessing(false);
       isProcessingRef.current = false;
       setStatus("idle");
+      silenceAutoSendRef.current = false;
       clearStreamingState();
       actionGateRef.current.cancelling = false;
     }
   }, [audio, clearStreamingState, reportError, stopDurationTracking]);
 
-  const confirmDictation = useCallback(async () => {
-    if (actionGateRef.current.confirming) {
-      return;
-    }
-    if (!isRecordingRef.current || isProcessingRef.current) {
-      return;
-    }
-    const confirmAllowed = canConfirm ? canConfirm() : true;
-    if (!confirmAllowed) {
-      return;
-    }
-
-    actionGateRef.current.confirming = true;
-    setError(null);
-    stopDurationTracking();
-    setIsProcessing(true);
-    isProcessingRef.current = true;
-
-    const attemptId = attemptGuardRef.current.next();
-
-    try {
-      await audioStopRef.current();
-      attemptGuardRef.current.assertCurrent(attemptId);
-
-      setStatus("uploading");
-      isRecordingRef.current = false;
-      setIsRecording(false);
-
-      const finalSeq = senderRef.current?.getFinalSeq() ?? -1;
-      if (finalSeq < 0) {
-        handleStreamingTranscriptionSuccess("", generateMessageId());
+  const confirmDictation = useCallback(
+    async (confirmOptions?: { autoSend?: boolean }) => {
+      if (actionGateRef.current.confirming) {
+        return;
+      }
+      if (!isRecordingRef.current || isProcessingRef.current) {
+        return;
+      }
+      const confirmAllowed = canConfirm ? canConfirm() : true;
+      if (!confirmAllowed) {
         return;
       }
 
-      const transcriptText = await ensureFinalTranscript(finalSeq);
-      attemptGuardRef.current.assertCurrent(attemptId);
-      handleStreamingTranscriptionSuccess(transcriptText, generateMessageId());
-    } catch (err) {
-      if (err instanceof Error && err.name === "AttemptCancelledError") {
-        return;
+      actionGateRef.current.confirming = true;
+      silenceAutoSendRef.current = Boolean(confirmOptions?.autoSend);
+      setError(null);
+      stopDurationTracking();
+      setIsProcessing(true);
+      isProcessingRef.current = true;
+
+      const attemptId = attemptGuardRef.current.next();
+
+      try {
+        await audioStopRef.current();
+        attemptGuardRef.current.assertCurrent(attemptId);
+
+        setStatus("uploading");
+        isRecordingRef.current = false;
+        setIsRecording(false);
+
+        const finalSeq = senderRef.current?.getFinalSeq() ?? -1;
+        if (finalSeq < 0) {
+          handleStreamingTranscriptionSuccess("", generateMessageId());
+          return;
+        }
+
+        const transcriptText = await ensureFinalTranscript(finalSeq);
+        attemptGuardRef.current.assertCurrent(attemptId);
+        handleStreamingTranscriptionSuccess(transcriptText, generateMessageId());
+      } catch (err) {
+        if (err instanceof Error && err.name === "AttemptCancelledError") {
+          return;
+        }
+        handleDictationFailure(err);
+      } finally {
+        actionGateRef.current.confirming = false;
       }
-      handleDictationFailure(err);
-    } finally {
-      actionGateRef.current.confirming = false;
-    }
-  }, [
-    canConfirm,
-    handleDictationFailure,
-    handleStreamingTranscriptionSuccess,
-    stopDurationTracking,
-    ensureFinalTranscript,
-  ]);
+    },
+    [
+      canConfirm,
+      handleDictationFailure,
+      handleStreamingTranscriptionSuccess,
+      stopDurationTracking,
+      ensureFinalTranscript,
+    ],
+  );
 
   const confirmDictationRef = useRef(confirmDictation);
   useEffect(() => {
@@ -439,6 +450,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
     setDuration(0);
     setStatus("idle");
     setError(null);
+    silenceAutoSendRef.current = false;
     clearStreamingState();
   }, [clearStreamingState]);
 
@@ -459,7 +471,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       vadState = result.next;
       if (result.shouldConfirm) {
         autoConfirmTriggered = true;
-        void confirmDictationRef.current();
+        void confirmDictationRef.current({ autoSend: true });
       }
     }, DICTATION_VAD_CONFIG.pollIntervalMs);
 
@@ -477,6 +489,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
     setDuration(0);
     setError(null);
     setStatus("idle");
+    silenceAutoSendRef.current = false;
     clearStreamingState();
   }, [clearStreamingState, stopDurationTracking]);
 

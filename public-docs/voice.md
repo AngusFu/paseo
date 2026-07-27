@@ -25,7 +25,7 @@ This keeps credentials and execution in your environment and avoids introducing 
 
 ## Local Speech
 
-Local speech defaults to STT language `zh` and model ID `sense-voice-zh-en-ja-ko-yue-int8` (Chinese-capable SenseVoice). When the STT language is English (or another non-Chinese tag), the default STT model falls back to `parakeet-tdt-0.6b-v2-int8`. Local TTS defaults to `kokoro-en-v0_19` (English only). Voice mode UI is currently hidden in the app; dictation remains available with client-side silence detection (auto-confirm after ~8s of silence).
+Local speech defaults to STT language `zh` and model ID `sense-voice-zh-en-ja-ko-yue-int8` (Chinese-capable SenseVoice). When the STT language is English (or another non-Chinese tag), the default STT model falls back to `parakeet-tdt-0.6b-v2-int8`. Local TTS defaults to `kokoro-en-v0_19` (English only). Voice mode UI is currently hidden in the app; dictation remains available with client-side silence detection (auto-confirm and send after ~1.8s of silence).
 
 Missing models are downloaded at daemon startup into `$PASEO_HOME/models/local-speech`. Downloads happen only for missing files.
 

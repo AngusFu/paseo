@@ -69,6 +69,7 @@ import {
   resolveVoiceAccessibilityLabel,
   resolveVoiceTooltipText,
 } from "./labels";
+import { applyDictationTranscript } from "./apply-dictation-transcript";
 import {
   computeCanStartDictation,
   resolveComposerSurfacePresentation,
@@ -782,42 +783,6 @@ function SendButtonTooltip({
   );
 }
 
-interface DictationTranscriptContext {
-  value: string;
-  defaultSendBehavior: "interrupt" | "queue";
-  isAgentRunning: boolean;
-  onQueue: ((payload: MessagePayload) => void) | undefined;
-  onSubmit: (payload: MessagePayload) => void;
-  onChangeText: (text: string) => void;
-  attachments: ComposerAttachment[];
-  cwd: string;
-  autoSend: boolean;
-}
-
-function applyDictationTranscript(text: string, ctx: DictationTranscriptContext): void {
-  if (!text) return;
-  const shouldPad = ctx.value.length > 0 && !/\s$/.test(ctx.value);
-  const nextValue = `${ctx.value}${shouldPad ? " " : ""}${text}`;
-
-  if (!ctx.autoSend) {
-    ctx.onChangeText(nextValue);
-    return;
-  }
-
-  if (ctx.defaultSendBehavior === "queue" && ctx.isAgentRunning && ctx.onQueue) {
-    ctx.onQueue({ text: nextValue, attachments: ctx.attachments, cwd: ctx.cwd });
-    ctx.onChangeText("");
-    return;
-  }
-
-  ctx.onSubmit({
-    text: nextValue,
-    attachments: ctx.attachments,
-    cwd: ctx.cwd,
-    forceSend: ctx.isAgentRunning || undefined,
-  });
-}
-
 interface ToggleRealtimeVoiceContext {
   voice:
     | {
@@ -1267,8 +1232,8 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
     useAutoFocusOnWebEffect(textInputRef, autoFocus, autoFocusKey);
 
     const handleDictationTranscript = useCallback(
-      (text: string, _meta: { requestId: string }) => {
-        const autoSend = sendAfterTranscriptRef.current;
+      (text: string, meta: { requestId: string; autoSend?: boolean }) => {
+        const autoSend = sendAfterTranscriptRef.current || Boolean(meta.autoSend);
         sendAfterTranscriptRef.current = false;
         applyDictationTranscript(text, {
           value: valueRef.current,
@@ -1338,6 +1303,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       canStart: canStartDictation,
       canConfirm: canConfirmDictation,
       enableDuration: true,
+      // Silence confirm inserts and sends (same as ↑ / keyboard confirm).
       autoConfirmOnSilence: true,
     });
 

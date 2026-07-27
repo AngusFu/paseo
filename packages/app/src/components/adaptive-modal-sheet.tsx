@@ -1,12 +1,4 @@
-import {
-  forwardRef,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, Ref } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -14,7 +6,12 @@ import { Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "r
 import type { StyleProp, TextInputProps, ViewStyle } from "react-native";
 import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { getOverlayRoot, OVERLAY_Z, raiseOverlayRoot } from "../lib/overlay-root";
+import {
+  getOverlayRoot,
+  OverlayLayerProvider,
+  useGlobalWebOverlayLayer,
+  useWebOverlayRegistration,
+} from "../lib/overlay-root";
 import {
   BottomSheetBackdrop,
   BottomSheetScrollView,
@@ -32,7 +29,6 @@ import { getCompactSheetSafeAreaPadding } from "@/components/adaptive-modal-shee
 import { createControlGeometry } from "@/components/ui/control-geometry";
 import { ControlSizeContext } from "@/components/ui/control-size-context";
 import { isNative, isWeb } from "@/constants/platform";
-import { pushEscHandler } from "@/lib/esc-stack";
 import { useWebScrollViewScrollbar } from "@/components/use-web-scrollbar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -74,7 +70,6 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     alignItems: "center",
     padding: theme.spacing[6],
-    zIndex: OVERLAY_Z.modal,
     pointerEvents: "auto" as const,
   },
   desktopCard: {
@@ -583,6 +578,7 @@ export function AdaptiveModalSheet({
   });
   const [shouldRenderWeb, setShouldRenderWeb] = useState(visible);
   const [isWebClosing, setIsWebClosing] = useState(false);
+  const modalLayer = useGlobalWebOverlayLayer("modal", isWeb && !isMobile && shouldRenderWeb);
   const nativeModalDismissNotifiedRef = useRef(!visible);
   const handleDismiss = useCallback(() => {
     handleSheetDismiss();
@@ -619,29 +615,31 @@ export function AdaptiveModalSheet({
     () => [
       styles.desktopOverlay,
       isWeb && {
+        zIndex: modalLayer,
         opacity: isWebClosing ? 0 : 1,
         transitionDuration: `${WEB_EXIT_DURATION_MS}ms`,
         transitionProperty: "opacity",
         transitionTimingFunction: "ease",
       },
     ],
-    [isWebClosing],
+    [isWebClosing, modalLayer],
   );
 
-  useEffect(() => {
-    if (!isWeb || isMobile || !visible) return;
-    return pushEscHandler(onClose);
-  }, [visible, isMobile, onClose]);
-
-  // When this sheet opens on desktop web, lift the shared overlay root above any
-  // react-native-web <Modal> pickers (combobox / model picker) that were opened
-  // earlier. Those append their own body-level fixed container on open, so an
-  // otherwise statically-positioned overlay root would render the sheet beneath
-  // an already-open picker. See raiseOverlayRoot.
-  useLayoutEffect(() => {
-    if (!isWeb || isMobile || !visible || typeof document === "undefined") return;
-    raiseOverlayRoot();
-  }, [visible, isMobile]);
+  const handleWebOverlayKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return false;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return true;
+    },
+    [onClose],
+  );
+  const setWebOverlayScope = useWebOverlayRegistration({
+    active: isWeb && !isMobile && visible,
+    layer: modalLayer,
+    onKeyDown: handleWebOverlayKeyDown,
+  });
 
   useEffect(() => {
     if (visible) {
@@ -719,7 +717,7 @@ export function AdaptiveModalSheet({
   }
 
   const cardInner = (
-    <>
+    <OverlayLayerProvider layer={modalLayer}>
       <SheetHeaderView header={header} onClose={onClose} />
       {scrollable ? (
         <View style={styles.desktopScrollContainer}>
@@ -746,7 +744,7 @@ export function AdaptiveModalSheet({
           <View style={footerStyle}>{footer}</View>
         </ControlSizeContext.Provider>
       ) : null}
-    </>
+    </OverlayLayerProvider>
   );
 
   const desktopContent = (
@@ -756,7 +754,15 @@ export function AdaptiveModalSheet({
         style={ABSOLUTE_FILL_STYLE}
         onPress={onClose}
       />
-      <View style={desktopCardStyle}>{cardInner}</View>
+      <View
+        ref={setWebOverlayScope}
+        style={desktopCardStyle}
+        role="dialog"
+        aria-modal
+        tabIndex={-1}
+      >
+        {cardInner}
+      </View>
     </View>
   );
 

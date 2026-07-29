@@ -1,8 +1,13 @@
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
   buildServeWebArguments,
   createVSCodeNodeSafeEnvironment,
+  ensureCodeServerDataDir,
+  resolveCodeServerDataDir,
   resolveVSCodeServeWebLaunch,
 } from "./vscode-serve-web-launch.js";
 
@@ -77,6 +82,7 @@ describe("resolveVSCodeServeWebLaunch", () => {
   });
 
   it("builds serve-web args with and without the serve-web subcommand", () => {
+    const serverDataDir = "/tmp/paseo-code-server-data";
     expect(
       buildServeWebArguments({
         launch: {
@@ -86,9 +92,12 @@ describe("resolveVSCodeServeWebLaunch", () => {
         },
         host: "127.0.0.1",
         port: 19490,
+        serverDataDir,
       }),
     ).toEqual([
       "serve-web",
+      "--server-data-dir",
+      serverDataDir,
       "--host",
       "127.0.0.1",
       "--port",
@@ -106,8 +115,12 @@ describe("resolveVSCodeServeWebLaunch", () => {
         },
         host: "127.0.0.1",
         port: 19490,
+        serverDataDir,
       }),
     ).toEqual([
+      "--server-data-dir",
+      serverDataDir,
+      "--disable-workspace-trust",
       "--host",
       "127.0.0.1",
       "--port",
@@ -115,5 +128,22 @@ describe("resolveVSCodeServeWebLaunch", () => {
       "--without-connection-token",
       "--accept-server-license-terms",
     ]);
+  });
+
+  it("seeds workspace trust defaults into the Paseo code-server data dir", () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), "paseo-code-server-"));
+    ensureCodeServerDataDir(dataDir);
+    const settings = JSON.parse(readFileSync(path.join(dataDir, "User/settings.json"), "utf8")) as {
+      "security.workspace.trust.enabled"?: boolean;
+      "security.workspace.trust.startupPrompt"?: string;
+    };
+    expect(settings["security.workspace.trust.enabled"]).toBe(false);
+    expect(settings["security.workspace.trust.startupPrompt"]).toBe("never");
+  });
+
+  it("resolves the code-server data dir under PASEO_HOME", () => {
+    expect(resolveCodeServerDataDir({ PASEO_HOME: "/tmp/paseo" })).toBe(
+      "/tmp/paseo/code-server-data",
+    );
   });
 });

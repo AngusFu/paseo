@@ -11,6 +11,11 @@ export const PASEO_CODE_SERVER_PARTITION = "persist:paseo-code-server";
 
 const CODE_SERVER_WINDOW_WIDTH = 1280;
 const CODE_SERVER_WINDOW_HEIGHT = 840;
+const CODE_SERVER_FONT_SMOOTHING_CSS = `
+html, body {
+  -webkit-font-smoothing: antialiased;
+}
+`;
 
 const windowsByUrl = new Map<string, BrowserWindow>();
 
@@ -45,6 +50,15 @@ function getCodeServerPopupWindowOptions(): BrowserWindowConstructorOptions {
   };
 }
 
+function installCodeServerFontSmoothing(contents: WebContents): void {
+  const inject = (): void => {
+    void contents.insertCSS(CODE_SERVER_FONT_SMOOTHING_CSS).catch(() => {
+      // Navigation races are harmless; the next load will re-inject.
+    });
+  };
+  contents.on("did-finish-load", inject);
+}
+
 function installCodeServerWindowOpenHandler(contents: WebContents): void {
   contents.setWindowOpenHandler(({ url, disposition, frameName, features, postBody }) => {
     const decision = decideBrowserWindowOpenRequest({
@@ -72,6 +86,7 @@ function installCodeServerWindowOpenHandler(contents: WebContents): void {
   contents.on("did-create-window", (popupWindow) => {
     const popupContents = popupWindow.webContents;
     registerBrowserWebviewNavigationGuards(popupContents);
+    installCodeServerFontSmoothing(popupContents);
     installCodeServerWindowOpenHandler(popupContents);
   });
 }
@@ -130,6 +145,7 @@ export function openCodeServerWindow(input: { url: string; cwd: string }): void 
 
   const { webContents } = window;
   registerBrowserWebviewNavigationGuards(webContents);
+  installCodeServerFontSmoothing(webContents);
   installCodeServerWindowOpenHandler(webContents);
 
   window.once("ready-to-show", () => {

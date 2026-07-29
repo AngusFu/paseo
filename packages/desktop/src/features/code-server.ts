@@ -9,7 +9,12 @@ import {
   openCodeServerWindow,
   parseCodeServerOpenWindowInput,
 } from "./code-server-window.js";
-import { buildServeWebArguments, resolveVSCodeServeWebLaunch } from "./vscode-serve-web-launch.js";
+import {
+  buildServeWebArguments,
+  ensureCodeServerDataDir,
+  resolveCodeServerDataDir,
+  resolveVSCodeServeWebLaunch,
+} from "./vscode-serve-web-launch.js";
 
 // A single, machine-global `code serve-web` instance listens on the upstream port.
 // The desktop app exposes a local proxy on the public port that forces
@@ -183,12 +188,16 @@ export async function startCodeServer(
     childEnv.ELECTRON_RUN_AS_NODE = "1";
   }
 
+  const serverDataDir = resolveCodeServerDataDir(env);
+  ensureCodeServerDataDir(serverDataDir);
+
   const child = spawn(
     launch.executable,
     buildServeWebArguments({
       launch,
       host: CODE_SERVER_HOST,
       port: CODE_SERVER_UPSTREAM_PORT,
+      serverDataDir,
     }),
     {
       // Detach so a crash in the Electron main process does not SIGHUP serve-web

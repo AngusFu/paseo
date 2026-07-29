@@ -1,6 +1,21 @@
-import { accessSync, constants, readFileSync, readdirSync, statSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
+import { resolvePaseoHome } from "@getpaseo/server";
 import { resolveExecutable } from "./editor-targets/runtime.js";
+
+const CODE_SERVER_DATA_DIRNAME = "code-server-data";
+const CODE_SERVER_TRUST_SETTINGS = {
+  "security.workspace.trust.enabled": false,
+  "security.workspace.trust.startupPrompt": "never",
+} as const;
 
 export interface VSCodeServeWebLaunchConfig {
   executable: string;
@@ -416,14 +431,49 @@ export function resolveVSCodeServeWebLaunch(
   );
 }
 
+export function resolveCodeServerDataDir(env: NodeJS.ProcessEnv = process.env): string {
+  return path.join(resolvePaseoHome(env), CODE_SERVER_DATA_DIRNAME);
+}
+
+/** Seed Paseo-managed serve-web data so workspace trust stays off for code-tunnel fallback. */
+export function ensureCodeServerDataDir(dataDir: string): void {
+  const userDir = path.join(dataDir, "User");
+  mkdirSync(userDir, { recursive: true });
+  const settingsPath = path.join(userDir, "settings.json");
+  let settings: Record<string, unknown> = {};
+  const existing = defaultReadFile(settingsPath);
+  if (existing) {
+    try {
+      const parsed = JSON.parse(existing) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        settings = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Replace corrupt settings with trust defaults.
+    }
+  }
+  for (const [key, value] of Object.entries(CODE_SERVER_TRUST_SETTINGS)) {
+    settings[key] = value;
+  }
+  writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+}
+
 export function buildServeWebArguments(input: {
   launch: VSCodeServeWebLaunchConfig;
   host: string;
   port: number;
+  serverDataDir?: string;
 }): string[] {
   const args: string[] = [];
   if (input.launch.usesServeWebSubcommand) {
     args.push("serve-web");
+  }
+  if (input.serverDataDir) {
+    args.push("--server-data-dir", input.serverDataDir);
+  }
+  // Cached code-server accepts this; code-tunnel serve-web rejects it (use server-data-dir settings).
+  if (!input.launch.usesServeWebSubcommand) {
+    args.push("--disable-workspace-trust");
   }
   args.push(
     "--host",

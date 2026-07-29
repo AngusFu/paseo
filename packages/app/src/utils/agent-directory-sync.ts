@@ -5,7 +5,10 @@ import { resolveProjectPlacement } from "@/utils/project-placement";
 import type { SessionOutboundMessage } from "@getpaseo/protocol/messages";
 import { clearArchiveAgentPending } from "@/hooks/use-archive-agent";
 import { queryClient } from "@/data/query-client";
-import { acceptAgentDirectoryUpdate } from "@/utils/agent-directory-update-policy";
+import {
+  acceptAgentDirectoryUpdate,
+  prepareLiveAgentDirectoryUpdate,
+} from "@/utils/agent-directory-update-policy";
 import { buildDraftStoreKey } from "@/stores/draft-keys";
 import { useDraftStore } from "@/stores/draft-store";
 import { getInitDeferred, getInitKey, rejectInitDeferred } from "@/utils/agent-initialization";
@@ -51,7 +54,8 @@ function upsertAgentDirectoryReplica(
       resolveProjectPlacement({ projectPlacement: delta.project, cwd: normalized.cwd }) ??
       previousAgent?.projectPlacement,
   };
-  const acceptedAgent = upsertAgentReplica(serverId, agent);
+  const preparedAgent = prepareLiveAgentDirectoryUpdate(previousAgent, agent);
+  const acceptedAgent = upsertAgentReplica(serverId, preparedAgent);
   if (acceptedAgent.archivedAt) {
     clearArchiveAgentPending({ queryClient, serverId, agentId: acceptedAgent.id });
   }

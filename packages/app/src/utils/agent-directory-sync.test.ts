@@ -255,4 +255,41 @@ describe("replaceFetchedAgentDirectory", () => {
 
     store.clearSession(serverId);
   });
+
+  it("accepts authoritative idle settlement after persistence resume with older updatedAt", () => {
+    const serverId = "server-resume-idle";
+    const agentId = "resume-idle-agent";
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, null as unknown as DaemonClient);
+
+    const running = createAgentPayload({
+      id: agentId,
+      status: "running",
+      updatedAt: "2026-07-12T11:00:00.000Z",
+    });
+    applyAgentDirectoryDelta({
+      serverId,
+      delta: { kind: "upsert", agent: running, project: createEntry(running).project },
+    });
+
+    const resumed = applyAgentDirectoryDelta({
+      serverId,
+      delta: {
+        kind: "upsert",
+        agent: {
+          ...running,
+          status: "idle",
+          updatedAt: "2026-07-12T10:00:00.000Z",
+        },
+        project: createEntry(running).project,
+      },
+    });
+
+    const agent = useSessionStore.getState().sessions[serverId]?.agents.get(agentId);
+    expect(resumed.stoppedRunning).toBe(true);
+    expect(agent?.status).toBe("idle");
+    expect(agent?.updatedAt.toISOString()).toBe("2026-07-12T11:00:00.000Z");
+
+    store.clearSession(serverId);
+  });
 });

@@ -5,6 +5,7 @@ import { useSessionStore } from "@/stores/session-store";
 import type { AssistantMessageItem, StreamItem, UserMessageItem } from "@/types/stream";
 import {
   applyStreamEvent,
+  clearOptimisticUserMessages,
   flushHeadToTail,
   hydrateStreamState,
   isAgentToolCallItem,
@@ -1213,7 +1214,7 @@ export function processAgentStreamEvent(
   // ------------------------------------------------------------------
   // Apply stream event to tail/head
   // ------------------------------------------------------------------
-  const { tail, head, changedTail, changedHead } = sequencing.shouldApplyStreamEvent
+  let { tail, head, changedTail, changedHead } = sequencing.shouldApplyStreamEvent
     ? applyStreamEvent({
         tail: sequencing.resetLiveTimeline ? [] : currentTail,
         head: sequencing.resetLiveTimeline ? [] : currentHead,
@@ -1228,6 +1229,19 @@ export function processAgentStreamEvent(
         changedTail: false,
         changedHead: false,
       };
+
+  if (event.type === "turn_completed" || event.type === "turn_failed") {
+    const clearedTail = clearOptimisticUserMessages(tail);
+    const clearedHead = clearOptimisticUserMessages(head);
+    if (clearedTail !== tail) {
+      tail = clearedTail;
+      changedTail = true;
+    }
+    if (clearedHead !== head) {
+      head = clearedHead;
+      changedHead = true;
+    }
+  }
 
   // ------------------------------------------------------------------
   // Optimistic lifecycle status

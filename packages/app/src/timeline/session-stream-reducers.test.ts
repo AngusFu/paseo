@@ -2249,6 +2249,30 @@ describe("processAgentStreamEvent", () => {
     expect(result.agent!.lastActivityAt.getTime()).toBe(2000);
   });
 
+  it("clears orphan optimistic user messages when a turn completes", () => {
+    const optimistic = makeOptimisticUserMessage("stuck prompt", "optimistic-stuck");
+    const turnCompletedEvent: AgentStreamEventPayload = {
+      type: "turn_completed",
+      provider: "claude",
+    };
+
+    const result = processAgentStreamEvent({
+      ...baseStreamInput,
+      event: turnCompletedEvent,
+      currentTail: [optimistic],
+      currentHead: [],
+      currentAgent: {
+        status: "running",
+        updatedAt: new Date(1000),
+        lastActivityAt: new Date(1000),
+      },
+      timestamp: new Date(2000),
+    });
+
+    expect(result.tail).toEqual([]);
+    expect(result.changedTail).toBe(true);
+  });
+
   it("derives optimistic error status on turn_failed for running agent", () => {
     const turnFailedEvent: AgentStreamEventPayload = {
       type: "turn_failed",

@@ -173,6 +173,7 @@ import {
   useInlineReviewController,
   type InlineReviewActions,
 } from "@/review";
+import { DiffTooLargeState } from "@/git/diff-too-large-state";
 
 export type { GitActionId, GitAction, GitActions } from "@/git/policy";
 
@@ -2638,6 +2639,7 @@ interface DiffBodyContentProps {
   diffErrorMessage: string | null;
   diffErrorCode: string | null;
   baseReselectSlot: ReactElement | null;
+  diffTooLarge: boolean;
   hasChanges: boolean;
   emptyMessage: string;
   flatItems: DiffFlatItem[];
@@ -2668,6 +2670,7 @@ function DiffBodyContent({
   diffErrorMessage,
   diffErrorCode,
   baseReselectSlot,
+  diffTooLarge,
   hasChanges,
   emptyMessage,
   flatItems,
@@ -2732,6 +2735,9 @@ function DiffBodyContent({
         <ThemedLoadingSpinner size="large" uniProps={foregroundMutedIconColorMapping} />
       </View>
     );
+  }
+  if (diffTooLarge) {
+    return <DiffTooLargeState />;
   }
   if (diffErrorMessage) {
     return (
@@ -4077,6 +4083,7 @@ export function GitDiffPane({
   const {
     files,
     payloadError: diffPayloadError,
+    diffTooLarge,
     isLoading: isDiffLoading,
   } = useDiffPaneCheckoutDiff({
     serverId,
@@ -4790,6 +4797,7 @@ export function GitDiffPane({
       diffErrorMessage={diffErrorMessage}
       diffErrorCode={diffPayloadError?.code ?? null}
       baseReselectSlot={baseReselectSlot}
+      diffTooLarge={diffTooLarge}
       hasChanges={hasChanges}
       emptyMessage={emptyMessage}
       flatItems={flatItems}

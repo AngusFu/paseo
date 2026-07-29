@@ -4579,6 +4579,8 @@ const CheckoutDiffSubscriptionPayloadSchema = z.object({
   wireTruncated: z.boolean().optional(),
   totalFileCount: z.number().int().nonnegative().optional(),
   filesOmitted: z.number().int().nonnegative().optional(),
+  // COMPAT(diffTooLarge): added in v0.2.4, keep optional until the daemon floor is v0.2.4.
+  diffTooLarge: z.boolean().optional(),
 });
 
 export const SubscribeCheckoutDiffResponseSchema = z.object({

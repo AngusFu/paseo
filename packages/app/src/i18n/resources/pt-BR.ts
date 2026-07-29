@@ -871,6 +871,8 @@ export const ptBR: TranslationResources = {
         loadLargeDiff: "Load diff anyway",
         loadFailedRetry: "Retry",
         tooLargeStill: "This diff is still too large to display.",
+        previewTooLargeTitle: "Este diff é grande demais para visualizar",
+        previewTooLargeDescription: "Reduza a comparação para visualizá-la aqui",
         unified: "Diff unificado",
         split: "Diff lado a lado",
         switchToUnified: "Alternar para diff unificado",

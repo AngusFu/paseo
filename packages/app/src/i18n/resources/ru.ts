@@ -870,6 +870,8 @@ export const ru: TranslationResources = {
         loadLargeDiff: "Load diff anyway",
         loadFailedRetry: "Retry",
         tooLargeStill: "This diff is still too large to display.",
+        previewTooLargeTitle: "Этот diff слишком велик для предпросмотра",
+        previewTooLargeDescription: "Сузьте сравнение, чтобы просмотреть его здесь",
         unified: "Единый дифференциал",
         split: "Параллельная разница",
         switchToUnified: "Переключить на объединенный diff",

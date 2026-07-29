@@ -880,6 +880,8 @@ export const es: TranslationResources = {
         loadLargeDiff: "Load diff anyway",
         loadFailedRetry: "Retry",
         tooLargeStill: "This diff is still too large to display.",
+        previewTooLargeTitle: "Este diff es demasiado grande para previsualizarlo",
+        previewTooLargeDescription: "Reduce la comparación para previsualizarla aquí",
         unified: "Diferencia unificada",
         split: "Diferencia de lado a lado",
         switchToUnified: "Cambiar a diferencia unificada",

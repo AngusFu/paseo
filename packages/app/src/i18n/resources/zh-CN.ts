@@ -839,6 +839,8 @@ export const zhCN: TranslationResources = {
         loadLargeDiff: "仍要加载 diff",
         loadFailedRetry: "重试",
         tooLargeStill: "此 diff 仍然过大，无法显示。",
+        previewTooLargeTitle: "此 diff 过大，无法预览",
+        previewTooLargeDescription: "缩小比较范围即可在此预览",
         unified: "Unified diff",
         split: "Side-by-side diff",
         switchToUnified: "切换到统一差异视图",

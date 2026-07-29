@@ -848,6 +848,8 @@ export const ar: TranslationResources = {
         loadLargeDiff: "Load diff anyway",
         loadFailedRetry: "Retry",
         tooLargeStill: "This diff is still too large to display.",
+        previewTooLargeTitle: "هذا الفرق كبير جدًا بحيث لا يمكن معاينته",
+        previewTooLargeDescription: "ضيّق نطاق المقارنة لمعاينتها هنا",
         unified: "الفرق الموحدة",
         split: "فرق جنبًا إلى جنب",
         switchToUnified: "التبديل إلى الفرق الموحد",

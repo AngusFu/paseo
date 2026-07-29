@@ -879,6 +879,8 @@ export const fr: TranslationResources = {
         loadLargeDiff: "Load diff anyway",
         loadFailedRetry: "Retry",
         tooLargeStill: "This diff is still too large to display.",
+        previewTooLargeTitle: "Ce diff est trop volumineux pour être prévisualisé",
+        previewTooLargeDescription: "Réduisez la comparaison pour la prévisualiser ici",
         unified: "Différentiel unifié",
         split: "Différent côte à côte",
         switchToUnified: "Passer au diff unifié",

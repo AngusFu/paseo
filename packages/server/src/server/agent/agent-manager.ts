@@ -1226,6 +1226,7 @@ export class AgentManager {
     const launchContext = await this.buildLaunchContext(
       resolvedAgentId,
       client,
+      storedConfig.cwd,
       options?.env,
       options.workspaceId,
     );
@@ -1308,6 +1309,7 @@ export class AgentManager {
     const launchContext = await this.buildLaunchContext(
       resolvedAgentId,
       client,
+      storedConfig.cwd,
       undefined,
       options?.workspaceId,
     );
@@ -1362,6 +1364,7 @@ export class AgentManager {
     const launchContext = await this.buildLaunchContext(
       resolvedAgentId,
       client,
+      storedConfig.cwd,
       undefined,
       input.workspaceId,
     );
@@ -1454,6 +1457,7 @@ export class AgentManager {
     const launchContext = await this.buildLaunchContext(
       agentId,
       client,
+      storedConfig.cwd,
       undefined,
       existing.workspaceId,
     );
@@ -5810,6 +5814,7 @@ export class AgentManager {
   private async buildLaunchContext(
     agentId: string,
     client: AgentClient,
+    cwd: string,
     env?: Record<string, string>,
     workspaceId?: string,
   ): Promise<AgentLaunchContext> {
@@ -5828,6 +5833,7 @@ export class AgentManager {
     const envWithIds: Record<string, string> = {
       ...env,
       PASEO_AGENT_ID: agentId,
+      PASEO_AGENT_CWD: cwd,
       ...(workspaceId ? { PASEO_WORKSPACE_ID: workspaceId } : {}),
     };
     const context: AgentLaunchContext = {

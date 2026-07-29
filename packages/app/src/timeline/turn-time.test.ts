@@ -37,6 +37,21 @@ describe("deriveStreamTurnTiming", () => {
     assert.equal(timing.isActive, true);
   });
 
+  it("ignores orphan optimistic prompts once the agent has settled idle", () => {
+    const optimisticPrompt = {
+      ...user("optimistic", new Date("2026-05-15T00:00:00.000Z")),
+      optimistic: true as const,
+    };
+
+    const timing = deriveStreamTurnTiming({
+      agentStatus: "idle",
+      tail: [optimisticPrompt],
+      head: [],
+    });
+
+    assert.equal(timing.isActive, false);
+  });
+
   it("does not start elapsed time from an optimistic prompt", () => {
     const optimisticPrompt = {
       ...user("optimistic", new Date("2026-05-15T00:00:00.000Z")),

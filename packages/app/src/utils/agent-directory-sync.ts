@@ -12,6 +12,7 @@ import {
 import { buildDraftStoreKey } from "@/stores/draft-keys";
 import { useDraftStore } from "@/stores/draft-store";
 import { getInitDeferred, getInitKey, rejectInitDeferred } from "@/utils/agent-initialization";
+import { clearOptimisticUserMessages } from "@/types/stream";
 
 type AgentDirectoryFetchEntry = FetchAgentsEntry;
 export type AgentDirectoryDelta = Extract<
@@ -31,6 +32,53 @@ export function applyAgentDirectoryDelta(input: { serverId: string; delta: Agent
 }
 
 type AgentUpsertDelta = Extract<AgentDirectoryDelta, { kind: "upsert" }>;
+
+export function clearOrphanOptimisticStreamPrompt(serverId: string, agentId: string): void {
+  const session = useSessionStore.getState().sessions[serverId];
+  if (!session) {
+    return;
+  }
+  const tail = session.agentStreamTail.get(agentId);
+  const head = session.agentStreamHead.get(agentId);
+  if (!tail?.length && !head?.length) {
+    return;
+  }
+  const clearedTail = tail ? clearOptimisticUserMessages(tail) : undefined;
+  const clearedHead = head ? clearOptimisticUserMessages(head) : undefined;
+  const store = useSessionStore.getState();
+  if (clearedTail && clearedTail !== tail) {
+    store.setAgentStreamTail(serverId, (prev) => {
+      const next = new Map(prev);
+      next.set(agentId, clearedTail);
+      return next;
+    });
+  }
+  if (clearedHead && clearedHead !== head) {
+    if (clearedHead.length === 0) {
+      store.clearAgentStreamHead(serverId, agentId);
+    } else {
+      store.setAgentStreamHead(serverId, (prev) => {
+        const next = new Map(prev);
+        next.set(agentId, clearedHead);
+        return next;
+      });
+    }
+  }
+}
+
+export function prepareAndUpsertLiveAgentReplica(
+  serverId: string,
+  agent: Agent,
+  previousAgent?: Agent,
+): { acceptedAgent: Agent; stoppedRunning: boolean } {
+  const preparedAgent = prepareLiveAgentDirectoryUpdate(previousAgent, agent);
+  const acceptedAgent = upsertAgentReplica(serverId, preparedAgent);
+  const stoppedRunning = previousAgent?.status === "running" && acceptedAgent.status !== "running";
+  if (stoppedRunning) {
+    clearOrphanOptimisticStreamPrompt(serverId, agent.id);
+  }
+  return { acceptedAgent, stoppedRunning };
+}
 
 function upsertAgentDirectoryReplica(
   serverId: string,
@@ -54,8 +102,11 @@ function upsertAgentDirectoryReplica(
       resolveProjectPlacement({ projectPlacement: delta.project, cwd: normalized.cwd }) ??
       previousAgent?.projectPlacement,
   };
-  const preparedAgent = prepareLiveAgentDirectoryUpdate(previousAgent, agent);
-  const acceptedAgent = upsertAgentReplica(serverId, preparedAgent);
+  const { acceptedAgent, stoppedRunning } = prepareAndUpsertLiveAgentReplica(
+    serverId,
+    agent,
+    previousAgent,
+  );
   if (acceptedAgent.archivedAt) {
     clearArchiveAgentPending({ queryClient, serverId, agentId: acceptedAgent.id });
   }
@@ -63,7 +114,7 @@ function upsertAgentDirectoryReplica(
   useSessionStore.getState().setAgentLastActivity(acceptedAgent.id, acceptedAgent.lastActivityAt);
   return {
     agentId: acceptedAgent.id,
-    stoppedRunning: previousAgent?.status === "running" && acceptedAgent.status !== "running",
+    stoppedRunning,
   };
 }
 

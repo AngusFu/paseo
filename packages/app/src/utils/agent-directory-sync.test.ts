@@ -292,4 +292,55 @@ describe("replaceFetchedAgentDirectory", () => {
 
     store.clearSession(serverId);
   });
+
+  it("clears orphan optimistic stream prompts when running settles to idle", () => {
+    const serverId = "server-settle-stream";
+    const agentId = "settle-stream-agent";
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, null as unknown as DaemonClient);
+
+    const running = createAgentPayload({
+      id: agentId,
+      status: "running",
+      updatedAt: "2026-07-12T11:00:00.000Z",
+    });
+    applyAgentDirectoryDelta({
+      serverId,
+      delta: { kind: "upsert", agent: running, project: createEntry(running).project },
+    });
+    store.setAgentStreamTail(
+      serverId,
+      new Map([
+        [
+          agentId,
+          [
+            {
+              kind: "user_message",
+              id: "optimistic-stuck",
+              text: "stuck prompt",
+              timestamp: new Date("2026-07-12T10:30:00.000Z"),
+              optimistic: true,
+            },
+          ],
+        ],
+      ]),
+    );
+
+    applyAgentDirectoryDelta({
+      serverId,
+      delta: {
+        kind: "upsert",
+        agent: {
+          ...running,
+          status: "idle",
+          updatedAt: "2026-07-12T10:00:00.000Z",
+        },
+        project: createEntry(running).project,
+      },
+    });
+
+    expect(useSessionStore.getState().sessions[serverId]?.agentStreamTail.get(agentId)).toEqual([]);
+
+    store.clearSession(serverId);
+  });
 });

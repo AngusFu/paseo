@@ -21,6 +21,7 @@ export function deriveStreamTurnTiming(params: {
   let currentUserAt: Date | null = null;
   let currentAuthoritativeUserAt: Date | null = null;
   let currentUserIsOptimistic = false;
+  let currentUserFromHead = false;
   let currentLastItemAt: Date | null = null;
   let currentAssistantIds: string[] = [];
 
@@ -38,12 +39,13 @@ export function deriveStreamTurnTiming(params: {
     }
   };
 
-  const visitItem = (item: StreamItem) => {
+  const visitItem = (item: StreamItem, fromHead: boolean) => {
     if (item.kind === "user_message") {
       flushCompletedTurn();
       currentUserAt = item.timestamp;
       currentAuthoritativeUserAt = item.optimistic ? null : item.timestamp;
       currentUserIsOptimistic = item.optimistic === true;
+      currentUserFromHead = fromHead;
       currentLastItemAt = null;
       currentAssistantIds = [];
       return;
@@ -58,10 +60,10 @@ export function deriveStreamTurnTiming(params: {
   };
 
   for (const item of params.tail) {
-    visitItem(item);
+    visitItem(item, false);
   }
   for (const item of params.head) {
-    visitItem(item);
+    visitItem(item, true);
   }
 
   const isRunning = params.agentStatus === "running";
@@ -70,9 +72,15 @@ export function deriveStreamTurnTiming(params: {
     flushCompletedTurn();
   }
 
+  const agentSettled =
+    params.agentStatus === "idle" ||
+    params.agentStatus === "error" ||
+    params.agentStatus === "closed";
+  const hasInFlightOptimistic = currentUserIsOptimistic && (currentUserFromHead || !agentSettled);
+
   return {
     byAssistantId,
     runningStartedAt,
-    isActive: isRunning || currentUserIsOptimistic,
+    isActive: isRunning || hasInFlightOptimistic,
   };
 }

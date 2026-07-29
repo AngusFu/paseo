@@ -83,4 +83,32 @@ describe("AgentDirectoryReplica", () => {
     ).toEqual(directoryPlacement);
     store.clearSession(serverId);
   });
+
+  it("accepts stale idle timeline snapshots after a running client state", () => {
+    const serverId = "agent-replica-resume";
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, null as unknown as DaemonClient);
+    const replica = new AgentDirectoryReplica(serverId, () => undefined);
+    const running = {
+      ...payload("running"),
+      status: "running" as const,
+      updatedAt: "2026-07-12T11:00:00.000Z",
+    };
+    replica.commitSnapshot([entry(running)], []);
+    const token = replica.captureTimeline("agent");
+
+    const staleIdle = {
+      ...payload("settled"),
+      status: "idle" as const,
+      updatedAt: "2026-07-12T10:00:00.000Z",
+    };
+    expect(replica.submitTimelineAgent(token, staleIdle)).toBe(true);
+    expect(useSessionStore.getState().sessions[serverId]?.agents.get("agent")).toMatchObject({
+      title: "settled",
+      status: "idle",
+      updatedAt: new Date("2026-07-12T11:00:00.000Z"),
+    });
+
+    store.clearSession(serverId);
+  });
 });

@@ -7,10 +7,10 @@ import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
 import {
   applyAgentDirectoryDelta,
   type AgentDirectoryDelta,
+  prepareAndUpsertLiveAgentReplica,
   removeAgentDirectoryReplica,
   replaceAgentPendingPermissions,
   replaceFetchedAgentDirectory,
-  upsertAgentReplica,
 } from "@/utils/agent-directory-sync";
 import { reconcileAgentDirectory } from "@/utils/agent-directory-reconciliation";
 import { applyLegacyDaemonWorkspaceOwnership } from "@/workspace/legacy-daemon-workspaces";
@@ -49,7 +49,11 @@ export class AgentDirectoryReplica {
       ...timelineAgent,
       projectPlacement: timelineAgent.projectPlacement ?? existing?.projectPlacement,
     };
-    const accepted = upsertAgentReplica(this.serverId, normalized);
+    const { acceptedAgent: accepted } = prepareAndUpsertLiveAgentReplica(
+      this.serverId,
+      normalized,
+      existing,
+    );
     replaceAgentPendingPermissions(this.serverId, accepted);
     useSessionStore.getState().setAgentLastActivity(accepted.id, accepted.lastActivityAt);
     if (accepted.archivedAt) {

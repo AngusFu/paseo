@@ -287,7 +287,7 @@ export interface ExplorerFile {
   modifiedAt: string;
 }
 
-interface ExplorerDirectory {
+export interface ExplorerDirectory {
   path: string;
   entries: ExplorerEntry[];
 }

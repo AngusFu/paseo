@@ -145,10 +145,13 @@ export function WorkspaceOpenInEditorButton({
     return { kind: "symbol", name: "terminal" } as const;
   }, [desktopOpenTargets]);
 
-  const codeServerToggleIcon = useMemo(
-    () => renderEditorOpenTargetIcon(vscodeWebIcon),
-    [vscodeWebIcon],
-  );
+  const codeServerToggleIcon = useMemo(() => {
+    const icon = renderEditorOpenTargetIcon(vscodeWebIcon);
+    if (isCodeServerRunning || isTogglingCodeServer) {
+      return icon;
+    }
+    return <View style={styles.codeServerToggleIconInactive}>{icon}</View>;
+  }, [isCodeServerRunning, isTogglingCodeServer, vscodeWebIcon]);
 
   const targets = useMemo<OpenTarget[]>(() => {
     const planned = planWorkspaceOpenTargets({
@@ -411,6 +414,13 @@ const styles = StyleSheet.create((theme) => ({
   splitButtonCaretHovered: {
     backgroundColor: theme.colors.surface2,
   },
+  codeServerToggleIconInactive: isWeb
+    ? {
+        filter: "grayscale(1)",
+      }
+    : {
+        opacity: 0.45,
+      },
   tooltipText: {
     color: theme.colors.popoverForeground,
     fontSize: theme.fontSize.sm,

@@ -77,6 +77,19 @@ describe("projectAskQuestionTimelineToolCall", () => {
     });
   });
 
+  test("rewrites Cursor ACP opaque MCP shells once questions are present", () => {
+    const projected = projectAskQuestionTimelineToolCall(
+      toolCall({
+        name: "other",
+        metadata: { kind: "other", title: "MCP: tool" },
+      }),
+    );
+    expect(projected).toMatchObject({
+      type: "tool_call",
+      name: CLAUDE_ASK_USER_QUESTION_TOOL_NAME,
+    });
+  });
+
   test("leaves native AskUserQuestion and unrelated tools alone", () => {
     const native = toolCall({ name: CLAUDE_ASK_USER_QUESTION_TOOL_NAME });
     expect(projectAskQuestionTimelineToolCall(native)).toEqual({

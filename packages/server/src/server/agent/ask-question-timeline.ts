@@ -61,6 +61,10 @@ export function isPaseoAskQuestionToolCall(
     return true;
   }
 
+  if (isOpaqueAcpMcpToolCall(item) && readQuestionsInput(item.detail)) {
+    return true;
+  }
+
   const nameToken = compactToolToken(item.name);
   if (nameToken === "askquestion") {
     return true;

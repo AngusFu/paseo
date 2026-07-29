@@ -2133,12 +2133,16 @@ export class AgentManager {
       // for live subscribers. Other event types are broadcast only.
       if (event.type === "timeline") {
         this.touchUpdatedAt(agent);
-        const row = this.recordTimeline(agent.id, event.item);
-        this.dispatchStream(agent.id, event, {
-          seq: row.seq,
-          epoch: this.timelineStore.getEpoch(agent.id),
-          timestamp: row.timestamp,
-        });
+        const { row, item: projectedItem } = this.recordTimeline(agent.id, event.item);
+        this.dispatchStream(
+          agent.id,
+          { ...event, item: projectedItem },
+          {
+            seq: row.seq,
+            epoch: this.timelineStore.getEpoch(agent.id),
+            timestamp: row.timestamp,
+          },
+        );
         return;
       }
       this.dispatchStream(agent.id, event, { timestamp: new Date().toISOString() });
@@ -2160,14 +2164,13 @@ export class AgentManager {
 
   async appendTimelineItem(agentId: string, item: AgentTimelineItem): Promise<void> {
     const agent = this.requireAgent(agentId);
-    item = limitAgentTimelineItemContent(item);
     this.touchUpdatedAt(agent);
-    const row = this.recordTimeline(agentId, item);
+    const { row, item: projectedItem } = this.recordTimeline(agentId, item);
     this.dispatchStream(
       agentId,
       {
         type: "timeline",
-        item,
+        item: projectedItem,
         provider: agent.provider,
       },
       {
@@ -4234,16 +4237,15 @@ export class AgentManager {
       }
     }
     for (const event of historyEvents) {
-      const item = limitAgentTimelineItemContent(event.item);
-      const row = this.recordTimeline(
+      const { row, item: projectedItem } = this.recordTimeline(
         agent.id,
-        item,
+        event.item,
         event.timestamp ? { timestamp: event.timestamp } : undefined,
       );
       if (broadcast) {
         this.dispatchStream(
           agent.id,
-          { ...event, item },
+          { ...event, item: projectedItem },
           {
             seq: row.seq,
             epoch: this.timelineStore.getEpoch(agent.id),
@@ -4285,15 +4287,16 @@ export class AgentManager {
         if (event.item.type === "user_message" && isSystemInjectedEnvelope(event.item.text)) {
           continue;
         }
-        const row = this.recordTimeline(
+        const { row, item: projectedItem } = this.recordTimeline(
           agent.id,
           event.item,
           event.timestamp ? { timestamp: event.timestamp } : undefined,
         );
+        const projectedEvent = { ...event, item: projectedItem };
         if (deferredBroadcast) {
-          timelineEvents.push({ event, row });
+          timelineEvents.push({ event: projectedEvent, row });
         } else if (broadcast) {
-          this.dispatchStream(agent.id, event, {
+          this.dispatchStream(agent.id, projectedEvent, {
             seq: row.seq,
             epoch: this.timelineStore.getEpoch(agent.id),
             timestamp: row.timestamp,
@@ -5210,10 +5213,10 @@ export class AgentManager {
     provider: AgentProvider,
     turnId?: string,
   ): AgentStreamEvent {
-    const row = this.recordTimeline(agentId, item);
+    const { row, item: projectedItem } = this.recordTimeline(agentId, item);
     const event: AgentStreamEvent = {
       type: "timeline",
-      item,
+      item: projectedItem,
       provider,
       ...(turnId !== undefined ? { turnId } : {}),
     };
@@ -5260,12 +5263,12 @@ export class AgentManager {
     }
 
     const item: AgentTimelineItem = { type: "assistant_message", text };
-    const row = this.recordTimeline(agent.id, item);
+    const { row, item: projectedItem } = this.recordTimeline(agent.id, item);
     this.dispatchStream(
       agent.id,
       {
         type: "timeline",
-        item,
+        item: projectedItem,
         provider,
       },
       {
@@ -5337,12 +5340,12 @@ export class AgentManager {
     agentId: string,
     item: AgentTimelineItem,
     options?: { timestamp?: string },
-  ): AgentTimelineRow {
-    item = limitAgentTimelineItemContent(item);
-    item = this.applyMcpAskQuestionTimelineDisguise(agentId, item);
-    const row = this.timelineStore.append(agentId, item, options);
+  ): { row: AgentTimelineRow; item: AgentTimelineItem } {
+    let projected = limitAgentTimelineItemContent(item);
+    projected = this.applyMcpAskQuestionTimelineDisguise(agentId, projected);
+    const row = this.timelineStore.append(agentId, projected, options);
     this.enqueueDurableTimelineAppend(agentId, row);
-    return row;
+    return { row, item: projected };
   }
 
   private emitState(agent: ManagedAgent, options?: { persist?: boolean }): void {

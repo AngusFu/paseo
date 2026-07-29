@@ -8867,6 +8867,16 @@ test("askAgentQuestion rewrites opaque ACP MCP: tool timeline calls to AskUserQu
       metadata: { kind: "other", title: "MCP: tool" },
     });
 
+    const streamEvents: Array<Extract<AgentStreamEvent, { type: "timeline" }>> = [];
+    manager.subscribe(
+      (event) => {
+        if (event.type === "agent_stream" && event.event.type === "timeline") {
+          streamEvents.push(event.event);
+        }
+      },
+      { agentId, replayState: false },
+    );
+
     const questionPromise = manager.askAgentQuestion({
       agentId,
       questions: ASK_QUESTION_QUESTIONS,
@@ -8880,6 +8890,16 @@ test("askAgentQuestion rewrites opaque ACP MCP: tool timeline calls to AskUserQu
         input: { questions: expectedQuestions },
       },
     });
+
+    const streamedToolCalls = streamEvents.filter(
+      (
+        event,
+      ): event is Extract<AgentStreamEvent, { type: "timeline" }> & {
+        item: Extract<AgentTimelineItem, { type: "tool_call" }>;
+      } => event.item.type === "tool_call" && event.item.callId === "opaque-mcp-call",
+    );
+    expect(streamedToolCalls.some((event) => event.item.name === "AskUserQuestion")).toBe(true);
+    expect(streamedToolCalls.some((event) => event.item.name === "other")).toBe(false);
 
     const requestId = manager.getPendingPermissions(agentId)[0].id;
     await manager.respondToPermission(agentId, requestId, {

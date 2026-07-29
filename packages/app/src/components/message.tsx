@@ -3654,10 +3654,6 @@ export const ToolCall = memo(function ToolCall({
   const isMobile = useIsCompactFormFactor();
   const shouldRenderInline = !isMobile || forceInline;
 
-  const normalizedToolName = toolName.toLowerCase();
-  const isAskQuestionTool =
-    normalizedToolName.includes("askuserquestion") || normalizedToolName.includes("askquestion");
-
   const effectiveDetail = useMemo<ToolCallDetail | undefined>(() => {
     if (detail) {
       return detail;
@@ -3676,12 +3672,9 @@ export const ToolCall = memo(function ToolCall({
   // are wired through), so fall back to `detail.input`/`detail.output` for the
   // same shape.
   const askQuestionQuestions = useMemo(() => {
-    if (!isAskQuestionTool) {
-      return null;
-    }
     const detailInput = effectiveDetail?.type === "unknown" ? effectiveDetail.input : undefined;
     return parseAskQuestionArgs(args) ?? parseAskQuestionArgs(detailInput);
-  }, [isAskQuestionTool, args, effectiveDetail]);
+  }, [args, effectiveDetail]);
 
   const askQuestionResult =
     result ?? (effectiveDetail?.type === "unknown" ? effectiveDetail.output : undefined);

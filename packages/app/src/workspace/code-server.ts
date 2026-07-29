@@ -6,20 +6,25 @@ import {
   type DesktopCodeServerStatus,
   getDesktopHost,
 } from "@/desktop/host";
-import { openExternalUrl } from "@/utils/open-external-url";
 
 interface AvailableCodeServerBridge {
   getStatus: NonNullable<DesktopCodeServerBridge["getStatus"]>;
   start: NonNullable<DesktopCodeServerBridge["start"]>;
   stop: NonNullable<DesktopCodeServerBridge["stop"]>;
+  openWindow: NonNullable<DesktopCodeServerBridge["openWindow"]>;
 }
 
 function getCodeServerBridge(): AvailableCodeServerBridge | null {
   const bridge = getDesktopHost()?.codeServer;
-  if (!bridge?.getStatus || !bridge.start || !bridge.stop) {
+  if (!bridge?.getStatus || !bridge.start || !bridge.stop || !bridge.openWindow) {
     return null;
   }
-  return { getStatus: bridge.getStatus, start: bridge.start, stop: bridge.stop };
+  return {
+    getStatus: bridge.getStatus,
+    start: bridge.start,
+    stop: bridge.stop,
+    openWindow: bridge.openWindow,
+  };
 }
 
 export function hasCodeServerBridge(): boolean {
@@ -91,7 +96,10 @@ export function useCodeServer(input: { isLocalExecution: boolean }) {
         status = await bridge.start();
       }
       setStatus(status);
-      await openExternalUrl(buildCodeServerFolderUrl(status.url, cwd));
+      await bridge.openWindow({
+        url: buildCodeServerFolderUrl(status.url, cwd),
+        cwd,
+      });
     },
     [setStatus],
   );

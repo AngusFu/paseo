@@ -4,6 +4,11 @@ import { connect as netConnect } from "node:net";
 import { ipcMain } from "electron";
 import { createExternalProcessEnv } from "./editor-targets/runtime.js";
 import { createCodeServerProxy, type CodeServerProxy } from "./code-server-proxy.js";
+import {
+  closeAllCodeServerWindows,
+  openCodeServerWindow,
+  parseCodeServerOpenWindowInput,
+} from "./code-server-window.js";
 import { buildServeWebArguments, resolveVSCodeServeWebLaunch } from "./vscode-serve-web-launch.js";
 
 // A single, machine-global `code serve-web` instance listens on the upstream port.
@@ -227,6 +232,7 @@ export async function stopCodeServer(
 ): Promise<CodeServerStatus> {
   const platform = dependencies.platform ?? process.platform;
   spawnedByUs = false;
+  closeAllCodeServerWindows();
   await stopUpstreamByPort(platform);
   await stopCodeServerProxy();
   return await getCodeServerStatus();
@@ -240,6 +246,9 @@ export function registerCodeServerHandlers(
   ipc.handle("paseo:code-server:getStatus", () => getCodeServerStatus());
   ipc.handle("paseo:code-server:start", () => startCodeServer(dependencies));
   ipc.handle("paseo:code-server:stop", () => stopCodeServer(dependencies));
+  ipc.handle("paseo:code-server:openWindow", (_event, rawInput: unknown) => {
+    openCodeServerWindow(parseCodeServerOpenWindowInput(rawInput));
+  });
 }
 
 // Kill the serve-web we started when the desktop app quits, so we do not leak an
@@ -247,6 +256,7 @@ export function registerCodeServerHandlers(
 // quit path cannot await. Only fires if we started it (never touches a serve-web
 // the user launched independently).
 export function shutdownCodeServer(): void {
+  closeAllCodeServerWindows();
   if (spawnedByUs) {
     spawnedByUs = false;
     killPids(

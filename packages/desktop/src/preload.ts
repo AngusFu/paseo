@@ -96,6 +96,8 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
     getStatus: () => ipcRenderer.invoke("paseo:code-server:getStatus"),
     start: () => ipcRenderer.invoke("paseo:code-server:start"),
     stop: () => ipcRenderer.invoke("paseo:code-server:stop"),
+    openWindow: (input: { url: string; cwd: string }) =>
+      ipcRenderer.invoke("paseo:code-server:openWindow", input),
   },
   webUtils: {
     getPathForFile: (file: File) => webUtils.getPathForFile(file),

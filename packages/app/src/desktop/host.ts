@@ -93,6 +93,7 @@ export interface DesktopCodeServerBridge {
   getStatus?: () => Promise<DesktopCodeServerStatus>;
   start?: () => Promise<DesktopCodeServerStatus>;
   stop?: () => Promise<DesktopCodeServerStatus>;
+  openWindow?: (input: { url: string; cwd: string }) => Promise<void>;
 }
 
 export interface DesktopWebUtilsBridge {

@@ -1337,6 +1337,56 @@ describe("WorkspaceGitServiceImpl primitive refresh entrypoint", () => {
     }
   });
 
+  test("does not poll forge PR status for a terminal MR on a non-Paseo checkout", async () => {
+    const closedStatus = createCurrentPullRequestStatus({ state: "closed" });
+    const forge = {
+      ...createGitHubServiceStub(),
+      retainCurrentPullRequestStatusPoll: undefined,
+      getCurrentPullRequestStatus: vi.fn(async () => closedStatus),
+    };
+    const unregister = defaultForgeRegistry.register("forge-closed-mr-test", {
+      createService: () => forge,
+      matchesHost: (host) => host === "forge-closed-mr.test",
+    });
+    const getPullRequestStatus = vi.fn(async () => ({
+      status: closedStatus,
+      authState: "authenticated" as const,
+      featuresEnabled: true,
+      githubFeaturesEnabled: true,
+    }));
+    const service = createService({
+      getCheckoutSnapshotFacts: vi.fn(async (cwd: string) =>
+        createCheckoutFacts(cwd, {
+          currentBranch: "fix/scif-5226",
+          remoteUrl: "https://forge-closed-mr.test/acme/repo.git",
+          pullRequestLookupTarget: { headRef: "fix/scif-5226" },
+        }),
+      ),
+      getCheckoutStatus: vi.fn(async (cwd: string) =>
+        createCheckoutStatus(cwd, {
+          currentBranch: "fix/scif-5226",
+          remoteUrl: "https://forge-closed-mr.test/acme/repo.git",
+          isPaseoOwnedWorktree: false,
+        }),
+      ),
+      getPullRequestStatus,
+    });
+
+    try {
+      const subscription = service.registerWorkspace({ cwd: REPO_CWD }, vi.fn());
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(120_000);
+      await flushPromises();
+
+      expect(getPullRequestStatus).toHaveBeenCalled();
+      expect(forge.getCurrentPullRequestStatus).not.toHaveBeenCalled();
+      subscription.unsubscribe();
+    } finally {
+      service.dispose();
+      unregister();
+    }
+  });
+
   test("subscription skips GitHub self-heal polling when the checkout has no GitHub remote", async () => {
     const retainCurrentPullRequestStatusPoll = vi.fn(() => ({ unsubscribe: vi.fn() }));
     const github = {

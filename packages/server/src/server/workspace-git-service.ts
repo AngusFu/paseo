@@ -1268,6 +1268,11 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       return;
     }
 
+    if (this.shouldStopForgePrStatusPollForTarget(target)) {
+      this.stopForgePrStatusPollForTarget(target);
+      return;
+    }
+
     const git = target.latestGit;
     if (!git?.remoteUrl) {
       this.stopForgePrStatusPollForTarget(target);
@@ -1293,6 +1298,9 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     });
     const previousPollKey = target.forgePrStatusPollKey;
     if (target.forgePrStatusPollKey === pollKey && target.forgePrStatusPollSubscription) {
+      if (this.shouldStopForgePrStatusPollForTarget(target)) {
+        this.stopForgePrStatusPollForTarget(target);
+      }
       return;
     }
     const pollImmediately = previousPollKey !== null && previousPollKey !== pollKey;
@@ -1318,6 +1326,9 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
               notify: true,
             },
           );
+          if (this.shouldStopForgePrStatusPollForTarget(target, status)) {
+            this.stopForgePrStatusPollForTarget(target);
+          }
         },
         onError: (error) => {
           this.logger.warn(
@@ -1428,6 +1439,16 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
         }
       },
     };
+  }
+
+  private shouldStopForgePrStatusPollForTarget(
+    target: WorkspaceGitTarget,
+    status?: WorkspaceGitRuntimeSnapshot["forge"]["pullRequest"] | null,
+  ): boolean {
+    if (target.latestGit?.isPaseoOwnedWorktree) {
+      return false;
+    }
+    return isTerminalPullRequestStatus(status ?? target.latestForge?.pullRequest ?? null);
   }
 
   private resolveForgePrStatusPollTarget(
@@ -2284,6 +2305,19 @@ function buildWorkspaceForgePrStatusPollKey({
     target.headSha ?? null,
     target.headRepositoryOwner ?? null,
   ]);
+}
+
+function isTerminalPullRequestStatus(
+  status: WorkspaceGitRuntimeSnapshot["forge"]["pullRequest"] | null | undefined,
+): boolean {
+  if (!status) {
+    return false;
+  }
+  if (status.isMerged) {
+    return true;
+  }
+  const normalizedState = status.state.trim().toLowerCase();
+  return normalizedState === "closed" || normalizedState === "merged";
 }
 
 function computeGenericForgeNextInterval(

@@ -2881,14 +2881,21 @@ export class AgentManager {
   async listInboxQuestions(
     filter: {
       status?: InboxQuestionStatus;
+      statuses?: InboxQuestionStatus[];
       agentId?: string;
+      limit?: number;
+      cursor?: string;
     } = {},
-  ): Promise<StoredInboxQuestion[]> {
+  ): Promise<{
+    questions: StoredInboxQuestion[];
+    pageInfo?: { nextCursor: string | null; hasMore: boolean };
+  }> {
     if (!this.questionStore) {
-      return [];
+      return { questions: [] };
     }
     await this.sweepExpiredInboxQuestions();
-    return this.questionStore.list(filter);
+    const { limit, cursor, ...storeFilter } = filter;
+    return this.questionStore.listPage(storeFilter, { limit, cursor });
   }
 
   private async sweepExpiredInboxQuestions(): Promise<void> {

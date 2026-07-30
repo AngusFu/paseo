@@ -6,7 +6,6 @@ import { useTranslation } from "react-i18next";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import type { AgentPermissionResponse } from "@getpaseo/protocol/agent-types";
-import type { InboxQuestionStatus } from "@getpaseo/protocol/question/types";
 import { AskQuestionCard } from "@/components/ask-question-card";
 import { MenuHeader } from "@/components/headers/menu-header";
 import { HostFilter } from "@/components/hosts/host-filter";
@@ -21,6 +20,7 @@ import {
   useQuestions,
   type AggregateLoadState,
   type AggregatedQuestion,
+  type ApprovalsBucket,
   type QuestionHostError,
 } from "@/hooks/use-questions";
 import {
@@ -29,8 +29,6 @@ import {
 } from "@/questions/inbox-question-permission";
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
-
-type ApprovalsBucket = "pending" | "answered" | "closed";
 
 const STATUS_FILTER_OPTIONS: { value: ApprovalsBucket; labelKey: string; testID: string }[] = [
   { value: "pending", labelKey: "approvals.filter.pending", testID: "approvals-filter-pending" },
@@ -48,16 +46,6 @@ const STATUS_FILTER_OPTIONS: { value: ApprovalsBucket; labelKey: string; testID:
 
 const EMPTY_QUESTIONS: AggregatedQuestion[] = [];
 
-function matchesApprovalsBucket(status: InboxQuestionStatus, bucket: ApprovalsBucket): boolean {
-  if (bucket === "pending") {
-    return status === "pending";
-  }
-  if (bucket === "answered") {
-    return status === "answered";
-  }
-  return status === "dismissed" || status === "expired";
-}
-
 export function ApprovalsScreen(): ReactElement {
   const isFocused = useIsFocused();
 
@@ -70,14 +58,18 @@ export function ApprovalsScreen(): ReactElement {
 
 function ApprovalsScreenContent(): ReactElement {
   const { t } = useTranslation();
-  const { loadState, hostErrors, isError, refetch } = useQuestions();
-  const questions = loadState.status === "loaded" ? loadState.data : EMPTY_QUESTIONS;
-  const { agents } = useAggregatedAgents({ includeArchived: true });
   const hosts = useHosts();
-
   const [selectedHost, setSelectedHost] = useState(ALL_HOSTS_OPTION_ID);
   const [statusFilter, setStatusFilter] = useState<ApprovalsBucket>("pending");
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
+  const historyServerId = selectedHost === ALL_HOSTS_OPTION_ID ? null : selectedHost;
+  const { loadState, hostErrors, isError, refetch, hasMore, isLoadingMore, loadMore } =
+    useQuestions({
+      bucket: statusFilter,
+      serverId: historyServerId,
+    });
+  const questions = loadState.status === "loaded" ? loadState.data : EMPTY_QUESTIONS;
+  const { agents } = useAggregatedAgents({ includeArchived: true });
 
   useEffect(() => {
     if (
@@ -96,14 +88,7 @@ function ApprovalsScreenContent(): ReactElement {
     return map;
   }, [agents]);
 
-  const filtered = useMemo(() => {
-    return questions.filter((question) => {
-      if (selectedHost !== ALL_HOSTS_OPTION_ID && question.serverId !== selectedHost) {
-        return false;
-      }
-      return matchesApprovalsBucket(question.status, statusFilter);
-    });
-  }, [questions, selectedHost, statusFilter]);
+  const filtered = questions;
 
   useEffect(() => {
     if (activeQuestionId && !filtered.some((question) => question.id === activeQuestionId)) {
@@ -136,6 +121,9 @@ function ApprovalsScreenContent(): ReactElement {
         activeQuestionId={activeQuestionId}
         onToggleQuestion={toggleQuestion}
         onAnswered={refetch}
+        hasMore={hasMore}
+        isLoadingMore={isLoadingMore}
+        onLoadMore={loadMore}
       />
     </View>
   );
@@ -157,6 +145,9 @@ function ApprovalsScreenBody({
   activeQuestionId,
   onToggleQuestion,
   onAnswered,
+  hasMore,
+  isLoadingMore,
+  onLoadMore,
 }: {
   rows: AggregatedQuestion[];
   loadState: AggregateLoadState<AggregatedQuestion>;
@@ -173,6 +164,9 @@ function ApprovalsScreenBody({
   activeQuestionId: string | null;
   onToggleQuestion: (questionId: string) => void;
   onAnswered: () => void;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  onLoadMore: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   const statusOptions = useMemo(
@@ -249,6 +243,16 @@ function ApprovalsScreenBody({
             />
           ))
         )}
+        {hasMore ? (
+          <Button
+            variant="ghost"
+            onPress={onLoadMore}
+            disabled={isLoadingMore}
+            testID="approvals-load-more"
+          >
+            {isLoadingMore ? t("common.loading") : t("sessions.actions.loadMore")}
+          </Button>
+        ) : null}
       </ScrollView>
     </View>
   );

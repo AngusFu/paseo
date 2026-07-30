@@ -8923,9 +8923,9 @@ test("askAgentQuestion times out without dismissing the pending permission", asy
     expect(manager.getPendingPermissions(agentId)).toHaveLength(1);
 
     await vi.waitFor(async () => {
-      expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(1);
+      expect((await manager.listInboxQuestions({ status: "pending" })).questions).toHaveLength(1);
     });
-    const pending = await manager.listInboxQuestions({ status: "pending" });
+    const pending = (await manager.listInboxQuestions({ status: "pending" })).questions;
     expect(pending[0].expiresAt).toEqual(expect.any(String));
     const waited = manager.waitInboxQuestion({ questionId: pending[0].id });
     await manager.answerInboxQuestion({
@@ -8967,7 +8967,7 @@ test("askAgentQuestion interrupt expires the inbox row and dismisses the MCP wai
       questions: ASK_QUESTION_QUESTIONS,
     });
     await vi.waitFor(async () => {
-      expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(1);
+      expect((await manager.listInboxQuestions({ status: "pending" })).questions).toHaveLength(1);
     });
 
     session!.pushEvent({
@@ -8982,9 +8982,9 @@ test("askAgentQuestion interrupt expires the inbox row and dismisses the MCP wai
     });
     expect(manager.getPendingPermissions(agent.id)).toHaveLength(0);
     await vi.waitFor(async () => {
-      expect(await manager.listInboxQuestions({ status: "expired" })).toHaveLength(1);
+      expect((await manager.listInboxQuestions({ status: "expired" })).questions).toHaveLength(1);
     });
-    expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(0);
+    expect((await manager.listInboxQuestions({ status: "pending" })).questions).toHaveLength(0);
   } finally {
     rmSync(workdir, { recursive: true, force: true });
   }
@@ -9009,9 +9009,9 @@ test("listInboxQuestions expires past-TTL pending rows", async () => {
       expiresAt: "2020-01-01T00:00:00.000Z",
     }));
 
-    const pending = await manager.listInboxQuestions({ status: "pending" });
+    const pending = (await manager.listInboxQuestions({ status: "pending" })).questions;
     expect(pending).toHaveLength(0);
-    const expired = await manager.listInboxQuestions({ status: "expired" });
+    const expired = (await manager.listInboxQuestions({ status: "expired" })).questions;
     expect(expired).toEqual([expect.objectContaining({ id: created.id, status: "expired" })]);
     expect(manager.getPendingPermissions(agentId)).toHaveLength(0);
   } finally {
@@ -9133,9 +9133,9 @@ test("askAgentQuestion persists and settles the Question Inbox record", async ()
     });
 
     await vi.waitFor(async () => {
-      expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(1);
+      expect((await manager.listInboxQuestions({ status: "pending" })).questions).toHaveLength(1);
     });
-    const pending = await manager.listInboxQuestions({ status: "pending" });
+    const pending = (await manager.listInboxQuestions({ status: "pending" })).questions;
     expect(pending).toHaveLength(1);
     expect(pending[0]).toMatchObject({
       agentId,
@@ -9159,8 +9159,10 @@ test("askAgentQuestion persists and settles the Question Inbox record", async ()
         updatedInput: { answers: { Env: "production" } },
       },
     });
-    expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(0);
-    expect(await manager.listInboxQuestions({ status: "answered" })).toEqual([answered]);
+    expect((await manager.listInboxQuestions({ status: "pending" })).questions).toHaveLength(0);
+    expect((await manager.listInboxQuestions({ status: "answered" })).questions).toEqual([
+      answered,
+    ]);
   } finally {
     cleanup();
   }
@@ -9192,16 +9194,16 @@ test("respondToPermission mirrors settled native AskUserQuestion into the inbox"
     });
 
     await vi.waitFor(async () => {
-      expect(await manager.listInboxQuestions({ status: "answered" })).toHaveLength(1);
+      expect((await manager.listInboxQuestions({ status: "answered" })).questions).toHaveLength(1);
     });
-    const mirrored = await manager.listInboxQuestions({ status: "answered" });
+    const mirrored = (await manager.listInboxQuestions({ status: "answered" })).questions;
     expect(mirrored[0]).toMatchObject({
       source: "native_mirror",
       mcpRequestId: "permission-native-1",
       title: "Deploy",
       answers: { Env: "staging" },
     });
-    expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(0);
+    expect((await manager.listInboxQuestions({ status: "pending" })).questions).toHaveLength(0);
   } finally {
     cleanup();
   }
@@ -9220,9 +9222,11 @@ test("respondToPermission does not native-mirror MCP ask_question settlements", 
     expect(requestId.startsWith("mcp-question-")).toBe(true);
 
     await vi.waitFor(async () => {
-      expect(await manager.listInboxQuestions({ status: "pending" })).toHaveLength(1);
+      expect((await manager.listInboxQuestions({ status: "pending" })).questions).toHaveLength(1);
     });
-    expect((await manager.listInboxQuestions({ status: "pending" }))[0]?.source).toBe("mcp");
+    expect((await manager.listInboxQuestions({ status: "pending" })).questions[0]?.source).toBe(
+      "mcp",
+    );
 
     await manager.respondToPermission(agentId, requestId, {
       behavior: "allow",
@@ -9231,9 +9235,9 @@ test("respondToPermission does not native-mirror MCP ask_question settlements", 
     await questionPromise;
 
     await vi.waitFor(async () => {
-      expect(await manager.listInboxQuestions({ status: "answered" })).toHaveLength(1);
+      expect((await manager.listInboxQuestions({ status: "answered" })).questions).toHaveLength(1);
     });
-    const answered = await manager.listInboxQuestions({ status: "answered" });
+    const answered = (await manager.listInboxQuestions({ status: "answered" })).questions;
     expect(answered[0]?.source).toBe("mcp");
     expect(answered.every((question) => question.source !== "native_mirror")).toBe(true);
   } finally {

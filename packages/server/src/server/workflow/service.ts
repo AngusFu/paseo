@@ -35,6 +35,7 @@ import type { StoredKanbanCard } from "@getpaseo/protocol/kanban/types";
 import type { Logger } from "pino";
 import type { WorkflowLogEntry, WorkflowLogLevel } from "@getpaseo/protocol/workflow/types";
 import { expandUserPath } from "../path-utils.js";
+import type { ListPageRequest } from "../pagination/list-page.js";
 import { WorkflowEventLog, type WorkflowEventLogWriteInput } from "./event-log.js";
 import {
   PROJECT_DEFINITION_ID_PREFIX,
@@ -546,8 +547,11 @@ export class WorkflowService {
     return paginateLogEntries(history, options);
   }
 
-  async listRuns(): Promise<WorkflowRun[]> {
-    return this.store.listRuns();
+  async listRuns(page?: ListPageRequest): Promise<{
+    runs: WorkflowRun[];
+    pageInfo?: { nextCursor: string | null; hasMore: boolean };
+  }> {
+    return this.store.listRuns(page);
   }
 
   async getRun(id: string): Promise<WorkflowRun | null> {
@@ -566,7 +570,7 @@ export class WorkflowService {
   async recoverAfterRestart(): Promise<void> {
     // listRuns is newest-first (UI order) — re-enqueue oldest-first so the
     // restored queue keeps the original FIFO dispatch order.
-    const runs = (await this.store.listRuns())
+    const runs = (await this.store.listRuns()).runs
       .slice()
       .sort((left, right) => left.queuedAt.localeCompare(right.queuedAt));
     for (const run of runs) {

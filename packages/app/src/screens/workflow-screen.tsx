@@ -205,6 +205,9 @@ function WorkflowScreenContent(): ReactElement {
         projectNameByCwd={projectNameByCwd}
         builtins={builtins.definitions}
         runs={runs.runs}
+        runsHasMore={runs.hasMore}
+        runsLoadingMore={runs.isLoadingMore}
+        onLoadMoreRuns={runs.loadMore}
         isCreating={mutations.isCreating}
         isDispatching={mutations.isDispatching}
         isRemoving={mutations.isRemoving}
@@ -277,6 +280,9 @@ function WorkflowLists({
   projectNameByCwd,
   builtins,
   runs,
+  runsHasMore,
+  runsLoadingMore,
+  onLoadMoreRuns,
   isCreating,
   isDispatching,
   isRemoving,
@@ -294,6 +300,9 @@ function WorkflowLists({
   projectNameByCwd: ReadonlyMap<string, string>;
   builtins: WorkflowDefinition[];
   runs: WorkflowRun[];
+  runsHasMore: boolean;
+  runsLoadingMore: boolean;
+  onLoadMoreRuns: () => void;
   isCreating: boolean;
   isDispatching: boolean;
   isRemoving: boolean;
@@ -530,6 +539,17 @@ function WorkflowLists({
               </Pressable>
             );
           })}
+          {runsHasMore ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onPress={onLoadMoreRuns}
+              disabled={runsLoadingMore}
+              testID="workflow-runs-load-more"
+            >
+              {runsLoadingMore ? t("common.loading") : t("sessions.actions.loadMore")}
+            </Button>
+          ) : null}
         </View>
       );
   }

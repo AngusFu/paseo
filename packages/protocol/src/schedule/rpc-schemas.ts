@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ListPageInfoSchema, ListPageRequestFieldsSchema } from "../list-page.js";
 import {
   ScheduleCadenceSchema,
   ScheduleRunSchema,
@@ -60,6 +61,7 @@ export const ScheduleLogsRequestSchema = z.object({
   type: z.literal("schedule/logs"),
   requestId: z.string(),
   scheduleId: z.string(),
+  ...ListPageRequestFieldsSchema,
 });
 
 export const SchedulePauseRequestSchema = z.object({
@@ -150,6 +152,7 @@ export const ScheduleLogsResponseSchema = z.object({
   payload: z.object({
     requestId: z.string(),
     runs: z.array(ScheduleRunSchema),
+    pageInfo: ListPageInfoSchema.optional(),
     error: z.string().nullable(),
   }),
 });

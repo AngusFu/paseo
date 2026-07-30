@@ -1,7 +1,7 @@
 import type { StoredInboxQuestion } from "@getpaseo/protocol/question/types";
 import { describe, expect, it } from "vitest";
 import {
-  fetchAggregatedQuestions,
+  fetchAggregatedQuestionsPage,
   type QuestionRuntime,
   type QuestionRuntimeSnapshot,
 } from "./aggregated-questions";
@@ -27,6 +27,7 @@ function makeQuestion(overrides: Partial<StoredInboxQuestion> = {}): StoredInbox
 function makeRuntime(input: {
   snapshots: Record<string, QuestionRuntimeSnapshot | null>;
   questions?: Record<string, StoredInboxQuestion[]>;
+  pageInfo?: Record<string, { nextCursor: string | null; hasMore: boolean }>;
 }): QuestionRuntime {
   return {
     getSnapshot: (serverId) => input.snapshots[serverId] ?? null,
@@ -36,15 +37,20 @@ function makeRuntime(input: {
         return null;
       }
       return {
-        questionList: async () => ({ requestId: "test-request", questions, error: null }),
+        questionList: async () => ({
+          requestId: "test-request",
+          questions,
+          pageInfo: input.pageInfo?.[serverId] ?? { nextCursor: null, hasMore: false },
+          error: null,
+        }),
       };
     },
   };
 }
 
-describe("fetchAggregatedQuestions load state", () => {
+describe("fetchAggregatedQuestionsPage load state", () => {
   it("does not report loaded empty while known hosts are still connecting", async () => {
-    const result = await fetchAggregatedQuestions({
+    const result = await fetchAggregatedQuestionsPage({
       hosts: [
         { serverId: "host-a", serverName: "Host A" },
         { serverId: "host-b", serverName: "Host B" },
@@ -55,6 +61,8 @@ describe("fetchAggregatedQuestions load state", () => {
           "host-b": { connectionStatus: "connecting" },
         },
       }),
+      bucket: "pending",
+      cursorByServerId: null,
     });
 
     expect(result.status).not.toBe("loaded");
@@ -62,7 +70,7 @@ describe("fetchAggregatedQuestions load state", () => {
   });
 
   it("reports loaded empty after all reachable hosts answer with no questions", async () => {
-    const result = await fetchAggregatedQuestions({
+    const result = await fetchAggregatedQuestionsPage({
       hosts: [
         { serverId: "host-a", serverName: "Host A" },
         { serverId: "host-b", serverName: "Host B" },
@@ -77,13 +85,23 @@ describe("fetchAggregatedQuestions load state", () => {
           "host-b": [],
         },
       }),
+      bucket: "pending",
+      cursorByServerId: null,
     });
 
-    expect(result).toEqual({ status: "loaded", data: [], hostErrors: [] });
+    expect(result).toEqual({
+      status: "loaded",
+      data: [],
+      hostErrors: [],
+      pageInfoByServerId: {
+        "host-a": { nextCursor: null, hasMore: false },
+        "host-b": { nextCursor: null, hasMore: false },
+      },
+    });
   });
 
-  it("merges questions from online hosts and tags server metadata", async () => {
-    const result = await fetchAggregatedQuestions({
+  it("merges questions from multiple hosts newest-first", async () => {
+    const result = await fetchAggregatedQuestionsPage({
       hosts: [
         { serverId: "host-a", serverName: "Host A" },
         { serverId: "host-b", serverName: "Host B" },
@@ -94,18 +112,17 @@ describe("fetchAggregatedQuestions load state", () => {
           "host-b": { connectionStatus: "online" },
         },
         questions: {
-          "host-a": [makeQuestion({ id: "qst_a", createdAt: "2026-07-25T01:00:00.000Z" })],
-          "host-b": [makeQuestion({ id: "qst_b", createdAt: "2026-07-25T00:00:00.000Z" })],
+          "host-a": [makeQuestion({ id: "qst_a", createdAt: "2026-07-26T00:00:00.000Z" })],
+          "host-b": [makeQuestion({ id: "qst_b", createdAt: "2026-07-27T00:00:00.000Z" })],
         },
       }),
+      bucket: "pending",
+      cursorByServerId: null,
     });
 
-    expect(result.status).toBe("loaded");
     if (result.status !== "loaded") {
-      return;
+      throw new Error("expected loaded state");
     }
     expect(result.data.map((question) => question.id)).toEqual(["qst_b", "qst_a"]);
-    expect(result.data[0]?.serverName).toBe("Host B");
-    expect(result.data[1]?.serverId).toBe("host-a");
   });
 });

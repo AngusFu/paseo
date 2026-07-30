@@ -129,4 +129,36 @@ describe("QuestionStore", () => {
     expect(await store.get(stale.id)).toBeNull();
     expect(await store.get(fresh.id)).toMatchObject({ status: "expired" });
   });
+
+  test("listPage returns newest-first with cursor continuation", async () => {
+    const oldest = await store.create({
+      agentId: "agent-1",
+      source: "cli",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      questions: [{ question: "Old?", header: "Old" }],
+    });
+    const middle = await store.create({
+      agentId: "agent-1",
+      source: "cli",
+      createdAt: "2026-01-02T00:00:00.000Z",
+      questions: [{ question: "Mid?", header: "Mid" }],
+    });
+    const newest = await store.create({
+      agentId: "agent-1",
+      source: "cli",
+      createdAt: "2026-01-03T00:00:00.000Z",
+      questions: [{ question: "New?", header: "New" }],
+    });
+
+    const first = await store.listPage({}, { limit: 2 });
+    expect(first.questions.map((question) => question.id)).toEqual([newest.id, middle.id]);
+    expect(first.pageInfo).toEqual({
+      hasMore: true,
+      nextCursor: expect.any(String),
+    });
+
+    const second = await store.listPage({}, { limit: 2, cursor: first.pageInfo!.nextCursor! });
+    expect(second.questions.map((question) => question.id)).toEqual([oldest.id]);
+    expect(second.pageInfo).toEqual({ hasMore: false, nextCursor: null });
+  });
 });

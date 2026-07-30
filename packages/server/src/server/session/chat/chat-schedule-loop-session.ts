@@ -384,12 +384,16 @@ export class ChatScheduleLoopSession {
     try {
       const inspected = await this.scheduleService.inspect(request.scheduleId);
       this.assertCommandSchedulesSupported(inspected.target);
-      const runs = await this.scheduleService.logs(request.scheduleId);
+      const result = await this.scheduleService.logs(request.scheduleId, {
+        ...(request.limit !== undefined ? { limit: request.limit } : {}),
+        ...(request.cursor !== undefined ? { cursor: request.cursor } : {}),
+      });
       this.host.emit({
         type: "schedule/logs/response",
         payload: {
           requestId: request.requestId,
-          runs,
+          runs: result.runs,
+          ...(result.pageInfo ? { pageInfo: result.pageInfo } : {}),
           error: null,
         },
       });

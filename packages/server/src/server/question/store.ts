@@ -9,6 +9,8 @@ import {
   type StoredInboxQuestion,
 } from "@getpaseo/protocol/question/types";
 import { writeJsonFileAtomic } from "../atomic-file.js";
+import { paginateSortedList, type ListPageRequest } from "../pagination/list-page.js";
+import { SortablePager } from "../pagination/sortable-pager.js";
 import { isInboxQuestionClosedPastRetention, isInboxQuestionPastExpiry } from "./ttl.js";
 
 function generateQuestionId(): string {
@@ -72,7 +74,34 @@ export interface CreateInboxQuestionInput {
 
 export interface ListInboxQuestionsFilter {
   status?: InboxQuestionStatus;
+  statuses?: InboxQuestionStatus[];
   agentId?: string;
+}
+
+const QUESTION_LIST_SORT = [{ key: "created_at", direction: "desc" }] as const;
+const questionListPager = new SortablePager<StoredInboxQuestion, "created_at">({
+  validKeys: ["created_at"],
+  defaultSort: QUESTION_LIST_SORT,
+  label: "question_list",
+  getId: (question) => question.id,
+  getSortValue: (question, key) => (key === "created_at" ? question.createdAt : null),
+});
+
+function matchesInboxQuestionFilter(
+  question: StoredInboxQuestion,
+  filter: ListInboxQuestionsFilter,
+): boolean {
+  if (filter.statuses?.length) {
+    if (!filter.statuses.includes(question.status)) {
+      return false;
+    }
+  } else if (filter.status && question.status !== filter.status) {
+    return false;
+  }
+  if (filter.agentId && question.agentId !== filter.agentId) {
+    return false;
+  }
+  return true;
 }
 
 export class QuestionStore {
@@ -102,6 +131,17 @@ export class QuestionStore {
   }
 
   async list(filter: ListInboxQuestionsFilter = {}): Promise<StoredInboxQuestion[]> {
+    const page = await this.listPage(filter);
+    return page.questions;
+  }
+
+  async listPage(
+    filter: ListInboxQuestionsFilter = {},
+    page?: ListPageRequest,
+  ): Promise<{
+    questions: StoredInboxQuestion[];
+    pageInfo?: { nextCursor: string | null; hasMore: boolean };
+  }> {
     await this.ensureDir();
     const entries = await readdir(this.dir, { withFileTypes: true });
     const questions = await Promise.all(
@@ -112,10 +152,12 @@ export class QuestionStore {
           return StoredInboxQuestionSchema.parse(JSON.parse(content));
         }),
     );
-    return questions
-      .filter((question) => (filter.status ? question.status === filter.status : true))
-      .filter((question) => (filter.agentId ? question.agentId === filter.agentId : true))
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    const filtered = questions.filter((question) => matchesInboxQuestionFilter(question, filter));
+    const paged = paginateSortedList(filtered, questionListPager, QUESTION_LIST_SORT, page);
+    return {
+      questions: paged.items,
+      ...(paged.pageInfo ? { pageInfo: paged.pageInfo } : {}),
+    };
   }
 
   async get(id: string): Promise<StoredInboxQuestion | null> {

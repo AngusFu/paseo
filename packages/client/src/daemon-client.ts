@@ -5457,12 +5457,16 @@ export class DaemonClient {
     });
   }
 
-  async scheduleLogs(options: InspectScheduleOptions): Promise<ScheduleLogsPayload> {
+  async scheduleLogs(
+    options: InspectScheduleOptions & { limit?: number; cursor?: string },
+  ): Promise<ScheduleLogsPayload> {
     return this.sendCorrelatedSessionRequest({
       requestId: options.requestId,
       message: {
         type: "schedule/logs",
         scheduleId: options.id,
+        ...(options.limit !== undefined ? { limit: options.limit } : {}),
+        ...(options.cursor !== undefined ? { cursor: options.cursor } : {}),
       },
       responseType: "schedule/logs/response",
     });
@@ -5763,7 +5767,10 @@ export class DaemonClient {
   async questionList(
     options: {
       status?: "pending" | "answered" | "dismissed" | "expired";
+      statuses?: Array<"pending" | "answered" | "dismissed" | "expired">;
       agentId?: string;
+      limit?: number;
+      cursor?: string;
       requestId?: string;
     } = {},
   ): Promise<QuestionListPayload> {
@@ -5772,7 +5779,10 @@ export class DaemonClient {
       message: {
         type: "question.list.request",
         ...(options.status !== undefined ? { status: options.status } : {}),
+        ...(options.statuses !== undefined ? { statuses: options.statuses } : {}),
         ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
+        ...(options.limit !== undefined ? { limit: options.limit } : {}),
+        ...(options.cursor !== undefined ? { cursor: options.cursor } : {}),
       },
     });
   }
@@ -6152,10 +6162,16 @@ export class DaemonClient {
     });
   }
 
-  async workflowRunList(requestId?: string): Promise<WorkflowRunListPayload> {
+  async workflowRunList(
+    options: { limit?: number; cursor?: string; requestId?: string } = {},
+  ): Promise<WorkflowRunListPayload> {
     return this.sendNamespacedCorrelatedSessionRequest({
-      requestId,
-      message: { type: "workflow.run.list.request" },
+      requestId: options.requestId,
+      message: {
+        type: "workflow.run.list.request",
+        ...(options.limit !== undefined ? { limit: options.limit } : {}),
+        ...(options.cursor !== undefined ? { cursor: options.cursor } : {}),
+      },
     });
   }
 

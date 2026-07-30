@@ -26,6 +26,17 @@ import type {
   UpdateScheduleNewAgentConfig,
 } from "@getpaseo/protocol/schedule/types";
 import type { FirstAgentContext } from "@getpaseo/protocol/messages";
+import { paginateSortedList, type ListPageRequest } from "../pagination/list-page.js";
+import { SortablePager } from "../pagination/sortable-pager.js";
+
+const SCHEDULE_RUN_LIST_SORT = [{ key: "started_at", direction: "desc" }] as const;
+const scheduleRunListPager = new SortablePager<ScheduleRun, "started_at">({
+  validKeys: ["started_at"],
+  defaultSort: SCHEDULE_RUN_LIST_SORT,
+  label: "schedule_run_list",
+  getId: (run) => run.id,
+  getSortValue: (run, key) => (key === "started_at" ? run.startedAt : null),
+});
 
 const SCHEDULE_TICK_INTERVAL_MS = 1000;
 
@@ -448,9 +459,24 @@ export class ScheduleService {
     return schedule;
   }
 
-  async logs(id: string): Promise<ScheduleRun[]> {
+  async logs(
+    id: string,
+    page?: ListPageRequest,
+  ): Promise<{
+    runs: ScheduleRun[];
+    pageInfo?: { nextCursor: string | null; hasMore: boolean };
+  }> {
     const schedule = await this.inspect(id);
-    return [...schedule.runs].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+    const paged = paginateSortedList(
+      [...schedule.runs],
+      scheduleRunListPager,
+      SCHEDULE_RUN_LIST_SORT,
+      page,
+    );
+    return {
+      runs: paged.items,
+      ...(paged.pageInfo ? { pageInfo: paged.pageInfo } : {}),
+    };
   }
 
   async pause(id: string): Promise<StoredSchedule> {

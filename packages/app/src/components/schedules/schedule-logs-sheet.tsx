@@ -21,7 +21,6 @@ const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMut
 // Wider than the default form sheet — log lines need horizontal room — and only
 // the newest runs are shown so history stays cheap to render.
 const LOGS_SHEET_MAX_WIDTH = 760;
-const MAX_VISIBLE_RUNS = 50;
 
 export interface ScheduleLogsSheetProps {
   visible: boolean;
@@ -167,15 +166,22 @@ export function ScheduleLogsSheet({
   scheduleTitle,
 }: ScheduleLogsSheetProps): ReactElement {
   const { t } = useTranslation();
-  const { runs, isLoading, isRefetching, isError, refetch } = useScheduleLogs({
-    serverId,
-    scheduleId,
-    enabled: visible,
-  });
+  const { runs, isLoading, isRefetching, isError, refetch, hasMore, isLoadingMore, loadMore } =
+    useScheduleLogs({
+      serverId,
+      scheduleId,
+      enabled: visible,
+    });
 
-  // Newest first — the daemon returns runs oldest-to-newest by startedAt — and
-  // capped at the 50 most recent so a long-lived schedule's history stays light.
-  const orderedRuns = useMemo(() => runs.toReversed().slice(0, MAX_VISIBLE_RUNS), [runs]);
+  // Newest first. Paginated daemons already return desc; legacy unpaged responses
+  // are oldest-first and get reversed here.
+  const orderedRuns = useMemo(() => {
+    if (runs.length < 2) {
+      return runs;
+    }
+    const ascending = runs[0]!.startedAt.localeCompare(runs[runs.length - 1]!.startedAt) <= 0;
+    return ascending ? runs.toReversed() : runs;
+  }, [runs]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
 
   // Auto-expand the newest run once per schedule, as a convenience — but never
@@ -257,6 +263,17 @@ export function ScheduleLogsSheet({
             onToggle={toggleRun}
           />
         ))}
+        {hasMore ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onPress={loadMore}
+            disabled={isLoadingMore}
+            testID="schedule-logs-load-more"
+          >
+            {isLoadingMore ? t("common.loading") : t("sessions.actions.loadMore")}
+          </Button>
+        ) : null}
         {isRefetching ? (
           <View style={styles.refetchRow}>
             <LoadingSpinner size="small" color={styles.spinner.color} />

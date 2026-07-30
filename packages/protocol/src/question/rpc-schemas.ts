@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ListPageInfoSchema, ListPageRequestFieldsSchema } from "../list-page.js";
 import {
   InboxQuestionItemSchema,
   InboxQuestionStatusSchema,
@@ -11,7 +12,10 @@ export const QuestionListRequestSchema = z.object({
   type: z.literal("question.list.request"),
   requestId: z.string(),
   status: InboxQuestionStatusSchema.optional(),
+  /** Match any of these statuses (e.g. dismissed + expired for the Closed bucket). */
+  statuses: z.array(InboxQuestionStatusSchema).min(1).optional(),
   agentId: z.string().min(1).optional(),
+  ...ListPageRequestFieldsSchema,
 });
 
 export const QuestionAnswerRequestSchema = z.object({
@@ -46,6 +50,7 @@ export const QuestionListResponseSchema = z.object({
   payload: z.object({
     requestId: z.string(),
     questions: z.array(StoredInboxQuestionSchema),
+    pageInfo: ListPageInfoSchema.optional(),
     error: z.string().nullable(),
   }),
 });

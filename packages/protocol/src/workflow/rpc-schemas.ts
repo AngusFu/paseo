@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ListPageInfoSchema, ListPageRequestFieldsSchema } from "../list-page.js";
 import {
   KanbanWorkflowFilterSchema,
   KanbanWorkflowRuleSchema,
@@ -11,6 +12,18 @@ function response<const Type extends string>(type: Type, value: z.ZodType) {
   return z.object({
     type: z.literal(type),
     payload: z.object({ requestId: z.string(), value, error: z.string().nullable() }),
+  });
+}
+
+function responseWithPageInfo<const Type extends string>(type: Type, value: z.ZodType) {
+  return z.object({
+    type: z.literal(type),
+    payload: z.object({
+      requestId: z.string(),
+      value,
+      pageInfo: ListPageInfoSchema.optional(),
+      error: z.string().nullable(),
+    }),
   });
 }
 
@@ -62,6 +75,7 @@ export const WorkflowAuthoringPrepareResultSchema = z.object({
 export const WorkflowRunListRequestSchema = z.object({
   type: z.literal("workflow.run.list.request"),
   requestId: z.string(),
+  ...ListPageRequestFieldsSchema,
 });
 export const WorkflowRunGetRequestSchema = z.object({
   type: z.literal("workflow.run.get.request"),
@@ -167,7 +181,7 @@ export const WorkflowAuthoringPrepareResponseSchema = response(
   "workflow.authoring.prepare.response",
   WorkflowAuthoringPrepareResultSchema,
 );
-export const WorkflowRunListResponseSchema = response(
+export const WorkflowRunListResponseSchema = responseWithPageInfo(
   "workflow.run.list.response",
   z.array(WorkflowRunSchema),
 );

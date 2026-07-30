@@ -1,9 +1,16 @@
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { ScheduleRun } from "@getpaseo/protocol/schedule/types";
-import { useFetchQuery } from "@/data/query";
 import { useSessionStore } from "@/stores/session-store";
 
 export const scheduleLogsQueryBaseKey = ["schedule-logs"] as const;
+const LOGS_PAGE_LIMIT = 50;
+
+interface ScheduleLogsPage {
+  runs: ScheduleRun[];
+  pageInfo?: { nextCursor: string | null; hasMore: boolean };
+}
 
 export interface UseScheduleLogsResult {
   runs: ScheduleRun[];
@@ -11,12 +18,16 @@ export interface UseScheduleLogsResult {
   isRefetching: boolean;
   isError: boolean;
   refetch: () => void;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  loadMore: () => void;
 }
 
 // Fetches a single schedule's run history (status, timing, captured output) from
 // its host. Only enabled while the logs modal is open — the list screen never
-// carries run data (ScheduleSummary omits `runs`). Runs come back newest-last
-// from the daemon; the modal reverses for display.
+// carries run data (ScheduleSummary omits `runs`). Runs come back newest-first
+// when paginated; unpaged legacy daemons return oldest-first and the modal
+// reverses for display.
 export function useScheduleLogs({
   serverId,
   scheduleId,
@@ -29,32 +40,60 @@ export function useScheduleLogs({
   const { t } = useTranslation();
   const isEnabled = enabled && Boolean(serverId) && Boolean(scheduleId);
 
-  const query = useFetchQuery<ScheduleRun[]>({
+  const query = useInfiniteQuery<
+    ScheduleLogsPage,
+    Error,
+    { pages: ScheduleLogsPage[] },
+    readonly unknown[],
+    string | null
+  >({
     queryKey: [...scheduleLogsQueryBaseKey, serverId, scheduleId],
-    dataShape: "list",
-    staleTimeMs: 0,
     enabled: isEnabled,
+    staleTime: 0,
     retry: false,
-    queryFn: async () => {
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) =>
+      lastPage.pageInfo?.hasMore && lastPage.pageInfo.nextCursor
+        ? lastPage.pageInfo.nextCursor
+        : null,
+    queryFn: async ({ pageParam }) => {
       const client = useSessionStore.getState().sessions[serverId ?? ""]?.client ?? null;
       if (!client) {
         throw new Error(t("common.errors.daemonClientUnavailable"));
       }
-      const payload = await client.scheduleLogs({ id: scheduleId ?? "" });
+      const payload = await client.scheduleLogs({
+        id: scheduleId ?? "",
+        limit: LOGS_PAGE_LIMIT,
+        ...(pageParam ? { cursor: pageParam } : {}),
+      });
       if (payload.error) {
         throw new Error(payload.error);
       }
-      return payload.runs;
+      return {
+        runs: payload.runs,
+        pageInfo: payload.pageInfo,
+      };
     },
   });
 
+  const runs = query.data?.pages.flatMap((page) => page.runs) ?? [];
+  const loadMore = useCallback(() => {
+    if (!query.hasNextPage || query.isFetchingNextPage) {
+      return;
+    }
+    void query.fetchNextPage();
+  }, [query]);
+
   return {
-    runs: query.data ?? [],
+    runs,
     isLoading: query.isLoading,
     isRefetching: query.isFetching && !query.isLoading,
     isError: query.isError,
     refetch: () => {
       void query.refetch();
     },
+    hasMore: query.hasNextPage ?? false,
+    isLoadingMore: query.isFetchingNextPage,
+    loadMore,
   };
 }

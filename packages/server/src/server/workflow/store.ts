@@ -14,6 +14,17 @@ import {
   type WorkflowRun,
 } from "@getpaseo/protocol/workflow/types";
 import { writeFileAtomic, writeJsonFileAtomic } from "../atomic-file.js";
+import { paginateSortedList, type ListPageRequest } from "../pagination/list-page.js";
+import { SortablePager } from "../pagination/sortable-pager.js";
+
+const WORKFLOW_RUN_LIST_SORT = [{ key: "queued_at", direction: "desc" }] as const;
+const workflowRunListPager = new SortablePager<WorkflowRun, "queued_at">({
+  validKeys: ["queued_at"],
+  defaultSort: WORKFLOW_RUN_LIST_SORT,
+  label: "workflow_run_list",
+  getId: (run) => run.id,
+  getSortValue: (run, key) => (key === "queued_at" ? run.queuedAt : null),
+});
 
 export class WorkflowStore {
   constructor(private readonly dir: string) {}
@@ -114,7 +125,10 @@ export class WorkflowStore {
     }
   }
 
-  async listRuns(): Promise<WorkflowRun[]> {
+  async listRuns(page?: ListPageRequest): Promise<{
+    runs: WorkflowRun[];
+    pageInfo?: { nextCursor: string | null; hasMore: boolean };
+  }> {
     const { readdir } = await import("node:fs/promises");
     await mkdir(this.runsDir, { recursive: true });
     const entries = await readdir(this.runsDir);
@@ -123,9 +137,12 @@ export class WorkflowStore {
         .filter((entry) => entry.endsWith(".json"))
         .map((entry) => this.getRun(entry.slice(0, -5))),
     );
-    return runs
-      .filter((run): run is WorkflowRun => run !== null)
-      .sort((left, right) => right.queuedAt.localeCompare(left.queuedAt));
+    const loaded = runs.filter((run): run is WorkflowRun => run !== null);
+    const paged = paginateSortedList(loaded, workflowRunListPager, WORKFLOW_RUN_LIST_SORT, page);
+    return {
+      runs: paged.items,
+      ...(paged.pageInfo ? { pageInfo: paged.pageInfo } : {}),
+    };
   }
 
   async updateRun(

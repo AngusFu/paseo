@@ -2504,7 +2504,7 @@ export class Session {
       case "workflow.authoring.prepare.request":
         return this.handleWorkflowRequest(msg, () => this.workflowService.prepareAuthoring());
       case "workflow.run.list.request":
-        return this.handleWorkflowRequest(msg, () => this.workflowService.listRuns());
+        return this.handleWorkflowRunListRequest(msg);
       case "workflow.run.get.request":
         return this.handleWorkflowRequest(msg, () => this.workflowService.getRun(msg.runId));
       case "workflow.run.dispatch.request":
@@ -2558,6 +2558,35 @@ export class Session {
         );
       default:
         return undefined;
+    }
+  }
+
+  private async handleWorkflowRunListRequest(
+    msg: Extract<SessionInboundMessage, { type: "workflow.run.list.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.workflowService.listRuns({
+        ...(msg.limit !== undefined ? { limit: msg.limit } : {}),
+        ...(msg.cursor !== undefined ? { cursor: msg.cursor } : {}),
+      });
+      this.emit({
+        type: "workflow.run.list.response",
+        payload: {
+          requestId: msg.requestId,
+          value: result.runs,
+          ...(result.pageInfo ? { pageInfo: result.pageInfo } : {}),
+          error: null,
+        },
+      } as SessionOutboundMessage);
+    } catch (error) {
+      this.emit({
+        type: "workflow.run.list.response",
+        payload: {
+          requestId: msg.requestId,
+          value: [],
+          error: error instanceof Error ? error.message : String(error),
+        },
+      } as SessionOutboundMessage);
     }
   }
 
@@ -3011,13 +3040,21 @@ export class Session {
     msg: Extract<SessionInboundMessage, { type: "question.list.request" }>,
   ): Promise<void> {
     try {
-      const questions = await this.agentManager.listInboxQuestions({
+      const result = await this.agentManager.listInboxQuestions({
         ...(msg.status ? { status: msg.status } : {}),
+        ...(msg.statuses ? { statuses: msg.statuses } : {}),
         ...(msg.agentId ? { agentId: msg.agentId } : {}),
+        ...(msg.limit !== undefined ? { limit: msg.limit } : {}),
+        ...(msg.cursor !== undefined ? { cursor: msg.cursor } : {}),
       });
       this.emit({
         type: "question.list.response",
-        payload: { requestId: msg.requestId, questions, error: null },
+        payload: {
+          requestId: msg.requestId,
+          questions: result.questions,
+          ...(result.pageInfo ? { pageInfo: result.pageInfo } : {}),
+          error: null,
+        },
       });
     } catch (error) {
       this.emit({

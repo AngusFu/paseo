@@ -360,6 +360,37 @@ describe("mapCursorPrintToolCall", () => {
     // Badge is displayName + summary; label must not repeat the tool name.
     expect(mapped?.detail.type === "plain_text" && mapped.detail.label).not.toBe("WebSearch");
   });
+
+  test("maps updateTodosToolCall into TodoWrite unknown input for Tasks card", () => {
+    const mapped = mapCursorPrintToolCall(
+      {
+        updateTodosToolCall: {
+          args: {
+            todos: [
+              { id: "1", content: "Implement login", status: "in_progress" },
+              { content: "Write tests", status: "pending" },
+            ],
+          },
+          result: { success: { updated: true } },
+        },
+      },
+      "call-todos",
+    );
+    expect(mapped).toMatchObject({
+      callId: "call-todos",
+      name: "TodoWrite",
+      callKey: "updateTodosToolCall",
+      detail: {
+        type: "unknown",
+        input: {
+          todos: [
+            { id: "1", content: "Implement login", status: "in_progress" },
+            { content: "Write tests", status: "pending" },
+          ],
+        },
+      },
+    });
+  });
 });
 
 describe("resolveAssistantEmitText", () => {

@@ -506,11 +506,25 @@ function pickNextThinkingOptionForProvider(input: {
   });
 }
 
+function canLateHydratePreferences(
+  state: AgentFormReducerState,
+  action: CompleteResolutionAction,
+): boolean {
+  // One-shot COMPLETE_RESOLUTION can race an empty/loading snapshot and leave
+  // provider unset. Re-apply prefs once the preferred provider becomes resolvable,
+  // but never overwrite an explicit user clear/selection.
+  if (state.userModified.provider || state.form.provider) {
+    return false;
+  }
+  const preferred = action.preferences?.provider;
+  return Boolean(preferred && action.allowedProviderMap.has(preferred));
+}
+
 function completeResolution(
   state: AgentFormReducerState,
   action: CompleteResolutionAction,
 ): AgentFormReducerState {
-  if (state.resolution.status === "completed") {
+  if (state.resolution.status === "completed" && !canLateHydratePreferences(state, action)) {
     return state;
   }
   const resolved = resolveFormStateFromProviderModels(

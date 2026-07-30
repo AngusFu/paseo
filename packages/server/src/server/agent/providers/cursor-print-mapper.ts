@@ -160,6 +160,34 @@ export interface MappedCursorToolCall {
 }
 
 /**
+ * Map Cursor `updateTodosToolCall` into Claude-shaped TodoWrite input so the
+ * app Tasks card can reuse extractTaskEntriesFromToolCall (keeps in_progress).
+ */
+function mapUpdateTodosToolCall(
+  updateTodos: Record<string, unknown>,
+  callIdFromEvent: string | null,
+  toolCall: Record<string, unknown>,
+): MappedCursorToolCall {
+  const args = isRecord(updateTodos.args) ? updateTodos.args : {};
+  const todos = Array.isArray(args.todos) ? args.todos : [];
+  const failure = readNestedFailure(updateTodos.result);
+  const success = readNestedSuccess(updateTodos.result);
+  return {
+    callId:
+      callIdFromEvent ?? readString(toolCall.toolCallId) ?? readString(updateTodos.toolCallId),
+    name: "TodoWrite",
+    callKey: toolCall.updateTodosToolCall ? "updateTodosToolCall" : "todoToolCall",
+    failed: failure.failed,
+    errorMessage: failure.failed ? (failure.message ?? "Todo update failed") : null,
+    detail: {
+      type: "unknown",
+      input: { todos },
+      output: success ?? failure.payload ?? undefined,
+    },
+  };
+}
+
+/**
  * Normalize Cursor `askQuestionToolCall` args into the unknown/{questions}
  * shape AskQuestionCard + ask-question-timeline projection expect.
  * Avoids plain_text label "AskQuestion" + projected name "AskUserQuestion"
@@ -570,6 +598,11 @@ export function mapCursorPrintToolCall(
   const askQuestion = toolCall.askQuestionToolCall;
   if (isRecord(askQuestion)) {
     return mapAskQuestionToolCall(askQuestion, callIdFromEvent, toolCall);
+  }
+
+  const updateTodos = toolCall.updateTodosToolCall ?? toolCall.todoToolCall;
+  if (isRecord(updateTodos)) {
+    return mapUpdateTodosToolCall(updateTodos, callIdFromEvent, toolCall);
   }
 
   // Unknown nested *ToolCall shapes (e.g. webSearchToolCall, getMcpToolsToolCall) → plain_text.

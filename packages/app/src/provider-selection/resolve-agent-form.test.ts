@@ -821,6 +821,56 @@ describe("resolveAgentForm", () => {
       expect(next.form.model).toBe("gpt-5.3-codex");
     });
 
+    it("late-hydrates preferences after an empty first resolution", () => {
+      const empty = resolveAgentForm(makeState({ serverId: "host-1" }), {
+        type: "COMPLETE_RESOLUTION",
+        initialValues: undefined,
+        preferences: {
+          provider: "codex",
+          providerPreferences: { codex: { model: "gpt-5.3-codex" } },
+        },
+        providerModelsByProvider: makeProviderModelsByProvider([]),
+        allowedProviderMap: new Map(),
+      });
+      expect(empty.form.provider).toBeNull();
+      expect(empty.resolution.status).toBe("completed");
+
+      const next = resolveAgentForm(empty, {
+        type: "COMPLETE_RESOLUTION",
+        initialValues: undefined,
+        preferences: {
+          provider: "codex",
+          providerPreferences: { codex: { model: "gpt-5.3-codex" } },
+        },
+        providerModelsByProvider: makeProviderModelsByProvider([["codex", CODEX_MODELS]]),
+        allowedProviderMap: codexProviderMap,
+      });
+
+      expect(next.form.provider).toBe("codex");
+      expect(next.form.model).toBe("gpt-5.3-codex");
+    });
+
+    it("does not late-hydrate after the user cleared provider selection", () => {
+      const empty = resolveAgentForm(makeState({ serverId: "host-1" }), {
+        type: "COMPLETE_RESOLUTION",
+        initialValues: undefined,
+        preferences: { provider: "codex" },
+        providerModelsByProvider: makeProviderModelsByProvider([]),
+        allowedProviderMap: new Map(),
+      });
+      const cleared = resolveAgentForm(empty, { type: "CLEAR_PROVIDER_SELECTION_FROM_USER" });
+      const next = resolveAgentForm(cleared, {
+        type: "COMPLETE_RESOLUTION",
+        initialValues: undefined,
+        preferences: { provider: "codex" },
+        providerModelsByProvider: makeProviderModelsByProvider([["codex", CODEX_MODELS]]),
+        allowedProviderMap: codexProviderMap,
+      });
+
+      expect(next.form.provider).toBeNull();
+      expect(next).toBe(cleared);
+    });
+
     it("prefills edit hydration from initial values", () => {
       const state = makeState({ serverId: "host-1" });
       const next = resolveAgentForm(state, {

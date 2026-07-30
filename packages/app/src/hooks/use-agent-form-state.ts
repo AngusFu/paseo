@@ -136,6 +136,30 @@ function hasSnapshotDataForResolution(input: {
   return input.snapshotEntries !== undefined;
 }
 
+/** Prefer waiting over completing with an empty allowedProviderMap while prefs exist. */
+export function shouldDeferResolutionComplete(input: {
+  preferences: FormPreferences;
+  allowedProviderMap: Map<AgentProvider, AgentProviderDefinition>;
+  snapshotEntries: ProviderSnapshotEntry[] | undefined;
+  snapshotIsLoading: boolean;
+}): boolean {
+  if (input.snapshotIsLoading && (input.snapshotEntries?.length ?? 0) === 0) {
+    return true;
+  }
+  const preferred = input.preferences.provider;
+  if (!preferred) {
+    return false;
+  }
+  if (input.allowedProviderMap.has(preferred)) {
+    return false;
+  }
+  if (input.snapshotIsLoading) {
+    return true;
+  }
+  const entry = input.snapshotEntries?.find((item) => item.provider === preferred);
+  return entry?.status === "loading";
+}
+
 function resolveSelectedProviderModes(input: {
   selectedEntry: ProviderSnapshotEntry | null;
   provider: AgentProvider | null;
@@ -330,7 +354,7 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
   }, [isVisible, isCreateFlow, resolutionIntentKey]);
 
   useEffect(() => {
-    if (!isVisible || !isCreateFlow || resolution.status !== "pending") {
+    if (!isVisible || !isCreateFlow) {
       return;
     }
     if (isPreferencesLoading) {
@@ -340,6 +364,26 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
       !hasSnapshotDataForResolution({
         serverId: formState.serverId,
         snapshotEntries,
+      })
+    ) {
+      return;
+    }
+    const preferredProvider = preferences.provider;
+    const canLateHydrate =
+      resolution.status === "completed" &&
+      !userModified.provider &&
+      !formState.provider &&
+      typeof preferredProvider === "string" &&
+      snapshotResolvableProviderDefinitionMap.has(preferredProvider);
+    if (resolution.status !== "pending" && !canLateHydrate) {
+      return;
+    }
+    if (
+      shouldDeferResolutionComplete({
+        preferences,
+        allowedProviderMap: snapshotResolvableProviderDefinitionMap,
+        snapshotEntries,
+        snapshotIsLoading,
       })
     ) {
       return;
@@ -354,6 +398,7 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
     });
   }, [
     combinedInitialValues,
+    formState.provider,
     formState.serverId,
     isCreateFlow,
     isPreferencesLoading,
@@ -361,8 +406,10 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
     preferences,
     resolution.status,
     snapshotEntries,
+    snapshotIsLoading,
     snapshotProviderModelsByProvider,
     snapshotResolvableProviderDefinitionMap,
+    userModified.provider,
   ]);
 
   const onlineServerIdsKey = onlineServerIds.join("|");

@@ -127,6 +127,8 @@ interface ControlledAgentControlsProps {
   modelSelectorServerId?: string | null;
   isCompactLayout?: boolean;
   desktopPlacement?: ComboboxProps["desktopPlacement"];
+  /** When true, model / thinking / fast_mode stay visible but are not editable. */
+  modelSelectionLocked?: boolean;
 }
 
 export interface DraftAgentControlsProps {
@@ -343,6 +345,8 @@ type AgentControlsSlice = {
   features: AgentFeature[] | undefined;
   thinkingOptionId: string | null | undefined;
   lastUsage: unknown;
+  /** Native provider session id — used to lock cursor-print model/effort/fast. */
+  providerSessionId: string | null;
 } | null;
 
 function selectAgentControlsSlice(
@@ -362,7 +366,39 @@ function selectAgentControlsSlice(
     features: currentAgent.features,
     thinkingOptionId: currentAgent.thinkingOptionId,
     lastUsage: currentAgent.lastUsage,
+    providerSessionId:
+      currentAgent.runtimeInfo?.sessionId ?? currentAgent.persistence?.sessionId ?? null,
   };
+}
+
+function isCursorPrintModelSelectionLocked(agent: AgentControlsSlice): boolean {
+  return Boolean(agent && agent.provider === "cursor-print" && agent.providerSessionId);
+}
+
+function isLockedFastFeature(
+  disabled: boolean,
+  modelDisabled: boolean,
+  featureId: string,
+): boolean {
+  return disabled || (modelDisabled && featureId === "fast_mode");
+}
+
+function resolveVisibleComposerFeatures(input: {
+  provider: string;
+  features: AgentFeature[] | undefined;
+  config: ReturnType<typeof useDaemonConfig>["config"];
+}): AgentFeature[] | undefined {
+  const autoAcceptFeature = input.features?.find((feature) => feature.id === "auto_accept");
+  if (
+    !shouldShowComposerAcpAutoAccept({
+      provider: input.provider,
+      config: input.config,
+      feature: autoAcceptFeature,
+    })
+  ) {
+    return input.features;
+  }
+  return excludeComposerManagedAcpFeatures(input.features);
 }
 
 function resolveSnapshotSelectedEntry(
@@ -422,6 +458,7 @@ function ControlledAgentControls({
   selectedThinkingOptionId,
   onSelectThinkingOption,
   disabled = false,
+  modelSelectionLocked = false,
   isModelLoading = false,
   modelSelectorProviders,
   favoriteKeys = new Set<string>(),
@@ -439,28 +476,20 @@ function ControlledAgentControls({
 }: ControlledAgentControlsProps) {
   const { theme } = useUnistyles();
   const { config } = useDaemonConfig(modelSelectorServerId);
-  const visibleFeatures = useMemo(() => {
-    const autoAcceptFeature = features?.find((feature) => feature.id === "auto_accept");
-    if (
-      !shouldShowComposerAcpAutoAccept({
-        provider,
-        config,
-        feature: autoAcceptFeature,
-      })
-    ) {
-      return features;
-    }
-    return excludeComposerManagedAcpFeatures(features);
-  }, [config, features, provider]);
+  const visibleFeatures = useMemo(
+    () => resolveVisibleComposerFeatures({ provider, features, config }),
+    [config, features, provider],
+  );
   const { t } = useTranslation();
   const isCompactFormFactor = useIsCompactFormFactor();
   const isCompact = isCompactLayout ?? isCompactFormFactor;
   const { fontScale } = useWindowDimensions();
   const [activeSheet, setActiveSheet] = useState<ActiveSheet>(null);
   const [openSelector, setOpenSelector] = useState<AgentControlSelector | null>(null);
-  const initialDensity: ComposerControlDensity = isCompact ? "tight" : "full";
-  const [density, setDensity] = useState<ComposerControlDensity>(initialDensity);
-  const densityRef = useRef<ComposerControlDensity>(initialDensity);
+  const [density, setDensity] = useState<ComposerControlDensity>(() =>
+    isCompact ? "tight" : "full",
+  );
+  const densityRef = useRef<ComposerControlDensity>(density);
   const availableWidthRef = useRef(0);
 
   const providerAnchorRef = useRef<View>(null);
@@ -557,7 +586,7 @@ function ControlledAgentControls({
     }
   }, [updateDensityForWidth]);
 
-  const modelDisabled = disabled;
+  const modelDisabled = disabled || modelSelectionLocked;
 
   const comboboxProviderOptions = useMemo<ComboboxOption[]>(
     () => toComboboxOptions(providerOptions),
@@ -962,7 +991,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
                 showToolbarLabel={presentation.showThinkingLabel}
                 showCaret={presentation.showCarets}
                 open={openSelector === "thinking"}
-                disabled={disabled || !canSelectThinking}
+                disabled={modelDisabled || !canSelectThinking}
                 onPress={handleThinkingPress}
                 accessibilityLabel={t("agentControls.thinking.selectWithValue", {
                   value: displayThinking,
@@ -1015,7 +1044,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
               <SheetFeatureItem
                 key={`feature-${feature.id}`}
                 feature={feature}
-                disabled={disabled}
+                disabled={isLockedFastFeature(disabled, modelDisabled, feature.id)}
                 openSelector={openSelector}
                 handleOpenChange={handleNestedOpenChange}
                 onSetFeature={onSetFeature}
@@ -1028,7 +1057,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
           <DesktopFeatureItem
             key={`feature-${feature.id}`}
             feature={feature}
-            disabled={disabled}
+            disabled={isLockedFastFeature(disabled, modelDisabled, feature.id)}
             openSelector={openSelector}
             handleOpenChange={handleOpenChange}
             onSetFeature={onSetFeature}
@@ -1141,7 +1170,7 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
             value={displayThinking}
             open={activeSheet === "thinking"}
             onPress={handleOpenThinking}
-            disabled={disabled || !canSelectThinking}
+            disabled={disabled || modelDisabled || !canSelectThinking}
             accessibilityLabel={t("agentControls.thinking.selectWithValue", {
               value: displayThinking,
             })}
@@ -1168,7 +1197,7 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
         <SheetFeatureItem
           key={`feature-${feature.id}`}
           feature={feature}
-          disabled={disabled}
+          disabled={isLockedFastFeature(disabled, modelDisabled, feature.id)}
           openSelector={openSelector}
           handleOpenChange={handleOpenChange}
           onSetFeature={onSetFeature}
@@ -1502,7 +1531,10 @@ export const AgentControls = memo(function AgentControls({
     runtimeModelId: agent?.runtimeModelId,
     configuredModelId: agent?.model,
     explicitThinkingOptionId: agent?.thinkingOptionId,
+    provider: agent?.provider,
   });
+
+  const cursorPrintSelectionLocked = isCursorPrintModelSelectionLocked(agent);
 
   const modelOptions = useMemo<AgentControlOption[]>(() => {
     return (models ?? []).map((model) => ({ id: model.id, label: model.label }));
@@ -1657,6 +1689,17 @@ export const AgentControls = memo(function AgentControls({
     [refreshSnapshot],
   );
 
+  const handleSetFeatureWithLock = useCallback(
+    (featureId: string, value: unknown) => {
+      if (isLockedFastFeature(false, cursorPrintSelectionLocked, featureId)) {
+        toast.error("Cursor print cannot change model, effort, or fast after the session starts");
+        return;
+      }
+      handleSetFeature(featureId, value);
+    },
+    [cursorPrintSelectionLocked, handleSetFeature, toast],
+  );
+
   if (!agent) {
     return null;
   }
@@ -1674,13 +1717,14 @@ export const AgentControls = memo(function AgentControls({
       selectedThinkingOptionId={modelSelection.selectedThinkingId ?? undefined}
       onSelectThinkingOption={handleSelectThinkingOption}
       features={agent.features}
-      onSetFeature={handleSetFeature}
+      onSetFeature={handleSetFeatureWithLock}
       isModelLoading={snapshotIsLoading || selectedProviderIsLoading}
       onModelSelectorOpen={handleModelSelectorOpen}
       onRetryModelProvider={handleRetryModelProvider}
       isRetryingModelProvider={snapshotIsRefreshing}
       onDropdownClose={onDropdownClose}
       disabled={!client}
+      modelSelectionLocked={cursorPrintSelectionLocked}
       modeControl={modeControl}
       modelSelectorServerId={serverId}
       isCompactLayout={isCompactLayout}

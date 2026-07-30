@@ -215,4 +215,51 @@ describe("resolveAgentModelSelection", () => {
     expect(selection.selectedThinkingId).toBe("low");
     expect(selection.displayThinking).toBe("Low");
   });
+
+  it("collapses cursor-print legacy wire ids to catalog base models", () => {
+    const selection = resolveAgentModelSelection({
+      provider: "cursor-print",
+      models: [
+        {
+          id: "cursor-grok-4.5",
+          provider: "cursor-print",
+          label: "Cursor Grok 4.5",
+          thinkingOptions: [
+            { id: "default", label: "Default" },
+            { id: "low", label: "Low" },
+            { id: "high", label: "High", isDefault: true },
+          ],
+          defaultThinkingOptionId: "high",
+        },
+      ],
+      runtimeModelId: "cursor-grok-4.5-high-fast",
+      configuredModelId: "cursor-grok-4.5-low",
+      explicitThinkingOptionId: "default",
+    });
+
+    expect(selection.activeModelId).toBe("cursor-grok-4.5");
+    expect(selection.selectedThinkingId).toBe("default");
+  });
+
+  it("treats thinking id default as unset when the model has no default option", () => {
+    const selection = resolveAgentModelSelection({
+      models: [
+        {
+          id: "a",
+          provider: "codex",
+          label: "Model A",
+          thinkingOptions: [
+            { id: "low", label: "Low" },
+            { id: "high", label: "High" },
+          ],
+          defaultThinkingOptionId: "low",
+        },
+      ],
+      runtimeModelId: "a",
+      configuredModelId: null,
+      explicitThinkingOptionId: "default",
+    });
+
+    expect(selection.selectedThinkingId).toBe("low");
+  });
 });

@@ -1848,9 +1848,15 @@ export class AgentManager {
     }
     await this.drainSessionEvents(agentId);
 
-    agent.config.model = normalizedModelId ?? undefined;
+    // Prefer session-normalized runtime model (e.g. cursor-print wire → base).
+    const runtimeModel = agent.runtimeInfo?.model ?? normalizedModelId;
+    agent.config.model = runtimeModel ?? undefined;
+    if (agent.runtimeInfo?.thinkingOptionId !== undefined) {
+      agent.config.thinkingOptionId = agent.runtimeInfo.thinkingOptionId ?? undefined;
+    }
+    this.syncCursorPrintFeatureValuesFromSession(agent);
     if (agent.runtimeInfo) {
-      agent.runtimeInfo = { ...agent.runtimeInfo, model: normalizedModelId };
+      agent.runtimeInfo = { ...agent.runtimeInfo, model: runtimeModel };
     }
     this.touchUpdatedAt(agent);
     this.emitState(agent);
@@ -1872,11 +1878,12 @@ export class AgentManager {
     }
     await this.drainSessionEvents(agentId);
 
-    agent.config.thinkingOptionId = normalizedThinkingOptionId ?? undefined;
+    agent.config.thinkingOptionId =
+      agent.runtimeInfo?.thinkingOptionId ?? normalizedThinkingOptionId ?? undefined;
     if (agent.runtimeInfo) {
       agent.runtimeInfo = {
         ...agent.runtimeInfo,
-        thinkingOptionId: normalizedThinkingOptionId,
+        thinkingOptionId: agent.config.thinkingOptionId ?? null,
       };
     }
     this.touchUpdatedAt(agent);
@@ -4208,6 +4215,7 @@ export class AgentManager {
         newInfo.sessionId !== agent.runtimeInfo?.sessionId ||
         newInfo.modeId !== agent.runtimeInfo?.modeId;
       agent.runtimeInfo = newInfo;
+      this.syncConfigFromRuntimeInfo(agent, newInfo);
       if (!agent.persistence && newInfo.sessionId) {
         agent.persistence = attachPersistenceCwd(
           { provider: agent.provider, sessionId: newInfo.sessionId },
@@ -4221,6 +4229,39 @@ export class AgentManager {
     } catch {
       // Keep existing runtimeInfo if refresh fails.
     }
+  }
+
+  /**
+   * Keep durable agent.config aligned with provider-normalized runtime state.
+   * cursor-print collapses wire model ids into base + thinking + fast_mode.
+   */
+  private syncConfigFromRuntimeInfo(agent: ActiveManagedAgent, info: AgentRuntimeInfo): void {
+    if (typeof info.model === "string" && info.model.length > 0) {
+      agent.config.model = info.model;
+    } else if (info.model === null) {
+      agent.config.model = undefined;
+    }
+    if (info.thinkingOptionId !== undefined) {
+      agent.config.thinkingOptionId = info.thinkingOptionId ?? undefined;
+    }
+    this.syncCursorPrintFeatureValuesFromSession(agent);
+  }
+
+  private syncCursorPrintFeatureValuesFromSession(agent: ManagedAgent): void {
+    if (agent.provider !== "cursor-print") {
+      return;
+    }
+    if (!("session" in agent) || !agent.session?.features) {
+      return;
+    }
+    const fast = agent.session.features.find((feature) => feature.id === "fast_mode");
+    if (!fast || fast.type !== "toggle") {
+      return;
+    }
+    agent.config.featureValues = {
+      ...agent.config.featureValues,
+      fast_mode: fast.value,
+    };
   }
 
   private async hydrateTimelineFromLegacyProviderHistory(

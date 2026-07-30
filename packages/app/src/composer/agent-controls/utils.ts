@@ -1,5 +1,6 @@
 import type { AgentFeature, AgentModelDefinition } from "@getpaseo/protocol/agent-types";
 import { i18n } from "@/i18n/i18next";
+import { isCursorPrintProvider, normalizeCursorPrintCatalogModelId } from "./cursor-print-model";
 
 export type ExplainedAgentControl = "mode" | "model" | "thinking";
 export type FeatureHighlightColor = "blue" | "default" | "green" | "yellow";
@@ -151,10 +152,32 @@ function resolveThinkingId(
   explicitThinkingOptionId: string | null | undefined,
   selectedModel: AgentModelDefinition | null,
 ): string | null {
-  if (explicitThinkingOptionId && explicitThinkingOptionId !== "default") {
-    return explicitThinkingOptionId;
+  if (!explicitThinkingOptionId) {
+    return selectedModel?.defaultThinkingOptionId ?? null;
   }
-  return selectedModel?.defaultThinkingOptionId ?? null;
+  // "default" is a real bare-effort option for cursor-print. Only treat it as
+  // "unset" when the selected model does not expose that option id.
+  if (
+    explicitThinkingOptionId === "default" &&
+    !selectedModel?.thinkingOptions?.some((option) => option.id === "default")
+  ) {
+    return selectedModel?.defaultThinkingOptionId ?? null;
+  }
+  return explicitThinkingOptionId;
+}
+
+function normalizeCatalogModelId(
+  provider: string | null | undefined,
+  modelId: string | null | undefined,
+): string | null {
+  const normalized = normalizeModelId(modelId);
+  if (!normalized) {
+    return null;
+  }
+  if (isCursorPrintProvider(provider)) {
+    return normalizeCursorPrintCatalogModelId(normalized) ?? normalized;
+  }
+  return normalized;
 }
 
 type ThinkingOption = NonNullable<AgentModelDefinition["thinkingOptions"]>[number];
@@ -202,10 +225,12 @@ export function resolveAgentModelSelection(input: {
   runtimeModelId: string | null | undefined;
   configuredModelId: string | null | undefined;
   explicitThinkingOptionId: string | null | undefined;
+  /** When set (e.g. cursor-print), collapses legacy wire model ids to catalog base ids. */
+  provider?: string | null;
 }) {
-  const { models, runtimeModelId, configuredModelId, explicitThinkingOptionId } = input;
-  const normalizedRuntimeModelId = normalizeModelId(runtimeModelId);
-  const normalizedConfiguredModelId = normalizeModelId(configuredModelId);
+  const { models, runtimeModelId, configuredModelId, explicitThinkingOptionId, provider } = input;
+  const normalizedRuntimeModelId = normalizeCatalogModelId(provider, runtimeModelId);
+  const normalizedConfiguredModelId = normalizeCatalogModelId(provider, configuredModelId);
 
   const runtimeSelectedModel = findModelById(models, normalizedRuntimeModelId);
   const preferredModelId = resolvePreferredModelId(

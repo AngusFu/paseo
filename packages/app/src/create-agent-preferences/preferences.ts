@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
+import { normalizeCursorPrintCatalogModelId } from "@/composer/agent-controls/cursor-print-model";
 
 export interface FavoriteModelPreference {
   provider: string;
@@ -132,8 +133,15 @@ export function mergeCreateAgentSelectionPreferences(args: {
   });
 }
 
+function canonicalizeFavoriteModelId(provider: string, modelId: string): string {
+  if (provider === "cursor-print") {
+    return normalizeCursorPrintCatalogModelId(modelId) ?? modelId;
+  }
+  return modelId;
+}
+
 export function buildFavoriteModelKey(input: FavoriteModelPreference): string {
-  return `${input.provider}:${input.modelId}`;
+  return `${input.provider}:${canonicalizeFavoriteModelId(input.provider, input.modelId)}`;
 }
 
 export function isFavoriteModel(args: {
@@ -152,7 +160,10 @@ export function toggleFavoriteModel(args: {
   provider: string;
   modelId: string;
 }): FormPreferences {
-  const favorite = { provider: args.provider, modelId: args.modelId };
+  const favorite = {
+    provider: args.provider,
+    modelId: canonicalizeFavoriteModelId(args.provider, args.modelId),
+  };
   const favoriteKey = buildFavoriteModelKey(favorite);
   const existingFavorites = args.preferences.favoriteModels ?? [];
   const hasFavorite = existingFavorites.some(

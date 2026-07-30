@@ -11,10 +11,25 @@ import {
   CursorPrintAgentClient,
   buildCursorPrintAutoAcceptFeature,
   buildCursorPrintCliPrompt,
+  normalizeCursorPrintSessionConfig,
   type CursorPrintLaunch,
   type CursorPrintSpawn,
 } from "./cursor-print-agent.js";
+import {
+  CURSOR_PRINT_FAST_MODE_FEATURE_ID,
+  groupCursorPrintModels,
+} from "./cursor-print-models.js";
 import { ACP_AUTO_ACCEPT_FEATURE_ID } from "./acp-agent.js";
+
+const GROK_MODELS_STDOUT = [
+  "Available models",
+  "cursor-grok-4.5-high - Cursor Grok 4.5",
+  "cursor-grok-4.5-high-fast - Cursor Grok 4.5 Fast",
+  "cursor-grok-4.5-low - Cursor Grok 4.5 Low",
+  "cursor-grok-4.5-low-fast - Cursor Grok 4.5 Low Fast",
+  "composer-2.5 - Composer 2.5",
+  "composer-2.5-fast - Composer 2.5 Fast",
+].join("\n");
 
 class FakeChild extends EventEmitter {
   readonly stdin = new PassThrough();
@@ -67,36 +82,52 @@ async function collectUntil(
 }
 
 describe("CursorPrintAgentClient", () => {
-  test("fetchCatalog parses agent models output", async () => {
+  test("fetchCatalog groups effort/fast variants into base models", async () => {
     const client = new CursorPrintAgentClient({
       logger: createTestLogger(),
       execModels: async () =>
         [
           "Available models",
-          "composer-2 - Composer 2  (current)",
-          "gpt-5.4 - GPT-5.4",
+          "composer-2.5 - Composer 2.5  (current)",
+          "composer-2.5-fast - Composer 2.5 Fast",
+          "cursor-grok-4.5-high - Cursor Grok 4.5",
+          "cursor-grok-4.5-high-fast - Cursor Grok 4.5 Fast",
+          "cursor-grok-4.5-low - Cursor Grok 4.5 Low",
+          "gpt-5.4-medium - GPT-5.4 1M",
+          "gpt-5.4-high - GPT-5.4 1M High",
           "Tip: use --model",
         ].join("\n"),
     });
 
-    await expect(
-      client.fetchCatalog({ scope: "workspace", cwd: "/tmp/project", force: false }),
-    ).resolves.toMatchObject({
-      defaultModeId: CURSOR_PRINT_DEFAULT_MODE_ID,
-      models: [
-        {
-          provider: CURSOR_PRINT_PROVIDER_ID,
-          id: "composer-2",
-          label: "Composer 2",
-          isDefault: true,
-        },
-        {
-          provider: CURSOR_PRINT_PROVIDER_ID,
-          id: "gpt-5.4",
-          label: "GPT-5.4",
-        },
-      ],
+    const catalog = await client.fetchCatalog({
+      scope: "workspace",
+      cwd: "/tmp/project",
+      force: false,
     });
+    expect(catalog.defaultModeId).toBe(CURSOR_PRINT_DEFAULT_MODE_ID);
+    expect(catalog.models.map((model) => model.id)).toEqual([
+      "composer-2.5",
+      "cursor-grok-4.5",
+      "gpt-5.4",
+    ]);
+    expect(catalog.models[0]).toMatchObject({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      id: "composer-2.5",
+      label: "Composer 2.5",
+      isDefault: true,
+      thinkingOptions: undefined,
+      metadata: { cursorPrintSupportsFast: true },
+    });
+    expect(catalog.models.find((model) => model.id === "cursor-grok-4.5")).toMatchObject({
+      label: "Cursor Grok 4.5",
+      defaultThinkingOptionId: "high",
+      metadata: { cursorPrintSupportsFast: true },
+    });
+    expect(
+      catalog.models
+        .find((model) => model.id === "cursor-grok-4.5")
+        ?.thinkingOptions?.map((o) => o.id),
+    ).toEqual(["low", "high"]);
   });
 
   test("startTurn launches print/stream-json with force + resume", async () => {
@@ -106,7 +137,7 @@ describe("CursorPrintAgentClient", () => {
           type: "system",
           subtype: "init",
           session_id: "chat-1",
-          model: "composer-2",
+          model: "composer-2.5",
         })}\n`,
       );
       child.stdout.write(
@@ -132,6 +163,7 @@ describe("CursorPrintAgentClient", () => {
     const client = new CursorPrintAgentClient({
       logger: createTestLogger(),
       spawn,
+      execModels: async () => GROK_MODELS_STDOUT,
       runtimeSettings: {
         command: { mode: "replace", argv: ["/bin/agent"] },
       },
@@ -141,7 +173,7 @@ describe("CursorPrintAgentClient", () => {
       provider: CURSOR_PRINT_PROVIDER_ID,
       cwd: "/tmp/project",
       modeId: "force",
-      model: "composer-2",
+      model: "composer-2.5",
     });
 
     // Seed a chat id as if a prior turn completed.
@@ -168,7 +200,7 @@ describe("CursorPrintAgentClient", () => {
       "--resume",
       "chat-1",
       "--model",
-      "composer-2",
+      "composer-2.5",
       "--workspace",
       "/tmp/project",
       "--",
@@ -372,6 +404,294 @@ describe("CursorPrintAgentClient", () => {
         featureValues: { [ACP_AUTO_ACCEPT_FEATURE_ID]: true },
       }),
     ]);
+  });
+
+  test("listFeatures exposes fast_mode when the selected model has fast variants", async () => {
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      execModels: async () => GROK_MODELS_STDOUT,
+    });
+    const features = await client.listFeatures({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      model: "cursor-grok-4.5",
+      featureValues: {
+        [ACP_AUTO_ACCEPT_FEATURE_ID]: false,
+        [CURSOR_PRINT_FAST_MODE_FEATURE_ID]: true,
+      },
+    });
+    expect(features.map((feature) => feature.id)).toEqual([
+      ACP_AUTO_ACCEPT_FEATURE_ID,
+      CURSOR_PRINT_FAST_MODE_FEATURE_ID,
+    ]);
+    expect(features[1]).toMatchObject({
+      type: "toggle",
+      id: CURSOR_PRINT_FAST_MODE_FEATURE_ID,
+      value: true,
+    });
+  });
+
+  test("startTurn passes the concrete wire model for effort + fast", async () => {
+    const { spawn, launches } = createFakeSpawn((child) => {
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "system",
+          subtype: "init",
+          session_id: "chat-wire",
+          model: "cursor-grok-4.5-low-fast",
+        })}\n`,
+      );
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "ok",
+          session_id: "chat-wire",
+        })}\n`,
+      );
+      child.emit("exit", 0, null);
+    });
+
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      spawn,
+      execModels: async () => GROK_MODELS_STDOUT,
+      runtimeSettings: {
+        command: { mode: "replace", argv: ["/bin/agent"] },
+      },
+    });
+
+    const session = await client.createSession({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      modeId: "auto-review",
+      model: "cursor-grok-4.5",
+      thinkingOptionId: "low",
+      featureValues: { [CURSOR_PRINT_FAST_MODE_FEATURE_ID]: true },
+    });
+
+    const done = collectUntil(session, (events) =>
+      events.some((event) => event.type === "turn_completed"),
+    );
+    await session.startTurn("go");
+    await done;
+
+    expect(launches[0]?.args).toContain("--model");
+    expect(launches[0]?.args[launches[0]!.args.indexOf("--model") + 1]).toBe(
+      "cursor-grok-4.5-low-fast",
+    );
+    await expect(session.getRuntimeInfo()).resolves.toMatchObject({
+      model: "cursor-grok-4.5",
+      thinkingOptionId: "low",
+    });
+  });
+
+  test("system/init display label must not become --model on the next turn", async () => {
+    const { spawn, launches } = createFakeSpawn((child, launch) => {
+      const resumeIdx = launch.args.indexOf("--resume");
+      const sessionId = resumeIdx >= 0 ? String(launch.args[resumeIdx + 1]) : "chat-label";
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "system",
+          subtype: "init",
+          session_id: sessionId,
+          // Real Cursor CLI reports the human label here, not the wire id.
+          model: "Cursor Grok 4.5 High Fast",
+        })}\n`,
+      );
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "ok",
+          session_id: sessionId,
+        })}\n`,
+      );
+      child.emit("exit", 0, null);
+    });
+
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      spawn,
+      execModels: async () => GROK_MODELS_STDOUT,
+      runtimeSettings: {
+        command: { mode: "replace", argv: ["/bin/agent"] },
+      },
+    });
+
+    const session = await client.createSession({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      modeId: "auto-review",
+      model: "cursor-grok-4.5",
+      thinkingOptionId: "high",
+      featureValues: { [CURSOR_PRINT_FAST_MODE_FEATURE_ID]: true },
+    });
+
+    const firstDone = collectUntil(session, (events) =>
+      events.some((event) => event.type === "turn_completed"),
+    );
+    await session.startTurn("first");
+    await firstDone;
+
+    await expect(session.getRuntimeInfo()).resolves.toMatchObject({
+      model: "cursor-grok-4.5",
+      thinkingOptionId: "high",
+    });
+    expect(session.describePersistence()?.metadata).toMatchObject({
+      model: "cursor-grok-4.5",
+    });
+
+    const secondDone = collectUntil(
+      session,
+      (events) => events.filter((event) => event.type === "turn_completed").length >= 1,
+    );
+    await session.startTurn("second");
+    await secondDone;
+
+    expect(launches).toHaveLength(2);
+    for (const launch of launches) {
+      const modelIdx = launch.args.indexOf("--model");
+      expect(modelIdx).toBeGreaterThanOrEqual(0);
+      expect(launch.args[modelIdx + 1]).toBe("cursor-grok-4.5-high-fast");
+      expect(launch.args[modelIdx + 1]).not.toMatch(/Cursor Grok/);
+    }
+  });
+
+  test("normalizeCursorPrintSessionConfig recovers display labels via catalog", () => {
+    const catalog = groupCursorPrintModels(
+      [
+        { id: "cursor-grok-4.5-high", label: "Cursor Grok 4.5" },
+        { id: "cursor-grok-4.5-high-fast", label: "Cursor Grok 4.5 Fast" },
+      ],
+      CURSOR_PRINT_PROVIDER_ID,
+    );
+    expect(
+      normalizeCursorPrintSessionConfig(
+        {
+          provider: CURSOR_PRINT_PROVIDER_ID,
+          cwd: "/tmp/project",
+          model: "Cursor Grok 4.5 High Fast",
+        },
+        catalog[0],
+        catalog,
+      ),
+    ).toMatchObject({
+      model: "cursor-grok-4.5",
+      thinkingOptionId: "high",
+      featureValues: { [CURSOR_PRINT_FAST_MODE_FEATURE_ID]: true },
+    });
+  });
+
+  test("setModel rejects after the cursor-print session has started", async () => {
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      execModels: async () => GROK_MODELS_STDOUT,
+      spawn: createFakeSpawn(() => undefined).spawn,
+      runtimeSettings: {
+        command: { mode: "replace", argv: ["/bin/agent"] },
+      },
+    });
+    const session = await client.createSession({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      model: "composer-2.5",
+    });
+    await session.setModel("cursor-grok-4.5");
+    expect(await session.getRuntimeInfo()).toMatchObject({ model: "cursor-grok-4.5" });
+
+    (session as unknown as { chatId: string }).chatId = "chat-locked";
+    await expect(session.setModel("composer-2.5")).rejects.toThrow(
+      /does not support changing the model after the session has started/,
+    );
+    await expect(session.setThinkingOption?.("low")).rejects.toThrow(
+      /does not support changing thinking\/effort after the session has started/,
+    );
+    await expect(session.setFeature(CURSOR_PRINT_FAST_MODE_FEATURE_ID, true)).rejects.toThrow(
+      /does not support changing fast mode after the session has started/,
+    );
+  });
+
+  test("normalizeCursorPrintSessionConfig collapses legacy wire ids", () => {
+    const [catalogModel] = groupCursorPrintModels(
+      [
+        { id: "cursor-grok-4.5-high", label: "Cursor Grok 4.5" },
+        { id: "cursor-grok-4.5-high-fast", label: "Cursor Grok 4.5 Fast" },
+        { id: "cursor-grok-4.5-low", label: "Cursor Grok 4.5 Low" },
+      ],
+      CURSOR_PRINT_PROVIDER_ID,
+    );
+    expect(
+      normalizeCursorPrintSessionConfig(
+        {
+          provider: CURSOR_PRINT_PROVIDER_ID,
+          cwd: "/tmp/project",
+          model: "cursor-grok-4.5-high-fast",
+        },
+        catalogModel,
+      ),
+    ).toMatchObject({
+      model: "cursor-grok-4.5",
+      thinkingOptionId: "high",
+      featureValues: { [CURSOR_PRINT_FAST_MODE_FEATURE_ID]: true },
+    });
+  });
+
+  test("setModel clears stale fast_mode when switching to a non-fast wire id", async () => {
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      execModels: async () => GROK_MODELS_STDOUT,
+      spawn: createFakeSpawn(() => undefined).spawn,
+      runtimeSettings: {
+        command: { mode: "replace", argv: ["/bin/agent"] },
+      },
+    });
+    const session = await client.createSession({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      model: "composer-2.5-fast",
+    });
+    expect(
+      session.features.some(
+        (f) => f.id === CURSOR_PRINT_FAST_MODE_FEATURE_ID && f.type === "toggle" && f.value,
+      ),
+    ).toBe(true);
+
+    await session.setModel("cursor-grok-4.5-high");
+    const fast = session.features.find((f) => f.id === CURSOR_PRINT_FAST_MODE_FEATURE_ID);
+    expect(fast).toMatchObject({ type: "toggle", value: false });
+    expect(await session.getRuntimeInfo()).toMatchObject({
+      model: "cursor-grok-4.5",
+      thinkingOptionId: "high",
+    });
+  });
+
+  test("describePersistence stores base model + thinking + fast after wire normalize", async () => {
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      execModels: async () => GROK_MODELS_STDOUT,
+      spawn: createFakeSpawn(() => undefined).spawn,
+      runtimeSettings: {
+        command: { mode: "replace", argv: ["/bin/agent"] },
+      },
+    });
+    const session = await client.createSession({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      model: "cursor-grok-4.5-low-fast",
+    });
+    (session as unknown as { chatId: string }).chatId = "persist-1";
+    expect(session.describePersistence()).toMatchObject({
+      sessionId: "persist-1",
+      metadata: {
+        cwd: "/tmp/project",
+        model: "cursor-grok-4.5",
+        thinkingOptionId: "low",
+        featureValues: { [CURSOR_PRINT_FAST_MODE_FEATURE_ID]: true },
+      },
+    });
   });
 
   test("auto_accept feature auto-approves interaction_query in default mode", async () => {

@@ -64,6 +64,18 @@ import {
   toToolCallTimelineItem,
 } from "./cursor-print-mapper.js";
 import {
+  CURSOR_PRINT_BARE_EFFORT_ID,
+  CURSOR_PRINT_FAST_MODE_FEATURE_ID,
+  cursorPrintModelSupportsFast,
+  groupCursorPrintModels,
+  isCursorPrintWireModelId,
+  matchCursorPrintCatalogFromDisplayLabel,
+  normalizeCursorPrintBaseModelId,
+  parseCursorPrintModelId,
+  resolveCursorPrintWireModel,
+  type CursorPrintRawModel,
+} from "./cursor-print-models.js";
+import {
   ACP_AUTO_ACCEPT_FEATURE_ID,
   isACPAutoAcceptEnabled,
   parseACPAutoAcceptFeatureValue,
@@ -209,8 +221,8 @@ function normalizeModeId(modeId: string | null | undefined): string {
   }
 }
 
-function parseModelsOutput(stdout: string, provider: AgentProvider): AgentModelDefinition[] {
-  const models: AgentModelDefinition[] = [];
+function parseRawModelsOutput(stdout: string): CursorPrintRawModel[] {
+  const models: CursorPrintRawModel[] = [];
   const seen = new Set<string>();
   for (const rawLine of stdout.split("\n")) {
     const line = rawLine.trim();
@@ -229,17 +241,28 @@ function parseModelsOutput(stdout: string, provider: AgentProvider): AgentModelD
     }
     seen.add(id);
     models.push({
-      provider,
       id,
       label: label || id,
       isDefault: /\(current\)/i.test(line) || /\(default\)/i.test(line),
     });
   }
-  models.sort((a, b) => a.id.localeCompare(b.id));
-  if (models.length > 0 && !models.some((model) => model.isDefault)) {
-    models[0] = { ...models[0], isDefault: true };
-  }
   return models;
+}
+
+function parseModelsOutput(stdout: string, provider: AgentProvider): AgentModelDefinition[] {
+  return groupCursorPrintModels(parseRawModelsOutput(stdout), provider);
+}
+
+export function buildCursorPrintFastModeFeature(enabled: boolean): AgentFeature {
+  return {
+    type: "toggle",
+    id: CURSOR_PRINT_FAST_MODE_FEATURE_ID,
+    label: "Fast",
+    description: "Use the Cursor fast variant of the selected model",
+    tooltip: "Toggle fast model variant",
+    icon: "zap",
+    value: enabled,
+  };
 }
 
 function mapUsage(raw: unknown): AgentUsage | undefined {
@@ -317,6 +340,93 @@ function withAbsoluteCwd(config: AgentSessionConfig): AgentSessionConfig {
   };
 }
 
+function catalogForLabelRecovery(
+  catalogModel?: AgentModelDefinition | null,
+  catalogModels?: readonly AgentModelDefinition[] | null,
+): readonly AgentModelDefinition[] {
+  if (catalogModels && catalogModels.length > 0) {
+    return catalogModels;
+  }
+  if (catalogModel) {
+    return [catalogModel];
+  }
+  return [];
+}
+
+function nonBareEffortId(effortId: string | null | undefined): string | null {
+  if (typeof effortId !== "string" || effortId.trim().length === 0) {
+    return null;
+  }
+  if (effortId === CURSOR_PRINT_BARE_EFFORT_ID) {
+    return null;
+  }
+  return effortId;
+}
+
+function recoverCursorPrintModelInput(
+  model: string | null | undefined,
+  catalogModel?: AgentModelDefinition | null,
+  catalogModels?: readonly AgentModelDefinition[] | null,
+): {
+  modelInput: string | undefined;
+  recoveredFromLabel: ReturnType<typeof matchCursorPrintCatalogFromDisplayLabel>;
+} {
+  if (typeof model !== "string" || !model.trim()) {
+    return { modelInput: undefined, recoveredFromLabel: null };
+  }
+  if (isCursorPrintWireModelId(model)) {
+    return { modelInput: model, recoveredFromLabel: null };
+  }
+  const recoveredFromLabel = matchCursorPrintCatalogFromDisplayLabel(
+    model,
+    catalogForLabelRecovery(catalogModel, catalogModels),
+  );
+  return { modelInput: recoveredFromLabel?.baseId, recoveredFromLabel };
+}
+
+/**
+ * Collapse legacy wire model ids into catalog base + thinking/fast config.
+ * Cursor CLI still receives the concrete wire id at launch time.
+ * Display labels (from system/init) are recovered via catalog when possible.
+ */
+export function normalizeCursorPrintSessionConfig(
+  config: AgentSessionConfig,
+  catalogModel?: AgentModelDefinition | null,
+  catalogModels?: readonly AgentModelDefinition[] | null,
+): AgentSessionConfig {
+  const { modelInput, recoveredFromLabel } = recoverCursorPrintModelInput(
+    config.model,
+    catalogModel,
+    catalogModels,
+  );
+  const parsed = parseCursorPrintModelId(modelInput);
+  const baseId = normalizeCursorPrintBaseModelId(modelInput) ?? undefined;
+  const configuredThinking =
+    typeof config.thinkingOptionId === "string" && config.thinkingOptionId.trim().length > 0
+      ? config.thinkingOptionId
+      : null;
+  const thinkingOptionId =
+    configuredThinking ??
+    nonBareEffortId(parsed?.effortId) ??
+    nonBareEffortId(recoveredFromLabel?.effortId) ??
+    catalogModel?.defaultThinkingOptionId ??
+    undefined;
+
+  const featureValues: Record<string, unknown> = { ...config.featureValues };
+  const inferredFast = parsed?.fast === true || recoveredFromLabel?.fast === true;
+  if (featureValues[CURSOR_PRINT_FAST_MODE_FEATURE_ID] == null && inferredFast) {
+    featureValues[CURSOR_PRINT_FAST_MODE_FEATURE_ID] = true;
+  }
+
+  // Drop unrecovered display labels so they never become --model.
+  return {
+    ...config,
+    ...(baseId ? { model: baseId } : { model: undefined }),
+    ...(thinkingOptionId ? { thinkingOptionId } : {}),
+    ...(Object.keys(featureValues).length > 0 ? { featureValues } : {}),
+  };
+}
+
 export function buildCursorPrintAutoAcceptFeature(config: AgentSessionConfig): AgentFeature {
   return {
     type: "toggle",
@@ -330,6 +440,18 @@ export function buildCursorPrintAutoAcceptFeature(config: AgentSessionConfig): A
   };
 }
 
+function buildCursorPrintFeatures(options: {
+  config: AgentSessionConfig;
+  catalogModel?: AgentModelDefinition | null;
+}): AgentFeature[] {
+  const features: AgentFeature[] = [buildCursorPrintAutoAcceptFeature(options.config)];
+  const fastEnabled = options.config.featureValues?.[CURSOR_PRINT_FAST_MODE_FEATURE_ID] === true;
+  if (cursorPrintModelSupportsFast(options.catalogModel) || fastEnabled) {
+    features.push(buildCursorPrintFastModeFeature(fastEnabled));
+  }
+  return features;
+}
+
 export class CursorPrintAgentClient implements AgentClient {
   readonly provider: AgentProvider;
   readonly capabilities = CAPABILITIES;
@@ -339,6 +461,7 @@ export class CursorPrintAgentClient implements AgentClient {
   private readonly label?: string;
   private readonly spawn: CursorPrintSpawn;
   private readonly execModels: (command: string, args: string[], cwd: string) => Promise<string>;
+  private catalogModelsById = new Map<string, AgentModelDefinition>();
 
   constructor(options: CursorPrintAgentClientOptions) {
     this.logger = options.logger;
@@ -358,6 +481,41 @@ export class CursorPrintAgentClient implements AgentClient {
       });
   }
 
+  private rememberCatalogModels(models: AgentModelDefinition[]): void {
+    this.catalogModelsById = new Map(models.map((model) => [model.id, model]));
+  }
+
+  private async ensureCatalogModel(
+    cwd: string,
+    modelId: string | null | undefined,
+  ): Promise<AgentModelDefinition | null> {
+    const baseId = normalizeCursorPrintBaseModelId(modelId);
+    if (!baseId) {
+      return null;
+    }
+    const cached = this.catalogModelsById.get(baseId);
+    if (cached) {
+      return cached;
+    }
+    try {
+      await this.fetchCatalog({ scope: "workspace", cwd, force: false });
+    } catch (error) {
+      this.logger.warn(
+        { err: error, modelId: baseId, cwd },
+        "cursor-print: catalog probe failed; wire model composition has no allow-list",
+      );
+      return null;
+    }
+    const model = this.catalogModelsById.get(baseId) ?? null;
+    if (!model) {
+      this.logger.warn(
+        { modelId: baseId, cwd, known: [...this.catalogModelsById.keys()] },
+        "cursor-print: model missing from catalog after probe",
+      );
+    }
+    return model;
+  }
+
   private resolveCommand(): { command: string; args: string[] } {
     if (
       this.runtimeSettings?.command?.mode === "replace" &&
@@ -375,8 +533,23 @@ export class CursorPrintAgentClient implements AgentClient {
     launchContext?: AgentLaunchContext,
     _options?: AgentCreateSessionOptions,
   ): Promise<AgentSession> {
+    const absolute = withAbsoluteCwd({ ...config, provider: this.provider });
+    if (absolute.model && !isCursorPrintWireModelId(absolute.model)) {
+      try {
+        await this.fetchCatalog({ scope: "workspace", cwd: absolute.cwd, force: false });
+      } catch {
+        // normalize will drop the unrecovered label
+      }
+    }
+    const catalogModels = [...this.catalogModelsById.values()];
+    const catalogModel = await this.ensureCatalogModel(
+      absolute.cwd,
+      normalizeCursorPrintSessionConfig(absolute, null, catalogModels).model,
+    );
     return new CursorPrintAgentSession({
-      config: withAbsoluteCwd({ ...config, provider: this.provider }),
+      config: normalizeCursorPrintSessionConfig(absolute, catalogModel, catalogModels),
+      catalogModel,
+      catalogModelsById: this.catalogModelsById,
       logger: this.logger,
       capabilities: this.capabilities,
       command: this.resolveCommand(),
@@ -411,13 +584,29 @@ export class CursorPrintAgentClient implements AgentClient {
       }
     }
 
+    const absolute = withAbsoluteCwd({
+      cwd,
+      ...metadata,
+      ...overrides,
+      provider: this.provider,
+    });
+    // Probe catalog before normalize so display-label recovery can match.
+    if (absolute.model && !isCursorPrintWireModelId(absolute.model)) {
+      try {
+        await this.fetchCatalog({ scope: "workspace", cwd: absolute.cwd, force: false });
+      } catch {
+        // normalize will drop the unrecovered label
+      }
+    }
+    const catalogModels = [...this.catalogModelsById.values()];
+    const catalogModel = await this.ensureCatalogModel(
+      absolute.cwd,
+      normalizeCursorPrintSessionConfig(absolute, null, catalogModels).model,
+    );
     return new CursorPrintAgentSession({
-      config: withAbsoluteCwd({
-        cwd,
-        ...metadata,
-        ...overrides,
-        provider: this.provider,
-      }),
+      config: normalizeCursorPrintSessionConfig(absolute, catalogModel, catalogModels),
+      catalogModel,
+      catalogModelsById: this.catalogModelsById,
       logger: this.logger,
       capabilities: this.capabilities,
       command: this.resolveCommand(),
@@ -438,8 +627,10 @@ export class CursorPrintAgentClient implements AgentClient {
     );
     try {
       const stdout = await this.execModels(command, [...args, "models"], cwd);
+      const models = parseModelsOutput(stdout, this.provider);
+      this.rememberCatalogModels(models);
       return {
-        models: parseModelsOutput(stdout, this.provider),
+        models,
         modes,
         defaultModeId: CURSOR_PRINT_DEFAULT_MODE_ID,
       };
@@ -454,7 +645,13 @@ export class CursorPrintAgentClient implements AgentClient {
   }
 
   async listFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
-    return [buildCursorPrintAutoAcceptFeature(config)];
+    const catalogModel = config.model
+      ? await this.ensureCatalogModel(config.cwd, config.model)
+      : null;
+    return buildCursorPrintFeatures({
+      config: normalizeCursorPrintSessionConfig(config, catalogModel),
+      catalogModel,
+    });
   }
 
   async listImportableSessions(
@@ -533,6 +730,8 @@ export class CursorPrintAgentClient implements AgentClient {
 
 interface CursorPrintAgentSessionOptions {
   config: AgentSessionConfig;
+  catalogModel?: AgentModelDefinition | null;
+  catalogModelsById?: Map<string, AgentModelDefinition>;
   logger: Logger;
   capabilities: AgentCapabilityFlags;
   command: { command: string; args: string[] };
@@ -546,6 +745,8 @@ export class CursorPrintAgentSession implements AgentSession {
   readonly capabilities: AgentCapabilityFlags;
 
   private readonly config: AgentSessionConfig;
+  private catalogModel: AgentModelDefinition | null;
+  private catalogModelsById: Map<string, AgentModelDefinition>;
   private readonly logger: Logger;
   private readonly command: { command: string; args: string[] };
   private readonly env?: Record<string, string>;
@@ -563,6 +764,10 @@ export class CursorPrintAgentSession implements AgentSession {
 
   constructor(options: CursorPrintAgentSessionOptions) {
     this.config = options.config;
+    this.catalogModelsById = options.catalogModelsById ?? new Map();
+    this.catalogModel =
+      options.catalogModel ??
+      (options.config.model ? (this.catalogModelsById.get(options.config.model) ?? null) : null);
     this.logger = options.logger;
     this.provider = options.config.provider;
     this.capabilities = options.capabilities;
@@ -580,7 +785,74 @@ export class CursorPrintAgentSession implements AgentSession {
   }
 
   get features(): AgentFeature[] {
-    return [buildCursorPrintAutoAcceptFeature(this.config)];
+    return buildCursorPrintFeatures({
+      config: this.config,
+      catalogModel: this.catalogModel,
+    });
+  }
+
+  private assertModelSelectionUnlocked(action: string): void {
+    if (this.chatId) {
+      throw new Error(`cursor-print does not support ${action} after the session has started`);
+    }
+  }
+
+  private recoverModelIdFromDisplayLabel(label: string): string | null {
+    const matched = matchCursorPrintCatalogFromDisplayLabel(label, [
+      ...this.catalogModelsById.values(),
+    ]);
+    if (!matched) {
+      return null;
+    }
+    this.logger.warn(
+      { reportedModel: label, recoveredBaseId: matched.baseId },
+      "cursor-print: recovered catalog model from display label",
+    );
+    this.modelId = matched.baseId;
+    this.config.model = matched.baseId;
+    if (!this.config.thinkingOptionId && matched.effortId !== CURSOR_PRINT_BARE_EFFORT_ID) {
+      this.config.thinkingOptionId = matched.effortId;
+    }
+    if (this.config.featureValues?.[CURSOR_PRINT_FAST_MODE_FEATURE_ID] == null) {
+      this.config.featureValues = {
+        ...this.config.featureValues,
+        [CURSOR_PRINT_FAST_MODE_FEATURE_ID]: matched.fast,
+      };
+    }
+    this.catalogModel = this.catalogModelsById.get(matched.baseId) ?? this.catalogModel;
+    return matched.baseId;
+  }
+
+  private resolveWireModelId(): string | null {
+    let modelId = this.modelId;
+    if (modelId && !isCursorPrintWireModelId(modelId)) {
+      modelId = this.recoverModelIdFromDisplayLabel(modelId);
+      if (!modelId) {
+        this.logger.error(
+          { model: this.modelId },
+          "cursor-print: refusing to pass display label as --model",
+        );
+        return null;
+      }
+    }
+    const wire = resolveCursorPrintWireModel({
+      modelId,
+      thinkingOptionId: this.config.thinkingOptionId,
+      fast: this.config.featureValues?.[CURSOR_PRINT_FAST_MODE_FEATURE_ID] === true,
+      model: this.catalogModel,
+    });
+    if (wire && !this.catalogModel) {
+      this.logger.warn(
+        {
+          model: modelId,
+          thinkingOptionId: this.config.thinkingOptionId ?? null,
+          fast: this.config.featureValues?.[CURSOR_PRINT_FAST_MODE_FEATURE_ID] === true,
+          wire,
+        },
+        "cursor-print: composing wire model without catalog allow-list",
+      );
+    }
+    return wire;
   }
 
   async run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult> {
@@ -632,10 +904,11 @@ export class CursorPrintAgentSession implements AgentSession {
     emitTurnStarted: boolean;
     clientMessageId?: string;
   }): void {
+    const wireModel = this.resolveWireModelId();
     const args = buildTurnArgs({
       extraArgs: this.command.args,
       modeId: this.modeId,
-      model: this.modelId,
+      model: wireModel,
       resumeChatId: options.resumeChatId,
       workspace: this.config.cwd,
       prompt: options.cliPrompt,
@@ -647,6 +920,9 @@ export class CursorPrintAgentSession implements AgentSession {
         resumeChatId: options.resumeChatId,
         modeId: this.modeId,
         model: this.modelId,
+        wireModel,
+        thinkingOptionId: this.config.thinkingOptionId ?? null,
+        fast: this.config.featureValues?.[CURSOR_PRINT_FAST_MODE_FEATURE_ID] === true,
         cwd: this.config.cwd,
       },
       "cursor-print: launching turn",
@@ -752,6 +1028,7 @@ export class CursorPrintAgentSession implements AgentSession {
       sessionId: this.chatId,
       model: this.modelId,
       modeId: this.modeId,
+      thinkingOptionId: this.config.thinkingOptionId ?? null,
     };
   }
 
@@ -816,6 +1093,8 @@ export class CursorPrintAgentSession implements AgentSession {
         cwd: this.config.cwd,
         model: this.modelId,
         modeId: this.modeId,
+        thinkingOptionId: this.config.thinkingOptionId,
+        featureValues: this.config.featureValues,
       },
     };
   }
@@ -848,7 +1127,34 @@ export class CursorPrintAgentSession implements AgentSession {
   }
 
   async setModel(modelId: string | null): Promise<void> {
-    this.modelId = modelId;
+    this.assertModelSelectionUnlocked("changing the model");
+    const parsed = parseCursorPrintModelId(modelId);
+    this.modelId = parsed?.baseId ?? (typeof modelId === "string" ? modelId.trim() || null : null);
+    this.config.model = this.modelId ?? undefined;
+    this.catalogModel = this.modelId ? (this.catalogModelsById.get(this.modelId) ?? null) : null;
+    if (parsed && parsed.effortId !== CURSOR_PRINT_BARE_EFFORT_ID) {
+      this.config.thinkingOptionId = parsed.effortId;
+    } else {
+      this.config.thinkingOptionId = this.catalogModel?.defaultThinkingOptionId;
+    }
+    // Wire id encodes fast — always rewrite so stale fast_mode cannot leak across models.
+    this.config.featureValues = {
+      ...this.config.featureValues,
+      [CURSOR_PRINT_FAST_MODE_FEATURE_ID]: parsed?.fast === true,
+    };
+    this.emit({
+      type: "model_changed",
+      provider: this.provider,
+      runtimeInfo: await this.getRuntimeInfo(),
+    });
+  }
+
+  async setThinkingOption(thinkingOptionId: string | null): Promise<void> {
+    this.assertModelSelectionUnlocked("changing thinking/effort");
+    this.config.thinkingOptionId =
+      typeof thinkingOptionId === "string" && thinkingOptionId.trim().length > 0
+        ? thinkingOptionId.trim()
+        : undefined;
     this.emit({
       type: "model_changed",
       provider: this.provider,
@@ -857,6 +1163,25 @@ export class CursorPrintAgentSession implements AgentSession {
   }
 
   async setFeature(featureId: string, value: unknown): Promise<void> {
+    if (featureId === CURSOR_PRINT_FAST_MODE_FEATURE_ID) {
+      this.assertModelSelectionUnlocked("changing fast mode");
+      const enabled = Boolean(value);
+      if (enabled && this.catalogModel && !cursorPrintModelSupportsFast(this.catalogModel)) {
+        throw new Error(
+          `Cursor print fast mode is not available for model '${this.modelId ?? "default"}'`,
+        );
+      }
+      this.config.featureValues = {
+        ...this.config.featureValues,
+        [CURSOR_PRINT_FAST_MODE_FEATURE_ID]: enabled,
+      };
+      this.emit({
+        type: "model_changed",
+        provider: this.provider,
+        runtimeInfo: await this.getRuntimeInfo(),
+      });
+      return;
+    }
     if (featureId !== ACP_AUTO_ACCEPT_FEATURE_ID) {
       throw new Error(`Unknown ${this.provider} feature: ${featureId}`);
     }
@@ -1002,9 +1327,29 @@ export class CursorPrintAgentSession implements AgentSession {
       }
     }
     const model = readString(raw.model);
-    if (model) {
-      this.modelId = model;
+    if (!model) {
+      return;
     }
+    // Cursor system/init reports a *display label* ("Cursor Grok 4.5 High Fast"),
+    // not a CLI wire id. Only wire ids may update session model state — otherwise
+    // the next turn passes the label to `--model` and Cursor rejects it.
+    const parsed = parseCursorPrintModelId(model);
+    if (!parsed) {
+      this.logger.debug(
+        { reportedModel: model, keptModel: this.modelId },
+        "cursor-print: ignoring non-wire model from system init",
+      );
+      return;
+    }
+    this.modelId = parsed.baseId;
+    this.config.model = parsed.baseId;
+    if (!this.config.thinkingOptionId && parsed.effortId !== CURSOR_PRINT_BARE_EFFORT_ID) {
+      this.config.thinkingOptionId = parsed.effortId;
+    }
+    this.config.featureValues = {
+      ...this.config.featureValues,
+      [CURSOR_PRINT_FAST_MODE_FEATURE_ID]: parsed.fast,
+    };
   }
 
   private handleThinking(raw: Record<string, unknown>): void {

@@ -3063,6 +3063,9 @@ export const es: TranslationResources = {
         placeholder: "Seleccionar razonamiento",
         empty: "No se encontraron opciones de razonamiento",
       },
+      fast: {
+        unsupported: "Update the host to change Fast on schedules.",
+      },
       mode: {
         label: "Modo",
         placeholder: "Modo predeterminado",

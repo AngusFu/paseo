@@ -3057,6 +3057,9 @@ export const ru: TranslationResources = {
         placeholder: "Выберите режим мышления",
         empty: "Варианты мышления не найдены",
       },
+      fast: {
+        unsupported: "Update the host to change Fast on schedules.",
+      },
       mode: {
         label: "Режим",
         placeholder: "Режим по умолчанию",

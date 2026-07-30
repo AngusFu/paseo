@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   mapCursorPrintToolCall,
+  normalizeCursorPrintTodos,
   resolveAssistantEmitText,
   toToolCallTimelineItem,
 } from "./cursor-print-mapper.js";
@@ -384,12 +385,38 @@ describe("mapCursorPrintToolCall", () => {
         type: "unknown",
         input: {
           todos: [
-            { id: "1", content: "Implement login", status: "in_progress" },
+            { content: "Implement login", status: "in_progress" },
             { content: "Write tests", status: "pending" },
           ],
         },
       },
     });
+  });
+
+  test("normalizes todo aliases and skips empty updates", () => {
+    expect(
+      normalizeCursorPrintTodos([
+        { description: "Ship it", status: "IN-PROGRESS" },
+        { title: "Done item", status: "done" },
+        { text: "Cancelled", status: "cancelled" },
+        { status: "pending" },
+      ]),
+    ).toEqual([
+      { content: "Ship it", status: "in_progress" },
+      { content: "Done item", status: "completed" },
+      { content: "Cancelled", status: "completed" },
+    ]);
+
+    expect(
+      mapCursorPrintToolCall(
+        {
+          todoToolCall: {
+            args: { todos: [] },
+          },
+        },
+        "call-empty",
+      ),
+    ).toBeNull();
   });
 });
 

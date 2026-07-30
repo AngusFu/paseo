@@ -125,7 +125,11 @@ export interface UpdateScheduleNewAgentConfig {
   archiveOnFinish?: boolean;
   isolation?: "local" | "worktree";
   cwd?: string;
-  /** Replace stored feature values; `null` clears them. */
+  /**
+   * Replace stored feature values; `null` clears them.
+   * COMPAT(scheduleUpdateFeatureValues): added in v0.1.107 — requires
+   * server_info.features.scheduleUpdateFeatureValues.
+   */
   featureValues?: Record<string, unknown> | null;
 }
 

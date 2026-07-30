@@ -3024,6 +3024,10 @@ export const en = {
         placeholder: "Select thinking",
         empty: "No thinking options found",
       },
+      fast: {
+        // COMPAT(scheduleUpdateFeatureValues): edit Fast needs host support.
+        unsupported: "Update the host to change Fast on schedules.",
+      },
       mode: {
         label: "Mode",
         placeholder: "Default mode",

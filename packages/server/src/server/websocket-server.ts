@@ -1563,6 +1563,8 @@ export class VoiceAssistantWebSocketServer {
         agentForkContext: true,
         // COMPAT(commandSchedules): added in v0.1.106, drop the gate when floor >= v0.1.106.
         commandSchedules: true,
+        // COMPAT(scheduleUpdateFeatureValues): added in v0.1.107, drop the gate when floor >= v0.1.107.
+        scheduleUpdateFeatureValues: true,
         // COMPAT(kanban): added in v0.1.107, drop the gate when floor >= v0.1.107.
         kanban: true,
         // COMPAT(kanbanColumns): added in v0.1.108, drop the gate when floor >= v0.1.108.

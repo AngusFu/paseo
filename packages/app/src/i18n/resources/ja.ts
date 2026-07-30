@@ -3037,6 +3037,9 @@ export const ja: TranslationResources = {
         placeholder: "思考を選択",
         empty: "思考オプションが見つかりません",
       },
+      fast: {
+        unsupported: "Update the host to change Fast on schedules.",
+      },
       mode: {
         label: "モード",
         placeholder: "デフォルトモード",

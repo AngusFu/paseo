@@ -124,6 +124,9 @@ function selectScheduleHosts(
         state.sessions[host.serverId]?.serverInfo?.features?.workspaceMultiplicity === true,
       supportsCommandSchedules:
         state.sessions[host.serverId]?.serverInfo?.features?.commandSchedules === true,
+      // COMPAT(scheduleUpdateFeatureValues): added in v0.1.107, drop the gate when floor >= v0.1.107.
+      supportsScheduleUpdateFeatureValues:
+        state.sessions[host.serverId]?.serverInfo?.features?.scheduleUpdateFeatureValues === true,
     }));
 }
 
@@ -385,11 +388,16 @@ function OpenScheduleFormSheet({
 
     await persistPreferences();
     const maxRuns = parseMaxRuns(state.maxRuns);
-    const featureValues = resolveSubmitFeatureValues({
-      existing: resolveExistingScheduleFeatureValues(schedule),
-      supportsFastMode: state.supportsFastMode,
-      selectedFastMode: state.selectedFastMode,
-    });
+    // COMPAT(scheduleUpdateFeatureValues): edit requires the host capability; create
+    // already persisted featureValues on the target before that flag existed.
+    const canPersistFeatureValues = mode === "create" || state.scheduleUpdateFeatureValuesSupported;
+    const featureValues = canPersistFeatureValues
+      ? resolveSubmitFeatureValues({
+          existing: resolveExistingScheduleFeatureValues(schedule),
+          supportsFastMode: state.supportsFastMode,
+          selectedFastMode: state.selectedFastMode,
+        })
+      : undefined;
     const lifecycle = buildNewAgentLifecyclePatch(state);
     if (mode === "edit" && schedule) {
       await updateSchedule({
@@ -695,6 +703,7 @@ function ScheduleNewAgentLaunchFields({
     !state.disclosure.showModelField &&
     !state.disclosure.showThinkingField &&
     !state.disclosure.showFastField &&
+    !state.disclosure.showFastHostUpdateHint &&
     !state.disclosure.showModeField
   ) {
     return null;
@@ -741,6 +750,17 @@ function ScheduleNewAgentLaunchFields({
           label={t("agentControls.fast.title")}
           testID="schedule-fast-field"
         />
+      ) : null}
+
+      {state.disclosure.showFastHostUpdateHint ? (
+        <Field
+          label={t("agentControls.fast.title")}
+          hint={t("schedule.form.fast.unsupported")}
+          hintWrap
+          testID="schedule-fast-unsupported"
+        >
+          {null}
+        </Field>
       ) : null}
 
       {state.disclosure.showModeField ? (

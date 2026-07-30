@@ -3072,6 +3072,9 @@ export const fr: TranslationResources = {
         placeholder: "Sélectionner la réflexion",
         empty: "Aucune option de réflexion trouvée",
       },
+      fast: {
+        unsupported: "Update the host to change Fast on schedules.",
+      },
       mode: {
         label: "Mode",
         placeholder: "Mode par défaut",

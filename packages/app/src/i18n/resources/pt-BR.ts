@@ -3051,6 +3051,9 @@ export const ptBR: TranslationResources = {
         placeholder: "Selecionar raciocínio",
         empty: "Nenhuma opção de raciocínio encontrada",
       },
+      fast: {
+        unsupported: "Update the host to change Fast on schedules.",
+      },
       mode: {
         label: "Modo",
         placeholder: "Modo padrão",

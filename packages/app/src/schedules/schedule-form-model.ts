@@ -43,6 +43,8 @@ export interface ScheduleFormHost {
   label: string;
   supportsWorkspaceMultiplicity?: boolean;
   supportsCommandSchedules?: boolean;
+  /** COMPAT(scheduleUpdateFeatureValues): added in v0.1.107 */
+  supportsScheduleUpdateFeatureValues?: boolean;
 }
 
 export interface CommandEnvRow {
@@ -72,6 +74,8 @@ export interface ScheduleDisclosureState {
   showModelField: boolean;
   showThinkingField: boolean;
   showFastField: boolean;
+  /** Model supports Fast but edit host cannot persist featureValues — show upgrade hint. */
+  showFastHostUpdateHint: boolean;
   showModeField: boolean;
   showIsolationField: boolean;
   showArchiveOnFinishField: boolean;
@@ -118,6 +122,7 @@ export interface ScheduleFormState {
   modeOptions: AgentMode[];
   availableThinkingOptions: NonNullable<AgentModelDefinition["thinkingOptions"]>;
   supportsFastMode: boolean;
+  scheduleUpdateFeatureValuesSupported: boolean;
   archiveOnFinish: boolean;
   isolation: "local" | "worktree";
   effectiveIsolation: "local" | "worktree";
@@ -581,6 +586,16 @@ function selectedHostSupportsCommandSchedules(input: {
   );
 }
 
+function selectedHostSupportsScheduleUpdateFeatureValues(input: {
+  hosts: readonly ScheduleFormHost[];
+  selectedServerId: string | null;
+}): boolean {
+  return (
+    input.hosts.find((entry) => entry.serverId === input.selectedServerId)
+      ?.supportsScheduleUpdateFeatureValues === true
+  );
+}
+
 function resolveEffectiveIsolation(input: {
   isolation: "local" | "worktree";
   canUseWorktreeIsolation: boolean;
@@ -609,6 +624,7 @@ function resolveDisclosure(state: ScheduleFormState): ScheduleDisclosureState {
       showModelField: false,
       showThinkingField: false,
       showFastField: false,
+      showFastHostUpdateHint: false,
       showModeField: false,
       showIsolationField: false,
       showArchiveOnFinishField: false,
@@ -623,6 +639,7 @@ function resolveDisclosure(state: ScheduleFormState): ScheduleDisclosureState {
       showModelField: false,
       showThinkingField: false,
       showFastField: false,
+      showFastHostUpdateHint: false,
       showModeField: false,
       showIsolationField: false,
       showArchiveOnFinishField: false,
@@ -634,12 +651,16 @@ function resolveDisclosure(state: ScheduleFormState): ScheduleDisclosureState {
   const hasSelectedModel = Boolean(state.selectedProvider && state.selectedModel.trim());
   const showProjectField = state.mode === "edit" || Boolean(state.selectedServerId);
   const showModelField = hasProject;
+  const modelSupportsFast = showModelField && hasSelectedModel && state.supportsFastMode;
+  // Create already persists featureValues on the target; edit needs the update patch.
+  const canPersistFast = state.mode === "create" || state.scheduleUpdateFeatureValuesSupported;
   return {
     showProjectField,
     showModelField,
     showThinkingField:
       showModelField && hasSelectedModel && state.availableThinkingOptions.length > 0,
-    showFastField: showModelField && hasSelectedModel && state.supportsFastMode,
+    showFastField: modelSupportsFast && canPersistFast,
+    showFastHostUpdateHint: modelSupportsFast && !canPersistFast,
     showModeField: showModelField && hasSelectedProvider && state.modeOptions.length > 0,
     showIsolationField: hasProject && state.canUseWorktreeIsolation,
     showArchiveOnFinishField:
@@ -718,6 +739,10 @@ function updateDerivedState(input: {
     hosts: input.hosts,
     selectedServerId: input.state.selectedServerId,
   });
+  const scheduleUpdateFeatureValuesSupported = selectedHostSupportsScheduleUpdateFeatureValues({
+    hosts: input.hosts,
+    selectedServerId: input.state.selectedServerId,
+  });
   const effectiveIsolation = resolveEffectiveIsolation({
     isolation: input.state.isolation,
     canUseWorktreeIsolation,
@@ -755,6 +780,7 @@ function updateDerivedState(input: {
     selectedFastMode: supportsFastMode ? input.state.selectedFastMode : false,
     canUseWorktreeIsolation,
     commandSchedulesSupported,
+    scheduleUpdateFeatureValuesSupported,
     effectiveIsolation,
     submitArchiveOnFinish: canSubmitWorkspaceLifecycleOptions
       ? input.state.archiveOnFinish
@@ -820,6 +846,7 @@ function buildInitialState(snapshot: ScheduleFormSnapshot): ScheduleFormState {
     modeOptions: [],
     availableThinkingOptions: [],
     supportsFastMode: false,
+    scheduleUpdateFeatureValuesSupported: false,
     archiveOnFinish: config?.archiveOnFinish ?? true,
     isolation: resolveInitialIsolation({ config, preferences: snapshot.defaults.preferences }),
     effectiveIsolation: "local",
@@ -837,6 +864,7 @@ function buildInitialState(snapshot: ScheduleFormSnapshot): ScheduleFormState {
       showModelField: false,
       showThinkingField: false,
       showFastField: false,
+      showFastHostUpdateHint: false,
       showModeField: false,
       showIsolationField: false,
       showArchiveOnFinishField: false,

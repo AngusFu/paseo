@@ -2977,6 +2977,9 @@ export const zhCN: TranslationResources = {
         placeholder: "选择思考强度",
         empty: "未找到思考选项",
       },
+      fast: {
+        unsupported: "请更新主机以在计划中修改 Fast。",
+      },
       mode: {
         label: "模式",
         placeholder: "默认模式",

@@ -3008,6 +3008,9 @@ export const ar: TranslationResources = {
         placeholder: "اختر مستوى التفكير",
         empty: "لم يُعثر على خيارات تفكير",
       },
+      fast: {
+        unsupported: "Update the host to change Fast on schedules.",
+      },
       mode: {
         label: "الوضع",
         placeholder: "الوضع الافتراضي",

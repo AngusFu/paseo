@@ -3188,6 +3188,9 @@ export const ServerInfoStatusPayloadSchema = z
         agentForkContext: z.boolean().optional(),
         // COMPAT(commandSchedules): added in v0.1.106, drop the gate when floor >= v0.1.106.
         commandSchedules: z.boolean().optional(),
+        // COMPAT(scheduleUpdateFeatureValues): added in v0.1.107, drop the gate when floor >= v0.1.107.
+        // Old daemons ignore newAgentConfig.featureValues on schedule/update.
+        scheduleUpdateFeatureValues: z.boolean().optional(),
         // COMPAT(kanban): added in v0.1.107, drop the gate when floor >= v0.1.107.
         kanban: z.boolean().optional(),
         // COMPAT(kanbanColumns): added in v0.1.108, drop the gate when floor >= v0.1.108.

@@ -159,6 +159,80 @@ export interface MappedCursorToolCall {
   errorMessage: string | null;
 }
 
+interface NormalizedCursorTodo {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  activeForm?: string;
+}
+
+function normalizeCursorTodoStatus(value: unknown): NormalizedCursorTodo["status"] | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  switch (normalized) {
+    case "pending":
+    case "todo":
+    case "not_started":
+    case "open":
+      return "pending";
+    case "in_progress":
+    case "inprogress":
+    case "active":
+    case "doing":
+    case "started":
+      return "in_progress";
+    case "completed":
+    case "complete":
+    case "done":
+    case "finished":
+      return "completed";
+    case "cancelled":
+    case "canceled":
+    case "skipped":
+      // Surface cancelled items as completed so the Tasks card still lists them.
+      return "completed";
+    default:
+      return null;
+  }
+}
+
+function normalizeCursorTodoItem(value: unknown): NormalizedCursorTodo | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const content =
+    readString(value.content) ??
+    readString(value.description) ??
+    readString(value.title) ??
+    readString(value.text) ??
+    readString(value.task);
+  if (!content) {
+    return null;
+  }
+  const status = normalizeCursorTodoStatus(value.status) ?? "pending";
+  const activeForm = readOptionalString(value.activeForm) ?? readOptionalString(value.active_form);
+  return {
+    content,
+    status,
+    ...(activeForm ? { activeForm } : {}),
+  };
+}
+
+/** Exported for unit tests — coerce Cursor todo args into Claude TodoWrite shape. */
+export function normalizeCursorPrintTodos(rawTodos: unknown): NormalizedCursorTodo[] {
+  if (!Array.isArray(rawTodos)) {
+    return [];
+  }
+  return rawTodos.flatMap((item) => {
+    const normalized = normalizeCursorTodoItem(item);
+    return normalized ? [normalized] : [];
+  });
+}
+
 /**
  * Map Cursor `updateTodosToolCall` into Claude-shaped TodoWrite input so the
  * app Tasks card can reuse extractTaskEntriesFromToolCall (keeps in_progress).
@@ -167,9 +241,12 @@ function mapUpdateTodosToolCall(
   updateTodos: Record<string, unknown>,
   callIdFromEvent: string | null,
   toolCall: Record<string, unknown>,
-): MappedCursorToolCall {
+): MappedCursorToolCall | null {
   const args = isRecord(updateTodos.args) ? updateTodos.args : {};
-  const todos = Array.isArray(args.todos) ? args.todos : [];
+  const todos = normalizeCursorPrintTodos(args.todos);
+  if (todos.length === 0) {
+    return null;
+  }
   const failure = readNestedFailure(updateTodos.result);
   const success = readNestedSuccess(updateTodos.result);
   return {

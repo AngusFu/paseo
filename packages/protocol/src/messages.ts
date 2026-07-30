@@ -3454,6 +3454,7 @@ const WorkspaceGitRuntimePayloadSchema = z
       .optional(),
     aheadOfOrigin: z.number().nullable().optional(),
     behindOfOrigin: z.number().nullable().optional(),
+    baseRef: z.string().nullable().optional(),
   })
   .optional()
   .nullable();

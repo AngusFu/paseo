@@ -5,6 +5,7 @@ import type {
 } from "@getpaseo/protocol/messages";
 import { isGitHubPullRequestStatusFacts } from "../../services/github-facts.js";
 import type { WorkspaceGitRuntimeSnapshot } from "../workspace-git-service.js";
+import { projectPullRequestForCheckoutDisplay } from "./pull-request-display-projection.js";
 
 type CheckoutPrStatusPayload = Extract<
   SessionOutboundMessage,
@@ -104,9 +105,10 @@ export function buildCheckoutPrStatusPayloadFromSnapshot({
   // self-managed GitLab hosts are correct). forgeSpecific.forge is only a facts
   // family tag, not a brand id, so unresolved snapshots stay unlabeled.
   const forge = snapshot.forge.forge;
+  const pullRequest = projectPullRequestForCheckoutDisplay(snapshot);
   return {
     cwd,
-    status: normalizeCheckoutPrStatusPayload(snapshot.forge.pullRequest, forge),
+    status: normalizeCheckoutPrStatusPayload(pullRequest, forge),
     githubFeaturesEnabled: snapshot.forge.featuresEnabled,
     authState: snapshot.forge.authState,
     ...(forge ? { forge } : {}),

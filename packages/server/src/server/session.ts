@@ -142,6 +142,7 @@ import {
   checkoutFromPersistedWorkspacePlacement,
   deriveWorkspaceDisplayName,
 } from "./workspace-registry-model.js";
+import { projectPullRequestForCheckoutDisplay } from "./checkout/pull-request-display-projection.js";
 import { resolveWorkspaceIdForPath } from "./resolve-workspace-id-for-path.js";
 import {
   resolveProjectDisplayName,
@@ -5460,6 +5461,7 @@ export class Session {
       aheadBehind: snapshot.git.aheadBehind,
       aheadOfOrigin: snapshot.git.aheadOfOrigin,
       behindOfOrigin: snapshot.git.behindOfOrigin,
+      baseRef: snapshot.git.baseRef,
     };
   }
 
@@ -5468,7 +5470,7 @@ export class Session {
   ): NonNullable<WorkspaceDescriptorPayload["githubRuntime"]> {
     return {
       featuresEnabled: snapshot.forge.featuresEnabled,
-      pullRequest: snapshot.forge.pullRequest,
+      pullRequest: projectPullRequestForCheckoutDisplay(snapshot),
       error: snapshot.forge.error,
     };
   }

@@ -62,6 +62,30 @@ describe("createSidebarWorkspaceEntry forge threading", () => {
     });
     expect(entry.prHint).toMatchObject({ number: 42, forge: "github" });
   });
+
+  it("hides a closed MR badge on the repository default branch", () => {
+    const closedMrWorkspace = workspaceWithForge(
+      "gitlab",
+      "https://gitlab.com/group/proj/-/merge_requests/1906",
+    );
+    closedMrWorkspace.githubRuntime = {
+      ...closedMrWorkspace.githubRuntime!,
+      pullRequest: {
+        ...closedMrWorkspace.githubRuntime!.pullRequest!,
+        state: "closed",
+      },
+    };
+    closedMrWorkspace.gitRuntime = {
+      currentBranch: "dev/sciforum-frontend-v2",
+      baseRef: "dev/sciforum-frontend-v2",
+    };
+
+    const entry = createSidebarWorkspaceEntry({
+      serverId: "srv",
+      workspace: closedMrWorkspace,
+    });
+    expect(entry.prHint).toBeNull();
+  });
 });
 
 interface OrderedItem {

@@ -14,6 +14,11 @@ const gitlabStatus = {
   isMerged: false,
 };
 
+const closedGitlabStatus = {
+  ...gitlabStatus,
+  state: "closed",
+};
+
 describe("selectPrHintFromStatus", () => {
   it("defaults the forge to github when none is supplied (old daemon)", () => {
     const hint = selectPrHintFromStatus(githubStatus);
@@ -33,6 +38,24 @@ describe("selectPrHintFromStatus", () => {
   it("passes an unknown forge id through untouched", () => {
     const hint = selectPrHintFromStatus(githubStatus, "bitbucket");
     expect(hint?.forge).toBe("bitbucket");
+  });
+
+  it("returns null when a closed MR is on the repository default branch", () => {
+    expect(
+      selectPrHintFromStatus(closedGitlabStatus, "gitlab", {
+        currentBranch: "dev/sciforum-frontend-v2",
+        defaultBranch: "dev/sciforum-frontend-v2",
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps a closed MR visible on a feature branch checkout", () => {
+    expect(
+      selectPrHintFromStatus(closedGitlabStatus, "gitlab", {
+        currentBranch: "feature/auth",
+        defaultBranch: "main",
+      }),
+    ).toMatchObject({ number: 7, state: "closed" });
   });
 
   it("returns null when the url has no parseable change-request number", () => {

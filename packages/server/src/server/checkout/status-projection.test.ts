@@ -369,6 +369,49 @@ describe("checkout status projection", () => {
     });
   });
 
+  test("hides a terminal MR on the repository default branch", () => {
+    const snapshot = {
+      cwd: "/repo",
+      git: {
+        isGit: true,
+        repoRoot: "/repo",
+        mainRepoRoot: null,
+        currentBranch: "dev/sciforum-frontend-v2",
+        remoteUrl: "https://gitlab.com/group/proj.git",
+        isPaseoOwnedWorktree: false,
+        isDirty: false,
+        baseRef: "dev/sciforum-frontend-v2",
+        aheadBehind: null,
+        aheadOfOrigin: null,
+        behindOfOrigin: null,
+        hasRemote: true,
+        diffStat: null,
+      },
+      forge: {
+        featuresEnabled: true,
+        authState: "authenticated",
+        forge: "gitlab",
+        error: null,
+        pullRequest: {
+          url: "https://gitlab.com/group/proj/-/merge_requests/1906",
+          title: "Old MR",
+          state: "closed",
+          baseRefName: "main",
+          headRefName: "dev/sciforum-frontend-v2",
+          isMerged: false,
+        },
+      },
+    } as unknown as WorkspaceGitRuntimeSnapshot;
+
+    const payload = buildCheckoutPrStatusPayloadFromSnapshot({
+      cwd: "/repo",
+      requestId: "req-terminal-default",
+      snapshot,
+    });
+
+    expect(payload.status).toBeNull();
+  });
+
   test("carries the missing-directory flag onto the non-git status payload", () => {
     function buildNonGitPayload(directoryMissing: boolean) {
       return buildCheckoutStatusPayloadFromSnapshot({

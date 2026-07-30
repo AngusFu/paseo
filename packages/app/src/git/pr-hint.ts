@@ -11,6 +11,12 @@ export interface PrHint {
   reviewDecision?: "approved" | "changes_requested" | "pending" | null;
 }
 
+export interface SelectPrHintContext {
+  currentBranch?: string | null;
+  /** Repository default branch (git base ref). */
+  defaultBranch?: string | null;
+}
+
 interface PrStatusLike {
   url: string;
   state: string;
@@ -19,6 +25,40 @@ interface PrStatusLike {
   checksStatus?: string;
   reviewDecision?: string | null;
   forge?: string;
+}
+
+function normalizeBranchRef(ref: string | null | undefined): string | null {
+  if (!ref) {
+    return null;
+  }
+  let normalized = ref.trim();
+  if (!normalized || normalized === "HEAD") {
+    return null;
+  }
+  normalized = normalized.replace(/^refs\/heads\//, "");
+  normalized = normalized.replace(/^origin\//, "");
+  return normalized;
+}
+
+function isTerminalPullRequestState(status: Pick<PrStatusLike, "state" | "isMerged">): boolean {
+  if (status.isMerged) {
+    return true;
+  }
+  const normalizedState = status.state.trim().toLowerCase();
+  return normalizedState === "closed" || normalizedState === "merged";
+}
+
+function shouldHideTerminalPullRequestOnDefaultBranch(input: {
+  currentBranch: string | null | undefined;
+  defaultBranch: string | null | undefined;
+  pullRequest: Pick<PrStatusLike, "state" | "isMerged"> | null | undefined;
+}): boolean {
+  if (!input.pullRequest || !isTerminalPullRequestState(input.pullRequest)) {
+    return false;
+  }
+  const currentBranch = normalizeBranchRef(input.currentBranch);
+  const defaultBranch = normalizeBranchRef(input.defaultBranch);
+  return currentBranch !== null && defaultBranch !== null && currentBranch === defaultBranch;
 }
 
 function parsePullRequestNumber(url: string): number | null {
@@ -41,8 +81,19 @@ function parsePullRequestNumber(url: string): number | null {
 export function selectPrHintFromStatus(
   status: PrStatusLike | null | undefined,
   forge?: string | null,
+  context?: SelectPrHintContext,
 ): PrHint | null {
   if (!status?.url) {
+    return null;
+  }
+
+  if (
+    shouldHideTerminalPullRequestOnDefaultBranch({
+      currentBranch: context?.currentBranch,
+      defaultBranch: context?.defaultBranch,
+      pullRequest: status,
+    })
+  ) {
     return null;
   }
 

@@ -167,6 +167,10 @@ export function createSidebarWorkspaceEntry(input: {
     prHint: selectPrHintFromStatus(
       input.workspace.githubRuntime?.pullRequest,
       input.workspace.forge,
+      {
+        currentBranch: normalizeCurrentBranch(input.workspace.gitRuntime?.currentBranch),
+        defaultBranch: normalizeCurrentBranch(input.workspace.gitRuntime?.baseRef),
+      },
     ),
     archiveHasUncommittedChanges: input.workspace.gitRuntime?.isDirty ?? null,
     archiveUnpushedCommitCount: input.workspace.gitRuntime?.aheadOfOrigin ?? null,

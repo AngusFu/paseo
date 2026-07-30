@@ -1,5 +1,8 @@
 /* eslint-disable max-nested-callbacks -- fake spawn + event collectors nest naturally */
 import { EventEmitter } from "node:events";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, expect, test, vi } from "vitest";
 
@@ -11,7 +14,9 @@ import {
   CursorPrintAgentClient,
   buildCursorPrintAutoAcceptFeature,
   buildCursorPrintCliPrompt,
+  buildCursorPrintPromptPointer,
   normalizeCursorPrintSessionConfig,
+  writeCursorPrintGuidanceFileForDaemon,
   type CursorPrintLaunch,
   type CursorPrintSpawn,
 } from "./cursor-print-agent.js";
@@ -806,60 +811,95 @@ describe("CursorPrintAgentClient", () => {
     });
   });
 
-  test("buildCursorPrintCliPrompt prepends runtime guidance and system prompts", () => {
-    const prompt = buildCursorPrintCliPrompt("do the thing", {
-      systemPrompt: "Agent system",
-      daemonAppendSystemPrompt: "Daemon append",
-    });
-    expect(prompt.startsWith(CURSOR_PRINT_RUNTIME_GUIDANCE)).toBe(true);
+  test("buildCursorPrintCliPrompt uses a compressed XML pointer (no guidance body)", () => {
+    const promptFilePath = "/tmp/paseo-cursor-print-guidance.md";
+    const prompt = buildCursorPrintCliPrompt(
+      "do the thing",
+      { systemPrompt: "Agent system", daemonAppendSystemPrompt: "Daemon append" },
+      { promptFilePath },
+    );
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("paseo question create");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("$PASEO_AGENT_ID");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("AskUserQuestion");
-    expect(prompt).toContain("Agent system");
-    expect(prompt).toContain("Daemon append");
-    expect(prompt.endsWith("do the thing")).toBe(true);
+    expect(buildCursorPrintPromptPointer(promptFilePath)).toBe(
+      `<paseo_guidance>Read ${promptFilePath} if unread this session; follow it.</paseo_guidance>`,
+    );
+    // daemonAppend is host-level (guidance file); only per-agent systemPrompt stays on the wire.
+    expect(prompt).toBe(
+      `${buildCursorPrintPromptPointer(promptFilePath)}\nAgent system\n\ndo the thing`,
+    );
+    expect(prompt).not.toContain(CURSOR_PRINT_RUNTIME_GUIDANCE);
+    expect(prompt).not.toContain("Daemon append");
   });
 
-  test("CLI prompt includes guidance but timeline user_message stays raw", async () => {
-    const { spawn, launches } = createFakeSpawn((child) => {
-      child.stdout.write(
-        `${JSON.stringify({
-          type: "result",
-          subtype: "success",
-          is_error: false,
-          result: "ok",
-          session_id: "chat-guidance",
-        })}\n`,
+  test("daemon boot writes host guidance; CLI pointer keeps timeline user_message raw", async () => {
+    const prev = process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
+    const dir = mkdtempSync(join(tmpdir(), "paseo-cursor-prompt-"));
+    const promptFilePath = join(dir, "paseo-cursor-print-guidance.md");
+    process.env.PASEO_CURSOR_PRINT_PROMPT_FILE = promptFilePath;
+    try {
+      await writeCursorPrintGuidanceFileForDaemon({
+        appendSystemPrompt: "Host append",
+        includeProseStopPrevention: true,
+        path: promptFilePath,
+      });
+      expect(readFileSync(promptFilePath, "utf8")).toContain(CURSOR_PRINT_RUNTIME_GUIDANCE);
+      expect(readFileSync(promptFilePath, "utf8")).toContain("Host append");
+      expect(readFileSync(promptFilePath, "utf8")).toContain("Decisions (Paseo)");
+
+      const { spawn, launches } = createFakeSpawn((child) => {
+        child.stdout.write(
+          `${JSON.stringify({
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            result: "ok",
+            session_id: "chat-guidance",
+          })}\n`,
+        );
+        child.emit("exit", 0, null);
+      });
+
+      const client = new CursorPrintAgentClient({
+        logger: createTestLogger(),
+        spawn,
+      });
+      const session = await client.createSession({
+        provider: CURSOR_PRINT_PROVIDER_ID,
+        cwd: "/tmp/project",
+        modeId: "force",
+        systemPrompt: "Be concise.",
+      });
+
+      const before = readFileSync(promptFilePath, "utf8");
+      const eventsPromise = collectUntil(session, (events) =>
+        events.some((event) => event.type === "turn_completed"),
       );
-      child.emit("exit", 0, null);
-    });
+      await session.startTurn("list files");
+      const events = await eventsPromise;
 
-    const client = new CursorPrintAgentClient({
-      logger: createTestLogger(),
-      spawn,
-    });
-    const session = await client.createSession({
-      provider: CURSOR_PRINT_PROVIDER_ID,
-      cwd: "/tmp/project",
-      modeId: "force",
-      systemPrompt: "Be concise.",
-    });
-
-    const eventsPromise = collectUntil(session, (events) =>
-      events.some((event) => event.type === "turn_completed"),
-    );
-    await session.startTurn("list files");
-    const events = await eventsPromise;
-
-    expect(launches[0]?.args.at(-1)).toBe(
-      buildCursorPrintCliPrompt("list files", { systemPrompt: "Be concise." }),
-    );
-    const userEvent = events.find(
-      (event) =>
-        event.type === "timeline" && (event.item as { type?: string }).type === "user_message",
-    ) as { item: { text: string } };
-    expect(userEvent.item.text).toBe("list files");
-    expect(userEvent.item.text).not.toContain("Paseo cursor-print");
+      expect(readFileSync(promptFilePath, "utf8")).toBe(before);
+      expect(launches[0]?.args.at(-1)).toBe(
+        buildCursorPrintCliPrompt("list files", { systemPrompt: "Be concise." }),
+      );
+      expect(launches[0]?.args.at(-1)).toContain(buildCursorPrintPromptPointer(promptFilePath));
+      expect(launches[0]?.args.at(-1)).toContain("Be concise.");
+      expect(launches[0]?.args.at(-1)).not.toContain("Paseo cursor-print");
+      expect(before).not.toContain("Be concise.");
+      const userEvent = events.find(
+        (event) =>
+          event.type === "timeline" && (event.item as { type?: string }).type === "user_message",
+      ) as { item: { text: string } };
+      expect(userEvent.item.text).toBe("list files");
+      expect(userEvent.item.text).not.toContain("Paseo cursor-print");
+    } finally {
+      if (prev === undefined) {
+        delete process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
+      } else {
+        process.env.PASEO_CURSOR_PRINT_PROMPT_FILE = prev;
+      }
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("startTurn emits canonical user_message with clientMessageId", async () => {

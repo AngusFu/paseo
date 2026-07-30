@@ -1,6 +1,10 @@
 import { type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import type { Logger } from "pino";
+
+import { McpCliService } from "../../mcp-cli/service.js";
+import { PROSE_STOP_PREVENTION_PROMPT } from "../prose-stop/prevention-prompt.js";
 
 import type {
   AgentCapabilityFlags,
@@ -89,10 +93,12 @@ const CURSOR_PRINT_DEFAULT_COMMAND = ["agent"] as const;
 const MODELS_TIMEOUT_MS = 30_000;
 
 /**
- * Cursor CLI has no --append-system-prompt. Paseo also cannot inject daemon MCP
- * into print sessions (`supportsMcpServers: false`). Prepend this guidance (plus
- * any agent/daemon system prompts) to the CLI prompt each turn; timeline
- * user_message stays the raw user text.
+ * Cursor CLI has no reliable append-system-prompt. Print sessions also cannot
+ * inject daemon MCP (`supportsMcpServers: false`). Host guidance is written once
+ * at daemon start to a file; each CLI turn only gets a short XML pointer.
+ * Timeline user_message stays raw.
+ *
+ * Override path with PASEO_CURSOR_PRINT_PROMPT_FILE (tests / non-/tmp hosts).
  */
 export const CURSOR_PRINT_RUNTIME_GUIDANCE = [
   "Paseo cursor-print: no daemon MCP. Use Shell + project CLIs; do not wait for MCP tools.",
@@ -103,24 +109,77 @@ export const CURSOR_PRINT_RUNTIME_GUIDANCE = [
   "Permission notes: Paseo Auto Approve only auto-answers Cursor interaction_query over stdin; it cannot enable org-disabled --force / Run Everything. Prefer Auto-review mode; do not rely on Force/YOLO when the org blocks it.",
 ].join("\n");
 
-/** Build the prompt string passed to `agent --print` (not the timeline user row). */
+export const CURSOR_PRINT_PROMPT_FILE_DEFAULT = "/tmp/paseo-cursor-print-guidance.md";
+
+export function resolveCursorPrintPromptFilePath(): string {
+  const fromEnv = process.env.PASEO_CURSOR_PRINT_PROMPT_FILE?.trim();
+  return fromEnv && fromEnv.length > 0 ? fromEnv : CURSOR_PRINT_PROMPT_FILE_DEFAULT;
+}
+
+/** Write guidance file contents. Returns the path. */
+export function writeCursorPrintGuidanceFile(
+  content: string,
+  path: string = resolveCursorPrintPromptFilePath(),
+): string {
+  writeFileSync(path, `${content}\n`, "utf8");
+  return path;
+}
+
+/**
+ * Daemon boot: write host-level cursor-print guidance (runtime + daemon appends).
+ * Per-agent systemPrompt is not included — that stays on the CLI wire when set.
+ */
+export async function writeCursorPrintGuidanceFileForDaemon(input: {
+  paseoHome?: string;
+  appendSystemPrompt?: string;
+  includeProseStopPrevention?: boolean;
+  path?: string;
+}): Promise<string> {
+  const parts: string[] = [CURSOR_PRINT_RUNTIME_GUIDANCE];
+  const userAppend = input.appendSystemPrompt?.trim();
+  if (userAppend) {
+    parts.push(userAppend);
+  }
+  if (input.includeProseStopPrevention !== false) {
+    parts.push(PROSE_STOP_PREVENTION_PROMPT.trim());
+  }
+  if (input.paseoHome) {
+    try {
+      const mcpPrompt = await new McpCliService(input.paseoHome).daemonAppendPrompt();
+      if (mcpPrompt.trim().length > 0) {
+        parts.push(mcpPrompt.trim());
+      }
+    } catch {
+      // FastMCP CLI overlay is best-effort at boot.
+    }
+  }
+  const content = composeSystemPromptParts(...parts) ?? CURSOR_PRINT_RUNTIME_GUIDANCE;
+  return writeCursorPrintGuidanceFile(content, input.path ?? resolveCursorPrintPromptFilePath());
+}
+
+export function buildCursorPrintPromptPointer(path: string): string {
+  return `<paseo_guidance>Read ${path} if unread this session; follow it.</paseo_guidance>`;
+}
+
+/**
+ * Build the prompt string passed to `agent --print` (not the timeline user row).
+ * Does not write the guidance file — daemon boot owns that.
+ */
 export function buildCursorPrintCliPrompt(
   userText: string,
   config: Pick<AgentSessionConfig, "systemPrompt" | "daemonAppendSystemPrompt"> = {},
+  options?: { promptFilePath?: string },
 ): string {
-  const preamble = composeSystemPromptParts(
-    CURSOR_PRINT_RUNTIME_GUIDANCE,
-    config.systemPrompt,
-    config.daemonAppendSystemPrompt,
-  );
-  if (!preamble) {
-    return userText;
-  }
+  const path = options?.promptFilePath ?? resolveCursorPrintPromptFilePath();
+  const pointer = buildCursorPrintPromptPointer(path);
+  // Host daemonAppend lives in the guidance file; only per-agent systemPrompt stays here.
+  const agentPrompt = config.systemPrompt?.trim();
+  const head = agentPrompt ? `${pointer}\n${agentPrompt}` : pointer;
   const trimmed = userText.trim();
   if (!trimmed) {
-    return preamble;
+    return head;
   }
-  return `${preamble}\n\n---\n\n${trimmed}`;
+  return `${head}\n\n${trimmed}`;
 }
 
 const CAPABILITIES: AgentCapabilityFlags = {

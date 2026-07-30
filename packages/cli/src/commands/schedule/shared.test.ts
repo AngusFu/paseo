@@ -224,6 +224,25 @@ describe("parseScheduleUpdateInput command target", () => {
   });
 });
 
+describe("parseScheduleCreateInput thinking", () => {
+  test("sets the thinking option for each scheduled new-agent run", () => {
+    const input = parseScheduleCreateInput({
+      ...baseOptions,
+      cwd: "/project",
+      thinking: "  high  ",
+    });
+
+    expect(input.target).toEqual({
+      type: "new-agent",
+      config: {
+        provider: "claude",
+        cwd: "/project",
+        thinkingOptionId: "high",
+      },
+    });
+  });
+});
+
 describe("parseScheduleUpdateInput", () => {
   test("rejects calls with no fields to update", () => {
     expect(() => parseScheduleUpdateInput({ id: "abc" })).toThrow(

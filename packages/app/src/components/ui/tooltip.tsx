@@ -31,7 +31,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { FloatingSurface } from "@/components/ui/floating";
 import { isWeb } from "@/constants/platform";
-import { getOverlayRoot, OVERLAY_Z, raiseOverlayRoot } from "@/lib/overlay-root";
+import { getOverlayRoot, OVERLAY_Z } from "@/lib/overlay-root";
 
 type Side = "top" | "bottom" | "left" | "right";
 type Align = "start" | "center" | "end";
@@ -541,7 +541,6 @@ export function TooltipContent({
 
   if (isWeb) {
     if (typeof document !== "undefined") {
-      raiseOverlayRoot();
       return createPortal(floatingContent, getOverlayRoot());
     }
     return floatingContent;

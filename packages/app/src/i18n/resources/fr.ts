@@ -879,6 +879,8 @@ export const fr: TranslationResources = {
         loadLargeDiff: "Load diff anyway",
         loadFailedRetry: "Retry",
         tooLargeStill: "This diff is still too large to display.",
+        previewTooLargeTitle: "Ce diff est trop volumineux pour être prévisualisé",
+        previewTooLargeDescription: "Réduisez la comparaison pour la prévisualiser ici",
         unified: "Différentiel unifié",
         split: "Différent côte à côte",
         switchToUnified: "Passer au diff unifié",
@@ -1070,6 +1072,8 @@ export const fr: TranslationResources = {
         openSettings: "Ouvrir les paramètres du projet",
         openNewWindow: "Open in new window",
         openNewWindowFailed: "Couldn't open a new window",
+        openFolder: "Open in file manager",
+        openFolderFailed: "Couldn't open folder",
         remove: "Supprimer le projet",
         removing: "Suppression...",
       },
@@ -2091,6 +2095,7 @@ export const fr: TranslationResources = {
         sendMessage: "Envoyer un message",
         queueMessage: "Message de file d'attente",
         muteUnmuteVoiceMode: "Mode vocal/unmutemuet",
+        switchProject: "Changer de projet",
       },
       helpNotes: {
         showKeyboardShortcuts:

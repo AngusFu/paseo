@@ -1226,6 +1226,7 @@ export class AgentManager {
     const launchContext = await this.buildLaunchContext(
       resolvedAgentId,
       client,
+      storedConfig.cwd,
       options?.env,
       options.workspaceId,
     );
@@ -1308,6 +1309,7 @@ export class AgentManager {
     const launchContext = await this.buildLaunchContext(
       resolvedAgentId,
       client,
+      storedConfig.cwd,
       undefined,
       options?.workspaceId,
     );
@@ -1362,6 +1364,7 @@ export class AgentManager {
     const launchContext = await this.buildLaunchContext(
       resolvedAgentId,
       client,
+      storedConfig.cwd,
       undefined,
       input.workspaceId,
     );
@@ -1454,6 +1457,7 @@ export class AgentManager {
     const launchContext = await this.buildLaunchContext(
       agentId,
       client,
+      storedConfig.cwd,
       undefined,
       existing.workspaceId,
     );
@@ -1590,6 +1594,8 @@ export class AgentManager {
       },
       "agent.manager.close.start",
     );
+    await this.drainSessionEvents(agentId);
+    this.cancelRunningProviderSubagents(agentId);
     const closedAgent = this.prepareAgentForClosure(agent, "agent closed");
     let closeError: unknown;
     try {
@@ -1619,6 +1625,20 @@ export class AgentManager {
     }
     if (persistError !== undefined) {
       throw persistError;
+    }
+  }
+
+  private cancelRunningProviderSubagents(parentAgentId: string): void {
+    for (const subagent of this.providerSubagents.list(parentAgentId)) {
+      if (subagent.status !== "running") {
+        continue;
+      }
+      const event = this.providerSubagents.apply(parentAgentId, subagent.provider, {
+        type: "upsert",
+        id: subagent.id,
+        status: "canceled",
+      });
+      this.dispatch({ type: "provider_subagent", event });
     }
   }
 
@@ -1663,8 +1683,23 @@ export class AgentManager {
       !this.runs.hasRun(agent.id) &&
       !agent.pendingReplacement &&
       agent.pendingPermissions.size === 0 &&
-      agent.inFlightPermissionResponses.size === 0
+      agent.inFlightPermissionResponses.size === 0 &&
+      !this.hasRunningChild(agent.id)
     );
+  }
+
+  private hasRunningChild(parentAgentId: string): boolean {
+    for (const agent of this.agents.values()) {
+      if (
+        agent.lifecycle === "running" &&
+        getParentAgentIdFromLabels(agent.labels) === parentAgentId
+      ) {
+        return true;
+      }
+    }
+    return this.providerSubagents
+      .list(parentAgentId)
+      .some((subagent) => subagent.status === "running");
   }
 
   async archiveAgent(agentId: string): Promise<{ archivedAt: string }> {
@@ -4628,7 +4663,12 @@ export class AgentManager {
       },
       "agent.manager.turn.completed",
     );
-    agent.lastUsage = event.usage;
+    if (event.usage) {
+      agent.lastUsage = { ...agent.lastUsage, ...event.usage };
+    }
+    // If no usage on turn_completed, keep lastUsage as-is so context window
+    // data accumulated during streaming isn't lost when the provider omits
+    // it from the completion event.
     agent.lastError = undefined;
     if (isForegroundEvent && !options?.fromHistory) {
       return this.handleForegroundTurnCompleted({ agent, event, eventTurnId, options, flags });
@@ -5774,6 +5814,7 @@ export class AgentManager {
   private async buildLaunchContext(
     agentId: string,
     client: AgentClient,
+    cwd: string,
     env?: Record<string, string>,
     workspaceId?: string,
   ): Promise<AgentLaunchContext> {
@@ -5792,6 +5833,7 @@ export class AgentManager {
     const envWithIds: Record<string, string> = {
       ...env,
       PASEO_AGENT_ID: agentId,
+      PASEO_AGENT_CWD: cwd,
       ...(workspaceId ? { PASEO_WORKSPACE_ID: workspaceId } : {}),
     };
     const context: AgentLaunchContext = {

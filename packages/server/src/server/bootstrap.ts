@@ -211,8 +211,8 @@ import {
 
 const MAX_MCP_DEBUG_BATCH_ITEMS = 10;
 const REDACTED_LOG_VALUE = "[redacted]";
-const IDLE_AGENT_RUNTIME_TTL_MS = 2 * 60 * 1000;
-const IDLE_AGENT_RUNTIME_SWEEP_INTERVAL_MS = 15 * 1000;
+const IDLE_AGENT_RUNTIME_TTL_MS = 30 * 60 * 1000;
+const IDLE_AGENT_RUNTIME_SWEEP_INTERVAL_MS = 60 * 1000;
 const DOWNLOAD_OPEN_FLAGS =
   process.platform === "win32" ? constants.O_RDONLY : constants.O_RDONLY | constants.O_NOFOLLOW;
 
@@ -908,6 +908,7 @@ export async function createPaseoDaemon(
     },
   });
   const workspaceProvisioning = createWorkspaceProvisioningService({
+    serverId,
     projectRegistry,
     workspaceRegistry,
     workspaceGitService,
@@ -952,6 +953,7 @@ export async function createPaseoDaemon(
   await agentStorage.initialize();
   logger.info({ elapsed: elapsed() }, "Agent storage initialized");
   await bootstrapWorkspaceRegistries({
+    serverId,
     paseoHome: config.paseoHome,
     agentStorage,
     projectRegistry,
@@ -965,6 +967,7 @@ export async function createPaseoDaemon(
     releaseWorkspaceServicePortPlan(workspaceId);
   };
   const workspaceReconciliation = new WorkspaceReconciliationService({
+    serverId,
     projectRegistry,
     workspaceRegistry,
     logger,
@@ -980,7 +983,7 @@ export async function createPaseoDaemon(
     },
   });
   await workspaceReconciliation.start();
-  void workspaceReconciliation.runOnce().catch((error) => {
+  void workspaceReconciliation.reconcileNow().catch((error) => {
     logger.warn({ err: error }, "Initial workspace reconciliation failed");
   });
   await chatService.initialize();

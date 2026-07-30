@@ -39,7 +39,7 @@ export function buildScheduleProjectTargets(
         serverId: host.serverId,
         serverName: host.serverName,
         projectKey: project.projectKey,
-        projectName: project.projectName,
+        projectName: host.projectName,
         cwd,
         isGit: Boolean(host.gitRuntime),
         ownsRepoRoot: host.ownsRepoRoot,

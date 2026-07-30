@@ -5,6 +5,7 @@ import {
   MAX_PHYSICAL_SOCKET_BUFFERED_BYTES,
   isOutboundFrameTooLarge,
   sendBoundedPhysicalFrame,
+  sendBoundedPhysicalFrameAndWait,
 } from "./physical-socket.js";
 
 test("sockets remain exempt until they send an application ping", () => {
@@ -94,4 +95,57 @@ test("a single frame larger than the hard bound is dropped without high-water te
   expect(sent).toEqual([]);
   expect(dropped).toBe(true);
   expect(terminated).toBe(false);
+});
+
+test("the awaitable physical send resolves only when that frame send completes", async () => {
+  const sent: Array<string | Uint8Array | ArrayBuffer> = [];
+  let completeSend: (() => void) | undefined;
+  const socket = {
+    readyState: 1,
+    bufferedAmount: 0,
+    send: (_data: string | Uint8Array | ArrayBuffer, callback?: (error?: Error) => void) => {
+      sent.push(_data);
+      if (callback) completeSend = () => callback();
+    },
+  };
+  let completed = false;
+
+  const sending = sendBoundedPhysicalFrameAndWait({
+    socket,
+    frame: new Uint8Array([1, 2, 3]),
+    onHighWater: () => undefined,
+  }).then(() => {
+    return (completed = true);
+  });
+
+  await Promise.resolve();
+  expect(completed).toBe(false);
+  expect(
+    sendBoundedPhysicalFrame({
+      socket,
+      frame: "unrelated",
+      onHighWater: () => undefined,
+    }),
+  ).toBe(true);
+  expect(sent).toEqual([new Uint8Array([1, 2, 3]), "unrelated"]);
+  completeSend?.();
+  await sending;
+  expect(completed).toBe(true);
+});
+
+test("the awaitable physical send rejects callback errors", async () => {
+  const socket = {
+    readyState: 1,
+    bufferedAmount: 0,
+    send: (_data: string | Uint8Array | ArrayBuffer, callback?: (error?: Error) => void) =>
+      callback?.(new Error("send failed")),
+  };
+
+  await expect(
+    sendBoundedPhysicalFrameAndWait({
+      socket,
+      frame: new Uint8Array([1]),
+      onHighWater: () => undefined,
+    }),
+  ).rejects.toThrow("send failed");
 });

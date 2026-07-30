@@ -170,7 +170,7 @@ describe("Live relay (relay.paseo.sh) E2E", () => {
               daemonReceivedCiphertext.byteOffset + daemonReceivedCiphertext.byteLength,
             ),
           );
-          expect(decryptedOnDaemon).toBe(plaintextFromClient);
+          expect(new TextDecoder().decode(decryptedOnDaemon)).toBe(plaintextFromClient);
 
           const plaintextFromDaemon = "hello-from-daemon";
           const ciphertextFromDaemon = encrypt(daemonSharedKey, plaintextFromDaemon);
@@ -189,7 +189,7 @@ describe("Live relay (relay.paseo.sh) E2E", () => {
               clientReceivedCiphertext.byteOffset + clientReceivedCiphertext.byteLength,
             ),
           );
-          expect(decryptedOnClient).toBe(plaintextFromDaemon);
+          expect(new TextDecoder().decode(decryptedOnClient)).toBe(plaintextFromDaemon);
         } finally {
           daemonControlWs.close();
           daemonWs?.close();

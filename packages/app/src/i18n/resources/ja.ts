@@ -862,6 +862,8 @@ export const ja: TranslationResources = {
         loadLargeDiff: "Load diff anyway",
         loadFailedRetry: "Retry",
         tooLargeStill: "This diff is still too large to display.",
+        previewTooLargeTitle: "この差分は大きすぎるためプレビューできません",
+        previewTooLargeDescription: "比較範囲を狭めると、ここでプレビューできます",
         unified: "ユニファイド差分",
         split: "左右比較",
         switchToUnified: "ユニファイド差分に切り替え",
@@ -1053,6 +1055,8 @@ export const ja: TranslationResources = {
         openSettings: "プロジェクト設定を開く",
         openNewWindow: "新しいウィンドウで開く",
         openNewWindowFailed: "新しいウィンドウを開けませんでした",
+        openFolder: "Open in file manager",
+        openFolderFailed: "Couldn't open folder",
         remove: "プロジェクトを削除",
         removing: "削除中...",
       },
@@ -2059,6 +2063,7 @@ export const ja: TranslationResources = {
         sendMessage: "メッセージを送信",
         queueMessage: "メッセージをキューに追加",
         muteUnmuteVoiceMode: "音声モードのミュートを切り替え",
+        switchProject: "プロジェクトを切り替え",
       },
       helpNotes: {
         showKeyboardShortcuts:

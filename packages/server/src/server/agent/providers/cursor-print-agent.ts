@@ -83,11 +83,9 @@ const MODELS_TIMEOUT_MS = 30_000;
  * user_message stays the raw user text.
  */
 export const CURSOR_PRINT_RUNTIME_GUIDANCE = [
-  "Paseo cursor-print runtime notes:",
-  "- You are running via Cursor Agent CLI (--print). Paseo does not inject its daemon MCP servers into this session.",
-  "- Prefer project CLIs and the Shell tool over MCP when a CLI exists (for example: atlassian, glab, figma, chrome-devtools, gh).",
-  "- Workspace/user `.cursor/mcp.json` may still load via Cursor itself; use MCP only when there is no suitable CLI.",
-  "- Follow repository AGENTS.md / CLAUDE.md / project skills when present.",
+  "Paseo cursor-print: no daemon MCP. Use Shell + project CLIs; do not wait for MCP tools.",
+  "Prefer: atlassian (Jira/Confluence), glab (GitLab; use env -u GITLAB_TOKEN glab …), figma, chrome-devtools, gh.",
+  "If a skill/doc names a CLI, run that CLI — do not substitute an MCP server.",
 ].join("\n");
 
 /** Build the prompt string passed to `agent --print` (not the timeline user row). */

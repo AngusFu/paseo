@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useRef, type ReactNode } from "react";
-import { ScrollView } from "react-native";
+import { ScrollView, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Wrench } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
@@ -76,7 +76,7 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
         showsVerticalScrollIndicator
         onContentSizeChange={scrollToLatest}
       >
-        {children}
+        <View style={styles.children}>{children}</View>
       </ScrollView>
     ),
     [children, scrollToLatest],
@@ -104,5 +104,8 @@ const styles = StyleSheet.create((theme) => ({
   content: {
     paddingTop: theme.spacing[1],
     paddingHorizontal: 13,
+  },
+  children: {
+    gap: theme.spacing[1],
   },
 }));

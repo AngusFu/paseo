@@ -167,6 +167,47 @@ export const OMP_MODES: AgentProviderModeDefinition[] = [
   },
 ];
 
+const CURSOR_PRINT_MODES: AgentProviderModeDefinition[] = [
+  {
+    id: "auto-review",
+    label: "Auto-review",
+    description:
+      "Cursor Smart Auto (--auto-review): classifier auto-runs safe tools; preferred when --force is org-disabled",
+    icon: "ShieldAlert",
+    colorTier: "moderate",
+    isUnattended: true,
+  },
+  {
+    id: "force",
+    label: "Force (YOLO)",
+    description: "Auto-approve tool calls via agent --force (may be disabled by org policy)",
+    icon: "ShieldOff",
+    colorTier: "dangerous",
+    isUnattended: true,
+  },
+  {
+    id: "default",
+    label: "Always Ask",
+    description: "Ask before tool use via Cursor interaction_query over stdin",
+    icon: "Shield",
+    colorTier: "safe",
+  },
+  {
+    id: "plan",
+    label: "Plan Mode",
+    description: "Read-only analysis with --mode plan",
+    icon: "ShieldEllipsis",
+    colorTier: "planning",
+  },
+  {
+    id: "ask",
+    label: "Ask Mode",
+    description: "Q&A style read-only with --mode ask",
+    icon: "ShieldCheck",
+    colorTier: "safe",
+  },
+];
+
 const MOCK_LOAD_TEST_MODES: AgentProviderModeDefinition[] = [
   {
     id: "load-test",
@@ -247,6 +288,15 @@ export const AGENT_PROVIDER_DEFINITIONS: AgentProviderDefinition[] = [
     enabledByDefault: false,
     defaultModeId: "full",
     modes: OMP_MODES,
+  },
+  {
+    id: "cursor-print",
+    label: "Cursor (Print)",
+    description:
+      "Cursor Agent CLI via --print/--output-format stream-json (non-ACP; loads project .cursor/hooks.json)",
+    enabledByDefault: false,
+    defaultModeId: "auto-review",
+    modes: CURSOR_PRINT_MODES,
   },
 ];
 

@@ -74,7 +74,15 @@ describe("ProviderSnapshotManager public surface", () => {
     try {
       const ids = manager.listRegisteredProviderIds();
       expect(ids).toEqual(
-        expect.arrayContaining(["claude", "codex", "opencode", "copilot", "pi", "omp"]),
+        expect.arrayContaining([
+          "claude",
+          "codex",
+          "opencode",
+          "copilot",
+          "pi",
+          "omp",
+          "cursor-print",
+        ]),
       );
     } finally {
       manager.destroy();
@@ -391,14 +399,24 @@ describe("ProviderSnapshotManager public surface", () => {
         claude: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
+        "cursor-print": { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
+        omp: { enabled: false },
       },
     });
     try {
       const entries = await manager.listProviders({ cwd: "/tmp/project", wait: true });
       const providers = entries.map((entry) => entry.provider).sort();
-      expect(providers).toEqual(["claude", "codex", "copilot", "omp", "opencode", "pi"]);
+      expect(providers).toEqual([
+        "claude",
+        "codex",
+        "copilot",
+        "cursor-print",
+        "omp",
+        "opencode",
+        "pi",
+      ]);
       for (const entry of entries) {
         expect(entry.enabled).toBe(false);
         expect(entry.status).toBe("unavailable");

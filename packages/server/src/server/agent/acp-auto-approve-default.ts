@@ -18,6 +18,11 @@ export function isDaemonManagedAcpAutoAcceptProvider(
   if (provider === "copilot") {
     return true;
   }
+  // Non-ACP Cursor print transport still uses the same auto_accept feature id /
+  // composer toggle to auto-approve interaction_query permissions.
+  if (provider === "cursor-print") {
+    return true;
+  }
   return providerOverrides?.[provider]?.extends === "acp";
 }
 

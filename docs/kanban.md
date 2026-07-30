@@ -139,14 +139,12 @@ does nothing (or worse, transitions the wrong way) would be worse than no drag;
 the Jira tab's real cross-lane move now goes through the write-back
 `kanban.card.transition` RPC below instead once the app wires it up.
 
-GitLab lanes are Draft / Open / Approved / Merged / Closed. **Approved** means
-substantive approval (`approvals_required > 0` or someone in `approved_by`) —
-GitLab's vacuous `approved: true` when a project has no approval rules must not
-land every open MR in Approved. Merged cards that drop out of a `state=opened`
-query are reconciled into Done + `detachedFromSource` (hidden from lanes, kept
-for the stats strip). The reconcile pass caps re-fetches per round; already-
-terminal detached cards are excluded from that cap so a backlog of old merged
-MRs cannot starve newer dropouts.
+GitLab lanes are **Draft + Open** only — matching a live `state=opened` source
+query (review queue or authored MRs). Opened non-draft MRs stay in Open
+regardless of approval state. Merged/closed MRs that drop out of the query are
+**deleted** on reconcile (and store-known `metadata.state === "merged"` cards are
+purged with no API call) so they cannot clutter the queue or starve the
+per-round reconcile re-fetch cap.
 
 ## Jira write-back
 

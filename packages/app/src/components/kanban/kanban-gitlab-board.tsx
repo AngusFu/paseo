@@ -7,78 +7,41 @@ import {
 } from "@/components/kanban/kanban-status-board";
 import { KanbanGitlabStats } from "@/components/kanban/kanban-gitlab-stats";
 
-type GitlabBucketKey = "draft" | "open" | "approved" | "merged" | "closed";
-// Fixed lane order — GitLab MRs always get all five lanes rendered, even
-// empty ones (unlike the Jira board's fully dynamic column set), since the
-// MR lifecycle is the same five stops for every source.
-const BUCKET_ORDER: GitlabBucketKey[] = ["draft", "open", "approved", "merged", "closed"];
+type GitlabBucketKey = "draft" | "open";
+// Live queue only: Draft + Open. Merged/closed drop out of `state=opened`
+// sources and are deleted on reconcile; Approved is not a separate lane —
+// an opened non-draft MR stays in Open regardless of approval state.
+const BUCKET_ORDER: GitlabBucketKey[] = ["draft", "open"];
 
-// Reads {state, draft, approvals} off a synced GitLab MR card's raw metadata
-// blob (packages/server/src/server/kanban/sync.ts stores the GitLab API MR
-// object there, plus an `approvals` field it fetches separately since the MR
-// list endpoint never includes approval state). Pure + defensive: metadata is
+// Reads {state, draft} off a synced GitLab MR card's raw metadata blob
+// (packages/server/src/server/kanban/sync.ts stores the GitLab API MR
+// object there). Pure + defensive: metadata is
 // `Record<string, unknown> | undefined` on the wire, so every field is
-// narrowed before use instead of assumed. `state` is GitLab's own
-// opened/merged/closed; an "opened" MR still marked draft gets its own Draft
-// lane ahead of Open, matching how MR authors think about their own queue. An
-// opened, non-draft MR only lands in Approved once approval was substantive —
-// see `isSubstantivelyApproved`. Missing/null approvals (fetch failed) or a
-// vacuous `approved: true` with no required rules both fall back to Open.
-function isSubstantivelyApproved(approvals: unknown): boolean {
-  if (typeof approvals !== "object" || approvals === null || Array.isArray(approvals)) {
-    return false;
-  }
-  const record = approvals as Record<string, unknown>;
-  if (record.approved !== true) {
-    return false;
-  }
-  // Prefer the required-count the daemon stores (post vacuous-approved fix).
-  let required: number | null = null;
-  if (typeof record.approvalsRequired === "number") {
-    required = record.approvalsRequired;
-  } else if (typeof record.approvals_required === "number") {
-    required = record.approvals_required;
-  }
-  if (required !== null) {
-    return required > 0;
-  }
-  // COMPAT: older metadata only had {approved, approvalsLeft}. On instances
-  // with no approval rules GitLab reports approved=true vacuously, identical
-  // to a finished approval (left=0) — don't trust `approved` alone.
-  return false;
-}
-
+// narrowed before use instead of assumed. Terminal states return null so
+// the card is omitted from the live queue (sync deletes them; this is a
+// render-time belt for stale local data).
 function readGitlabBucket(metadata: Record<string, unknown> | undefined): GitlabBucketKey | null {
   const state = metadata?.state;
   if (typeof state !== "string") {
     return null;
   }
-  if (state === "merged") {
-    return "merged";
-  }
-  if (state === "closed") {
-    return "closed";
+  if (state === "merged" || state === "closed") {
+    return null;
   }
   if (state === "opened") {
-    if (metadata?.draft === true) {
-      return "draft";
-    }
-    return isSubstantivelyApproved(metadata?.approvals) ? "approved" : "open";
+    return metadata?.draft === true ? "draft" : "open";
   }
   return null;
 }
 
 /**
- * GitLab source-kind view: five fixed lanes (Draft / Open / Approved / Merged
- * / Closed) derived from the MR's real state + draft flag + approval state,
- * not Paseo's generic pending/wip/done buckets. Unlike the Jira view, all
- * five lanes always render (even with zero cards) since GitLab's MR
- * lifecycle is fixed. Cards synced before the raw state metadata was stored
- * (or any card this parser can't read) fall back to a lane named after the
- * legacy KanbanStatus so nothing silently disappears from the board. A
- * read-only stats strip (KanbanGitlabStats) sits above the lanes:
- * merged-in-7d/30d, average time-to-merge, pending-review backlog,
- * unresolved-discussion count.
+ * GitLab source-kind view: Draft + Open only — the live `state=opened` queue
+ * for both review boards and authored-MR boards. Not Paseo's generic
+ * pending/wip/done buckets. Both lanes always render (even empty). Cards
+ * synced before raw state metadata was stored fall back to a lane named
+ * after the legacy KanbanStatus. Stats strip still sits above for pending
+ * review / unresolved discussion counts (merge stats are zero once merged
+ * cards are purged from the store).
  */
 export function KanbanGitlabBoard({
   cards,
@@ -96,17 +59,16 @@ export function KanbanGitlabBoard({
     );
     const legacy = new Map<string, KanbanStatusBucket>();
     for (const card of cards) {
-      // A merged MR that dropped out of the source query is kept in the store
-      // (flagged detached) only so the stats strip below can still count it —
-      // the board itself is a live review queue, so hide it from the lanes. Note
-      // this filters lane rendering ONLY; KanbanGitlabStats still receives the
-      // full `cards` set, so merged-in-7d/30d and avg-time-to-merge stay intact.
-      if (card.detachedFromSource === true && card.metadata?.state === "merged") {
-        continue;
-      }
       const bucket = readGitlabBucket(card.metadata);
       if (bucket) {
         fixed.get(bucket)?.cards.push(card);
+        continue;
+      }
+      // Terminal / unreadable metadata: omit from the live queue.
+      if (card.metadata?.state === "merged" || card.metadata?.state === "closed") {
+        continue;
+      }
+      if (card.detachedFromSource === true) {
         continue;
       }
       const key = `legacy:${card.status}`;

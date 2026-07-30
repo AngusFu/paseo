@@ -204,18 +204,23 @@ function jiraStoredCategoryKey(card: StoredKanbanCard): string | undefined {
   return status?.statusCategory?.key;
 }
 
-/** Detached + terminal — kept for stats, never needs another reconcile fetch. */
+/**
+ * Detached + terminal Jira cards stay in the store (done category) but never
+ * need another reconcile fetch. GitLab merged cards are purged outright (see
+ * purgeMergedGitlabCards) — they must not be excluded here or they'd linger.
+ */
 function isTerminalDetachedCard(card: StoredKanbanCard): boolean {
   if (card.detachedFromSource !== true) {
     return false;
-  }
-  if (card.source.kind === "gitlab") {
-    return (card.metadata as { state?: string } | undefined)?.state === "merged";
   }
   if (card.source.kind === "jira") {
     return jiraStoredCategoryKey(card) === "done";
   }
   return false;
+}
+
+function gitlabStoredState(card: StoredKanbanCard): string | undefined {
+  return (card.metadata as { state?: string } | undefined)?.state;
 }
 
 // GitLab MRs only ever have two board-relevant buckets: still open (including
@@ -419,6 +424,9 @@ export class KanbanSyncService {
         await this.onCardCreated?.(card, source);
       }
     }
+    // Drop store-known merged cards for this source (no API). Live queues are
+    // Draft+Open only; keeping merged-for-stats starved the reconcile cap.
+    await this.purgeMergedGitlabCards(source);
     cards.push(
       ...(await this.reconcileDetachedGitlabCards(
         baseUrl,
@@ -942,25 +950,40 @@ export class KanbanSyncService {
     return reconciled;
   }
 
-  // A merged/closed MR drops out of a state-filtered sync query (the common
+  // Purge cards this source still lists whose stored metadata is already
+  // `merged` — no API call. The live GitLab board is Draft+Open only; merged
+  // leftovers only clutter the queue and used to starve the reconcile cap.
+  private async purgeMergedGitlabCards(source: StoredKanbanSource): Promise<void> {
+    for (const card of await this.store.listCards()) {
+      if (card.source.kind !== "gitlab") {
+        continue;
+      }
+      if (gitlabStoredState(card) !== "merged") {
+        continue;
+      }
+      if (!cardBelongsToSource(card, source.id)) {
+        continue;
+      }
+      if (await this.releaseSharedCard(card, source)) {
+        continue;
+      }
+      await this.store.deleteCard(card.id);
+    }
+  }
+
+  // An MR that drops out of a state-filtered sync query (the common
   // `state=opened&reviewer_username=...` filter). Handled by outcome:
   //
-  //   - Closed (not merged) → removed. A closed MR is abandoned work, not the
-  //     user's review anymore, so keeping a stale card only clutters the queue.
-  //   - Still open but the tracked reviewer was removed → removed. No longer the
-  //     user's review either (the GitLab analogue of a reassigned Jira issue).
-  //   - Merged → kept, moved to Done, flagged detached. A merged MR IS terminal
-  //     and the GitLab board hides merged cards from its lanes (see
-  //     kanban-gitlab-board), but the card stays in the store so the stats strip
-  //     (merged-in-7d/30d, avg time-to-merge) can still count it.
+  //   - Merged or closed → removed. The live board is Draft+Open only.
+  //   - Still open but the tracked reviewer was removed → removed.
   //   - Still open and still the user's to review (or the reviewer can't be
   //     determined) — dropped out for some other reason → kept, real state
   //     written back, flagged detached.
   //
-  // Conservative by construction: removal only fires on a proven closed state or
-  // a proven reviewer removal (see gitlabReviewerRemoved), never on missing
-  // data, never during a truncated page walk (candidates are empty then), and
-  // only for cards this source owns.
+  // Conservative by construction: removal only fires on a proven terminal
+  // state or a proven reviewer removal (see gitlabReviewerRemoved), never on
+  // missing data, never during a truncated page walk, and only for cards this
+  // source owns.
   private async reconcileDetachedGitlabCards(
     baseUrl: string,
     source: StoredKanbanSource,
@@ -980,12 +1003,6 @@ export class KanbanSyncService {
       if (await this.releaseSharedCard(card, source)) {
         continue;
       }
-      // Already flagged and already merged — its state can't drift further, and
-      // it is only kept for the stats strip, so re-fetching it forever is waste.
-      const storedState = (card.metadata as { state?: string } | undefined)?.state;
-      if (card.detachedFromSource && storedState === "merged") {
-        continue;
-      }
       // Best-effort per card: a network error re-fetching one card must not
       // fail the whole sync, whose primary query already succeeded.
       try {
@@ -1003,23 +1020,25 @@ export class KanbanSyncService {
           }
           continue;
         }
-        // Closed, or no longer the user's to review — drop it (only for cards
-        // this source owns, mirroring flagUnreachableCard). Merged is NOT dropped
-        // here: it is kept for the stats strip and hidden at the render layer.
-        if (mr.state === "closed" || gitlabReviewerRemoved(mr, reviewerUsername)) {
+        // Terminal, or no longer the user's to review — drop it (only for cards
+        // this source owns, mirroring flagUnreachableCard).
+        if (
+          mr.state === "merged" ||
+          mr.state === "closed" ||
+          gitlabReviewerRemoved(mr, reviewerUsername)
+        ) {
           if (card.sourceId === source.id) {
             await this.store.deleteCard(card.id);
           }
           continue;
         }
-        // Merged → Done + detached; still-open-still-mine → detached in place.
-        // approvals isn't worth a second request for a card in this state.
+        // Still open but missing from the query → detach in place. Approvals
+        // aren't worth a second request for a card in this state.
         const { cardSource, payload } = await this.buildGitlabUpsert(baseUrl, source, mr, null);
         reconciled.push(
           await this.store.upsertCardBySource(cardSource, {
             ...payload,
             detachedFromSource: true,
-            forceStatus: mr.state === "merged",
           }),
         );
       } catch (error) {

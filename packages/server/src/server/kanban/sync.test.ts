@@ -232,7 +232,7 @@ describe("KanbanSyncService", () => {
     expect(byExternalId.get("gitlab:42!7")?.status).toBe("done");
   });
 
-  test("keeps a merged MR as a detached Done card (for the stats strip) once it drops out", async () => {
+  test("removes a merged MR once it drops out of the opened query", async () => {
     const openMr = {
       iid: 5,
       project_id: 42,
@@ -248,7 +248,7 @@ describe("KanbanSyncService", () => {
       // List endpoint: the first sync returns the open MR; later syncs no
       // longer return it, mirroring how a merged MR drops out of a
       // `state=opened` query.
-      if (url.includes("/api/v4/merge_requests")) {
+      if (url.includes("/api/v4/merge_requests") && !url.includes("/projects/")) {
         listCalls += 1;
         return {
           ok: true,
@@ -260,6 +260,14 @@ describe("KanbanSyncService", () => {
       // Single-MR endpoint used by the reconcile pass: now merged.
       if (url.includes("/api/v4/projects/42/merge_requests/5")) {
         return { ok: true, status: 200, statusText: "OK", json: async () => mergedMr };
+      }
+      if (url.includes("/approvals")) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ approved: false, approvals_left: 1, approvals_required: 1 }),
+        };
       }
       throw new Error(`unexpected url ${url}`);
     }) as unknown as typeof fetch;
@@ -276,23 +284,11 @@ describe("KanbanSyncService", () => {
     expect(first.cards.find((card) => card.externalId === "gitlab:42!5")?.status).toBe("wip");
 
     // Second sync: the MR is gone from the list query; reconciliation re-fetches
-    // it, sees it merged, moves it to Done and flags it detached. It is NOT
-    // deleted — the stats strip counts merged cards; the board hides them at the
-    // render layer instead.
+    // it, sees it merged, and deletes it — the live board is Draft+Open only.
     const second = await syncService.sync(source);
     expect(second.error).toBeNull();
     const storedAfter = (await store.listCards()).find((card) => card.externalId === "gitlab:42!5");
-    expect(storedAfter).toMatchObject({ status: "done", detachedFromSource: true });
-
-    // Third sync: the card's stored metadata is already merged, so it is not
-    // re-fetched again — each merged MR costs exactly one reconciliation request.
-    const singleFetchCount = () =>
-      fetchImpl.mock.calls.filter((call: unknown[]) =>
-        String(call[0]).includes("/api/v4/projects/42/merge_requests/5"),
-      ).length;
-    const before = singleFetchCount();
-    await syncService.sync(source);
-    expect(singleFetchCount()).toBe(before);
+    expect(storedAfter).toBeUndefined();
   });
 
   test("removes a GitLab card once its MR is closed (not merged)", async () => {
@@ -1676,11 +1672,10 @@ describe("KanbanSyncService", () => {
     });
   });
 
-  test("reconcile cap is not starved by already-detached merged cards", async () => {
-    // Seed > MAX_RECONCILE_CARDS (25) terminal detached merged cards plus one
-    // stale still-"opened" card. Without excluding terminal cards from the
-    // candidate pool, every sync would re-slice the same first 25 and never
-    // reach the stale one — which is how merged MRs stuck in Draft/Approved.
+  test("purges store-known merged cards without fetching and still reconciles stale opens", async () => {
+    // Seed many already-merged cards plus one stale still-"opened" card.
+    // Purge clears merged with no API; reconcile then fetches the stale one
+    // and deletes it once GitLab reports merged.
     const source = await store.createSource({
       kind: "gitlab",
       name: "GitLab",
@@ -1758,16 +1753,13 @@ describe("KanbanSyncService", () => {
     const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
     await syncService.sync(source);
 
-    expect(singleFetches).toContain("99");
-    const stale = (await store.listCards()).find((card) => card.externalId === "gitlab:42!99");
-    expect(stale).toMatchObject({
-      status: "done",
-      detachedFromSource: true,
-      metadata: expect.objectContaining({ state: "merged" }),
-    });
+    expect(singleFetches).toEqual(["99"]);
+    const remaining = await store.listCards();
+    expect(remaining.find((card) => card.externalId === "gitlab:42!99")).toBeUndefined();
+    expect(remaining.filter((card) => card.source.kind === "gitlab")).toHaveLength(0);
   });
 
-  test("a merged MR forces a user-pinned card to done, overriding the manual drag", async () => {
+  test("a merged MR is removed even when the user had pinned another column", async () => {
     const cardSource = {
       kind: "gitlab" as const,
       externalId: "gitlab:42!9",
@@ -1803,9 +1795,8 @@ describe("KanbanSyncService", () => {
     });
 
     await syncService.sync(source);
-    const card = await store.getCard(created.id);
-    // Terminal merge wins over the pin: the card lands in done.
-    expect(card?.status).toBe("done");
+    // Live queue is Draft+Open only — merged wins over the pin by deleting.
+    expect(await store.getCard(created.id)).toBeNull();
   });
 
   test("Jira Cloud sync requests created/updated fields and stores them on the card", async () => {

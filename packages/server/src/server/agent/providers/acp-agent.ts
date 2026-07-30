@@ -3506,6 +3506,14 @@ function mapPlanToTimeline(plan: Plan): AgentTimelineItem {
   };
 }
 
+function resolveAcpToolCallName(kind: string | null | undefined, title: string): string {
+  const normalizedKind = kind?.trim().toLowerCase();
+  if (!normalizedKind || normalizedKind === "other") {
+    return title.trim() || kind?.trim() || title;
+  }
+  return kind ?? title;
+}
+
 function mapToolSnapshotToTimeline(
   snapshot: ACPToolSnapshot,
   terminals: Map<string, TerminalEntry>,
@@ -3515,7 +3523,7 @@ function mapToolSnapshotToTimeline(
   const base = {
     type: "tool_call" as const,
     callId: snapshot.toolCallId,
-    name: snapshot.kind ?? snapshot.title,
+    name: resolveAcpToolCallName(snapshot.kind, snapshot.title),
     detail,
     metadata: {
       kind: snapshot.kind ?? undefined,
@@ -3797,7 +3805,7 @@ function mapPermissionRequest(
   return {
     id: requestId,
     provider,
-    name: snapshot.kind ?? snapshot.title,
+    name: resolveAcpToolCallName(snapshot.kind, snapshot.title),
     kind,
     title: params.toolCall.title ?? snapshot.title,
     detail: mapToolDetail(snapshot, new Map()),

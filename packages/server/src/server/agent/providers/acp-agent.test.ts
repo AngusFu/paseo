@@ -3707,6 +3707,54 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
     });
   });
 
+  test("opaque other tool shells use title for timeline and permission names", async () => {
+    const session = createSession();
+    const internals = asInternals<ACPSessionInternals>(session);
+    internals.sessionId = "session-1";
+
+    const toolEvents = internals.translateSessionUpdate({
+      sessionUpdate: "tool_call",
+      toolCallId: "opaque-mcp",
+      title: "MCP: tool",
+      kind: "other",
+      status: "running",
+    });
+
+    expect(toolEvents).toEqual([
+      expect.objectContaining({
+        type: "timeline",
+        item: expect.objectContaining({
+          type: "tool_call",
+          name: "MCP: tool",
+          metadata: expect.objectContaining({
+            kind: "other",
+            title: "MCP: tool",
+          }),
+        }),
+      }),
+    ]);
+
+    const permission = session.requestPermission({
+      sessionId: "session-1",
+      toolCall: {
+        toolCallId: "opaque-mcp",
+        title: "MCP: tool",
+        kind: "other",
+        status: "pending",
+      },
+      options: [{ optionId: "allow-once", name: "Allow", kind: "allow_once" }],
+    } satisfies RequestPermissionRequest);
+
+    await Promise.resolve();
+    expect(session.getPendingPermissions()[0]?.name).toBe("MCP: tool");
+    await session.respondToPermission(session.getPendingPermissions()[0]!.id, {
+      behavior: "allow",
+    });
+    await expect(permission).resolves.toEqual({
+      outcome: { outcome: "selected", optionId: "allow-once" },
+    });
+  });
+
   test("CreatePlan completion in plan mode emits an execute question after turn completes", async () => {
     const session = createSession();
     const events: AgentStreamEvent[] = [];
@@ -3748,6 +3796,7 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
           type: "timeline",
           item: expect.objectContaining({
             type: "tool_call",
+            name: "CreatePlan",
             detail: {
               type: "plan",
               text: "- Step one\n- Step two",

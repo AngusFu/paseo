@@ -6,14 +6,12 @@ import { useMutation } from "@tanstack/react-query";
 import { Check, ChevronDown } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { EditorTargetIcon } from "@/components/icons/editor-target-icon";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/contexts/toast-context";
 import { useCheckoutStatusQuery } from "@/git/use-status-query";
 import { useCheckoutPrStatusQuery } from "@/git/use-pr-status-query";
@@ -102,13 +100,9 @@ export function WorkspaceOpenInEditorButton({
     useDesktopOpenTargets({
       isLocalExecution: isLocalDaemon,
     });
-  const {
-    isAvailable: isCodeServerAvailable,
-    isRunning: isCodeServerRunning,
-    isToggling: isTogglingCodeServer,
-    toggle: toggleCodeServer,
-    openWorkspace: openInCodeServer,
-  } = useCodeServer({ isLocalExecution: isLocalDaemon });
+  const { isAvailable: isCodeServerAvailable, openWorkspace: openInCodeServer } = useCodeServer({
+    isLocalExecution: isLocalDaemon,
+  });
 
   const resolvedFile = useMemo(
     () =>
@@ -139,14 +133,6 @@ export function WorkspaceOpenInEditorButton({
     }
     return { kind: "symbol", name: "terminal" } as const;
   }, [desktopOpenTargets]);
-
-  const codeServerToggleIcon = useMemo(() => {
-    const icon = renderEditorOpenTargetIcon(vscodeWebIcon);
-    if (isCodeServerRunning || isTogglingCodeServer) {
-      return icon;
-    }
-    return <View style={styles.codeServerToggleIconInactive}>{icon}</View>;
-  }, [isCodeServerRunning, isTogglingCodeServer, vscodeWebIcon]);
 
   const targets = useMemo<OpenTarget[]>(() => {
     const planned = planWorkspaceOpenTargets({
@@ -249,113 +235,78 @@ export function WorkspaceOpenInEditorButton({
     }
   }, [primaryOption, handleOpenTarget]);
 
-  const handleCodeServerToggle = useCallback(() => {
-    toggleCodeServer();
-  }, [toggleCodeServer]);
-
   if (!canResolveWorkspace || !primaryOption || targets.length === 0) {
     return null;
   }
 
-  const codeServerToggleLabel = isCodeServerRunning
-    ? t("workspace.git.openInEditor.codeServerStop")
-    : t("workspace.git.openInEditor.codeServerStart");
-
   return (
-    <View style={styles.row}>
-      <View style={styles.splitButton}>
-        <Pressable
-          testID="workspace-open-in-editor-primary"
-          style={primaryPressableStyle}
-          onPress={handlePrimaryPress}
-          disabled={openMutation.isPending}
-          accessibilityRole="button"
-          accessibilityLabel={
-            activeFileName
-              ? t("workspace.git.openInEditor.openFileIn", {
-                  fileName: activeFileName,
-                  target: primaryOption.label,
-                })
-              : t("workspace.git.openInEditor.openIn", {
-                  target: primaryOption.label,
-                })
-          }
-        >
-          {openMutation.isPending ? (
-            <ThemedLoadingSpinner
-              size="small"
-              uniProps={foregroundColorMapping}
-              style={styles.splitButtonSpinnerOnly}
-            />
-          ) : (
-            <View style={styles.splitButtonContent}>
-              {primaryOption.icon}
-              {!hideLabels && (
-                <Text style={styles.splitButtonText}>{t("workspace.git.openInEditor.open")}</Text>
-              )}
-            </View>
-          )}
-        </Pressable>
-        {targets.length > 1 ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              testID="workspace-open-in-editor-caret"
-              style={caretTriggerStyle}
-              accessibilityRole="button"
-              accessibilityLabel={t("workspace.git.openInEditor.chooseEditor")}
-            >
-              <ThemedChevronDown size={16} uniProps={mutedColorMapping} />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              minWidth={148}
-              maxWidth={176}
-              testID="workspace-open-in-editor-menu"
-            >
-              {targets.map((target) => (
-                <OpenTargetMenuItem
-                  key={target.id}
-                  target={target}
-                  isPreferred={target.id === effectivePreferredEditorId}
-                  onOpen={handleOpenTarget}
-                />
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-      </View>
-      {isCodeServerAvailable ? (
-        <Tooltip delayDuration={300}>
-          <TooltipTrigger asChild>
-            <View>
-              <Button
-                size="sm"
-                variant="outline"
-                loading={isTogglingCodeServer}
-                leftIcon={codeServerToggleIcon}
-                onPress={handleCodeServerToggle}
-                accessibilityLabel={codeServerToggleLabel}
-                testID="workspace-code-server-toggle"
+    <View style={styles.splitButton}>
+      <Pressable
+        testID="workspace-open-in-editor-primary"
+        style={primaryPressableStyle}
+        onPress={handlePrimaryPress}
+        disabled={openMutation.isPending}
+        accessibilityRole="button"
+        accessibilityLabel={
+          activeFileName
+            ? t("workspace.git.openInEditor.openFileIn", {
+                fileName: activeFileName,
+                target: primaryOption.label,
+              })
+            : t("workspace.git.openInEditor.openIn", {
+                target: primaryOption.label,
+              })
+        }
+      >
+        {openMutation.isPending ? (
+          <ThemedLoadingSpinner
+            size="small"
+            uniProps={foregroundColorMapping}
+            style={styles.splitButtonSpinnerOnly}
+          />
+        ) : (
+          <View style={styles.splitButtonContent}>
+            {primaryOption.icon}
+            {!hideLabels && (
+              <Text style={styles.splitButtonText}>{t("workspace.git.openInEditor.open")}</Text>
+            )}
+          </View>
+        )}
+      </Pressable>
+      {targets.length > 1 ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            testID="workspace-open-in-editor-caret"
+            style={caretTriggerStyle}
+            accessibilityRole="button"
+            accessibilityLabel={t("workspace.git.openInEditor.chooseEditor")}
+          >
+            <ThemedChevronDown size={16} uniProps={mutedColorMapping} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            minWidth={148}
+            maxWidth={176}
+            testID="workspace-open-in-editor-menu"
+          >
+            {targets.map((target) => (
+              <OpenTargetMenuItem
+                key={target.id}
+                target={target}
+                isPreferred={target.id === effectivePreferredEditorId}
+                onOpen={handleOpenTarget}
               />
-            </View>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="center" offset={8}>
-            <Text style={styles.tooltipText}>{codeServerToggleLabel}</Text>
-          </TooltipContent>
-        </Tooltip>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create((theme) => ({
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[1],
-    flexShrink: 0,
-  },
   splitButton: {
+    flexShrink: 0,
     flexDirection: "row",
     alignItems: "stretch",
     borderRadius: theme.borderRadius.md,
@@ -408,16 +359,5 @@ const styles = StyleSheet.create((theme) => ({
   },
   splitButtonCaretHovered: {
     backgroundColor: theme.colors.surface2,
-  },
-  codeServerToggleIconInactive: isWeb
-    ? {
-        filter: "grayscale(1)",
-      }
-    : {
-        opacity: 0.45,
-      },
-  tooltipText: {
-    color: theme.colors.popoverForeground,
-    fontSize: theme.fontSize.sm,
   },
 }));

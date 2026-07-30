@@ -492,6 +492,9 @@ describe("CursorPrintAgentClient", () => {
       daemonAppendSystemPrompt: "Daemon append",
     });
     expect(prompt.startsWith(CURSOR_PRINT_RUNTIME_GUIDANCE)).toBe(true);
+    expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("paseo question create");
+    expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("$PASEO_AGENT_ID");
+    expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("AskUserQuestion");
     expect(prompt).toContain("Agent system");
     expect(prompt).toContain("Daemon append");
     expect(prompt.endsWith("do the thing")).toBe(true);

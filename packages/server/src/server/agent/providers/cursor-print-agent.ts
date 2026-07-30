@@ -68,12 +68,47 @@ import {
   isACPAutoAcceptEnabled,
   parseACPAutoAcceptFeatureValue,
 } from "./acp-agent.js";
+import { composeSystemPromptParts } from "../system-prompt.js";
 
 export const CURSOR_PRINT_PROVIDER_ID = "cursor-print";
 /** Prefer auto-review: many orgs disable --force / YOLO. */
 export const CURSOR_PRINT_DEFAULT_MODE_ID = "auto-review";
 const CURSOR_PRINT_DEFAULT_COMMAND = ["agent"] as const;
 const MODELS_TIMEOUT_MS = 30_000;
+
+/**
+ * Cursor CLI has no --append-system-prompt. Paseo also cannot inject daemon MCP
+ * into print sessions (`supportsMcpServers: false`). Prepend this guidance (plus
+ * any agent/daemon system prompts) to the CLI prompt each turn; timeline
+ * user_message stays the raw user text.
+ */
+export const CURSOR_PRINT_RUNTIME_GUIDANCE = [
+  "Paseo cursor-print runtime notes:",
+  "- You are running via Cursor Agent CLI (--print). Paseo does not inject its daemon MCP servers into this session.",
+  "- Prefer project CLIs and the Shell tool over MCP when a CLI exists (for example: atlassian, glab, figma, chrome-devtools, gh).",
+  "- Workspace/user `.cursor/mcp.json` may still load via Cursor itself; use MCP only when there is no suitable CLI.",
+  "- Follow repository AGENTS.md / CLAUDE.md / project skills when present.",
+].join("\n");
+
+/** Build the prompt string passed to `agent --print` (not the timeline user row). */
+export function buildCursorPrintCliPrompt(
+  userText: string,
+  config: Pick<AgentSessionConfig, "systemPrompt" | "daemonAppendSystemPrompt"> = {},
+): string {
+  const preamble = composeSystemPromptParts(
+    CURSOR_PRINT_RUNTIME_GUIDANCE,
+    config.systemPrompt,
+    config.daemonAppendSystemPrompt,
+  );
+  if (!preamble) {
+    return userText;
+  }
+  const trimmed = userText.trim();
+  if (!trimmed) {
+    return preamble;
+  }
+  return `${preamble}\n\n---\n\n${trimmed}`;
+}
 
 const CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
@@ -124,7 +159,10 @@ interface ActiveTurn {
   completed: boolean;
   resumedWith: string | null;
   allowResumeFallback: boolean;
+  /** Prompt passed to Cursor CLI (includes runtime guidance / system prompts). */
   promptText: string;
+  /** Raw user text for timeline user_message / retries. */
+  userText: string;
 }
 
 function isPlanLikePrintMode(modeId: string): boolean {
@@ -568,11 +606,13 @@ export class CursorPrintAgentSession implements AgentSession {
 
     const turnId = randomUUID();
     const assistantMessageId = randomUUID();
-    const text = promptToText(prompt);
+    const userText = promptToText(prompt);
+    const cliPrompt = buildCursorPrintCliPrompt(userText, this.config);
     this.launchTurnProcess({
       turnId,
       assistantMessageId,
-      prompt: text,
+      userText,
+      cliPrompt,
       resumeChatId: this.chatId,
       allowResumeFallback: Boolean(this.chatId),
       emitTurnStarted: true,
@@ -584,7 +624,8 @@ export class CursorPrintAgentSession implements AgentSession {
   private launchTurnProcess(options: {
     turnId: string;
     assistantMessageId: string;
-    prompt: string;
+    userText: string;
+    cliPrompt: string;
     resumeChatId: string | null;
     allowResumeFallback: boolean;
     emitTurnStarted: boolean;
@@ -596,7 +637,7 @@ export class CursorPrintAgentSession implements AgentSession {
       model: this.modelId,
       resumeChatId: options.resumeChatId,
       workspace: this.config.cwd,
-      prompt: options.prompt,
+      prompt: options.cliPrompt,
     });
 
     this.logger.debug(
@@ -628,7 +669,8 @@ export class CursorPrintAgentSession implements AgentSession {
       completed: false,
       resumedWith: options.resumeChatId,
       allowResumeFallback: options.allowResumeFallback,
-      promptText: options.prompt,
+      promptText: options.cliPrompt,
+      userText: options.userText,
     };
     this.stdoutBuffer = "";
     this.stderrBuffer = "";
@@ -639,7 +681,7 @@ export class CursorPrintAgentSession implements AgentSession {
         provider: this.provider,
         turnId: options.turnId,
       });
-      this.emitSubmittedUserMessage(options.prompt, options.turnId, options.clientMessageId);
+      this.emitSubmittedUserMessage(options.userText, options.turnId, options.clientMessageId);
     }
     if (this.chatId) {
       this.emit({
@@ -1210,7 +1252,8 @@ export class CursorPrintAgentSession implements AgentSession {
       this.launchTurnProcess({
         turnId: turn.turnId,
         assistantMessageId: turn.assistantMessageId,
-        prompt: turn.promptText,
+        userText: turn.userText,
+        cliPrompt: turn.promptText,
         resumeChatId: null,
         allowResumeFallback: false,
         emitTurnStarted: false,

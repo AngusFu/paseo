@@ -7,8 +7,10 @@ import { createTestLogger } from "../../../test-utils/test-logger.js";
 import {
   CURSOR_PRINT_DEFAULT_MODE_ID,
   CURSOR_PRINT_PROVIDER_ID,
+  CURSOR_PRINT_RUNTIME_GUIDANCE,
   CursorPrintAgentClient,
   buildCursorPrintAutoAcceptFeature,
+  buildCursorPrintCliPrompt,
   type CursorPrintLaunch,
   type CursorPrintSpawn,
 } from "./cursor-print-agent.js";
@@ -156,7 +158,7 @@ describe("CursorPrintAgentClient", () => {
       command: "/bin/agent",
       cwd: "/tmp/project",
     });
-    expect(launches[0]?.args).toEqual([
+    expect(launches[0]?.args.slice(0, -1)).toEqual([
       "--print",
       "--output-format",
       "stream-json",
@@ -170,8 +172,8 @@ describe("CursorPrintAgentClient", () => {
       "--workspace",
       "/tmp/project",
       "--",
-      "hello",
     ]);
+    expect(launches[0]?.args.at(-1)).toBe(buildCursorPrintCliPrompt("hello"));
 
     expect(events.some((event) => event.type === "turn_started")).toBe(true);
     expect(
@@ -482,6 +484,59 @@ describe("CursorPrintAgentClient", () => {
     await vi.waitFor(() => {
       expect(stdinChunks.join("")).toContain('"approved"');
     });
+  });
+
+  test("buildCursorPrintCliPrompt prepends runtime guidance and system prompts", () => {
+    const prompt = buildCursorPrintCliPrompt("do the thing", {
+      systemPrompt: "Agent system",
+      daemonAppendSystemPrompt: "Daemon append",
+    });
+    expect(prompt.startsWith(CURSOR_PRINT_RUNTIME_GUIDANCE)).toBe(true);
+    expect(prompt).toContain("Agent system");
+    expect(prompt).toContain("Daemon append");
+    expect(prompt.endsWith("do the thing")).toBe(true);
+  });
+
+  test("CLI prompt includes guidance but timeline user_message stays raw", async () => {
+    const { spawn, launches } = createFakeSpawn((child) => {
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "ok",
+          session_id: "chat-guidance",
+        })}\n`,
+      );
+      child.emit("exit", 0, null);
+    });
+
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      spawn,
+    });
+    const session = await client.createSession({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      modeId: "force",
+      systemPrompt: "Be concise.",
+    });
+
+    const eventsPromise = collectUntil(session, (events) =>
+      events.some((event) => event.type === "turn_completed"),
+    );
+    await session.startTurn("list files");
+    const events = await eventsPromise;
+
+    expect(launches[0]?.args.at(-1)).toBe(
+      buildCursorPrintCliPrompt("list files", { systemPrompt: "Be concise." }),
+    );
+    const userEvent = events.find(
+      (event) =>
+        event.type === "timeline" && (event.item as { type?: string }).type === "user_message",
+    ) as { item: { text: string } };
+    expect(userEvent.item.text).toBe("list files");
+    expect(userEvent.item.text).not.toContain("Paseo cursor-print");
   });
 
   test("startTurn emits canonical user_message with clientMessageId", async () => {

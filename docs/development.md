@@ -602,7 +602,7 @@ git merge-base main upstream/main   # shared ancestor
 git log upstream/main --oneline -20 # spot-check recent upstream
 ```
 
-Last reconciled: **2026-07-26**. Batches **6**, **7a**, and **7b** are merged into fork `main` (composer/Changes/workspace-git/ACP/web-chat stickiness, etc.). **`7bd4afe84` (Codex setup guide)** is on fork `main`. **ACP provider catalog** was refreshed from `upstream/main` HEAD on 2026-07-26 (13 version pin bumps; fork PATH/`manual` entries such as `codebuddy-code` unchanged — upstream HEAD already matches those customizations).
+Last reconciled: **2026-07-30**. Batches **6**, **7a**, and **7b** are on fork `main`. **`7bd4afe84` (Codex setup guide)** and the **ACP provider catalog** refresh (2026-07-26) are on fork `main`. Branch **`chore/port-upstream-0.2.4-batch`** ports the P1/P2/P3 batch from merge-base `860fcb2e35` through upstream `0.2.4` (32 cherry-picks: Android chat position, quit-stops-daemon, Claude reauth docs, file-pane focus, Markdown wrap, relay perf, parent-while-child, chat history pagination `#2481`, large-file transfer `#2482`, overlay stacking `#2476`, Windows worktree, forge port, PR HTML, Codex skills, parallel build, OMP fixes, ⌘P project switch, sidebar open folder, Opus 5 dedupe, Grok quota, AppImage, swipe-dismiss keyboard, CLI thinking, plan approval, Pi interrupt, context meter, file-tree startup, agent cwd, old `gh` repo search, oversized checkout diffs `#2488`, cross-host project grouping `#2565`). Conflict merges kept fork-only surfaces (no Hub, non-virtualizer web chat + TranscriptZoom, lazy hunks / difftastic / vscode diff, agents-workflow build).
 
 ### Refreshing the ACP catalog later
 
@@ -625,15 +625,21 @@ npx vitest run packages/app/src/hooks/use-acp-provider-catalog.test.ts --bail=1
 | **Desktop auto-update UX** (`Always revalidate…`, 0.1.108/0.1.109 notices, revert)                                         | Fork ships its own desktop/update channel; skip upstream desktop update prompts.                                                                                           |
 | **Release/chore noise** (lockfile/Nix hash, `chore(release):`, changelog prep, ACP catalog refresh commits, merge commits) | Versioning and release cadence differ; port feature/fix subjects only when needed.                                                                                         |
 | **`fix(app): stop updates after chat teardown (#1997)`**                                                                   | Upstream targets the history virtualizer delayed-scroll teardown path; fork web chat strategy has no equivalent virtualizer lifecycle — patch does not apply meaningfully. |
+| **Timeline optimistic/pagination stack** (`#2490`, `#2484`, revert `#2596`)                                                | Upstream later reverted the stack; fork already has its own chat-history / timeline path (`#2481` ported without virtualizer). Do not re-apply the reverted commits.       |
+| **`Keep idle agents and their background work alive (#2590)`**                                                             | Would dismantle fork `#2203` idle collect; keep fork behavior.                                                                                                             |
+| **Upstream CI-only** (`#2500`, `#2537`, `#2613`)                                                                           | Fork CI layout differs; skip.                                                                                                                                              |
+| **`Carry local files… (#2419)` + upstream revert**                                                                         | Fork already has `#2419`; upstream later reverted — do not port the revert.                                                                                                |
+| **Docs-only community/relay pointers** (`paseo-skins`, `docs(relay): point readers…`)                                      | Optional marketing/docs; skip unless aligning website copy.                                                                                                                |
 
 ### Remaining actionable upstream (subject not on fork)
 
-As of merge-base `860fcb2e35` → `upstream/main`:
+As of merge-base `860fcb2e35` → `upstream/main` (after `chore/port-upstream-0.2.4-batch`):
 
 | Commit                                     | Subject                                              | Notes                                                                                |
 | ------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | ~~`7bd4afe84`~~                            | ~~`docs(providers): add Codex setup guide (#2389)`~~ | **Done** on fork `main`.                                                             |
 | ~~ACP catalog (upstream HEAD)~~            | `chore(app): refresh ACP provider catalog` etc.      | **Done** 2026-07-26 — file-level refresh from `upstream/main`; pins-only delta.      |
+| ~~P1/P2/P3 0.2.4 batch (32 commits)~~      | see branch `chore/port-upstream-0.2.4-batch`         | **Done** 2026-07-30 on that branch — merge to `main` when ready.                     |
 | `5db070a4d9` / `51fea4b7e0`                | upstream release-note edits                          | Upstream CHANGELOG only; skip unless aligning release notes.                         |
 | `5ae53c7e55` / `144f951a79` / `d28e174b38` | `ops(relay): …`                                      | Fly cutover bridge + manual deploy workflow; pending — fork relay deploy may differ. |
 

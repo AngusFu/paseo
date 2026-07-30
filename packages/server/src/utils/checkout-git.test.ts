@@ -370,14 +370,17 @@ describe("checkout git utilities", () => {
       },
     );
     try {
-      await expect(getCheckoutStatus(nonGitDir, { logger })).resolves.toEqual({ isGit: false });
+      await expect(getCheckoutStatus(nonGitDir, { logger })).resolves.toEqual({
+        isGit: false,
+        directoryMissing: false,
+      });
       expect(records).toEqual([]);
     } finally {
       rmSync(nonGitDir, { recursive: true, force: true });
     }
   });
 
-  it("warns when git discovery fails unexpectedly", async () => {
+  it("flags a missing directory and warns about git discovery", async () => {
     const missingDir = join(tempDir, "missing-git-cwd");
     const records: unknown[] = [];
     const logger = pino(
@@ -389,7 +392,10 @@ describe("checkout git utilities", () => {
       },
     );
 
-    await expect(getCheckoutStatus(missingDir, { logger })).resolves.toEqual({ isGit: false });
+    await expect(getCheckoutStatus(missingDir, { logger })).resolves.toEqual({
+      isGit: false,
+      directoryMissing: true,
+    });
     expect(records).toEqual([
       expect.objectContaining({
         level: 40,

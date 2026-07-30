@@ -1,6 +1,6 @@
 {
   "name": "@getpaseo/agents-workflow",
-  "version": "0.1.105",
+  "version": "0.1.106",
   "private": true,
   "description": "Deterministic multi-agent workflow engine (Claude-Code-Workflow superset) with SDK and aw CLI",
   "bin": {

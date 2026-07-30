@@ -32,6 +32,7 @@ describe("composer control layout", () => {
     const controls = {
       hasModel: true,
       hasThinking: true,
+      hasFast: false,
       hasMode: true,
       features: [{ type: "toggle" as const }],
       fontScale: 1,
@@ -93,6 +94,7 @@ describe("composer control layout", () => {
         controls: {
           hasModel: true,
           hasThinking: true,
+          hasFast: false,
           hasMode: true,
           features: [{ type: "toggle" }],
           fontScale: 1,
@@ -105,6 +107,7 @@ describe("composer control layout", () => {
         controls: {
           hasModel: true,
           hasThinking: true,
+          hasFast: false,
           hasMode: true,
           features: [{ type: "toggle" }, { type: "select", label: "Tools" }],
           fontScale: 1,
@@ -117,6 +120,7 @@ describe("composer control layout", () => {
         controls: {
           hasModel: true,
           hasThinking: true,
+          hasFast: false,
           hasMode: true,
           features: [{ type: "toggle" }],
           fontScale: 1.25,
@@ -132,6 +136,7 @@ describe("composer control layout", () => {
       controls: {
         hasModel: true,
         hasThinking: true,
+        hasFast: false,
         hasMode: true,
         fontScale: 1,
       },

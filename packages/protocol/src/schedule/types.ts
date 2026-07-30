@@ -125,6 +125,8 @@ export interface UpdateScheduleNewAgentConfig {
   archiveOnFinish?: boolean;
   isolation?: "local" | "worktree";
   cwd?: string;
+  /** Replace stored feature values; `null` clears them. */
+  featureValues?: Record<string, unknown> | null;
 }
 
 export interface UpdateScheduleCommandConfig {

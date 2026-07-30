@@ -154,6 +154,9 @@ export const ru: TranslationResources = {
       select: "Выберите вариант мышления",
       selectWithValue: "Выберите вариант мышления ({{value}})",
     },
+    fast: {
+      title: "Fast",
+    },
     model: {
       unknown: "Неизвестная модель",
     },
@@ -176,6 +179,7 @@ export const ru: TranslationResources = {
       thinking: "Режим мышления",
       model: "Изменить модель",
       mode: "Изменить режим",
+      fast: "Toggle fast model variant",
     },
   },
   agentStream: {

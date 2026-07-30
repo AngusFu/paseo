@@ -173,6 +173,13 @@ function applyNewAgentConfig(
       delete config.thinkingOptionId;
     }
   }
+  if (patch.featureValues !== undefined) {
+    if (patch.featureValues === null || Object.keys(patch.featureValues).length === 0) {
+      delete config.featureValues;
+    } else {
+      config.featureValues = patch.featureValues;
+    }
+  }
   if (patch.archiveOnFinish !== undefined) {
     config.archiveOnFinish = patch.archiveOnFinish;
   }

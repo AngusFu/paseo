@@ -154,6 +154,9 @@ export const ja: TranslationResources = {
       select: "思考オプションを選択",
       selectWithValue: "思考オプションを選択（{{value}}）",
     },
+    fast: {
+      title: "Fast",
+    },
     model: {
       unknown: "不明なモデル",
     },
@@ -176,6 +179,7 @@ export const ja: TranslationResources = {
       thinking: "思考モード",
       model: "モデルを変更",
       mode: "権限モードを変更",
+      fast: "Toggle fast model variant",
     },
   },
   agentStream: {

@@ -154,6 +154,9 @@ export const es: TranslationResources = {
       select: "Seleccione la opción de pensamiento",
       selectWithValue: "Seleccione la opción de pensamiento ({{value}})",
     },
+    fast: {
+      title: "Fast",
+    },
     model: {
       unknown: "Modelo desconocido",
     },
@@ -177,6 +180,7 @@ export const es: TranslationResources = {
       thinking: "Modo de pensamiento",
       model: "Cambiar modelo",
       mode: "Cambiar modo",
+      fast: "Toggle fast model variant",
     },
   },
   agentStream: {

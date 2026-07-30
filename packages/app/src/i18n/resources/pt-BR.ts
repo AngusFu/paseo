@@ -154,6 +154,9 @@ export const ptBR: TranslationResources = {
       select: "Selecionar opção de raciocínio",
       selectWithValue: "Selecionar opção de raciocínio ({{value}})",
     },
+    fast: {
+      title: "Fast",
+    },
     model: {
       unknown: "Modelo desconhecido",
     },
@@ -177,6 +180,7 @@ export const ptBR: TranslationResources = {
       thinking: "Modo de raciocínio",
       model: "Alterar modelo",
       mode: "Alterar modo de permissão",
+      fast: "Toggle fast model variant",
     },
   },
   agentStream: {

@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import {
   AgentModeField,
   AgentModelField,
+  AgentFastField,
   AgentThinkingField,
 } from "@/components/agent-launch-fields";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -39,6 +40,7 @@ import {
   type SelectFieldOption,
   type SelectFieldRenderOptionInput,
 } from "@/components/ui/select-field";
+import { FAST_MODE_FEATURE_ID } from "@/composer/agent-controls/utils";
 import {
   mergeProviderPreferences,
   useFormPreferences,
@@ -160,6 +162,7 @@ function updateSelectionPreferences(input: {
   model: string;
   mode: string;
   thinkingOptionId: string;
+  fastMode: boolean | undefined;
   isolation: "local" | "worktree";
 }): FormPreferences {
   const model = input.model.trim();
@@ -173,9 +176,49 @@ function updateSelectionPreferences(input: {
         model: model || undefined,
         mode: mode || undefined,
         ...(model && thinkingOptionId ? { thinkingByModel: { [model]: thinkingOptionId } } : {}),
+        ...(input.fastMode !== undefined
+          ? { featureValues: { [FAST_MODE_FEATURE_ID]: input.fastMode } }
+          : {}),
       },
     }),
     isolation: input.isolation,
+  };
+}
+
+function resolveSubmitFeatureValues(input: {
+  existing: Record<string, unknown> | undefined;
+  supportsFastMode: boolean;
+  selectedFastMode: boolean;
+}): Record<string, unknown> | null | undefined {
+  const next: Record<string, unknown> = { ...input.existing };
+  if (input.supportsFastMode) {
+    next[FAST_MODE_FEATURE_ID] = input.selectedFastMode;
+  } else {
+    delete next[FAST_MODE_FEATURE_ID];
+  }
+  if (Object.keys(next).length === 0) {
+    return input.existing ? null : undefined;
+  }
+  return next;
+}
+
+function resolveExistingScheduleFeatureValues(
+  schedule: ScheduleSummary | null | undefined,
+): Record<string, unknown> | undefined {
+  return schedule?.target.type === "new-agent" ? schedule.target.config.featureValues : undefined;
+}
+
+function buildNewAgentLifecyclePatch(
+  state: Pick<ScheduleFormState, "submitArchiveOnFinish" | "submitIsolation">,
+): {
+  archiveOnFinish?: boolean;
+  isolation?: "local" | "worktree";
+} {
+  return {
+    ...(state.submitArchiveOnFinish !== undefined
+      ? { archiveOnFinish: state.submitArchiveOnFinish }
+      : {}),
+    ...(state.submitIsolation !== undefined ? { isolation: state.submitIsolation } : {}),
   };
 }
 
@@ -304,15 +347,18 @@ function OpenScheduleFormSheet({
         model: state.selectedModel,
         mode: state.selectedMode,
         thinkingOptionId: state.selectedThinkingOptionId,
+        fastMode: state.supportsFastMode ? state.selectedFastMode : undefined,
         isolation: state.isolation,
       }),
     );
   }, [
     state.isolation,
+    state.selectedFastMode,
     state.selectedMode,
     state.selectedModel,
     state.selectedProvider,
     state.selectedThinkingOptionId,
+    state.supportsFastMode,
     updatePreferences,
   ]);
 
@@ -339,6 +385,12 @@ function OpenScheduleFormSheet({
 
     await persistPreferences();
     const maxRuns = parseMaxRuns(state.maxRuns);
+    const featureValues = resolveSubmitFeatureValues({
+      existing: resolveExistingScheduleFeatureValues(schedule),
+      supportsFastMode: state.supportsFastMode,
+      selectedFastMode: state.selectedFastMode,
+    });
+    const lifecycle = buildNewAgentLifecyclePatch(state);
     if (mode === "edit" && schedule) {
       await updateSchedule({
         id: schedule.id,
@@ -351,10 +403,8 @@ function OpenScheduleFormSheet({
           modeId: state.selectedMode || null,
           thinkingOptionId: state.selectedThinkingOptionId || null,
           cwd,
-          ...(state.submitArchiveOnFinish !== undefined
-            ? { archiveOnFinish: state.submitArchiveOnFinish }
-            : {}),
-          ...(state.submitIsolation !== undefined ? { isolation: state.submitIsolation } : {}),
+          ...(featureValues !== undefined ? { featureValues } : {}),
+          ...lifecycle,
         },
         maxRuns,
       });
@@ -373,10 +423,8 @@ function OpenScheduleFormSheet({
           model: state.selectedModel || undefined,
           modeId: state.selectedMode || undefined,
           thinkingOptionId: state.selectedThinkingOptionId || undefined,
-          ...(state.submitArchiveOnFinish !== undefined
-            ? { archiveOnFinish: state.submitArchiveOnFinish }
-            : {}),
-          ...(state.submitIsolation !== undefined ? { isolation: state.submitIsolation } : {}),
+          ...(featureValues != null ? { featureValues } : {}),
+          ...lifecycle,
           title: state.name.trim() || undefined,
         },
       },
@@ -608,6 +656,112 @@ function ScheduleFormFields({
   );
 }
 
+function ScheduleNewAgentLaunchFields({
+  model,
+  state,
+  providerSnapshot,
+  controlSize,
+  mutationServerId,
+  onSelectModel,
+  onSelectThinking,
+  onSelectMode,
+  onModelOpen,
+  onRetryProvider,
+  renderModelTrigger,
+  renderThinkingOption,
+}: {
+  model: ScheduleFormModel;
+  state: ScheduleFormState;
+  providerSnapshot: ReturnType<typeof useScheduleFormProviderSnapshot>;
+  controlSize: FieldControlSize;
+  mutationServerId: string;
+  onSelectModel: (provider: AgentProvider, modelId: string) => void;
+  onSelectThinking: (thinkingOptionId: string) => void;
+  onSelectMode: (modeId: string) => void;
+  onModelOpen: () => void;
+  onRetryProvider: (provider: AgentProvider) => void;
+  renderModelTrigger: (input: {
+    selectedModelLabel: string;
+    onPress: () => void;
+    disabled: boolean;
+    isOpen: boolean;
+    hovered: boolean;
+    pressed: boolean;
+  }) => ReactNode;
+  renderThinkingOption: (input: SelectFieldRenderOptionInput<string>) => ReactElement;
+}): ReactElement | null {
+  const { t } = useTranslation();
+  if (
+    !state.disclosure.showModelField &&
+    !state.disclosure.showThinkingField &&
+    !state.disclosure.showFastField &&
+    !state.disclosure.showModeField
+  ) {
+    return null;
+  }
+  return (
+    <>
+      {state.disclosure.showModelField ? (
+        <AgentModelField
+          label={t("schedule.form.model.label")}
+          providers={state.modelSelectorProviders}
+          selectedProvider={state.selectedProvider ?? ""}
+          selectedModel={state.selectedModel}
+          onSelect={onSelectModel}
+          isLoading={providerSnapshot.isLoading || providerSnapshot.isFetching}
+          renderTrigger={renderModelTrigger}
+          serverId={mutationServerId}
+          disabled={!state.selectedServerId}
+          onOpen={onModelOpen}
+          onRetryProvider={onRetryProvider}
+          isRetryingProvider={providerSnapshot.isRefreshing}
+        />
+      ) : null}
+
+      {state.disclosure.showThinkingField ? (
+        <AgentThinkingField
+          options={state.availableThinkingOptions}
+          value={state.selectedThinkingOptionId || null}
+          selectedDisplay={state.selectedThinkingDisplay}
+          onChange={onSelectThinking}
+          label={t("schedule.form.thinking.label")}
+          placeholder={t("schedule.form.thinking.placeholder")}
+          emptyText={t("schedule.form.thinking.empty")}
+          size={controlSize}
+          triggerTestID="schedule-thinking-trigger"
+          renderOption={renderThinkingOption}
+          getOptionTestId={buildThinkingOptionTestId}
+        />
+      ) : null}
+
+      {state.disclosure.showFastField ? (
+        <AgentFastField
+          value={state.selectedFastMode}
+          onChange={model.setFastMode}
+          label={t("agentControls.fast.title")}
+          testID="schedule-fast-field"
+        />
+      ) : null}
+
+      {state.disclosure.showModeField ? (
+        <AgentModeField
+          options={state.modeOptions}
+          value={state.selectedMode || null}
+          selectedDisplay={state.selectedModeDisplay}
+          onChange={onSelectMode}
+          label={t("schedule.form.mode.label")}
+          placeholder={t("schedule.form.mode.placeholder")}
+          emptyText={t("schedule.form.mode.empty")}
+          hint={state.modeOptions.length === 0 ? t("schedule.form.mode.unavailable") : undefined}
+          size={controlSize}
+          triggerTestID="schedule-mode-trigger"
+          allowEmpty
+        />
+      ) : null}
+    </>
+  );
+}
+
 interface ScheduleTargetFieldsProps {
   model: ScheduleFormModel;
   state: ScheduleFormState;
@@ -786,54 +940,20 @@ function ScheduleTargetFields({
         <ScheduleCommandFields model={model} state={state} controlSize={controlSize} />
       ) : null}
 
-      {state.disclosure.showModelField ? (
-        <AgentModelField
-          label={t("schedule.form.model.label")}
-          providers={state.modelSelectorProviders}
-          selectedProvider={state.selectedProvider ?? ""}
-          selectedModel={state.selectedModel}
-          onSelect={handleSelectModel}
-          isLoading={providerSnapshot.isLoading || providerSnapshot.isFetching}
-          renderTrigger={renderModelTrigger}
-          serverId={mutationServerId}
-          disabled={!state.selectedServerId}
-          onOpen={handleModelOpen}
-          onRetryProvider={handleRetryProvider}
-          isRetryingProvider={providerSnapshot.isRefreshing}
-        />
-      ) : null}
-
-      {state.disclosure.showThinkingField ? (
-        <AgentThinkingField
-          options={state.availableThinkingOptions}
-          value={state.selectedThinkingOptionId || null}
-          selectedDisplay={state.selectedThinkingDisplay}
-          onChange={handleSelectThinking}
-          label={t("schedule.form.thinking.label")}
-          placeholder={t("schedule.form.thinking.placeholder")}
-          emptyText={t("schedule.form.thinking.empty")}
-          size={controlSize}
-          triggerTestID="schedule-thinking-trigger"
-          renderOption={renderThinkingOption}
-          getOptionTestId={buildThinkingOptionTestId}
-        />
-      ) : null}
-
-      {state.disclosure.showModeField ? (
-        <AgentModeField
-          options={state.modeOptions}
-          value={state.selectedMode || null}
-          selectedDisplay={state.selectedModeDisplay}
-          onChange={handleSelectMode}
-          label={t("schedule.form.mode.label")}
-          placeholder={t("schedule.form.mode.placeholder")}
-          emptyText={t("schedule.form.mode.empty")}
-          hint={state.modeOptions.length === 0 ? t("schedule.form.mode.unavailable") : undefined}
-          size={controlSize}
-          triggerTestID="schedule-mode-trigger"
-          allowEmpty
-        />
-      ) : null}
+      <ScheduleNewAgentLaunchFields
+        model={model}
+        state={state}
+        providerSnapshot={providerSnapshot}
+        controlSize={controlSize}
+        mutationServerId={mutationServerId}
+        onSelectModel={handleSelectModel}
+        onSelectThinking={handleSelectThinking}
+        onSelectMode={handleSelectMode}
+        onModelOpen={handleModelOpen}
+        onRetryProvider={handleRetryProvider}
+        renderModelTrigger={renderModelTrigger}
+        renderThinkingOption={renderThinkingOption}
+      />
 
       {state.disclosure.showIsolationField ? (
         <ScheduleIsolationField model={model} state={state} size={controlSize} />

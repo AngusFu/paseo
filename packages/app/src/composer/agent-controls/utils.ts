@@ -2,12 +2,16 @@ import type { AgentFeature, AgentModelDefinition } from "@getpaseo/protocol/agen
 import { i18n } from "@/i18n/i18next";
 import { isCursorPrintProvider, normalizeCursorPrintCatalogModelId } from "./cursor-print-model";
 
-export type ExplainedAgentControl = "mode" | "model" | "thinking";
+/** Shared across composer chips and launch forms (schedule / workflow / create). */
+export const FAST_MODE_FEATURE_ID = "fast_mode";
+
+export type ExplainedAgentControl = "mode" | "model" | "thinking" | "fast";
 export type FeatureHighlightColor = "blue" | "default" | "green" | "yellow";
 export type AgentControlHintKey =
   | "agentControls.hints.thinking"
   | "agentControls.hints.model"
-  | "agentControls.hints.mode";
+  | "agentControls.hints.mode"
+  | "agentControls.hints.fast";
 
 export function getAgentControlHintKey(selector: ExplainedAgentControl): AgentControlHintKey {
   switch (selector) {
@@ -17,9 +21,37 @@ export function getAgentControlHintKey(selector: ExplainedAgentControl): AgentCo
       return "agentControls.hints.model";
     case "mode":
       return "agentControls.hints.mode";
+    case "fast":
+      return "agentControls.hints.fast";
     default:
       throw new Error("unreachable");
   }
+}
+
+/** Promote fast_mode to a peer of thinking; keep remaining features for the gear tray. */
+export function splitFastModeFeature(features: AgentFeature[] | undefined): {
+  fastFeature: (AgentFeature & { type: "toggle" }) | null;
+  otherFeatures: AgentFeature[] | undefined;
+} {
+  if (!features || features.length === 0) {
+    return { fastFeature: null, otherFeatures: features };
+  }
+  let fastFeature: (AgentFeature & { type: "toggle" }) | null = null;
+  const otherFeatures: AgentFeature[] = [];
+  for (const feature of features) {
+    if (feature.id === FAST_MODE_FEATURE_ID && feature.type === "toggle") {
+      fastFeature = feature;
+      continue;
+    }
+    otherFeatures.push(feature);
+  }
+  return { fastFeature, otherFeatures };
+}
+
+export function agentModelSupportsFastMode(
+  model: Pick<AgentModelDefinition, "metadata"> | null | undefined,
+): boolean {
+  return model?.metadata?.cursorPrintSupportsFast === true;
 }
 
 export function normalizeModelId(modelId: string | null | undefined): string | null {

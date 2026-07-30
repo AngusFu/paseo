@@ -6,7 +6,11 @@ import type {
 } from "@getpaseo/protocol/agent-types";
 import type { ScheduleCadence, ScheduleSummary } from "@getpaseo/protocol/schedule/types";
 import type { FormPreferences } from "@/create-agent-preferences/preferences";
-import { formatThinkingOptionLabel } from "@/composer/agent-controls/utils";
+import {
+  agentModelSupportsFastMode,
+  FAST_MODE_FEATURE_ID,
+  formatThinkingOptionLabel,
+} from "@/composer/agent-controls/utils";
 import {
   buildSelectableProviderSelectorProviders,
   type ProviderSelectorProvider,
@@ -67,6 +71,7 @@ export interface ScheduleDisclosureState {
   showProjectField: boolean;
   showModelField: boolean;
   showThinkingField: boolean;
+  showFastField: boolean;
   showModeField: boolean;
   showIsolationField: boolean;
   showArchiveOnFinishField: boolean;
@@ -102,6 +107,7 @@ export interface ScheduleFormState {
   selectedModel: string;
   selectedMode: string;
   selectedThinkingOptionId: string;
+  selectedFastMode: boolean;
   workingDir: string;
   projectDisplay: ScheduleFormDisplay | null;
   selectedProjectOptionId: string;
@@ -111,6 +117,7 @@ export interface ScheduleFormState {
   modelSelectorProviders: ProviderSelectorProvider[];
   modeOptions: AgentMode[];
   availableThinkingOptions: NonNullable<AgentModelDefinition["thinkingOptions"]>;
+  supportsFastMode: boolean;
   archiveOnFinish: boolean;
   isolation: "local" | "worktree";
   effectiveIsolation: "local" | "worktree";
@@ -140,6 +147,7 @@ export interface ScheduleFormModel {
   setProject: (optionId: string, display: ScheduleFormDisplay) => void;
   setModel: (provider: AgentProvider, modelId: string) => void;
   setThinking: (thinkingOptionId: string) => void;
+  setFastMode: (enabled: boolean) => void;
   setSessionMode: (modeId: string) => void;
   setName: (value: string) => void;
   setPrompt: (value: string) => void;
@@ -331,6 +339,15 @@ function resolveThinkingOptions(
 ): NonNullable<AgentModelDefinition["thinkingOptions"]> {
   const model = resolveEffectiveModel(resolveAvailableModels(entries, provider), modelId);
   return model?.thinkingOptions ?? [];
+}
+
+function resolveSupportsFastMode(
+  entries: readonly ProviderSnapshotEntry[],
+  provider: AgentProvider | null,
+  modelId: string,
+): boolean {
+  const model = resolveEffectiveModel(resolveAvailableModels(entries, provider), modelId);
+  return agentModelSupportsFastMode(model);
 }
 
 function resolveModelDisplay(input: {
@@ -591,6 +608,7 @@ function resolveDisclosure(state: ScheduleFormState): ScheduleDisclosureState {
       showProjectField: false,
       showModelField: false,
       showThinkingField: false,
+      showFastField: false,
       showModeField: false,
       showIsolationField: false,
       showArchiveOnFinishField: false,
@@ -604,6 +622,7 @@ function resolveDisclosure(state: ScheduleFormState): ScheduleDisclosureState {
       showProjectField: state.mode === "edit" || Boolean(state.selectedServerId),
       showModelField: false,
       showThinkingField: false,
+      showFastField: false,
       showModeField: false,
       showIsolationField: false,
       showArchiveOnFinishField: false,
@@ -620,6 +639,7 @@ function resolveDisclosure(state: ScheduleFormState): ScheduleDisclosureState {
     showModelField,
     showThinkingField:
       showModelField && hasSelectedModel && state.availableThinkingOptions.length > 0,
+    showFastField: showModelField && hasSelectedModel && state.supportsFastMode,
     showModeField: showModelField && hasSelectedProvider && state.modeOptions.length > 0,
     showIsolationField: hasProject && state.canUseWorktreeIsolation,
     showArchiveOnFinishField:
@@ -680,6 +700,11 @@ function updateDerivedState(input: {
     input.state.selectedProvider,
     input.state.selectedModel,
   );
+  const supportsFastMode = resolveSupportsFastMode(
+    input.providerEntries,
+    input.state.selectedProvider,
+    input.state.selectedModel,
+  );
   const canUseWorktreeIsolation = resolveCanUseWorktreeIsolation({
     state: input.state,
     hosts: input.hosts,
@@ -726,6 +751,8 @@ function updateDerivedState(input: {
     }),
     modeOptions,
     availableThinkingOptions,
+    supportsFastMode,
+    selectedFastMode: supportsFastMode ? input.state.selectedFastMode : false,
     canUseWorktreeIsolation,
     commandSchedulesSupported,
     effectiveIsolation,
@@ -762,6 +789,7 @@ function buildInitialState(snapshot: ScheduleFormSnapshot): ScheduleFormState {
   const initialModel = config?.model ?? "";
   const initialMode = config?.modeId ?? "";
   const initialThinking = config?.thinkingOptionId ?? "";
+  const initialFastMode = config?.featureValues?.[FAST_MODE_FEATURE_ID] === true;
   const state: ScheduleFormState = {
     mode: snapshot.mode,
     targetKind,
@@ -777,6 +805,7 @@ function buildInitialState(snapshot: ScheduleFormSnapshot): ScheduleFormState {
     selectedModel: initialModel,
     selectedMode: initialMode,
     selectedThinkingOptionId: initialThinking,
+    selectedFastMode: initialFastMode,
     workingDir,
     projectDisplay: buildInitialProjectDisplay({
       config,
@@ -790,6 +819,7 @@ function buildInitialState(snapshot: ScheduleFormSnapshot): ScheduleFormState {
     modelSelectorProviders: [],
     modeOptions: [],
     availableThinkingOptions: [],
+    supportsFastMode: false,
     archiveOnFinish: config?.archiveOnFinish ?? true,
     isolation: resolveInitialIsolation({ config, preferences: snapshot.defaults.preferences }),
     effectiveIsolation: "local",
@@ -806,6 +836,7 @@ function buildInitialState(snapshot: ScheduleFormSnapshot): ScheduleFormState {
       showProjectField: false,
       showModelField: false,
       showThinkingField: false,
+      showFastField: false,
       showModeField: false,
       showIsolationField: false,
       showArchiveOnFinishField: false,
@@ -978,9 +1009,11 @@ export function openScheduleForm(snapshot: ScheduleFormSnapshot): ScheduleFormMo
       selectedModel: "",
       selectedMode: "",
       selectedThinkingOptionId: "",
+      selectedFastMode: false,
       modelSelectorProviders: [],
       modeOptions: [],
       availableThinkingOptions: [],
+      supportsFastMode: false,
       selectedModelDisplay: null,
       selectedModeDisplay: { label: i18n.t("schedule.form.mode.placeholder") },
       selectedThinkingDisplay: null,
@@ -1134,6 +1167,10 @@ export function openScheduleForm(snapshot: ScheduleFormSnapshot): ScheduleFormMo
         modelId: selectedModel,
         requestedThinkingOptionId: "",
       });
+      const model = resolveEffectiveModel(availableModels, selectedModel);
+      const preferredFast =
+        preferences?.providerPreferences?.[provider]?.featureValues?.[FAST_MODE_FEATURE_ID] ===
+        true;
       userModified = { ...userModified, provider: true, model: true };
       publish({
         ...state,
@@ -1146,6 +1183,7 @@ export function openScheduleForm(snapshot: ScheduleFormSnapshot): ScheduleFormMo
           currentMode: state.selectedMode,
         }),
         selectedThinkingOptionId,
+        selectedFastMode: agentModelSupportsFastMode(model) ? preferredFast : false,
       });
     },
     setThinking(thinkingOptionId) {
@@ -1154,6 +1192,12 @@ export function openScheduleForm(snapshot: ScheduleFormSnapshot): ScheduleFormMo
       }
       userModified = { ...userModified, thinkingOptionId: true };
       publish({ ...state, selectedThinkingOptionId: thinkingOptionId });
+    },
+    setFastMode(enabled) {
+      if (closed) {
+        return;
+      }
+      publish({ ...state, selectedFastMode: enabled });
     },
     setSessionMode(modeId) {
       if (closed) {

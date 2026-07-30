@@ -154,6 +154,9 @@ export const ar: TranslationResources = {
       select: "حدد خيار التفكير",
       selectWithValue: "حدد خيار التفكير ({{value}})",
     },
+    fast: {
+      title: "Fast",
+    },
     model: {
       unknown: "نموذج غير معروف",
     },
@@ -176,6 +179,7 @@ export const ar: TranslationResources = {
       thinking: "وضع التفكير",
       model: "تغيير النموذج",
       mode: "تغيير الوضع",
+      fast: "Toggle fast model variant",
     },
   },
   agentStream: {

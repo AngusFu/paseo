@@ -156,6 +156,9 @@ export const fr: TranslationResources = {
       select: "Sélectionnez l'option de réflexion",
       selectWithValue: "Sélectionnez l'option de réflexion ({{value}})",
     },
+    fast: {
+      title: "Fast",
+    },
     model: {
       unknown: "Modèle inconnu",
     },
@@ -178,6 +181,7 @@ export const fr: TranslationResources = {
       thinking: "Mode réflexion",
       model: "Changer de modèle",
       mode: "Changer de mode",
+      fast: "Toggle fast model variant",
     },
   },
   agentStream: {

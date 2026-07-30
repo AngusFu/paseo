@@ -255,6 +255,7 @@ describe("schedule form model", () => {
       showProjectField: true,
       showModelField: false,
       showThinkingField: false,
+      showFastField: false,
       showModeField: false,
       showIsolationField: false,
       showArchiveOnFinishField: false,
@@ -266,6 +267,7 @@ describe("schedule form model", () => {
       showProjectField: true,
       showModelField: true,
       showThinkingField: false,
+      showFastField: false,
       showModeField: false,
       showIsolationField: true,
       showArchiveOnFinishField: true,
@@ -278,10 +280,69 @@ describe("schedule form model", () => {
       showProjectField: true,
       showModelField: true,
       showThinkingField: true,
+      showFastField: false,
       showModeField: true,
       showIsolationField: true,
       showArchiveOnFinishField: true,
     });
+  });
+
+  it("shows Fast as a peer of thinking when the selected model supports it", () => {
+    const fastModels: AgentModelDefinition[] = [
+      {
+        provider: "cursor-print",
+        id: "cursor-grok-4.5-high",
+        label: "Cursor Grok 4.5 High",
+        isDefault: true,
+        metadata: { cursorPrintSupportsFast: true },
+        thinkingOptions: [
+          { id: "low", label: "Low" },
+          { id: "high", label: "High", isDefault: true },
+        ],
+        defaultThinkingOptionId: "high",
+      },
+    ];
+    const form = open({
+      mode: "create",
+      defaults: {
+        serverId: "host-a",
+        projectTargets: PROJECT_TARGETS,
+        preferences: {
+          providerPreferences: {
+            "cursor-print": { featureValues: { fast_mode: true } },
+          },
+        },
+      },
+    });
+
+    form.setProject(buildProjectOptionId("host-a", "project-a"), { label: "Project A" });
+    form.applyProviderSnapshot("host-a", {
+      entries: [
+        {
+          provider: "cursor-print",
+          label: "Cursor",
+          status: "ready",
+          enabled: true,
+          fetchedAt: "2026-07-01T00:00:00.000Z",
+          models: fastModels,
+          modes: MOCK_MODES,
+          defaultModeId: "load-test",
+        },
+      ],
+    });
+    form.setModel("cursor-print", "cursor-grok-4.5-high");
+
+    expect(form.getState()).toMatchObject({
+      supportsFastMode: true,
+      selectedFastMode: true,
+      disclosure: {
+        showThinkingField: true,
+        showFastField: true,
+      },
+    });
+
+    form.setFastMode(false);
+    expect(form.getState().selectedFastMode).toBe(false);
   });
 
   it("hides isolation unless the selected project can create a worktree", () => {

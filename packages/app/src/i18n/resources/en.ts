@@ -152,6 +152,9 @@ export const en = {
       select: "Select thinking option",
       selectWithValue: "Select thinking option ({{value}})",
     },
+    fast: {
+      title: "Fast",
+    },
     model: {
       unknown: "Unknown model",
     },
@@ -174,6 +177,7 @@ export const en = {
       thinking: "Thinking mode",
       model: "Change model",
       mode: "Change mode",
+      fast: "Toggle fast model variant",
     },
   },
   agentStream: {

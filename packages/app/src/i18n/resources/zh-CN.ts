@@ -154,6 +154,9 @@ export const zhCN: TranslationResources = {
       select: "选择 thinking 选项",
       selectWithValue: "选择 thinking 选项（{{value}}）",
     },
+    fast: {
+      title: "Fast",
+    },
     model: {
       unknown: "未知 Model",
     },
@@ -176,6 +179,7 @@ export const zhCN: TranslationResources = {
       thinking: "Thinking mode",
       model: "切换 Model",
       mode: "更改模式",
+      fast: "切换 Fast 模型变体",
     },
   },
   agentStream: {

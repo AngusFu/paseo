@@ -8,6 +8,7 @@ import {
   formatThinkingOptionLabel,
   normalizeModelId,
   resolveAgentModelSelection,
+  splitFastModeFeature,
 } from "./utils";
 
 describe("getAgentControlHintKey", () => {
@@ -15,6 +16,21 @@ describe("getAgentControlHintKey", () => {
     expect(getAgentControlHintKey("thinking")).toBe("agentControls.hints.thinking");
     expect(getAgentControlHintKey("model")).toBe("agentControls.hints.model");
     expect(getAgentControlHintKey("mode")).toBe("agentControls.hints.mode");
+    expect(getAgentControlHintKey("fast")).toBe("agentControls.hints.fast");
+  });
+});
+
+describe("splitFastModeFeature", () => {
+  it("lifts fast_mode out as a peer control and leaves other features", () => {
+    expect(
+      splitFastModeFeature([
+        { id: "fast_mode", type: "toggle", label: "Fast", value: true },
+        { id: "auto_accept", type: "toggle", label: "Auto", value: false },
+      ]),
+    ).toEqual({
+      fastFeature: { id: "fast_mode", type: "toggle", label: "Fast", value: true },
+      otherFeatures: [{ id: "auto_accept", type: "toggle", label: "Auto", value: false }],
+    });
   });
 });
 

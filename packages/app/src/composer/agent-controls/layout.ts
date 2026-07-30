@@ -3,6 +3,8 @@ export type ComposerControlDensity = "full" | "condensed" | "tight";
 export interface ComposerControlPresence {
   hasModel: boolean;
   hasThinking: boolean;
+  /** Peer of thinking (e.g. cursor-print fast_mode) — not aggregated into the gear tray. */
+  hasFast: boolean;
   hasMode: boolean;
   features: readonly ComposerFeatureControlPresence[];
   fontScale: number;
@@ -61,6 +63,7 @@ function resolveCondensedFloor(controls: ComposerControlPresence): number {
   const widths: number[] = [];
   if (controls.hasModel) widths.push(36 + 60 * fontScale);
   if (controls.hasThinking) widths.push(COMPOSER_TOOLBAR_GEOMETRY.controlSize);
+  if (controls.hasFast) widths.push(COMPOSER_TOOLBAR_GEOMETRY.controlSize);
   if (controls.hasMode) widths.push(36 + 96 * fontScale);
   if (controls.features.length > 0) widths.push(COMPOSER_TOOLBAR_GEOMETRY.controlSize);
   return sumControlWidths(widths);
@@ -71,6 +74,7 @@ function resolveFullFloor(controls: ComposerControlPresence): number {
   const widths: number[] = [];
   if (controls.hasModel) widths.push(50 + 70 * fontScale);
   if (controls.hasThinking) widths.push(54 + 48 * fontScale);
+  if (controls.hasFast) widths.push(54 + 36 * fontScale);
   if (controls.hasMode) widths.push(54 + 96 * fontScale);
   for (const feature of controls.features) {
     widths.push(resolveFeatureControlWidth(feature, fontScale));

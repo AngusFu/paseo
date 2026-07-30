@@ -61,11 +61,13 @@ import type {
 } from "@getpaseo/protocol/agent-types";
 import type { AgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
 import {
+  FAST_MODE_FEATURE_ID,
   getFeatureHighlightColor,
   getFeatureTooltip,
   getAgentControlHintKey,
   formatThinkingOptionLabel,
   resolveAgentModelSelection,
+  splitFastModeFeature,
 } from "@/composer/agent-controls/utils";
 import {
   ACP_AUTO_ACCEPT_FEATURE_ID,
@@ -380,7 +382,7 @@ function isLockedFastFeature(
   modelDisabled: boolean,
   featureId: string,
 ): boolean {
-  return disabled || (modelDisabled && featureId === "fast_mode");
+  return disabled || (modelDisabled && featureId === FAST_MODE_FEATURE_ID);
 }
 
 function resolveVisibleComposerFeatures(input: {
@@ -480,6 +482,10 @@ function ControlledAgentControls({
     () => resolveVisibleComposerFeatures({ provider, features, config }),
     [config, features, provider],
   );
+  const { fastFeature, otherFeatures } = useMemo(
+    () => splitFastModeFeature(visibleFeatures),
+    [visibleFeatures],
+  );
   const { t } = useTranslation();
   const isCompactFormFactor = useIsCompactFormFactor();
   const isCompact = isCompactLayout ?? isCompactFormFactor;
@@ -528,7 +534,7 @@ function ControlledAgentControls({
   });
   const featureControls = useMemo(
     () =>
-      (visibleFeatures ?? []).map((feature) => {
+      (otherFeatures ?? []).map((feature) => {
         if (feature.type === "toggle") return { type: "toggle" as const };
         const selectedOption = feature.options.find((option) => option.id === feature.value);
         return {
@@ -536,17 +542,18 @@ function ControlledAgentControls({
           label: selectedOption?.label ?? feature.label,
         };
       }),
-    [visibleFeatures],
+    [otherFeatures],
   );
   const controlPresence = useMemo(
     () => ({
       hasModel: canSelectModel,
       hasThinking: canSelectThinking,
+      hasFast: Boolean(fastFeature),
       hasMode: modeControl !== null && modeControl !== undefined,
       features: featureControls,
       fontScale,
     }),
-    [canSelectModel, canSelectThinking, featureControls, fontScale, modeControl],
+    [canSelectModel, canSelectThinking, fastFeature, featureControls, fontScale, modeControl],
   );
   const presentation = useMemo(() => resolveComposerControlPresentation(density), [density]);
   const layoutContextValue = useMemo(
@@ -719,7 +726,8 @@ function ControlledAgentControls({
             selectedModelId={selectedModelId}
             thinkingOptions={formattedThinkingOptions}
             selectedThinkingOptionId={selectedThinkingOptionId}
-            features={visibleFeatures}
+            fastFeature={fastFeature}
+            features={otherFeatures}
             onSetFeature={onSetFeature}
             onToggleFavoriteModel={onToggleFavoriteModel}
             onDropdownClose={onDropdownClose}
@@ -766,7 +774,8 @@ function ControlledAgentControls({
             provider={provider}
             selectedModelId={selectedModelId}
             selectedThinkingOptionId={selectedThinkingOptionId}
-            features={visibleFeatures}
+            fastFeature={fastFeature}
+            features={otherFeatures}
             onSetFeature={onSetFeature}
             onToggleFavoriteModel={onToggleFavoriteModel}
             onDropdownClose={onDropdownClose}
@@ -808,6 +817,7 @@ interface DesktopAgentControlsContentProps {
   selectedModelId?: string;
   thinkingOptions?: AgentControlOption[];
   selectedThinkingOptionId?: string;
+  fastFeature?: (AgentFeature & { type: "toggle" }) | null;
   features?: AgentFeature[];
   onSetFeature?: (featureId: string, value: unknown) => void;
   onToggleFavoriteModel?: (provider: string, modelId: string) => void;
@@ -868,6 +878,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     selectedModelId,
     thinkingOptions,
     selectedThinkingOptionId,
+    fastFeature,
     features,
     onSetFeature,
     onToggleFavoriteModel,
@@ -910,6 +921,13 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     modelSelectorServerId,
     desktopPlacement,
   } = props;
+  const handleToggleFast = useCallback(() => {
+    if (!fastFeature) {
+      return;
+    }
+    onSetFeature?.(fastFeature.id, !fastFeature.value);
+    onDropdownClose?.();
+  }, [fastFeature, onDropdownClose, onSetFeature]);
   const modelToolbar = useMemo(
     () => ({ glyphSize, showCaret: presentation.showCarets }),
     [glyphSize, presentation.showCarets],
@@ -1018,6 +1036,16 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
         </>
       ) : null}
 
+      {fastFeature ? (
+        <FastModeControl
+          feature={fastFeature}
+          surface="toolbar"
+          showToolbarLabel={presentation.showThinkingLabel}
+          disabled={isLockedFastFeature(disabled, modelDisabled, fastFeature.id)}
+          onToggle={handleToggleFast}
+        />
+      ) : null}
+
       {modeControl ? <AgentModeControl {...modeControl} onClose={onDropdownClose} /> : null}
 
       {presentation.aggregateFeatures && features?.length ? (
@@ -1044,7 +1072,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
               <SheetFeatureItem
                 key={`feature-${feature.id}`}
                 feature={feature}
-                disabled={isLockedFastFeature(disabled, modelDisabled, feature.id)}
+                disabled={disabled}
                 openSelector={openSelector}
                 handleOpenChange={handleNestedOpenChange}
                 onSetFeature={onSetFeature}
@@ -1057,7 +1085,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
           <DesktopFeatureItem
             key={`feature-${feature.id}`}
             feature={feature}
-            disabled={isLockedFastFeature(disabled, modelDisabled, feature.id)}
+            disabled={disabled}
             openSelector={openSelector}
             handleOpenChange={handleOpenChange}
             onSetFeature={onSetFeature}
@@ -1073,6 +1101,7 @@ interface SheetAgentControlsContentProps {
   provider: string;
   selectedModelId?: string;
   selectedThinkingOptionId?: string;
+  fastFeature?: (AgentFeature & { type: "toggle" }) | null;
   features?: AgentFeature[];
   onSetFeature?: (featureId: string, value: unknown) => void;
   onToggleFavoriteModel?: (provider: string, modelId: string) => void;
@@ -1113,6 +1142,7 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
     provider,
     selectedModelId,
     selectedThinkingOptionId,
+    fastFeature,
     features,
     onSetFeature,
     onToggleFavoriteModel,
@@ -1145,6 +1175,12 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
   const thinkingAnchorRef = useRef<View | null>(null);
 
   const hasThinking = comboboxThinkingOptions.length > 0;
+  const handleToggleFast = useCallback(() => {
+    if (!fastFeature) {
+      return;
+    }
+    onSetFeature?.(fastFeature.id, !fastFeature.value);
+  }, [fastFeature, onSetFeature]);
 
   const handleOpenThinking = useCallback(() => handleOpenSheet("thinking"), [handleOpenSheet]);
   const handleThinkingSheetOpenChange = useCallback(
@@ -1191,13 +1227,23 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
         </>
       ) : null}
 
+      {fastFeature ? (
+        <FastModeControl
+          feature={fastFeature}
+          surface="sheet"
+          showToolbarLabel
+          disabled={isLockedFastFeature(disabled, modelDisabled, fastFeature.id)}
+          onToggle={handleToggleFast}
+        />
+      ) : null}
+
       {modeControl ? <AgentModeControl {...modeControl} surface="sheet" /> : null}
 
       {(features ?? []).map((feature) => (
         <SheetFeatureItem
           key={`feature-${feature.id}`}
           feature={feature}
-          disabled={isLockedFastFeature(disabled, modelDisabled, feature.id)}
+          disabled={disabled}
           openSelector={openSelector}
           handleOpenChange={handleOpenChange}
           onSetFeature={onSetFeature}
@@ -1226,6 +1272,58 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
       {sheetControls}
     </CompactModelSheet>
   ) : null;
+}
+
+function FastModeControl({
+  feature,
+  surface,
+  showToolbarLabel,
+  disabled,
+  onToggle,
+}: {
+  feature: AgentFeature & { type: "toggle" };
+  surface: "toolbar" | "sheet";
+  showToolbarLabel: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  const { theme } = useUnistyles();
+  const { t } = useTranslation();
+  const valueLabel = feature.value
+    ? t("agentControls.features.on")
+    : t("agentControls.features.off");
+  const trigger = (
+    <AgentControlTrigger
+      icon={Zap}
+      iconColor={getFeatureIconColor(
+        feature.id,
+        feature.value,
+        theme.colors.palette,
+        theme.colors.foregroundMuted,
+      )}
+      surface={surface}
+      label={t("agentControls.fast.title")}
+      value={valueLabel}
+      showToolbarLabel={showToolbarLabel}
+      disabled={disabled}
+      onPress={onToggle}
+      accessibilityLabel={getFeatureTooltip(feature)}
+      testID="agent-fast-mode"
+    />
+  );
+  if (surface === "sheet") {
+    return trigger;
+  }
+  return (
+    <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+      <TooltipTrigger asChild triggerRefProp="ref">
+        {trigger}
+      </TooltipTrigger>
+      <TooltipContent side="top" align="center" offset={8}>
+        <Text style={styles.tooltipText}>{t(getAgentControlHintKey("fast"))}</Text>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 function DesktopFeatureItem({

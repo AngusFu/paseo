@@ -12,6 +12,7 @@ import {
   type SelectFieldDisplay,
   type SelectFieldRenderOptionInput,
 } from "@/components/ui/select-field";
+import { Switch } from "@/components/ui/switch";
 import type { FieldControlSize } from "@/components/ui/control-geometry";
 import { formatAgentModeLabel, formatThinkingOptionLabel } from "@/composer/agent-controls/utils";
 import type { ProviderSelectorProvider } from "@/provider-selection/provider-selection";
@@ -156,6 +157,32 @@ export function AgentThinkingField({
       testID={testID}
       renderOption={renderOption}
     />
+  );
+}
+
+/** Peer of AgentThinkingField — toggle for providers that expose fast_mode. */
+export function AgentFastField({
+  value,
+  onChange,
+  label,
+  testID,
+  accessibilityLabel,
+}: {
+  value: boolean;
+  onChange: (enabled: boolean) => void;
+  label: string;
+  testID?: string;
+  accessibilityLabel?: string;
+}): ReactElement {
+  return (
+    <Field label={label} testID={testID}>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        accessibilityLabel={accessibilityLabel ?? label}
+        testID={testID ? `${testID}-switch` : undefined}
+      />
+    </Field>
   );
 }
 

@@ -119,4 +119,9 @@ describe("desktop-updates helpers", () => {
     );
     expect(buildMacAppleSiliconDownloadUrl(null)).toBeNull();
   });
+
+  it("keeps desktop app-update UI disabled on this fork", async () => {
+    const { shouldShowDesktopUpdateSection } = await loadModuleForPlatform("web");
+    expect(shouldShowDesktopUpdateSection()).toBe(false);
+  });
 });

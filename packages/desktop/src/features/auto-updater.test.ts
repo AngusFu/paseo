@@ -16,11 +16,53 @@ vi.mock("electron-updater", () => ({
 
 import {
   bucketFromStagingUserId,
+  checkForAppUpdate,
+  downloadAndInstallUpdate,
+  installAppUpdateOnQuit,
   resolveStagingUserId,
   rolloutManifestSchema,
   shouldAdmitToRollout,
   shouldInstallAppUpdateOnQuit,
 } from "./auto-updater";
+
+describe("desktop app updates disabled", () => {
+  it("no-ops check, download/install, and quit install", async () => {
+    await expect(
+      checkForAppUpdate({
+        currentVersion: "0.1.106",
+        releaseChannel: "stable",
+        intent: "manual",
+      }),
+    ).resolves.toEqual({
+      hasUpdate: false,
+      readyToInstall: false,
+      currentVersion: "0.1.106",
+      latestVersion: "0.1.106",
+      body: null,
+      date: null,
+      errorMessage: null,
+    });
+
+    await expect(
+      downloadAndInstallUpdate({
+        currentVersion: "0.1.106",
+        releaseChannel: "stable",
+      }),
+    ).resolves.toEqual({
+      installed: false,
+      version: null,
+      message: "App updates are disabled.",
+    });
+
+    await expect(
+      installAppUpdateOnQuit({
+        currentVersion: "0.1.106",
+        releaseChannel: "stable",
+        signal: AbortSignal.abort(),
+      }),
+    ).resolves.toBe(false);
+  });
+});
 
 describe("shouldInstallAppUpdateOnQuit", () => {
   it("keeps Linux AppImage updates on the manual install path", () => {

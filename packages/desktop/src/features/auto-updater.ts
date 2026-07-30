@@ -162,6 +162,10 @@ const appUpdateService = createAppUpdateService({
 // Public API
 // ---------------------------------------------------------------------------
 
+// Fork: publish still targets getpaseo/paseo. Disable check/download/install
+// until this fork owns an update channel.
+const DESKTOP_APP_UPDATES_ENABLED = false;
+
 export async function checkForAppUpdate({
   currentVersion,
   releaseChannel,
@@ -171,6 +175,17 @@ export async function checkForAppUpdate({
   releaseChannel: AppReleaseChannel;
   intent: AppUpdateCheckIntent;
 }): Promise<AppUpdateCheckResult> {
+  if (!DESKTOP_APP_UPDATES_ENABLED) {
+    return {
+      hasUpdate: false,
+      readyToInstall: false,
+      currentVersion,
+      latestVersion: currentVersion,
+      body: null,
+      date: null,
+      errorMessage: null,
+    };
+  }
   return appUpdateService.checkForAppUpdate({ currentVersion, releaseChannel, intent });
 }
 
@@ -184,6 +199,13 @@ export async function downloadAndInstallUpdate(
   },
   onBeforeQuit?: () => Promise<void>,
 ): Promise<AppUpdateInstallResult> {
+  if (!DESKTOP_APP_UPDATES_ENABLED) {
+    return {
+      installed: false,
+      version: null,
+      message: "App updates are disabled.",
+    };
+  }
   return appUpdateService.downloadAndInstallUpdate(
     { currentVersion, releaseChannel },
     onBeforeQuit,
@@ -199,6 +221,9 @@ export async function installAppUpdateOnQuit({
   releaseChannel: AppReleaseChannel;
   signal: AbortSignal;
 }): Promise<boolean> {
+  if (!DESKTOP_APP_UPDATES_ENABLED) {
+    return false;
+  }
   if (
     !shouldInstallAppUpdateOnQuit({
       platform: process.platform,

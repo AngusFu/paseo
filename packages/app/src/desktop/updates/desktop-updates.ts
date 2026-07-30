@@ -61,8 +61,12 @@ function toNumberOr(defaultValue: number, value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : defaultValue;
 }
 
+// Fork: electron-builder still publishes to getpaseo/paseo — no owned update
+// channel yet. Keep app-update UI/checks off until that exists.
+const DESKTOP_APP_UPDATES_ENABLED = false;
+
 export function shouldShowDesktopUpdateSection(): boolean {
-  return isWeb && isElectronRuntime();
+  return DESKTOP_APP_UPDATES_ENABLED && isWeb && isElectronRuntime();
 }
 
 export function parseLocalDaemonVersionResult(raw: unknown): LocalDaemonVersionResult {

@@ -155,8 +155,13 @@ async function waitForReady(child: ReturnType<typeof nodeSpawn>): Promise<void> 
 }
 
 export async function getCodeServerStatus(): Promise<CodeServerStatus> {
-  const running = await probePort(CODE_SERVER_UPSTREAM_PORT, CODE_SERVER_HOST);
-  return { running, url: CODE_SERVER_URL, port: CODE_SERVER_PROXY_PORT };
+  const upstreamRunning = await probePort(CODE_SERVER_UPSTREAM_PORT, CODE_SERVER_HOST);
+  // Upstream may already be listening (orphan from a prior session or started
+  // outside Paseo). The UI always loads the proxy port — start it if missing.
+  if (upstreamRunning) {
+    await ensureCodeServerProxy();
+  }
+  return { running: upstreamRunning, url: CODE_SERVER_URL, port: CODE_SERVER_PROXY_PORT };
 }
 
 export async function startCodeServer(

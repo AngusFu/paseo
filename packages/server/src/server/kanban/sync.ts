@@ -164,8 +164,15 @@ function gitlabReviewerRemoved(mr: GitlabMergeRequest, reviewerUsername: string 
 // state (CE and EE alike), so "has this MR collected its required approvals"
 // needs its own request per open MR (see fetchGitlabApprovalState below).
 interface GitlabApprovalState {
+  /**
+   * True only when the MR is substantively approved — required approvals
+   * were met, or at least one user approved. GitLab returns
+   * `approved: true` with `approvals_required: 0` on projects that have no
+   * approval rules (vacuous), which must NOT count as Approved on the board.
+   */
   approved: boolean;
   approvalsLeft: number;
+  approvalsRequired: number;
 }
 
 // GitLab MR list responses don't carry one canonical "status" field the way
@@ -195,6 +202,20 @@ function jiraStoredCategoryKey(card: StoredKanbanCard): string | undefined {
   const status = (card.metadata as { status?: { statusCategory?: { key?: string } } } | undefined)
     ?.status;
   return status?.statusCategory?.key;
+}
+
+/** Detached + terminal — kept for stats, never needs another reconcile fetch. */
+function isTerminalDetachedCard(card: StoredKanbanCard): boolean {
+  if (card.detachedFromSource !== true) {
+    return false;
+  }
+  if (card.source.kind === "gitlab") {
+    return (card.metadata as { state?: string } | undefined)?.state === "merged";
+  }
+  if (card.source.kind === "jira") {
+    return jiraStoredCategoryKey(card) === "done";
+  }
+  return false;
 }
 
 // GitLab MRs only ever have two board-relevant buckets: still open (including
@@ -779,7 +800,11 @@ export class KanbanSyncService {
       (card) =>
         card.source.kind === source.kind &&
         !seenExternalIds.has(card.externalId ?? "") &&
-        (cardBelongsToSource(card, source.id) || resolveCardSourceIds(card).length === 0),
+        (cardBelongsToSource(card, source.id) || resolveCardSourceIds(card).length === 0) &&
+        // Already-terminal detached cards stay in the store for stats but must
+        // not consume the per-round reconcile cap — otherwise a backlog of
+        // merged/done cards starves newer dropouts forever (same 25 every sync).
+        !isTerminalDetachedCard(card),
     );
     if (candidates.length <= MAX_RECONCILE_CARDS) {
       return candidates;
@@ -1028,10 +1053,21 @@ export class KanbanSyncService {
       if (!response.ok) {
         return null;
       }
-      const body = (await response.json()) as { approved?: boolean; approvals_left?: number };
+      const body = (await response.json()) as {
+        approved?: boolean;
+        approvals_left?: number;
+        approvals_required?: number;
+        approved_by?: unknown[];
+      };
+      const approvalsRequired = body.approvals_required ?? 0;
+      const approvedByCount = Array.isArray(body.approved_by) ? body.approved_by.length : 0;
+      // Vacuous: GitLab sets approved=true when no rules exist (required=0 and
+      // nobody approved). Only treat as approved when something real happened.
+      const approved = body.approved === true && (approvalsRequired > 0 || approvedByCount > 0);
       return {
-        approved: body.approved === true,
+        approved,
         approvalsLeft: body.approvals_left ?? 0,
+        approvalsRequired,
       };
     } catch (error) {
       this.logger?.warn(

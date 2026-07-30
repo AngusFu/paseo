@@ -1626,10 +1626,145 @@ describe("KanbanSyncService", () => {
     expect(byId.get("gitlab:42!1")?.metadata?.approvals).toEqual({
       approved: false,
       approvalsLeft: 2,
+      approvalsRequired: 0,
     });
     // Merged MR never triggers the approvals request — it's a moot concept
     // once terminal — and its metadata carries approvals: null instead.
     expect(byId.get("gitlab:42!2")?.metadata?.approvals).toBeNull();
+  });
+
+  test("treats GitLab vacuous approved (no rules) as not approved", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/merge_requests/3/approvals")) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          // GitLab CE / no approval rules: approved=true with required=0.
+          json: async () => ({
+            approved: true,
+            approvals_left: 0,
+            approvals_required: 0,
+            approved_by: [],
+          }),
+        };
+      }
+      if (url.includes("/api/v4/merge_requests")) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => [{ iid: 3, project_id: 42, title: "Open", state: "opened" }],
+        };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    const source = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+      query: "state=opened",
+    });
+    const result = await syncService.sync(source);
+    expect(result.cards[0]?.metadata?.approvals).toEqual({
+      approved: false,
+      approvalsLeft: 0,
+      approvalsRequired: 0,
+    });
+  });
+
+  test("reconcile cap is not starved by already-detached merged cards", async () => {
+    // Seed > MAX_RECONCILE_CARDS (25) terminal detached merged cards plus one
+    // stale still-"opened" card. Without excluding terminal cards from the
+    // candidate pool, every sync would re-slice the same first 25 and never
+    // reach the stale one — which is how merged MRs stuck in Draft/Approved.
+    const source = await store.createSource({
+      kind: "gitlab",
+      name: "GitLab",
+      baseUrl: "https://gitlab.example.com",
+      query: "state=opened",
+    });
+    const columns = await store.listColumns();
+    const doneColumnId = columns.find((c) => c.legacyStatus === "done")!.id;
+    const wipColumnId = columns.find((c) => c.legacyStatus === "wip")!.id;
+
+    for (let i = 1; i <= 30; i += 1) {
+      await store.upsertCardBySource(
+        {
+          kind: "gitlab",
+          externalId: `gitlab:42!${i}`,
+          projectId: "42",
+          mrIid: String(i),
+        },
+        {
+          title: `Merged ${i}`,
+          url: null,
+          status: "done",
+          columnId: doneColumnId,
+          theme: "gitlab-mr",
+          sourceId: source.id,
+          metadata: { state: "merged" },
+          detachedFromSource: true,
+          forceStatus: true,
+        },
+      );
+    }
+    await store.upsertCardBySource(
+      {
+        kind: "gitlab",
+        externalId: "gitlab:42!99",
+        projectId: "42",
+        mrIid: "99",
+      },
+      {
+        title: "Stale open",
+        url: null,
+        status: "wip",
+        columnId: wipColumnId,
+        theme: "gitlab-mr",
+        sourceId: source.id,
+        metadata: { state: "opened", draft: true },
+      },
+    );
+
+    const singleFetches: string[] = [];
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/api/v4/merge_requests") && !url.includes("/projects/")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => [] };
+      }
+      const match = url.match(/\/projects\/42\/merge_requests\/(\d+)$/);
+      if (match) {
+        singleFetches.push(match[1]!);
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({
+            iid: Number(match[1]),
+            project_id: 42,
+            title: "Stale open",
+            state: "merged",
+            draft: false,
+          }),
+        };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const syncService = new KanbanSyncService({ store, secrets, fetchImpl });
+    await syncService.sync(source);
+
+    expect(singleFetches).toContain("99");
+    const stale = (await store.listCards()).find((card) => card.externalId === "gitlab:42!99");
+    expect(stale).toMatchObject({
+      status: "done",
+      detachedFromSource: true,
+      metadata: expect.objectContaining({ state: "merged" }),
+    });
   });
 
   test("a merged MR forces a user-pinned card to done, overriding the manual drag", async () => {

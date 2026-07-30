@@ -21,9 +21,33 @@ const BUCKET_ORDER: GitlabBucketKey[] = ["draft", "open", "approved", "merged", 
 // narrowed before use instead of assumed. `state` is GitLab's own
 // opened/merged/closed; an "opened" MR still marked draft gets its own Draft
 // lane ahead of Open, matching how MR authors think about their own queue. An
-// opened, non-draft MR only lands in Approved once `approvals.approved` is
-// explicitly true — missing/null approvals (fetch failed, or not yet
-// resolved) or `approved: false` both fall back to Open rather than guessing.
+// opened, non-draft MR only lands in Approved once approval was substantive —
+// see `isSubstantivelyApproved`. Missing/null approvals (fetch failed) or a
+// vacuous `approved: true` with no required rules both fall back to Open.
+function isSubstantivelyApproved(approvals: unknown): boolean {
+  if (typeof approvals !== "object" || approvals === null || Array.isArray(approvals)) {
+    return false;
+  }
+  const record = approvals as Record<string, unknown>;
+  if (record.approved !== true) {
+    return false;
+  }
+  // Prefer the required-count the daemon stores (post vacuous-approved fix).
+  let required: number | null = null;
+  if (typeof record.approvalsRequired === "number") {
+    required = record.approvalsRequired;
+  } else if (typeof record.approvals_required === "number") {
+    required = record.approvals_required;
+  }
+  if (required !== null) {
+    return required > 0;
+  }
+  // COMPAT: older metadata only had {approved, approvalsLeft}. On instances
+  // with no approval rules GitLab reports approved=true vacuously, identical
+  // to a finished approval (left=0) — don't trust `approved` alone.
+  return false;
+}
+
 function readGitlabBucket(metadata: Record<string, unknown> | undefined): GitlabBucketKey | null {
   const state = metadata?.state;
   if (typeof state !== "string") {
@@ -39,8 +63,7 @@ function readGitlabBucket(metadata: Record<string, unknown> | undefined): Gitlab
     if (metadata?.draft === true) {
       return "draft";
     }
-    const approvals = metadata?.approvals as { approved?: unknown } | null | undefined;
-    return approvals?.approved === true ? "approved" : "open";
+    return isSubstantivelyApproved(metadata?.approvals) ? "approved" : "open";
   }
   return null;
 }

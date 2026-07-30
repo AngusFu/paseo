@@ -86,6 +86,8 @@ export const CURSOR_PRINT_RUNTIME_GUIDANCE = [
   "Paseo cursor-print: no daemon MCP. Use Shell + project CLIs; do not wait for MCP tools.",
   "Prefer: atlassian (Jira/Confluence), glab (GitLab; use env -u GITLAB_TOKEN glab …), figma, chrome-devtools, gh.",
   "If a skill/doc names a CLI, run that CLI — do not substitute an MCP server.",
+  "Never use AskUserQuestion / AskQuestion (or similar IDE questionnaire tools): --print has no questionnaire UI and they return Questions skipped. To ask the user, write numbered options in normal assistant text and wait for their next message.",
+  "Permission notes: Paseo Auto Approve only auto-answers Cursor interaction_query over stdin; it cannot enable org-disabled --force / Run Everything. Prefer Auto-review mode; do not rely on Force/YOLO when the org blocks it.",
 ].join("\n");
 
 /** Build the prompt string passed to `agent --print` (not the timeline user row). */

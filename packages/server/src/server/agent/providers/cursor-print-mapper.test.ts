@@ -251,6 +251,57 @@ describe("mapCursorPrintToolCall", () => {
     });
   });
 
+  test("maps askQuestionToolCall into AskUserQuestion unknown/questions shape", () => {
+    const mapped = mapCursorPrintToolCall(
+      {
+        askQuestionToolCall: {
+          args: {
+            title: "下一步",
+            questions: [
+              {
+                id: "demo_choice",
+                prompt: "想让我帮你做什么？",
+                options: [
+                  { id: "jira", label: "查 Jira 工单" },
+                  { id: "code", label: "看代码" },
+                ],
+                allowMultiple: false,
+              },
+            ],
+          },
+          result: {
+            rejected: {
+              reason:
+                "Questions skipped by the user, continue with the information you already have",
+            },
+          },
+        },
+      },
+      "ask-1",
+    );
+    expect(mapped).toMatchObject({
+      name: "AskUserQuestion",
+      callKey: "askQuestionToolCall",
+      failed: true,
+      detail: {
+        type: "unknown",
+        input: {
+          title: "下一步",
+          questions: [
+            {
+              question: "想让我帮你做什么？",
+              header: "demo_choice",
+              options: [{ label: "查 Jira 工单" }, { label: "看代码" }],
+              multiSelect: false,
+            },
+          ],
+        },
+      },
+    });
+    // No plain_text label — avoids "AskUserQuestion AskQuestion" badge.
+    expect(mapped?.detail.type).not.toBe("plain_text");
+  });
+
   test("maps unknown *ToolCall as plain_text", () => {
     const mapped = mapCursorPrintToolCall(
       {

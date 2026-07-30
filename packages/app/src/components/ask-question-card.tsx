@@ -85,7 +85,8 @@ function extractErrorText(error: unknown): string {
 // whose content is its own canned rejection text ("doesn't want to proceed" /
 // "want to proceed"), or the literal message Paseo's own Dismiss button sends
 // ("Dismissed by user") — neither is a genuine tool-call failure.
-const DISMISSED_ERROR_PATTERN = /want to proceed|dismiss(ed)? by user/i;
+const DISMISSED_ERROR_PATTERN =
+  /want to proceed|dismiss(ed)? by user|questions skipped by the user/i;
 
 function isDismissed(status: AskQuestionStatus, error: unknown): boolean {
   if (status === "canceled") {

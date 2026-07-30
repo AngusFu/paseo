@@ -160,6 +160,102 @@ export interface MappedCursorToolCall {
 }
 
 /**
+ * Normalize Cursor `askQuestionToolCall` args into the unknown/{questions}
+ * shape AskQuestionCard + ask-question-timeline projection expect.
+ * Avoids plain_text label "AskQuestion" + projected name "AskUserQuestion"
+ * rendering as the awkward "AskUserQuestion AskQuestion" badge.
+ */
+function mapAskQuestionToolCall(
+  ask: Record<string, unknown>,
+  callIdFromEvent: string | null,
+  toolCall: Record<string, unknown>,
+): MappedCursorToolCall {
+  const args = isRecord(ask.args) ? ask.args : {};
+  const success = readNestedSuccess(ask.result);
+  const failure = readNestedFailure(ask.result);
+  const rawQuestions = Array.isArray(args.questions) ? args.questions : [];
+  const questions = rawQuestions.flatMap((item) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+    const prompt = readString(item.prompt) ?? readString(item.question) ?? readString(item.text);
+    if (!prompt) {
+      return [];
+    }
+    const header =
+      readString(item.header) ??
+      readString(item.id) ??
+      (prompt.length > 24 ? `${prompt.slice(0, 24)}…` : prompt);
+    const rawOptions = Array.isArray(item.options) ? item.options : [];
+    const options = rawOptions.flatMap((opt) => {
+      if (!isRecord(opt)) {
+        return [];
+      }
+      const label = readString(opt.label) ?? readString(opt.id);
+      if (!label) {
+        return [];
+      }
+      const description = readString(opt.description);
+      return [
+        {
+          label,
+          ...(description ? { description } : {}),
+        },
+      ];
+    });
+    return [
+      {
+        question: prompt,
+        header,
+        options,
+        multiSelect: item.allowMultiple === true || item.multiSelect === true,
+        allowOther: item.allowOther === true,
+        allowEmpty: item.allowEmpty === true,
+      },
+    ];
+  });
+
+  const title = readString(args.title);
+  const output =
+    success ?? (failure.failed ? (failure.payload ?? { message: failure.message }) : null);
+
+  if (questions.length > 0) {
+    return {
+      callId: callIdFromEvent ?? readString(toolCall.toolCallId) ?? readString(ask.toolCallId),
+      name: "AskUserQuestion",
+      callKey: "askQuestionToolCall",
+      failed: failure.failed,
+      errorMessage: failure.failed
+        ? (failure.message ??
+          "Questions skipped by the user, continue with the information you already have")
+        : null,
+      detail: {
+        type: "unknown",
+        input: {
+          ...(title ? { title } : {}),
+          questions,
+        },
+        output,
+      },
+    };
+  }
+
+  // Fallback when args are incomplete — keep a single display name (no plain_text label).
+  return {
+    callId: callIdFromEvent ?? readString(toolCall.toolCallId) ?? readString(ask.toolCallId),
+    name: "AskUserQuestion",
+    callKey: "askQuestionToolCall",
+    failed: failure.failed,
+    errorMessage: failure.failed ? (failure.message ?? "AskQuestion failed") : null,
+    detail: {
+      type: "unknown",
+      input: args,
+      output,
+    },
+  };
+}
+
+/**
  * Map Cursor print/stream-json `tool_call` payloads into Paseo ToolCallDetail.
  * Wire shape is NOT ACP — this is the adaptation layer (cf. acp-agent mapToolDetail).
  */
@@ -469,6 +565,11 @@ export function mapCursorPrintToolCall(
         result: readString(success?.content) ?? readString(success?.result) ?? undefined,
       },
     };
+  }
+
+  const askQuestion = toolCall.askQuestionToolCall;
+  if (isRecord(askQuestion)) {
+    return mapAskQuestionToolCall(askQuestion, callIdFromEvent, toolCall);
   }
 
   // Unknown nested *ToolCall shapes (e.g. getMcpToolsToolCall) → plain_text.

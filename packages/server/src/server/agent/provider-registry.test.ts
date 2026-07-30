@@ -712,6 +712,14 @@ test("cursor provider extending acp uses CursorACPAgentClient", () => {
   expect(mockState.constructorArgs.genericAcp).toEqual([]);
 });
 
+test("cursor-print builtin uses CursorPrintAgentClient", () => {
+  const registry = buildProviderRegistry(logger);
+  const client = registry["cursor-print"].createClient(logger);
+  expect(client.provider).toBe("cursor-print");
+  expect(registry["cursor-print"].label).toBe("Cursor (Print)");
+  expect(registry["cursor-print"].defaultModeId).toBe("auto-review");
+});
+
 test("wrapped cursor client lists ACP features through the inner provider", async () => {
   const registry = buildProviderRegistry(logger, {
     providerOverrides: {

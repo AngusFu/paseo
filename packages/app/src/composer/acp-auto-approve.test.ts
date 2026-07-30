@@ -24,6 +24,10 @@ describe("isAcpProvider", () => {
     expect(isAcpProvider("codewhale", null)).toBe(true);
   });
 
+  test("returns true for cursor-print (shares global Auto Approve)", () => {
+    expect(isAcpProvider("cursor-print", null)).toBe(true);
+  });
+
   test("returns false for non-ACP providers", () => {
     expect(isAcpProvider("opencode", null)).toBe(false);
     expect(isAcpProvider("claude", null)).toBe(false);
@@ -83,6 +87,19 @@ describe("isComposerAcpAutoAcceptFeature", () => {
         value: false,
       }),
     ).toBe(false);
+  });
+
+  test("accepts cursor-print auto_accept description", () => {
+    expect(
+      isComposerAcpAutoAcceptFeature({
+        type: "toggle",
+        id: ACP_AUTO_ACCEPT_FEATURE_ID,
+        label: "Auto Approve",
+        description:
+          "Automatically approves Cursor print/stream-json interaction_query tool permissions.",
+        value: false,
+      }),
+    ).toBe(true);
   });
 });
 
@@ -212,6 +229,9 @@ describe("resolveGlobalAcpAutoAcceptFeatureValues", () => {
     ).toEqual({ [ACP_AUTO_ACCEPT_FEATURE_ID]: true });
     expect(
       resolveGlobalAcpAutoAcceptFeatureValues({ acpAutoApprove: true }, "cursor", null),
+    ).toEqual({ [ACP_AUTO_ACCEPT_FEATURE_ID]: true });
+    expect(
+      resolveGlobalAcpAutoAcceptFeatureValues({ acpAutoApprove: true }, "cursor-print", null),
     ).toEqual({ [ACP_AUTO_ACCEPT_FEATURE_ID]: true });
     expect(
       resolveGlobalAcpAutoAcceptFeatureValues({ acpAutoApprove: true }, "claude", null),

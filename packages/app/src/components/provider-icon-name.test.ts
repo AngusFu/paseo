@@ -21,6 +21,10 @@ describe("resolveProviderIconName", () => {
     expect(resolveProviderIconName("traecli")).toEqual({ kind: "catalog", id: "traecli" });
   });
 
+  it("maps cursor-print to the Cursor catalog icon", () => {
+    expect(resolveProviderIconName("cursor-print")).toEqual({ kind: "catalog", id: "cursor" });
+  });
+
   it("falls back to the bot icon for unknown custom providers", () => {
     expect(resolveProviderIconName("custom-claude-profile")).toEqual({ kind: "bot" });
   });

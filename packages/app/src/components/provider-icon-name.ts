@@ -12,6 +12,10 @@ const BUILTIN_PROVIDER_IDS = new Set(BUILTIN_PROVIDER_ICON_NAMES);
 const KNOWN_PROVIDER_IDS = new Set(KNOWN_PROVIDER_ICON_NAMES);
 
 export function resolveProviderIconName(provider: string): ProviderIconName {
+  // Print transport reuses the Cursor ACP catalog icon artwork.
+  if (provider === "cursor-print") {
+    return { kind: "catalog", id: "cursor" };
+  }
   if (BUILTIN_PROVIDER_IDS.has(provider)) {
     return { kind: "builtin", id: provider };
   }

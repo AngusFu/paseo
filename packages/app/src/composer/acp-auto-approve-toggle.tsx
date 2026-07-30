@@ -55,7 +55,7 @@ export const AcpAutoApproveToggle = memo(function AcpAutoApproveToggle({
 
   const pressableStyle = useCallback(
     ({ pressed, hovered }: PressableStateCallbackType) =>
-      resolveToggleStyle(enabled, disabled, pressed, hovered),
+      resolveToggleStyle(enabled, disabled, Boolean(pressed), Boolean(hovered)),
     [disabled, enabled],
   );
 

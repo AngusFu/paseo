@@ -16,6 +16,10 @@ describe("isDaemonManagedAcpAutoAcceptProvider", () => {
     );
   });
 
+  it("includes cursor-print (non-ACP print transport)", () => {
+    expect(isDaemonManagedAcpAutoAcceptProvider("cursor-print", {})).toBe(true);
+  });
+
   it("excludes opencode and non-acp providers", () => {
     expect(isDaemonManagedAcpAutoAcceptProvider("opencode", {})).toBe(false);
     expect(isDaemonManagedAcpAutoAcceptProvider("codex", {})).toBe(false);

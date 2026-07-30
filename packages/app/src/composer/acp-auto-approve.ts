@@ -11,6 +11,12 @@ export const COMPOSER_MANAGED_ACP_FEATURE_IDS = [ACP_AUTO_ACCEPT_FEATURE_ID] as 
 /** Daemon-manifest ACP built-in not installed through the ACP catalog (`extends: "acp"`). */
 const MANIFEST_NATIVE_ACP_PROVIDER_IDS = new Set<AgentProvider>(["copilot"]);
 
+/**
+ * Providers that share the composer/daemon global Auto Approve (`auto_accept`)
+ * even when they are not ACP transports.
+ */
+const MANIFEST_AUTO_ACCEPT_PROVIDER_IDS = new Set<AgentProvider>(["cursor-print"]);
+
 export function isAcpProvider(
   provider: AgentProvider | null | undefined,
   config: Pick<MutableDaemonConfig, "providers"> | null | undefined,
@@ -19,6 +25,9 @@ export function isAcpProvider(
     return false;
   }
   if (MANIFEST_NATIVE_ACP_PROVIDER_IDS.has(provider)) {
+    return true;
+  }
+  if (MANIFEST_AUTO_ACCEPT_PROVIDER_IDS.has(provider)) {
     return true;
   }
   if (ACP_CATALOG_PROVIDER_IDS.has(provider)) {
@@ -39,6 +48,10 @@ export function isComposerAcpAutoAcceptFeature(
     return false;
   }
   if (description.includes("ACP")) {
+    return true;
+  }
+  // Cursor print uses the same feature id for interaction_query auto-approve.
+  if (description.includes("Cursor print") || description.includes("print/stream-json")) {
     return true;
   }
   return false;

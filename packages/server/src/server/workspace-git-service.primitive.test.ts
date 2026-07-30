@@ -1387,6 +1387,106 @@ describe("WorkspaceGitServiceImpl primitive refresh entrypoint", () => {
     }
   });
 
+  test("generic forge self-heal poll stops after discovering a terminal MR", async () => {
+    const closedStatus = createCurrentPullRequestStatus({ state: "closed" });
+    const getCurrentPullRequestStatus = vi.fn(async () => closedStatus);
+    const forge = {
+      ...createGitHubServiceStub(),
+      retainCurrentPullRequestStatusPoll: undefined,
+      getCurrentPullRequestStatus,
+    };
+    const unregister = defaultForgeRegistry.register("forge-closed-mr-poll-test", {
+      createService: () => forge,
+      matchesHost: (host) => host === "forge-closed-mr-poll.test",
+    });
+    const service = createService({
+      getCheckoutSnapshotFacts: vi.fn(async (cwd: string) =>
+        createCheckoutFacts(cwd, {
+          currentBranch: "dev/sciforum-frontend-v2",
+          remoteUrl: "https://forge-closed-mr-poll.test/acme/repo.git",
+          pullRequestLookupTarget: { headRef: "dev/sciforum-frontend-v2" },
+        }),
+      ),
+      getCheckoutStatus: vi.fn(async (cwd: string) =>
+        createCheckoutStatus(cwd, {
+          currentBranch: "dev/sciforum-frontend-v2",
+          remoteUrl: "https://forge-closed-mr-poll.test/acme/repo.git",
+          isPaseoOwnedWorktree: false,
+        }),
+      ),
+      getPullRequestStatus: vi.fn(async () => createPullRequestStatusResult()),
+    });
+
+    try {
+      const subscription = service.registerWorkspace({ cwd: REPO_CWD }, vi.fn());
+      await flushPromises();
+
+      await vi.advanceTimersByTimeAsync(120_000);
+      await flushPromises();
+      expect(getCurrentPullRequestStatus).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(120_000);
+      await flushPromises();
+      expect(getCurrentPullRequestStatus).toHaveBeenCalledTimes(1);
+
+      subscription.unsubscribe();
+    } finally {
+      service.dispose();
+      unregister();
+    }
+  });
+
+  test("onWorkspaceStateMayHaveChanged skips forge refresh for a settled terminal MR", async () => {
+    const closedStatus = createCurrentPullRequestStatus({ state: "merged", isMerged: true });
+    const forge = {
+      ...createGitHubServiceStub(),
+      retainCurrentPullRequestStatusPoll: undefined,
+      getCurrentPullRequestStatus: vi.fn(async () => closedStatus),
+    };
+    const unregister = defaultForgeRegistry.register("forge-settled-mr-test", {
+      createService: () => forge,
+      matchesHost: (host) => host === "forge-settled-mr.test",
+    });
+    const getPullRequestStatus = vi.fn(async () => ({
+      status: closedStatus,
+      authState: "authenticated" as const,
+      featuresEnabled: true,
+      githubFeaturesEnabled: true,
+    }));
+    const service = createService({
+      getCheckoutSnapshotFacts: vi.fn(async (cwd: string) =>
+        createCheckoutFacts(cwd, {
+          currentBranch: "dev/sciforum-frontend-v2",
+          remoteUrl: "https://forge-settled-mr.test/acme/repo.git",
+          pullRequestLookupTarget: { headRef: "dev/sciforum-frontend-v2" },
+        }),
+      ),
+      getCheckoutStatus: vi.fn(async (cwd: string) =>
+        createCheckoutStatus(cwd, {
+          currentBranch: "dev/sciforum-frontend-v2",
+          remoteUrl: "https://forge-settled-mr.test/acme/repo.git",
+          isPaseoOwnedWorktree: false,
+        }),
+      ),
+      getPullRequestStatus,
+    });
+
+    try {
+      await service.getSnapshot(REPO_CWD);
+      expect(getPullRequestStatus).toHaveBeenCalledTimes(1);
+
+      service.onWorkspaceStateMayHaveChanged(REPO_CWD);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await flushPromises();
+
+      expect(getPullRequestStatus).toHaveBeenCalledTimes(1);
+      expect(forge.getCurrentPullRequestStatus).not.toHaveBeenCalled();
+      service.dispose();
+    } finally {
+      unregister();
+    }
+  });
+
   test("subscription skips GitHub self-heal polling when the checkout has no GitHub remote", async () => {
     const retainCurrentPullRequestStatusPoll = vi.fn(() => ({ unsubscribe: vi.fn() }));
     const github = {

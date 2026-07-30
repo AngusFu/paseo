@@ -1268,6 +1268,13 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       return;
     }
 
+    // Wait for the initial workspace snapshot before starting self-heal polling.
+    // Otherwise we race the initial forge load and may keep polling after a
+    // terminal MR is discovered there.
+    if (!target.latestSnapshot) {
+      return;
+    }
+
     if (this.shouldStopForgePrStatusPollForTarget(target)) {
       this.stopForgePrStatusPollForTarget(target);
       return;
@@ -1420,7 +1427,13 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
           "Failed to run forge PR status self-heal refresh",
         );
       } finally {
-        schedule(computeGenericForgeNextInterval(latestStatus, consecutiveErrors));
+        if (
+          !closed &&
+          this.isActiveObservedWorkspaceTarget(target) &&
+          !this.shouldStopForgePrStatusPollForTarget(target, latestStatus)
+        ) {
+          schedule(computeGenericForgeNextInterval(latestStatus, consecutiveErrors));
+        }
       }
     };
 
@@ -1445,10 +1458,17 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     target: WorkspaceGitTarget,
     status?: WorkspaceGitRuntimeSnapshot["forge"]["pullRequest"] | null,
   ): boolean {
-    if (target.latestGit?.isPaseoOwnedWorktree) {
-      return false;
-    }
-    return isTerminalPullRequestStatus(status ?? target.latestForge?.pullRequest ?? null);
+    return shouldSettleTerminalForgeStatusForCheckout(
+      target.latestGit?.isPaseoOwnedWorktree === true,
+      status ?? target.latestForge?.pullRequest ?? null,
+    );
+  }
+
+  private shouldSkipForgeStatusRefresh(target: WorkspaceGitTarget): boolean {
+    return shouldSettleTerminalForgeStatusForCheckout(
+      target.latestGit?.isPaseoOwnedWorktree === true,
+      target.latestForge?.pullRequest ?? null,
+    );
   }
 
   private resolveForgePrStatusPollTarget(
@@ -1899,6 +1919,10 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     request: WorkspaceGitRefreshRequest,
     facts: CheckoutSnapshotFacts,
   ): Promise<void> {
+    if (this.shouldSkipForgeStatusRefresh(target)) {
+      return;
+    }
+
     const remoteUrl = target.latestGit?.remoteUrl ?? null;
     const resolution = await this.forgeResolver.resolveFromRemoteUrlAsync(remoteUrl);
     // Every forge gates on the resolver alone: a cloud host matches synchronously
@@ -2318,6 +2342,16 @@ function isTerminalPullRequestStatus(
   }
   const normalizedState = status.state.trim().toLowerCase();
   return normalizedState === "closed" || normalizedState === "merged";
+}
+
+function shouldSettleTerminalForgeStatusForCheckout(
+  isPaseoOwnedWorktree: boolean,
+  status: WorkspaceGitRuntimeSnapshot["forge"]["pullRequest"] | null | undefined,
+): boolean {
+  if (isPaseoOwnedWorktree) {
+    return false;
+  }
+  return isTerminalPullRequestStatus(status);
 }
 
 function computeGenericForgeNextInterval(

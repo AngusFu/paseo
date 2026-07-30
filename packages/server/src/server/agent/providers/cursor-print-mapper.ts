@@ -572,7 +572,9 @@ export function mapCursorPrintToolCall(
     return mapAskQuestionToolCall(askQuestion, callIdFromEvent, toolCall);
   }
 
-  // Unknown nested *ToolCall shapes (e.g. getMcpToolsToolCall) → plain_text.
+  // Unknown nested *ToolCall shapes (e.g. webSearchToolCall, getMcpToolsToolCall) → plain_text.
+  // Do not set label to the tool name — UI shows displayName + summary, so label===name
+  // becomes the awkward "WebSearch WebSearch" badge.
   for (const [key, value] of Object.entries(toolCall)) {
     if (!key.endsWith("ToolCall") || !isRecord(value)) {
       continue;
@@ -581,6 +583,12 @@ export function mapCursorPrintToolCall(
     const success = readNestedSuccess(value.result);
     const failure = readNestedFailure(value.result);
     const name = humanizeToolCallKey(key);
+    const summary =
+      readString(args.searchTerm) ??
+      readString(args.query) ??
+      readString(args.pattern) ??
+      readString(args.url) ??
+      readString(value.description);
     const text =
       readOptionalString(success?.content) ??
       (success ? JSON.stringify(success, null, 2) : undefined) ??
@@ -594,7 +602,7 @@ export function mapCursorPrintToolCall(
       errorMessage: failure.failed ? (failure.message ?? `${name} failed`) : null,
       detail: {
         type: "plain_text",
-        label: name,
+        ...(summary && summary !== name ? { label: summary } : {}),
         icon: "wrench",
         text,
       },

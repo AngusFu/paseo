@@ -302,7 +302,7 @@ describe("mapCursorPrintToolCall", () => {
     expect(mapped?.detail.type).not.toBe("plain_text");
   });
 
-  test("maps unknown *ToolCall as plain_text", () => {
+  test("maps unknown *ToolCall as plain_text without duplicating the name as label", () => {
     const mapped = mapCursorPrintToolCall(
       {
         getMcpToolsToolCall: {
@@ -321,11 +321,44 @@ describe("mapCursorPrintToolCall", () => {
       callKey: "getMcpToolsToolCall",
       detail: {
         type: "plain_text",
-        label: "GetMcpTools",
+        label: "ask_question|AskUserQuestion",
         icon: "wrench",
         text: '{\n  "mode": "search",\n  "matches": []\n}',
       },
     });
+  });
+
+  test("maps webSearchToolCall without WebSearch WebSearch badge", () => {
+    const mapped = mapCursorPrintToolCall(
+      {
+        webSearchToolCall: {
+          args: { searchTerm: "cursor agent cli --force" },
+          result: {
+            success: {
+              references: [
+                {
+                  title: "Web search results",
+                  url: "",
+                  chunk: "Title: Example\nURL: https://example.com",
+                },
+              ],
+            },
+          },
+        },
+      },
+      "web-1",
+    );
+    expect(mapped).toMatchObject({
+      name: "WebSearch",
+      callKey: "webSearchToolCall",
+      detail: {
+        type: "plain_text",
+        label: "cursor agent cli --force",
+        icon: "wrench",
+      },
+    });
+    // Badge is displayName + summary; label must not repeat the tool name.
+    expect(mapped?.detail.type === "plain_text" && mapped.detail.label).not.toBe("WebSearch");
   });
 });
 

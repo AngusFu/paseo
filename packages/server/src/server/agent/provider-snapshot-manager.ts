@@ -406,8 +406,23 @@ export class ProviderSnapshotManager {
     this.providerClients = { ...this.extraClients } as Record<AgentProvider, AgentClient>;
 
     for (const cwd of this.snapshots.keys()) {
-      this.providerLoads.delete(cwd);
-      this.snapshots.set(cwd, this.reconcileSnapshotForRegistry(cwd));
+      // Keep in-flight cold probes. Config replacement only refreshes metadata /
+      // membership — cancelling loads and caching `unavailable` is what made
+      // Settings show "Not installed" after app restart until a manual refresh.
+      const next = this.reconcileSnapshotForRegistry(cwd);
+      const loads = this.providerLoads.get(cwd);
+      if (loads) {
+        for (const provider of Array.from(loads.keys())) {
+          const entry = next.get(provider);
+          if (!entry || entry.status !== "loading" || !entry.enabled) {
+            loads.delete(provider);
+          }
+        }
+        if (loads.size === 0) {
+          this.providerLoads.delete(cwd);
+        }
+      }
+      this.snapshots.set(cwd, next);
       this.emitChange(cwd);
     }
 
@@ -604,11 +619,32 @@ export class ProviderSnapshotManager {
         defaultModeId: definition?.defaultModeId ?? null,
       };
 
-      if (!definition?.enabled || !current || current.status === "loading") {
+      if (!definition?.enabled) {
         entries.set(provider, {
           ...metadata,
           status: "unavailable",
-          enabled: definition?.enabled ?? true,
+          enabled: false,
+        });
+        continue;
+      }
+
+      if (!current) {
+        // New membership from config. Do not probe here (settings refresh is
+        // the explicit re-probe path); leave unavailable until then.
+        entries.set(provider, {
+          ...metadata,
+          status: "unavailable",
+          enabled: true,
+        });
+        continue;
+      }
+
+      if (current.status === "loading") {
+        entries.set(provider, {
+          ...current,
+          ...metadata,
+          status: "loading",
+          enabled: true,
         });
         continue;
       }
@@ -771,51 +807,68 @@ export class ProviderSnapshotManager {
     force: boolean;
   }): Promise<void> {
     const { snapshotCwd, catalogScope, provider, definition, load, force } = options;
-    const snapshot = this.getOrCreateSnapshot(snapshotCwd);
-    const base = {
-      provider,
-      source: this.getProviderSource(provider),
-      label: definition.label,
-      description: definition.description,
-      defaultModeId: definition.defaultModeId,
+    // Resolve metadata at write time so a concurrent config apply can relabel
+    // the provider without the completing probe restoring the stale label.
+    const liveBase = () => {
+      const liveDefinition = this.providerRegistry[provider] ?? definition;
+      return {
+        provider,
+        source: this.getProviderSource(provider),
+        label: liveDefinition.label,
+        description: liveDefinition.description,
+        defaultModeId: liveDefinition.defaultModeId,
+      };
     };
     const setEntry = (entry: ProviderSnapshotEntry) => {
       if (!this.isCurrentProviderLoad(snapshotCwd, provider, load)) {
         return false;
       }
-      snapshot.set(provider, entry);
+      // Always write through the live map — applyMutableProviderConfig replaces
+      // the snapshot Map during reconcile, so a captured reference would publish
+      // ready into an orphaned map while Settings still reads `loading`.
+      this.getOrCreateSnapshot(snapshotCwd).set(provider, entry);
       this.emitChange(snapshotCwd);
       return true;
     };
 
     try {
-      if (!definition.enabled) {
-        setEntry({ ...base, status: "unavailable", enabled: false });
+      const liveDefinition = this.providerRegistry[provider] ?? definition;
+      if (!liveDefinition.enabled) {
+        setEntry({ ...liveBase(), status: "unavailable", enabled: false });
         return;
       }
 
-      const client = this.ensureClient(provider, definition);
+      const client = this.ensureClient(provider, liveDefinition);
       const available = await withTimeout(
         client.isAvailable(),
         this.refreshTimeoutMs,
-        `Timed out checking ${definition.label} availability after ${this.refreshTimeoutMs}ms`,
+        `Timed out checking ${liveDefinition.label} availability after ${this.refreshTimeoutMs}ms`,
       );
       if (!available) {
-        setEntry({ ...base, status: "unavailable", enabled: true });
+        setEntry({ ...liveBase(), status: "unavailable", enabled: true });
         return;
       }
 
       const catalogOptions = createFetchCatalogOptions(catalogScope, force);
+      const catalogFetcher = this.providerRegistry[provider] ?? definition;
       const catalog = await withTimeout(
-        definition.fetchCatalog({ ...catalogOptions, timeoutMs: this.refreshTimeoutMs }, client),
+        catalogFetcher.fetchCatalog(
+          { ...catalogOptions, timeoutMs: this.refreshTimeoutMs },
+          client,
+        ),
         this.refreshTimeoutMs,
-        `Timed out refreshing ${definition.label} after ${this.refreshTimeoutMs}ms`,
+        `Timed out refreshing ${catalogFetcher.label} after ${this.refreshTimeoutMs}ms`,
       );
 
+      const base = liveBase();
+      if (!(this.providerRegistry[provider] ?? definition).enabled) {
+        setEntry({ ...base, status: "unavailable", enabled: false });
+        return;
+      }
       setEntry({
         ...base,
         defaultModeId:
-          catalog.defaultModeId === undefined ? definition.defaultModeId : catalog.defaultModeId,
+          catalog.defaultModeId === undefined ? base.defaultModeId : catalog.defaultModeId,
         status: "ready",
         enabled: true,
         models: catalog.models,
@@ -824,7 +877,7 @@ export class ProviderSnapshotManager {
       });
     } catch (error) {
       const emitted = setEntry({
-        ...base,
+        ...liveBase(),
         status: "error",
         enabled: true,
         error: toErrorMessage(error),

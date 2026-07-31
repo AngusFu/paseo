@@ -1090,6 +1090,65 @@ describe("ProviderSnapshotManager applyMutableProviderConfig", () => {
       manager.destroy();
     }
   });
+
+  test("keeps an in-flight cold probe alive across applyMutableProviderConfig", async () => {
+    // App connect often writes daemon config while the first snapshot warm-up
+    // is still probing. Cancelling that probe and caching `unavailable` is what
+    // makes Settings show "Not installed" until a manual refresh.
+    let resolveAvailable: ((value: boolean) => void) | undefined;
+    const isAvailable = vi.fn(
+      () =>
+        new Promise<boolean>((resolvePromise) => {
+          resolveAvailable = resolvePromise;
+        }),
+    );
+    const fetchCatalog = vi.fn(async () => ({
+      models: [{ id: "codex-mini", label: "Codex Mini" }] as AgentModelDefinition[],
+      modes: [{ id: "auto-review", label: "Auto Review" }] as AgentMode[],
+    }));
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      refreshTimeoutMs: TEST_REFRESH_TIMEOUT_MS,
+      providerOverrides: {
+        claude: { enabled: false },
+        copilot: { enabled: false },
+        opencode: { enabled: false },
+        pi: { enabled: false },
+      },
+      extraClients: { codex: createExtraClient("codex", { isAvailable, fetchCatalog }) },
+    });
+    try {
+      const cwd = resolve("/tmp/provider-config-race");
+      const waitPromise = manager.listProviders({ cwd, providers: ["codex"], wait: true });
+      await vi.waitFor(() => {
+        expect(isAvailable).toHaveBeenCalledTimes(1);
+      });
+
+      manager.applyMutableProviderConfig({
+        codex: { label: "Codex Relabeled" },
+      });
+
+      expect(manager.getSnapshot(cwd).find((entry) => entry.provider === "codex")).toMatchObject({
+        status: "loading",
+        label: "Codex Relabeled",
+        enabled: true,
+      });
+
+      resolveAvailable?.(true);
+      const [entry] = await waitPromise;
+      expect(entry).toMatchObject({
+        provider: "codex",
+        status: "ready",
+        label: "Codex Relabeled",
+        enabled: true,
+      });
+      expect(entry.models?.map((model) => model.id)).toEqual(["codex-mini"]);
+      expect(isAvailable).toHaveBeenCalledTimes(1);
+      expect(fetchCatalog).toHaveBeenCalledTimes(1);
+    } finally {
+      manager.destroy();
+    }
+  });
 });
 
 describe("ProviderSnapshotManager lifecycle", () => {

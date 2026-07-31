@@ -72,7 +72,7 @@ Snapshot reads may probe providers only while the requested cwd scope is cold. O
 
 Settings refresh is the user-facing "forget stale provider knowledge everywhere" action. A settings refresh clears provider snapshot caches and in-flight loads across all cwd scopes, then immediately refreshes only the global snapshot with `force: true`. Workspace snapshots are re-probed lazily on the next scoped read; do not fan out a settings refresh across every known workspace.
 
-Registry/config replacement may update visible metadata such as label, description, default mode, enabled state, and provider membership, but it must not spawn provider processes. If a provider needs to be re-probed after a config change, route that through the explicit settings refresh path.
+Registry/config replacement may update visible metadata such as label, description, default mode, enabled state, and provider membership, but it must not spawn provider processes. If a provider needs to be re-probed after a config change, route that through the explicit settings refresh path. In-flight cold probes must keep running across config replacement — do not cancel loads or rewrite `loading` entries to `unavailable`, or Settings will show "Not installed" after app restart until a manual refresh.
 
 Boundary tests should assert observable behavior: cold reads may call provider availability/model/mode discovery for that scope; warm reads and registry replacement must not; explicit workspace refreshes affect only one cwd; settings refresh wipes all scopes but immediately refreshes only global.
 

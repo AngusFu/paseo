@@ -32,9 +32,23 @@ describe("retriable-turn-hook", () => {
     ).toBe(true);
   });
 
-  it("rejects ordinary model failures", () => {
+  it("matches aborted TLS / socket disconnect failures", () => {
+    expect(
+      isRetriableProviderError(
+        "Error: [aborted] Client network socket disconnected before secure TLS connection was established",
+      ),
+    ).toBe(true);
+    expect(isRetriableProviderError("Error: [aborted] read ECONNRESET")).toBe(true);
+    expect(isRetriableProviderError("request failed: socket hang up")).toBe(true);
+    expect(isRetriableProviderError("connect ETIMEDOUT 1.2.3.4:443")).toBe(true);
+    expect(isRetriableProviderError("UND_ERR_CONNECT_TIMEOUT")).toBe(true);
+  });
+
+  it("rejects ordinary model failures and bare user aborts", () => {
     expect(isRetriableProviderError("invalid model id")).toBe(false);
     expect(isRetriableProviderError("permission denied")).toBe(false);
+    // Bare [aborted] without transport wording — do not treat as retriable.
+    expect(isRetriableProviderError("Error: [aborted]")).toBe(false);
   });
 
   it("does not treat explanatory assistant text as a retriable turn_completed failure", () => {

@@ -7,8 +7,11 @@ export const RETRIABLE_TURN_MAX_ATTEMPTS = 10;
 const RETRIABLE_TURN_BASE_DELAY_MS = 2_000;
 const RETRIABLE_TURN_MAX_DELAY_MS = 60_000;
 
+// Include transient TLS / socket disconnects (e.g. Cursor
+// `Error: [aborted] Client network socket disconnected before secure TLS
+// connection was established`) — same class as ConnectError / ECONNRESET.
 const RETRIABLE_ERROR_PATTERN =
-  /RetriableError|resource_exhausted|rate_limit(?:_exceeded)?|overloaded|temporarily unavailable|\bunavailable\b|PING timed out|keepalive ping timed out|ConnectError|try again later/i;
+  /RetriableError|resource_exhausted|rate_limit(?:_exceeded)?|overloaded|temporarily unavailable|\bunavailable\b|PING timed out|keepalive ping timed out|ConnectError|try again later|Client network socket disconnected|secure TLS connection was established|socket hang up|\bECONNRESET\b|\bETIMEDOUT\b|UND_ERR_(?:CONNECT|SOCKET|HEADERS)_TIMEOUT/i;
 
 export function isRetriableProviderError(message: string): boolean {
   return RETRIABLE_ERROR_PATTERN.test(message);

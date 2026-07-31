@@ -14,8 +14,8 @@ import {
   CursorPrintAgentClient,
   buildCursorPrintAutoAcceptFeature,
   buildCursorPrintCliPrompt,
-  buildCursorPrintPromptPointer,
   buildTurnArgs,
+  readCursorPrintGuidanceMarkdown,
   convertCursorPrintPrompt,
   formatCursorPrintModelRejection,
   isCursorEmptyModelCatalogFailure,
@@ -205,13 +205,25 @@ describe("CursorPrintAgentClient", () => {
       command: "/bin/agent",
       cwd: "/tmp/project",
     });
-    expect(launches[0]?.args.slice(0, -1)).toEqual([
+    const args = launches[0]?.args ?? [];
+    expect(args.at(-1)).toBe(buildCursorPrintCliPrompt("hello"));
+    expect(args.at(-1)).toBe("hello");
+    const pluginDirIndex = args.indexOf("--plugin-dir");
+    expect(pluginDirIndex).toBeGreaterThanOrEqual(0);
+    const pluginDir = args[pluginDirIndex + 1];
+    expect(typeof pluginDir).toBe("string");
+    expect(existsSync(join(pluginDir!, "rules", "paseo-guidance.mdc"))).toBe(true);
+    expect(args).not.toContain("--approve-mcps");
+    // Stable flags around the session-scoped plugin-dir path.
+    expect(args.slice(0, pluginDirIndex)).toEqual([
       "--print",
       "--output-format",
       "stream-json",
       "--stream-partial-output",
       "--trust",
       "--force",
+    ]);
+    expect(args.slice(pluginDirIndex + 2, -1)).toEqual([
       "--resume",
       "chat-1",
       "--model",
@@ -220,7 +232,6 @@ describe("CursorPrintAgentClient", () => {
       "/tmp/project",
       "--",
     ]);
-    expect(launches[0]?.args.at(-1)).toBe(buildCursorPrintCliPrompt("hello"));
 
     expect(events.some((event) => event.type === "turn_started")).toBe(true);
     expect(
@@ -910,30 +921,24 @@ describe("CursorPrintAgentClient", () => {
     });
   });
 
-  test("buildCursorPrintCliPrompt uses a compressed XML pointer (no guidance body)", () => {
-    const promptFilePath = "/tmp/paseo-cursor-print-guidance.md";
-    const prompt = buildCursorPrintCliPrompt(
-      "do the thing",
-      { systemPrompt: "Agent system", daemonAppendSystemPrompt: "Daemon append" },
-      { promptFilePath },
-    );
+  test("buildCursorPrintCliPrompt keeps only per-agent systemPrompt (no guidance body)", () => {
+    const prompt = buildCursorPrintCliPrompt("do the thing", {
+      systemPrompt: "Agent system",
+      daemonAppendSystemPrompt: "Daemon append",
+    });
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("--plugin-dir");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("ask_question");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("paseo question create");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("$PASEO_AGENT_ID");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("AskUserQuestion");
-    expect(buildCursorPrintPromptPointer(promptFilePath)).toBe(
-      `<paseo_guidance>Read ${promptFilePath} if unread this session; follow it.</paseo_guidance>`,
-    );
-    // daemonAppend is host-level (guidance file); only per-agent systemPrompt stays on the wire.
-    expect(prompt).toBe(
-      `${buildCursorPrintPromptPointer(promptFilePath)}\nAgent system\n\ndo the thing`,
-    );
+    // Host guidance is injected via plugin alwaysApply rule, not the CLI prompt.
+    expect(prompt).toBe("Agent system\n\ndo the thing");
     expect(prompt).not.toContain(CURSOR_PRINT_RUNTIME_GUIDANCE);
     expect(prompt).not.toContain("Daemon append");
+    expect(prompt).not.toContain("paseo_guidance");
   });
 
-  test("daemon boot writes host guidance; CLI pointer keeps timeline user_message raw", async () => {
+  test("daemon boot writes host guidance; plugin rule injects it without CLI pointer", async () => {
     const prev = process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
     const dir = mkdtempSync(join(tmpdir(), "paseo-cursor-prompt-"));
     const promptFilePath = join(dir, "paseo-cursor-print-guidance.md");
@@ -947,6 +952,7 @@ describe("CursorPrintAgentClient", () => {
       expect(readFileSync(promptFilePath, "utf8")).toContain(CURSOR_PRINT_RUNTIME_GUIDANCE);
       expect(readFileSync(promptFilePath, "utf8")).toContain("Host append");
       expect(readFileSync(promptFilePath, "utf8")).toContain("Decisions (Paseo)");
+      expect(readCursorPrintGuidanceMarkdown(promptFilePath)).toContain("Host append");
 
       const { spawn, launches } = createFakeSpawn((child) => {
         child.stdout.write(
@@ -983,16 +989,32 @@ describe("CursorPrintAgentClient", () => {
       expect(launches[0]?.args.at(-1)).toBe(
         buildCursorPrintCliPrompt("list files", { systemPrompt: "Be concise." }),
       );
-      expect(launches[0]?.args.at(-1)).toContain(buildCursorPrintPromptPointer(promptFilePath));
       expect(launches[0]?.args.at(-1)).toContain("Be concise.");
+      expect(launches[0]?.args.at(-1)).not.toContain("paseo_guidance");
       expect(launches[0]?.args.at(-1)).not.toContain("Paseo cursor-print");
       expect(before).not.toContain("Be concise.");
+
+      const args = launches[0]?.args ?? [];
+      const pluginDirIndex = args.indexOf("--plugin-dir");
+      expect(pluginDirIndex).toBeGreaterThanOrEqual(0);
+      const pluginDir = args[pluginDirIndex + 1]!;
+      expect(args).not.toContain("--approve-mcps");
+      expect(readFileSync(join(pluginDir, "rules", "paseo-guidance.mdc"), "utf8")).toContain(
+        "Host append",
+      );
+      expect(readFileSync(join(pluginDir, "rules", "paseo-guidance.mdc"), "utf8")).toContain(
+        "alwaysApply: true",
+      );
+
       const userEvent = events.find(
         (event) =>
           event.type === "timeline" && (event.item as { type?: string }).type === "user_message",
       ) as { item: { text: string } };
       expect(userEvent.item.text).toBe("list files");
       expect(userEvent.item.text).not.toContain("Paseo cursor-print");
+
+      await session.close();
+      expect(existsSync(pluginDir)).toBe(false);
     } finally {
       if (prev === undefined) {
         delete process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
@@ -1369,18 +1391,19 @@ describe("CursorPrintAgentClient", () => {
     ]);
   });
 
-  test("buildTurnArgs adds --plugin-dir and --approve-mcps when plugin dirs are set", () => {
-    const args = buildTurnArgs({
-      extraArgs: [],
-      modeId: "auto-review",
-      model: "composer-2.5",
-      resumeChatId: null,
-      workspace: "/tmp/project",
-      prompt: "hi",
-      pluginDirs: ["/tmp/plugin-a", "/tmp/plugin-b"],
-    });
-
-    expect(args).toEqual([
+  test("buildTurnArgs adds --plugin-dir and optional --approve-mcps", () => {
+    expect(
+      buildTurnArgs({
+        extraArgs: [],
+        modeId: "auto-review",
+        model: "composer-2.5",
+        resumeChatId: null,
+        workspace: "/tmp/project",
+        prompt: "hi",
+        pluginDirs: ["/tmp/plugin-a", "/tmp/plugin-b"],
+        approveMcps: true,
+      }),
+    ).toEqual([
       "--print",
       "--output-format",
       "stream-json",
@@ -1399,6 +1422,18 @@ describe("CursorPrintAgentClient", () => {
       "--",
       "hi",
     ]);
+
+    expect(
+      buildTurnArgs({
+        extraArgs: [],
+        modeId: "auto-review",
+        model: "composer-2.5",
+        resumeChatId: null,
+        workspace: "/tmp/project",
+        prompt: "hi",
+        pluginDirs: ["/tmp/plugin-rules-only"],
+      }),
+    ).not.toContain("--approve-mcps");
   });
 
   test("startTurn materializes MCP plugin-dir from config.mcpServers and cleans up on close", async () => {
@@ -1470,6 +1505,9 @@ describe("CursorPrintAgentClient", () => {
         },
       },
     });
+    expect(readFileSync(join(pluginDir!, "rules", "paseo-guidance.mdc"), "utf8")).toContain(
+      "alwaysApply: true",
+    );
 
     await session.close();
     expect(existsSync(pluginDir!)).toBe(false);

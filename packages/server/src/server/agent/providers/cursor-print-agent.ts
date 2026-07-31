@@ -1,6 +1,6 @@
 import { type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { Logger } from "pino";
 
 import { McpCliService } from "../../mcp-cli/service.js";
@@ -99,10 +99,12 @@ const CURSOR_PRINT_DEFAULT_COMMAND = ["agent"] as const;
 const MODELS_TIMEOUT_MS = 30_000;
 
 /**
- * Cursor CLI has no reliable append-system-prompt. Daemon MCP is injected per
- * session via a temp `--plugin-dir` (see `cursor-print-mcp-plugin.ts`). Host
- * guidance is written once at daemon start to a file; each CLI turn only gets a
- * short XML pointer. Timeline user_message stays raw.
+ * Cursor CLI has no reliable append-system-prompt. Per session, a temp
+ * `--plugin-dir` carries daemon MCP (`.mcp.json`) and host guidance as an
+ * alwaysApply plugin rule (`rules/paseo-guidance.mdc`). Daemon boot still
+ * writes the guidance file (source for that rule). CLI turns keep only
+ * per-agent systemPrompt + user text — no XML pointer. Timeline user_message
+ * stays raw.
  *
  * Override path with PASEO_CURSOR_PRINT_PROMPT_FILE (tests / non-/tmp hosts).
  */
@@ -163,29 +165,44 @@ export async function writeCursorPrintGuidanceFileForDaemon(input: {
   return writeCursorPrintGuidanceFile(content, input.path ?? resolveCursorPrintPromptFilePath());
 }
 
-export function buildCursorPrintPromptPointer(path: string): string {
-  return `<paseo_guidance>Read ${path} if unread this session; follow it.</paseo_guidance>`;
+/**
+ * Read host guidance written at daemon boot. Falls back to runtime guidance
+ * when the file is missing (tests / early session before boot write).
+ */
+export function readCursorPrintGuidanceMarkdown(
+  path: string = resolveCursorPrintPromptFilePath(),
+): string {
+  try {
+    if (existsSync(path)) {
+      const content = readFileSync(path, "utf8").trim();
+      if (content.length > 0) {
+        return content;
+      }
+    }
+  } catch {
+    // Fall through to runtime default.
+  }
+  return CURSOR_PRINT_RUNTIME_GUIDANCE;
 }
 
 /**
  * Build the prompt string passed to `agent --print` (not the timeline user row).
- * Does not write the guidance file — daemon boot owns that.
+ * Host guidance is injected via the temp plugin alwaysApply rule — not here.
  */
 export function buildCursorPrintCliPrompt(
   userText: string,
   config: Pick<AgentSessionConfig, "systemPrompt" | "daemonAppendSystemPrompt"> = {},
-  options?: { promptFilePath?: string },
 ): string {
-  const path = options?.promptFilePath ?? resolveCursorPrintPromptFilePath();
-  const pointer = buildCursorPrintPromptPointer(path);
-  // Host daemonAppend lives in the guidance file; only per-agent systemPrompt stays here.
+  // Host daemonAppend lives in the plugin guidance rule; only per-agent systemPrompt stays here.
   const agentPrompt = config.systemPrompt?.trim();
-  const head = agentPrompt ? `${pointer}\n${agentPrompt}` : pointer;
   const trimmed = userText.trim();
-  if (!trimmed) {
-    return head;
+  if (agentPrompt && trimmed) {
+    return `${agentPrompt}\n\n${trimmed}`;
   }
-  return `${head}\n\n${trimmed}`;
+  if (agentPrompt) {
+    return agentPrompt;
+  }
+  return trimmed;
 }
 
 const CAPABILITIES: AgentCapabilityFlags = {
@@ -454,6 +471,8 @@ export function buildTurnArgs(options: {
   prompt: string;
   imagePaths?: readonly string[];
   pluginDirs?: readonly string[];
+  /** Only when the plugin carries MCP servers (not rules-only). */
+  approveMcps?: boolean;
 }): string[] {
   const workspace = resolveAbsoluteWorkspace(options.workspace);
   const args = [
@@ -482,12 +501,12 @@ export function buildTurnArgs(options: {
       break;
   }
 
-  // Session-scoped MCP from config.mcpServers (daemon paseo + user servers).
+  // Session-scoped plugin: host guidance rules + optional config.mcpServers.
   const pluginDirs = options.pluginDirs ?? [];
-  if (pluginDirs.length > 0) {
-    for (const pluginDir of pluginDirs) {
-      args.push("--plugin-dir", pluginDir);
-    }
+  for (const pluginDir of pluginDirs) {
+    args.push("--plugin-dir", pluginDir);
+  }
+  if (options.approveMcps && pluginDirs.length > 0) {
     args.push("--approve-mcps");
   }
 
@@ -960,18 +979,23 @@ export class CursorPrintAgentSession implements AgentSession {
     }
     this.mcpPluginResolved = true;
     try {
-      this.mcpPlugin = materializeCursorPrintMcpPlugin(this.config.mcpServers);
+      this.mcpPlugin = materializeCursorPrintMcpPlugin({
+        servers: this.config.mcpServers,
+        guidanceMarkdown: readCursorPrintGuidanceMarkdown(),
+      });
       if (this.mcpPlugin) {
         this.logger.debug(
           {
             pluginDir: this.mcpPlugin.pluginDir,
             servers: Object.keys(this.config.mcpServers ?? {}),
+            hasMcpServers: this.mcpPlugin.hasMcpServers,
+            hasGuidanceRule: this.mcpPlugin.hasGuidanceRule,
           },
-          "cursor-print: materialized MCP plugin-dir",
+          "cursor-print: materialized plugin-dir",
         );
       }
     } catch (error) {
-      this.logger.warn({ err: error }, "cursor-print: failed to materialize MCP plugin-dir");
+      this.logger.warn({ err: error }, "cursor-print: failed to materialize plugin-dir");
       this.mcpPlugin = null;
     }
     return this.mcpPlugin;
@@ -1116,6 +1140,7 @@ export class CursorPrintAgentSession implements AgentSession {
       prompt: options.cliPrompt,
       imagePaths: options.imagePaths,
       pluginDirs: mcpPlugin ? [mcpPlugin.pluginDir] : undefined,
+      approveMcps: mcpPlugin?.hasMcpServers === true,
     });
 
     this.logger.debug(

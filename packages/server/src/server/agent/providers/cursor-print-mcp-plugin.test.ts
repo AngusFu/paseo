@@ -3,7 +3,9 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
 import {
+  CURSOR_PRINT_GUIDANCE_RULE_FILENAME,
   CURSOR_PRINT_MCP_PLUGIN_NAME,
+  buildCursorPrintGuidanceRuleMarkdown,
   materializeCursorPrintMcpPlugin,
   toCursorPrintMcpServerEntry,
 } from "./cursor-print-mcp-plugin.js";
@@ -36,40 +38,52 @@ describe("cursor-print-mcp-plugin", () => {
     });
   });
 
-  test("materializeCursorPrintMcpPlugin returns null for empty servers", () => {
-    expect(materializeCursorPrintMcpPlugin(undefined)).toBeNull();
+  test("materializeCursorPrintMcpPlugin returns null when empty", () => {
+    expect(materializeCursorPrintMcpPlugin()).toBeNull();
     expect(materializeCursorPrintMcpPlugin({})).toBeNull();
+    expect(materializeCursorPrintMcpPlugin({ servers: {} })).toBeNull();
+    expect(materializeCursorPrintMcpPlugin({ guidanceMarkdown: "   " })).toBeNull();
   });
 
-  test("materializeCursorPrintMcpPlugin writes plugin.json + .mcp.json and cleanup removes them", () => {
+  test("materializeCursorPrintMcpPlugin writes MCP + alwaysApply guidance rule", () => {
     const plugin = materializeCursorPrintMcpPlugin({
-      paseo: {
-        type: "http",
-        url: "http://127.0.0.1:6767/mcp/agents?callerAgentId=agent-1",
-        headers: { Authorization: "Bearer secret-token" },
+      servers: {
+        paseo: {
+          type: "http",
+          url: "http://127.0.0.1:6767/mcp/agents?callerAgentId=agent-1",
+          headers: { Authorization: "Bearer secret-token" },
+        },
+        local: {
+          type: "stdio",
+          command: "echo",
+          args: ["hi"],
+        },
       },
-      local: {
-        type: "stdio",
-        command: "echo",
-        args: ["hi"],
-      },
+      guidanceMarkdown: "Host guidance body\nPrefer ask_question.",
     });
     expect(plugin).not.toBeNull();
     if (!plugin) {
       return;
     }
 
+    expect(plugin.hasMcpServers).toBe(true);
+    expect(plugin.hasGuidanceRule).toBe(true);
+
     const pluginJsonPath = join(plugin.pluginDir, ".cursor-plugin", "plugin.json");
     const mcpJsonPath = join(plugin.pluginDir, ".mcp.json");
+    const rulePath = join(plugin.pluginDir, "rules", CURSOR_PRINT_GUIDANCE_RULE_FILENAME);
     expect(existsSync(pluginJsonPath)).toBe(true);
     expect(existsSync(mcpJsonPath)).toBe(true);
+    expect(existsSync(rulePath)).toBe(true);
 
     const pluginJson = JSON.parse(readFileSync(pluginJsonPath, "utf8")) as {
       name: string;
       mcpServers: string;
+      rules: string;
     };
     expect(pluginJson.name).toBe(CURSOR_PRINT_MCP_PLUGIN_NAME);
     expect(pluginJson.mcpServers).toBe("./.mcp.json");
+    expect(pluginJson.rules).toBe("./rules/");
 
     const mcpJson = JSON.parse(readFileSync(mcpJsonPath, "utf8")) as {
       mcpServers: Record<string, unknown>;
@@ -84,7 +98,31 @@ describe("cursor-print-mcp-plugin", () => {
       args: ["hi"],
     });
 
+    expect(readFileSync(rulePath, "utf8")).toBe(
+      buildCursorPrintGuidanceRuleMarkdown("Host guidance body\nPrefer ask_question."),
+    );
+    expect(readFileSync(rulePath, "utf8")).toContain("alwaysApply: true");
+
     plugin.cleanup();
     expect(existsSync(plugin.pluginDir)).toBe(false);
+  });
+
+  test("materializeCursorPrintMcpPlugin can be guidance-only (no MCP)", () => {
+    const plugin = materializeCursorPrintMcpPlugin({
+      guidanceMarkdown: "rules only",
+    });
+    expect(plugin).not.toBeNull();
+    if (!plugin) {
+      return;
+    }
+    expect(plugin.hasMcpServers).toBe(false);
+    expect(plugin.hasGuidanceRule).toBe(true);
+    expect(existsSync(join(plugin.pluginDir, ".mcp.json"))).toBe(false);
+    const pluginJson = JSON.parse(
+      readFileSync(join(plugin.pluginDir, ".cursor-plugin", "plugin.json"), "utf8"),
+    ) as { rules?: string; mcpServers?: string };
+    expect(pluginJson.rules).toBe("./rules/");
+    expect(pluginJson.mcpServers).toBeUndefined();
+    plugin.cleanup();
   });
 });

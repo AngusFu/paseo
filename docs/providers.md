@@ -46,7 +46,12 @@ Every provider adapter owns its canonical user-message timeline rows. When a for
 
 `cursor-print` is a direct provider (`cursor-print-agent.ts`). Image prompts are dual-attached on the Cursor CLI wire (`--image` plus `@<path>` in the print prompt) so headless attach and `@`-file Read both work, but the timeline `user_message` must stay the raw user text — never bake those `@path` wire mentions into the durable row. Cursor CLI model rejections that return an empty `Available models:` list are retried once; final failures are rewritten into a short actionable error.
 
-Cursor CLI has no `--mcp-config` for `--print`. When `supportsMcpServers` is true and `config.mcpServers` is non-empty, `cursor-print` materializes a temp plugin (`cursor-print-mcp-plugin.ts`: `.cursor-plugin/plugin.json` + `.mcp.json`) and passes `--plugin-dir` plus `--approve-mcps` on each turn. Cleanup runs on session `close()`. Do not write into the project's `.cursor/mcp.json` — that would leak session-scoped daemon tokens onto disk the user owns.
+Cursor CLI has no `--mcp-config` / append-system-prompt for `--print`. Each `cursor-print` session materializes a temp plugin (`cursor-print-mcp-plugin.ts`) and passes `--plugin-dir` on every turn:
+
+- host guidance (daemon boot file: runtime + prose-stop + FastMCP CLI + host append) → `rules/paseo-guidance.mdc` with `alwaysApply: true`
+- `config.mcpServers` (when present) → `.mcp.json`, plus `--approve-mcps`
+
+Do not put that guidance on the CLI prompt wire (no `<paseo_guidance>` XML pointer) and do not write into the project's `.cursor/mcp.json` (session-scoped daemon tokens). Cleanup runs on session `close()`. Plugin `agents/` are subagent defs, not a place for this host guidance; `sessionStart` hooks are less reliable than alwaysApply rules under `--print`.
 
 `updateTodosToolCall` mapping (`cursor-print-mapper.ts`) must prefer `result.success.todos` over `args.todos` for the Tasks-card `TodoWrite` input. Cursor's completed payload is authoritative and uses `TODO_STATUS_PENDING` / `TODO_STATUS_IN_PROGRESS` / `TODO_STATUS_COMPLETED`; merge args often omit `content`. Normalize those enums (strip the `TODO_STATUS_` prefix) before falling back to `pending`, or the dock stays stuck at 0/N.
 

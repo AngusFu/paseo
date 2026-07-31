@@ -94,6 +94,7 @@ test("orchestrated callers do not get ask_question in the tool catalog", async (
       logger,
     });
     expect(foregroundCatalog.tools.has("ask_question")).toBe(true);
+    expect(foregroundCatalog.tools.has("render_markdown")).toBe(true);
 
     const delegated = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
       workspaceId: undefined,

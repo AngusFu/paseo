@@ -172,7 +172,7 @@ paseo markdown report.md --no-cache
 paseo markdown --clear-all
 ```
 
-**Markdown preview:** `paseo markdown <file.md>` turns an archived markdown report into a styled standalone HTML view (cache under `$TMPDIR/paseo-markdown/`, OS-reclaimable; `--no-cache` / `--clear` / `--clear-all` for cache control). Details: skill `paseo-markdown`.
+**Markdown preview:** MCP **`render_markdown`** `{ path, open?, template?, noCache?, clear?, clearAll? }` (or CLI `paseo markdown <file.md>`) turns an archived markdown report into a styled standalone HTML view (cache under `$TMPDIR/paseo-markdown/`, OS-reclaimable). Details: skill `paseo-markdown`.
 
 Discover with `paseo --help` and `paseo <cmd> --help`.
 

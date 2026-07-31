@@ -438,7 +438,7 @@ npm run cli -- markdown report.md    # Render md → styled HTML and open (needs
 
 ### Markdown preview (`paseo markdown`)
 
-Local helper (no daemon) that turns an archived `.md` report into a styled standalone HTML page. Implementation lives at `packages/cli/tools/markdown/` (PEP-723 Python script run through `uv`). Default output is under `$TMPDIR/paseo-markdown/` (system temp, OS-reclaimable) — it does **not** write a sibling `.html` next to the markdown. Cache controls: `--no-cache`, `--clear`, `--clear-all`, `--cache-dir`, `--ls-cache`. See that directory's README and skill `paseo-markdown`.
+Local helper (also exposed as MCP `render_markdown`) that turns an archived `.md` report into a styled standalone HTML page. Implementation lives at `packages/cli/tools/markdown/` (PEP-723 Python script run through `uv`). Default output is under `$TMPDIR/paseo-markdown/` (system temp, OS-reclaimable) — it does **not** write a sibling `.html` next to the markdown. Cache controls: `--no-cache`, `--clear`, `--clear-all`, `--cache-dir`, `--ls-cache`. See that directory's README and skill `paseo-markdown`.
 
 ### Getting a workspace id back from worktree creation
 

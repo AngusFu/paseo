@@ -35,6 +35,7 @@ import type { VoiceCallerContext, VoiceSpeakHandler } from "../../voice-types.js
 import type { FirstAgentContext } from "../../messages.js";
 import { everyMsToFiveFieldCron } from "@getpaseo/protocol/schedule/cadence";
 import { expandUserPath, isSameOrDescendantPath, resolvePathFromBase } from "../../path-utils.js";
+import { renderMarkdown } from "../../markdown/render-markdown.js";
 import type { TerminalManager } from "../../../terminal/terminal-manager.js";
 import type { CreatePaseoWorktreeWorkflowFn } from "../../worktree-session.js";
 import type { ScheduleService } from "../../schedule/service.js";
@@ -3794,6 +3795,76 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     }
     return trimmed;
   };
+
+  registerTool(
+    "render_markdown",
+    {
+      title: "Render markdown to HTML preview",
+      description:
+        "Render a markdown report to styled standalone HTML (same engine as `paseo markdown`). Opens the preview by default. HTML lands under the system temp dir. Requires `uv` on the daemon host PATH.",
+      inputSchema: {
+        path: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "Markdown file path (absolute, ~/…, or relative to the agent cwd). Required unless clearAll.",
+          ),
+        open: z
+          .boolean()
+          .optional()
+          .describe("Open the HTML in the host default viewer (default true)."),
+        template: z
+          .enum(["auto", "generic", "kb-audit", "mr-review", "plan"])
+          .optional()
+          .describe("Theme preset (default auto)."),
+        noCache: z
+          .boolean()
+          .optional()
+          .describe("Write a unique temp HTML instead of the stable per-source cache file."),
+        out: z.string().optional().describe("Explicit HTML output path."),
+        clear: z
+          .boolean()
+          .optional()
+          .describe("Delete the cache entry for path and return (no render)."),
+        clearAll: z
+          .boolean()
+          .optional()
+          .describe("Wipe the markdown preview cache directory (no render)."),
+      },
+      outputSchema: {
+        htmlPath: z.string().nullable(),
+        opened: z.boolean(),
+        cleared: z.string().nullable(),
+        message: z.string(),
+      },
+    },
+    async (args) => {
+      const baseCwd = resolveCallerAgent()?.cwd;
+      const resolveAgainstCaller = (value: string): string => {
+        if (baseCwd) {
+          return resolvePathFromBase(baseCwd, value);
+        }
+        return expandUserPath(value);
+      };
+      const resolvedPath = args.path !== undefined ? resolveAgainstCaller(args.path) : undefined;
+      const resolvedOut = args.out !== undefined ? resolveAgainstCaller(args.out) : undefined;
+
+      const result = await renderMarkdown({
+        path: resolvedPath,
+        open: args.open,
+        template: args.template,
+        noCache: args.noCache,
+        out: resolvedOut,
+        clear: args.clear,
+        clearAll: args.clearAll,
+      });
+      return {
+        content: [{ type: "text", text: result.message }],
+        structuredContent: ensureValidJson(result),
+      };
+    },
+  );
 
   registerTool(
     "list_workflows",

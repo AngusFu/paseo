@@ -917,6 +917,8 @@ describe("CursorPrintAgentClient", () => {
       { systemPrompt: "Agent system", daemonAppendSystemPrompt: "Daemon append" },
       { promptFilePath },
     );
+    expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("--plugin-dir");
+    expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("ask_question");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("paseo question create");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("$PASEO_AGENT_ID");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("AskUserQuestion");
@@ -1365,6 +1367,112 @@ describe("CursorPrintAgentClient", () => {
       "--",
       "see images",
     ]);
+  });
+
+  test("buildTurnArgs adds --plugin-dir and --approve-mcps when plugin dirs are set", () => {
+    const args = buildTurnArgs({
+      extraArgs: [],
+      modeId: "auto-review",
+      model: "composer-2.5",
+      resumeChatId: null,
+      workspace: "/tmp/project",
+      prompt: "hi",
+      pluginDirs: ["/tmp/plugin-a", "/tmp/plugin-b"],
+    });
+
+    expect(args).toEqual([
+      "--print",
+      "--output-format",
+      "stream-json",
+      "--stream-partial-output",
+      "--trust",
+      "--auto-review",
+      "--plugin-dir",
+      "/tmp/plugin-a",
+      "--plugin-dir",
+      "/tmp/plugin-b",
+      "--approve-mcps",
+      "--model",
+      "composer-2.5",
+      "--workspace",
+      "/tmp/project",
+      "--",
+      "hi",
+    ]);
+  });
+
+  test("startTurn materializes MCP plugin-dir from config.mcpServers and cleans up on close", async () => {
+    const { spawn, launches } = createFakeSpawn((child) => {
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "system",
+          subtype: "init",
+          session_id: "chat-mcp",
+          model: "composer-2.5",
+        })}\n`,
+      );
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "ok",
+          session_id: "chat-mcp",
+        })}\n`,
+      );
+      child.emit("exit", 0, null);
+    });
+
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      spawn,
+      execModels: async () => GROK_MODELS_STDOUT,
+      runtimeSettings: {
+        command: { mode: "replace", argv: ["/bin/agent"] },
+      },
+    });
+    expect(client.capabilities.supportsMcpServers).toBe(true);
+
+    const session = await client.createSession({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      modeId: "force",
+      model: "composer-2.5",
+      mcpServers: {
+        paseo: {
+          type: "http",
+          url: "http://127.0.0.1:6767/mcp/agents?callerAgentId=agent-mcp",
+          headers: { Authorization: "Bearer tok" },
+        },
+      },
+    });
+
+    const eventsPromise = collectUntil(session, (events) =>
+      events.some((event) => event.type === "turn_completed"),
+    );
+    await session.startTurn("use ask_question");
+    await eventsPromise;
+
+    expect(launches).toHaveLength(1);
+    const args = launches[0]?.args ?? [];
+    const pluginDirIndex = args.indexOf("--plugin-dir");
+    expect(pluginDirIndex).toBeGreaterThanOrEqual(0);
+    const pluginDir = args[pluginDirIndex + 1];
+    expect(typeof pluginDir).toBe("string");
+    expect(args).toContain("--approve-mcps");
+    expect(existsSync(join(pluginDir!, ".mcp.json"))).toBe(true);
+    expect(JSON.parse(readFileSync(join(pluginDir!, ".mcp.json"), "utf8"))).toEqual({
+      mcpServers: {
+        paseo: {
+          type: "http",
+          url: "http://127.0.0.1:6767/mcp/agents?callerAgentId=agent-mcp",
+          headers: { Authorization: "Bearer tok" },
+        },
+      },
+    });
+
+    await session.close();
+    expect(existsSync(pluginDir!)).toBe(false);
   });
 
   test("startTurn passes --image paths for prompt image blocks", async () => {

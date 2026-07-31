@@ -87,6 +87,10 @@ import {
 import { composeSystemPromptParts } from "../system-prompt.js";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { resolveOrMaterializeProviderImage } from "./provider-image-output.js";
+import {
+  materializeCursorPrintMcpPlugin,
+  type CursorPrintMcpPlugin,
+} from "./cursor-print-mcp-plugin.js";
 
 export const CURSOR_PRINT_PROVIDER_ID = "cursor-print";
 /** Prefer auto-review: many orgs disable --force / YOLO. */
@@ -95,19 +99,19 @@ const CURSOR_PRINT_DEFAULT_COMMAND = ["agent"] as const;
 const MODELS_TIMEOUT_MS = 30_000;
 
 /**
- * Cursor CLI has no reliable append-system-prompt. Print sessions also cannot
- * inject daemon MCP (`supportsMcpServers: false`). Host guidance is written once
- * at daemon start to a file; each CLI turn only gets a short XML pointer.
- * Timeline user_message stays raw.
+ * Cursor CLI has no reliable append-system-prompt. Daemon MCP is injected per
+ * session via a temp `--plugin-dir` (see `cursor-print-mcp-plugin.ts`). Host
+ * guidance is written once at daemon start to a file; each CLI turn only gets a
+ * short XML pointer. Timeline user_message stays raw.
  *
  * Override path with PASEO_CURSOR_PRINT_PROMPT_FILE (tests / non-/tmp hosts).
  */
 export const CURSOR_PRINT_RUNTIME_GUIDANCE = [
-  "Paseo cursor-print: no daemon MCP. Use Shell + project CLIs; do not wait for MCP tools.",
-  "Prefer: atlassian (Jira/Confluence), glab (GitLab; use env -u GITLAB_TOKEN glab …), figma, chrome-devtools, gh.",
-  "If a skill/doc names a CLI, run that CLI — do not substitute an MCP server.",
+  "Paseo cursor-print: daemon MCP (paseo) is injected via --plugin-dir. Prefer MCP tools (ask_question, create_agent, …) when GetMcpTools lists them.",
+  "Prefer project CLIs for tools that are also FastMCP CLIs: atlassian (Jira/Confluence), glab (GitLab; use env -u GITLAB_TOKEN glab …), figma, chrome-devtools, gh.",
+  "If a skill/doc names a CLI, run that CLI — do not substitute an MCP server with the same job.",
   "Never use AskUserQuestion / AskQuestion (or similar IDE questionnaire tools): --print has no questionnaire UI and they return Questions skipped.",
-  'To ask the user a decision: use Paseo Question Inbox via Shell — `paseo question create --agent "$PASEO_AGENT_ID" --source skill --title "…" --questions \'[{"header":"…","question":"…","options":[{"label":"…"},{"label":"…"}]}]\' --json` then `paseo question wait <id> --timeout 30m --json`. Do not re-ask in chat prose; treat dismissed=true as a real outcome.',
+  'To ask the user a decision: prefer MCP ask_question. On timeout / missing tool, use Paseo Question Inbox via Shell — `paseo question create --agent "$PASEO_AGENT_ID" --source skill --title "…" --questions \'[{"header":"…","question":"…","options":[{"label":"…"},{"label":"…"}]}]\' --json` then `paseo question wait <id> --timeout 30m --json`. Do not re-ask in chat prose; treat dismissed=true as a real outcome.',
   "Permission notes: Paseo Auto Approve only auto-answers Cursor interaction_query over stdin; it cannot enable org-disabled --force / Run Everything. Prefer Auto-review mode; do not rely on Force/YOLO when the org blocks it.",
 ].join("\n");
 
@@ -189,7 +193,8 @@ const CAPABILITIES: AgentCapabilityFlags = {
   supportsSessionPersistence: true,
   supportsSessionListing: true,
   supportsDynamicModes: false,
-  supportsMcpServers: false,
+  // Consumed via temp --plugin-dir (Cursor has no --mcp-config for print).
+  supportsMcpServers: true,
   supportsReasoningStream: true,
   supportsToolInvocations: true,
   supportsRewindConversation: false,
@@ -448,6 +453,7 @@ export function buildTurnArgs(options: {
   workspace: string;
   prompt: string;
   imagePaths?: readonly string[];
+  pluginDirs?: readonly string[];
 }): string[] {
   const workspace = resolveAbsoluteWorkspace(options.workspace);
   const args = [
@@ -474,6 +480,15 @@ export function buildTurnArgs(options: {
       break;
     default:
       break;
+  }
+
+  // Session-scoped MCP from config.mcpServers (daemon paseo + user servers).
+  const pluginDirs = options.pluginDirs ?? [];
+  if (pluginDirs.length > 0) {
+    for (const pluginDir of pluginDirs) {
+      args.push("--plugin-dir", pluginDir);
+    }
+    args.push("--approve-mcps");
   }
 
   if (options.resumeChatId) {
@@ -918,6 +933,8 @@ export class CursorPrintAgentSession implements AgentSession {
   private closed = false;
   private stdoutBuffer = "";
   private stderrBuffer = "";
+  private mcpPlugin: CursorPrintMcpPlugin | null = null;
+  private mcpPluginResolved = false;
 
   constructor(options: CursorPrintAgentSessionOptions) {
     this.config = options.config;
@@ -935,6 +952,29 @@ export class CursorPrintAgentSession implements AgentSession {
     this.modeId = normalizeModeId(options.config.modeId);
     this.modelId = options.config.model ?? null;
     this.autoAcceptEnabled = isACPAutoAcceptEnabled(options.config);
+  }
+
+  private ensureMcpPlugin(): CursorPrintMcpPlugin | null {
+    if (this.mcpPluginResolved) {
+      return this.mcpPlugin;
+    }
+    this.mcpPluginResolved = true;
+    try {
+      this.mcpPlugin = materializeCursorPrintMcpPlugin(this.config.mcpServers);
+      if (this.mcpPlugin) {
+        this.logger.debug(
+          {
+            pluginDir: this.mcpPlugin.pluginDir,
+            servers: Object.keys(this.config.mcpServers ?? {}),
+          },
+          "cursor-print: materialized MCP plugin-dir",
+        );
+      }
+    } catch (error) {
+      this.logger.warn({ err: error }, "cursor-print: failed to materialize MCP plugin-dir");
+      this.mcpPlugin = null;
+    }
+    return this.mcpPlugin;
   }
 
   get id(): string | null {
@@ -1066,6 +1106,7 @@ export class CursorPrintAgentSession implements AgentSession {
     clientMessageId?: string;
   }): void {
     const wireModel = this.resolveWireModelId();
+    const mcpPlugin = this.ensureMcpPlugin();
     const args = buildTurnArgs({
       extraArgs: this.command.args,
       modeId: this.modeId,
@@ -1074,6 +1115,7 @@ export class CursorPrintAgentSession implements AgentSession {
       workspace: this.config.cwd,
       prompt: options.cliPrompt,
       imagePaths: options.imagePaths,
+      pluginDirs: mcpPlugin ? [mcpPlugin.pluginDir] : undefined,
     });
 
     this.logger.debug(
@@ -1086,6 +1128,7 @@ export class CursorPrintAgentSession implements AgentSession {
         thinkingOptionId: this.config.thinkingOptionId ?? null,
         fast: this.config.featureValues?.[CURSOR_PRINT_FAST_MODE_FEATURE_ID] === true,
         cwd: this.config.cwd,
+        pluginDir: mcpPlugin?.pluginDir ?? null,
       },
       "cursor-print: launching turn",
     );
@@ -1288,6 +1331,14 @@ export class CursorPrintAgentSession implements AgentSession {
     this.closed = true;
     await this.interrupt();
     this.subscribers.clear();
+    if (this.mcpPlugin) {
+      try {
+        this.mcpPlugin.cleanup();
+      } catch (error) {
+        this.logger.warn({ err: error }, "cursor-print: failed to cleanup MCP plugin-dir");
+      }
+      this.mcpPlugin = null;
+    }
   }
 
   async setModel(modelId: string | null): Promise<void> {

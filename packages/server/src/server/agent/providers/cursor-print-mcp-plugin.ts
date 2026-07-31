@@ -6,19 +6,11 @@ import type { McpServerConfig } from "../agent-sdk-types.js";
 
 export const CURSOR_PRINT_MCP_PLUGIN_NAME = "paseo";
 export const CURSOR_PRINT_MCP_PLUGIN_DIR_PREFIX = "paseo-cursor-print-mcp-";
-export const CURSOR_PRINT_GUIDANCE_RULE_FILENAME = "paseo-guidance.mdc";
 
 export interface CursorPrintMcpPlugin {
   pluginDir: string;
   hasMcpServers: boolean;
-  hasGuidanceRule: boolean;
   cleanup: () => void;
-}
-
-export interface MaterializeCursorPrintMcpPluginOptions {
-  servers?: Record<string, McpServerConfig>;
-  /** Host guidance body (runtime + prose-stop + FastMCP CLI + host append). */
-  guidanceMarkdown?: string;
 }
 
 /**
@@ -54,35 +46,18 @@ export function toCursorPrintMcpServerEntry(config: McpServerConfig): CursorPrin
   };
 }
 
-export function buildCursorPrintGuidanceRuleMarkdown(guidanceMarkdown: string): string {
-  const body = guidanceMarkdown.trim();
-  return [
-    "---",
-    "description: Paseo cursor-print host guidance",
-    "alwaysApply: true",
-    "---",
-    "",
-    body,
-    "",
-  ].join("\n");
-}
-
 /**
- * Materialize a temporary Cursor plugin for cursor-print:
- * - optional `config.mcpServers` → `.mcp.json`
- * - optional host guidance → `rules/paseo-guidance.mdc` (`alwaysApply: true`)
+ * Materialize a temporary Cursor plugin for cursor-print MCP only.
+ * Host guidance is injected at daemon boot into `~/.cursor/rules/` (see
+ * `writeCursorPrintGlobalCursorRule`), not via this plugin.
  *
- * Caller must `cleanup()` when done. Returns null when neither MCP nor guidance
- * is provided.
+ * Caller must `cleanup()` when done. Returns null when no servers are provided.
  */
 export function materializeCursorPrintMcpPlugin(
-  options: MaterializeCursorPrintMcpPluginOptions = {},
+  servers: Record<string, McpServerConfig> = {},
 ): CursorPrintMcpPlugin | null {
-  const entries = Object.entries(options.servers ?? {});
-  const guidance = options.guidanceMarkdown?.trim() ?? "";
-  const hasMcpServers = entries.length > 0;
-  const hasGuidanceRule = guidance.length > 0;
-  if (!hasMcpServers && !hasGuidanceRule) {
+  const entries = Object.entries(servers);
+  if (entries.length === 0) {
     return null;
   }
 
@@ -95,46 +70,31 @@ export function materializeCursorPrintMcpPlugin(
   const pluginMetaDir = join(pluginDir, ".cursor-plugin");
   mkdirSync(pluginMetaDir, { recursive: true });
 
-  const manifest: Record<string, unknown> = {
-    name: CURSOR_PRINT_MCP_PLUGIN_NAME,
-    displayName: "Paseo",
-    version: "1.0.0",
-    description: "Paseo MCP + host guidance for cursor-print sessions",
-  };
-  if (hasMcpServers) {
-    manifest.mcpServers = "./.mcp.json";
-  }
-  if (hasGuidanceRule) {
-    manifest.rules = "./rules/";
-  }
+  writeFileSync(
+    join(pluginMetaDir, "plugin.json"),
+    `${JSON.stringify(
+      {
+        name: CURSOR_PRINT_MCP_PLUGIN_NAME,
+        displayName: "Paseo",
+        version: "1.0.0",
+        description: "Paseo daemon MCP for cursor-print sessions",
+        mcpServers: "./.mcp.json",
+      },
+      null,
+      2,
+    )}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
 
-  writeFileSync(join(pluginMetaDir, "plugin.json"), `${JSON.stringify(manifest, null, 2)}\n`, {
+  // May contain Authorization bearer tokens for /mcp/agents.
+  writeFileSync(join(pluginDir, ".mcp.json"), `${JSON.stringify({ mcpServers }, null, 2)}\n`, {
     encoding: "utf8",
     mode: 0o600,
   });
 
-  if (hasMcpServers) {
-    // May contain Authorization bearer tokens for /mcp/agents.
-    writeFileSync(join(pluginDir, ".mcp.json"), `${JSON.stringify({ mcpServers }, null, 2)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-  }
-
-  if (hasGuidanceRule) {
-    const rulesDir = join(pluginDir, "rules");
-    mkdirSync(rulesDir, { recursive: true });
-    writeFileSync(
-      join(rulesDir, CURSOR_PRINT_GUIDANCE_RULE_FILENAME),
-      buildCursorPrintGuidanceRuleMarkdown(guidance),
-      { encoding: "utf8", mode: 0o600 },
-    );
-  }
-
   return {
     pluginDir,
-    hasMcpServers,
-    hasGuidanceRule,
+    hasMcpServers: true,
     cleanup: () => {
       rmSync(pluginDir, { recursive: true, force: true });
     },

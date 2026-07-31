@@ -1,9 +1,12 @@
 import { type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import type { Logger } from "pino";
 
 import { McpCliService } from "../../mcp-cli/service.js";
+import { resolvePaseoHome } from "../../paseo-home.js";
 import { PROSE_STOP_PREVENTION_PROMPT } from "../prose-stop/prevention-prompt.js";
 
 import type {
@@ -99,14 +102,15 @@ const CURSOR_PRINT_DEFAULT_COMMAND = ["agent"] as const;
 const MODELS_TIMEOUT_MS = 30_000;
 
 /**
- * Cursor CLI has no reliable append-system-prompt. Per session, a temp
- * `--plugin-dir` carries daemon MCP (`.mcp.json`) and host guidance as an
- * alwaysApply plugin rule (`rules/paseo-guidance.mdc`). Daemon boot still
- * writes the guidance file (source for that rule). CLI turns keep only
- * per-agent systemPrompt + user text — no XML pointer. Timeline user_message
- * stays raw.
+ * Cursor CLI has no reliable append-system-prompt. Daemon boot writes host
+ * guidance to `~/.cursor/rules/paseo-cursor-print-guidance.mdc` (alwaysApply;
+ * reaches `--print` via LocalCursorRulesService ancestor walk) and a reference
+ * copy under `$PASEO_HOME/cursor-print-guidance.md`. Per session, a temp
+ * `--plugin-dir` carries daemon MCP only (`.mcp.json`). CLI turns keep only
+ * per-agent systemPrompt + user text. Timeline user_message stays raw.
  *
- * Override path with PASEO_CURSOR_PRINT_PROMPT_FILE (tests / non-/tmp hosts).
+ * Override paths with PASEO_CURSOR_PRINT_PROMPT_FILE /
+ * PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE (tests / non-default hosts).
  */
 export const CURSOR_PRINT_RUNTIME_GUIDANCE = [
   "Paseo cursor-print: daemon MCP (paseo) is injected via --plugin-dir. Prefer MCP tools (ask_question, create_agent, …) when GetMcpTools lists them.",
@@ -117,11 +121,42 @@ export const CURSOR_PRINT_RUNTIME_GUIDANCE = [
   "Permission notes: Paseo Auto Approve only auto-answers Cursor interaction_query over stdin; it cannot enable org-disabled --force / Run Everything. Prefer Auto-review mode; do not rely on Force/YOLO when the org blocks it.",
 ].join("\n");
 
-export const CURSOR_PRINT_PROMPT_FILE_DEFAULT = "/tmp/paseo-cursor-print-guidance.md";
+export const CURSOR_PRINT_GUIDANCE_FILENAME = "cursor-print-guidance.md";
+export const CURSOR_PRINT_GLOBAL_RULE_FILENAME = "paseo-cursor-print-guidance.mdc";
 
-export function resolveCursorPrintPromptFilePath(): string {
+export function resolveCursorPrintPromptFilePath(paseoHome?: string): string {
   const fromEnv = process.env.PASEO_CURSOR_PRINT_PROMPT_FILE?.trim();
-  return fromEnv && fromEnv.length > 0 ? fromEnv : CURSOR_PRINT_PROMPT_FILE_DEFAULT;
+  if (fromEnv && fromEnv.length > 0) {
+    return fromEnv;
+  }
+  return join(paseoHome ?? resolvePaseoHome(), CURSOR_PRINT_GUIDANCE_FILENAME);
+}
+
+/**
+ * Cursor CLI loads `AGENTS.md` / `.cursor/rules/*.mdc` from the workspace and
+ * every ancestor directory. Writing under `~/.cursor/rules/` therefore applies
+ * to all projects under the home directory — the Cursor-global alwaysApply path
+ * that actually reaches `--print` request context (unlike `--plugin-dir` rules).
+ */
+export function resolveCursorPrintGlobalRulePath(): string {
+  const fromEnv = process.env.PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE?.trim();
+  if (fromEnv && fromEnv.length > 0) {
+    return fromEnv;
+  }
+  return join(homedir(), ".cursor", "rules", CURSOR_PRINT_GLOBAL_RULE_FILENAME);
+}
+
+export function buildCursorPrintGlobalRuleMarkdown(guidanceMarkdown: string): string {
+  const body = guidanceMarkdown.trim();
+  return [
+    "---",
+    "description: Paseo cursor-print host guidance (daemon-managed)",
+    "alwaysApply: true",
+    "---",
+    "",
+    body,
+    "",
+  ].join("\n");
 }
 
 /** Write guidance file contents. Returns the path. */
@@ -129,12 +164,43 @@ export function writeCursorPrintGuidanceFile(
   content: string,
   path: string = resolveCursorPrintPromptFilePath(),
 ): string {
-  writeFileSync(path, `${content}\n`, "utf8");
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${content}\n`, { encoding: "utf8", mode: 0o600 });
   return path;
 }
 
 /**
- * Daemon boot: write host-level cursor-print guidance (runtime + daemon appends).
+ * Upsert the daemon-managed alwaysApply rule under `~/.cursor/rules/`.
+ * Returns the path written.
+ */
+export function writeCursorPrintGlobalCursorRule(
+  guidanceMarkdown: string,
+  path: string = resolveCursorPrintGlobalRulePath(),
+): string {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, buildCursorPrintGlobalRuleMarkdown(guidanceMarkdown), {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  return path;
+}
+
+/** Remove the daemon-managed global rule if present. */
+export function removeCursorPrintGlobalCursorRule(
+  path: string = resolveCursorPrintGlobalRulePath(),
+): void {
+  try {
+    if (existsSync(path)) {
+      unlinkSync(path);
+    }
+  } catch {
+    // Best-effort cleanup on daemon stop.
+  }
+}
+
+/**
+ * Daemon boot: write host-level cursor-print guidance (runtime + daemon appends)
+ * to `$PASEO_HOME/cursor-print-guidance.md` and the Cursor-global alwaysApply rule.
  * Per-agent systemPrompt is not included — that stays on the CLI wire when set.
  */
 export async function writeCursorPrintGuidanceFileForDaemon(input: {
@@ -142,7 +208,8 @@ export async function writeCursorPrintGuidanceFileForDaemon(input: {
   appendSystemPrompt?: string;
   includeProseStopPrevention?: boolean;
   path?: string;
-}): Promise<string> {
+  globalRulePath?: string;
+}): Promise<{ guidancePath: string; globalRulePath: string }> {
   const parts: string[] = [CURSOR_PRINT_RUNTIME_GUIDANCE];
   const userAppend = input.appendSystemPrompt?.trim();
   if (userAppend) {
@@ -162,7 +229,15 @@ export async function writeCursorPrintGuidanceFileForDaemon(input: {
     }
   }
   const content = composeSystemPromptParts(...parts) ?? CURSOR_PRINT_RUNTIME_GUIDANCE;
-  return writeCursorPrintGuidanceFile(content, input.path ?? resolveCursorPrintPromptFilePath());
+  const guidancePath = writeCursorPrintGuidanceFile(
+    content,
+    input.path ?? resolveCursorPrintPromptFilePath(input.paseoHome),
+  );
+  const globalRulePath = writeCursorPrintGlobalCursorRule(
+    content,
+    input.globalRulePath ?? resolveCursorPrintGlobalRulePath(),
+  );
+  return { guidancePath, globalRulePath };
 }
 
 /**
@@ -187,13 +262,13 @@ export function readCursorPrintGuidanceMarkdown(
 
 /**
  * Build the prompt string passed to `agent --print` (not the timeline user row).
- * Host guidance is injected via the temp plugin alwaysApply rule — not here.
+ * Host guidance is injected via the Cursor-global alwaysApply rule at daemon boot.
  */
 export function buildCursorPrintCliPrompt(
   userText: string,
   config: Pick<AgentSessionConfig, "systemPrompt" | "daemonAppendSystemPrompt"> = {},
 ): string {
-  // Host daemonAppend lives in the plugin guidance rule; only per-agent systemPrompt stays here.
+  // Host daemonAppend lives in ~/.cursor/rules; only per-agent systemPrompt stays here.
   const agentPrompt = config.systemPrompt?.trim();
   const trimmed = userText.trim();
   if (agentPrompt && trimmed) {
@@ -979,17 +1054,13 @@ export class CursorPrintAgentSession implements AgentSession {
     }
     this.mcpPluginResolved = true;
     try {
-      this.mcpPlugin = materializeCursorPrintMcpPlugin({
-        servers: this.config.mcpServers,
-        guidanceMarkdown: readCursorPrintGuidanceMarkdown(),
-      });
+      this.mcpPlugin = materializeCursorPrintMcpPlugin(this.config.mcpServers);
       if (this.mcpPlugin) {
         this.logger.debug(
           {
             pluginDir: this.mcpPlugin.pluginDir,
             servers: Object.keys(this.config.mcpServers ?? {}),
             hasMcpServers: this.mcpPlugin.hasMcpServers,
-            hasGuidanceRule: this.mcpPlugin.hasGuidanceRule,
           },
           "cursor-print: materialized plugin-dir",
         );

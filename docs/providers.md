@@ -46,12 +46,12 @@ Every provider adapter owns its canonical user-message timeline rows. When a for
 
 `cursor-print` is a direct provider (`cursor-print-agent.ts`). Image prompts are dual-attached on the Cursor CLI wire (`--image` plus `@<path>` in the print prompt) so headless attach and `@`-file Read both work, but the timeline `user_message` must stay the raw user text — never bake those `@path` wire mentions into the durable row. Cursor CLI model rejections that return an empty `Available models:` list are retried once; final failures are rewritten into a short actionable error.
 
-Cursor CLI has no `--mcp-config` / append-system-prompt for `--print`. Each `cursor-print` session materializes a temp plugin (`cursor-print-mcp-plugin.ts`) and passes `--plugin-dir` on every turn:
+Cursor CLI has no `--mcp-config` / append-system-prompt for `--print`. Guidance and MCP are injected on separate paths:
 
-- host guidance (daemon boot file: runtime + prose-stop + FastMCP CLI + host append) → `rules/paseo-guidance.mdc` with `alwaysApply: true`
-- `config.mcpServers` (when present) → `.mcp.json`, plus `--approve-mcps`
+- **Host guidance** (daemon boot): write `~/.cursor/rules/paseo-cursor-print-guidance.mdc` with `alwaysApply: true` (override with `PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE`). Cursor CLI's `LocalCursorRulesService` walks ancestors from the workspace and loads `.cursor/rules` + `AGENTS.md`, so a home-level rule reaches `--print` request context. The same body is also written to `$PASEO_HOME/cursor-print-guidance.md` for reference (override with `PASEO_CURSOR_PRINT_PROMPT_FILE`). The Cursor-global `.mdc` is removed on daemon stop.
+- **MCP**: each session materializes a temp `--plugin-dir` (`cursor-print-mcp-plugin.ts`) with `.mcp.json` from `config.mcpServers`, plus `--approve-mcps`. Session `close()` cleans up the temp plugin.
 
-Do not put that guidance on the CLI prompt wire (no `<paseo_guidance>` XML pointer) and do not write into the project's `.cursor/mcp.json` (session-scoped daemon tokens). Cleanup runs on session `close()`. Plugin `agents/` are subagent defs, not a place for this host guidance; `sessionStart` hooks are less reliable than alwaysApply rules under `--print`.
+Gotcha (Cursor agent CLI `2026.07.23`): `--plugin-dir` MCP is reloaded into the MCP runtime, but plugin **rules/hooks are not reliably applied** under `--print` (CLI request-context `MergedCursorRulesService` only wires `LocalCursorRulesService`; `getPluginHooks()` is unused). Do not put guidance on the CLI prompt wire and do not write into the project's `.cursor/mcp.json` (session-scoped daemon tokens).
 
 `updateTodosToolCall` mapping (`cursor-print-mapper.ts`) must prefer `result.success.todos` over `args.todos` for the Tasks-card `TodoWrite` input. Cursor's completed payload is authoritative and uses `TODO_STATUS_PENDING` / `TODO_STATUS_IN_PROGRESS` / `TODO_STATUS_COMPLETED`; merge args often omit `content`. Normalize those enums (strip the `TODO_STATUS_` prefix) before falling back to `pending`, or the dock stays stuck at 0/N.
 

@@ -9,17 +9,21 @@ import { describe, expect, test, vi } from "vitest";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import {
   CURSOR_PRINT_DEFAULT_MODE_ID,
+  CURSOR_PRINT_GUIDANCE_FILENAME,
   CURSOR_PRINT_PROVIDER_ID,
   CURSOR_PRINT_RUNTIME_GUIDANCE,
   CursorPrintAgentClient,
   buildCursorPrintAutoAcceptFeature,
   buildCursorPrintCliPrompt,
+  buildCursorPrintGlobalRuleMarkdown,
   buildTurnArgs,
   readCursorPrintGuidanceMarkdown,
   convertCursorPrintPrompt,
   formatCursorPrintModelRejection,
   isCursorEmptyModelCatalogFailure,
   normalizeCursorPrintSessionConfig,
+  removeCursorPrintGlobalCursorRule,
+  resolveCursorPrintPromptFilePath,
   writeCursorPrintGuidanceFileForDaemon,
   type CursorPrintLaunch,
   type CursorPrintSpawn,
@@ -208,22 +212,16 @@ describe("CursorPrintAgentClient", () => {
     const args = launches[0]?.args ?? [];
     expect(args.at(-1)).toBe(buildCursorPrintCliPrompt("hello"));
     expect(args.at(-1)).toBe("hello");
-    const pluginDirIndex = args.indexOf("--plugin-dir");
-    expect(pluginDirIndex).toBeGreaterThanOrEqual(0);
-    const pluginDir = args[pluginDirIndex + 1];
-    expect(typeof pluginDir).toBe("string");
-    expect(existsSync(join(pluginDir!, "rules", "paseo-guidance.mdc"))).toBe(true);
+    // No MCP servers → no temp plugin-dir (guidance is Cursor-global at daemon boot).
+    expect(args).not.toContain("--plugin-dir");
     expect(args).not.toContain("--approve-mcps");
-    // Stable flags around the session-scoped plugin-dir path.
-    expect(args.slice(0, pluginDirIndex)).toEqual([
+    expect(args.slice(0, -1)).toEqual([
       "--print",
       "--output-format",
       "stream-json",
       "--stream-partial-output",
       "--trust",
       "--force",
-    ]);
-    expect(args.slice(pluginDirIndex + 2, -1)).toEqual([
       "--resume",
       "chat-1",
       "--model",
@@ -931,28 +929,56 @@ describe("CursorPrintAgentClient", () => {
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("paseo question create");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("$PASEO_AGENT_ID");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("AskUserQuestion");
-    // Host guidance is injected via plugin alwaysApply rule, not the CLI prompt.
+    // Host guidance is injected via ~/.cursor/rules alwaysApply at daemon boot.
     expect(prompt).toBe("Agent system\n\ndo the thing");
     expect(prompt).not.toContain(CURSOR_PRINT_RUNTIME_GUIDANCE);
     expect(prompt).not.toContain("Daemon append");
     expect(prompt).not.toContain("paseo_guidance");
   });
 
-  test("daemon boot writes host guidance; plugin rule injects it without CLI pointer", async () => {
-    const prev = process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
-    const dir = mkdtempSync(join(tmpdir(), "paseo-cursor-prompt-"));
-    const promptFilePath = join(dir, "paseo-cursor-print-guidance.md");
-    process.env.PASEO_CURSOR_PRINT_PROMPT_FILE = promptFilePath;
+  test("guidance reference file defaults under paseo home", () => {
+    const prevPrompt = process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
+    delete process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
     try {
-      await writeCursorPrintGuidanceFileForDaemon({
+      const paseoHome = join(tmpdir(), "paseo-home-guidance");
+      expect(resolveCursorPrintPromptFilePath(paseoHome)).toBe(
+        join(paseoHome, CURSOR_PRINT_GUIDANCE_FILENAME),
+      );
+    } finally {
+      if (prevPrompt === undefined) {
+        delete process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
+      } else {
+        process.env.PASEO_CURSOR_PRINT_PROMPT_FILE = prevPrompt;
+      }
+    }
+  });
+
+  test("daemon boot writes guidance file + Cursor-global alwaysApply rule; CLI has no pointer", async () => {
+    const prevPrompt = process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
+    const prevRule = process.env.PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE;
+    const dir = mkdtempSync(join(tmpdir(), "paseo-cursor-prompt-"));
+    const paseoHome = join(dir, "paseo-home");
+    const promptFilePath = join(paseoHome, CURSOR_PRINT_GUIDANCE_FILENAME);
+    const globalRulePath = join(dir, "paseo-cursor-print-guidance.mdc");
+    delete process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
+    process.env.PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE = globalRulePath;
+    try {
+      const written = await writeCursorPrintGuidanceFileForDaemon({
+        paseoHome,
         appendSystemPrompt: "Host append",
         includeProseStopPrevention: true,
-        path: promptFilePath,
+        globalRulePath,
       });
+      expect(written.guidancePath).toBe(promptFilePath);
+      expect(written.globalRulePath).toBe(globalRulePath);
       expect(readFileSync(promptFilePath, "utf8")).toContain(CURSOR_PRINT_RUNTIME_GUIDANCE);
       expect(readFileSync(promptFilePath, "utf8")).toContain("Host append");
       expect(readFileSync(promptFilePath, "utf8")).toContain("Decisions (Paseo)");
       expect(readCursorPrintGuidanceMarkdown(promptFilePath)).toContain("Host append");
+      expect(readFileSync(globalRulePath, "utf8")).toBe(
+        buildCursorPrintGlobalRuleMarkdown(readFileSync(promptFilePath, "utf8").trim()),
+      );
+      expect(readFileSync(globalRulePath, "utf8")).toContain("alwaysApply: true");
 
       const { spawn, launches } = createFakeSpawn((child) => {
         child.stdout.write(
@@ -995,16 +1021,8 @@ describe("CursorPrintAgentClient", () => {
       expect(before).not.toContain("Be concise.");
 
       const args = launches[0]?.args ?? [];
-      const pluginDirIndex = args.indexOf("--plugin-dir");
-      expect(pluginDirIndex).toBeGreaterThanOrEqual(0);
-      const pluginDir = args[pluginDirIndex + 1]!;
+      expect(args).not.toContain("--plugin-dir");
       expect(args).not.toContain("--approve-mcps");
-      expect(readFileSync(join(pluginDir, "rules", "paseo-guidance.mdc"), "utf8")).toContain(
-        "Host append",
-      );
-      expect(readFileSync(join(pluginDir, "rules", "paseo-guidance.mdc"), "utf8")).toContain(
-        "alwaysApply: true",
-      );
 
       const userEvent = events.find(
         (event) =>
@@ -1014,12 +1032,19 @@ describe("CursorPrintAgentClient", () => {
       expect(userEvent.item.text).not.toContain("Paseo cursor-print");
 
       await session.close();
-      expect(existsSync(pluginDir)).toBe(false);
+      removeCursorPrintGlobalCursorRule(globalRulePath);
+      expect(existsSync(globalRulePath)).toBe(false);
     } finally {
-      if (prev === undefined) {
+      removeCursorPrintGlobalCursorRule(globalRulePath);
+      if (prevPrompt === undefined) {
         delete process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
       } else {
-        process.env.PASEO_CURSOR_PRINT_PROMPT_FILE = prev;
+        process.env.PASEO_CURSOR_PRINT_PROMPT_FILE = prevPrompt;
+      }
+      if (prevRule === undefined) {
+        delete process.env.PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE;
+      } else {
+        process.env.PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE = prevRule;
       }
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1505,9 +1530,7 @@ describe("CursorPrintAgentClient", () => {
         },
       },
     });
-    expect(readFileSync(join(pluginDir!, "rules", "paseo-guidance.mdc"), "utf8")).toContain(
-      "alwaysApply: true",
-    );
+    expect(existsSync(join(pluginDir!, "rules"))).toBe(false);
 
     await session.close();
     expect(existsSync(pluginDir!)).toBe(false);

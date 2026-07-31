@@ -393,18 +393,109 @@ describe("mapCursorPrintToolCall", () => {
     });
   });
 
+  test("prefers result.success.todos with TODO_STATUS_* enums over stale args", () => {
+    const mapped = mapCursorPrintToolCall(
+      {
+        updateTodosToolCall: {
+          args: {
+            todos: [
+              { id: "1", content: "Update release-line.md", status: "pending" },
+              { id: "2", content: "Commit docs", status: "pending" },
+            ],
+          },
+          result: {
+            success: {
+              todos: [
+                {
+                  id: "1",
+                  content: "Update release-line.md",
+                  status: "TODO_STATUS_COMPLETED",
+                },
+                {
+                  id: "2",
+                  content: "Commit docs",
+                  status: "TODO_STATUS_IN_PROGRESS",
+                },
+              ],
+              totalCount: 2,
+              wasMerge: true,
+            },
+          },
+        },
+      },
+      "call-todos-result",
+    );
+    expect(mapped).toMatchObject({
+      callId: "call-todos-result",
+      name: "TodoWrite",
+      detail: {
+        type: "unknown",
+        input: {
+          todos: [
+            { content: "Update release-line.md", status: "completed" },
+            { content: "Commit docs", status: "in_progress" },
+          ],
+        },
+      },
+    });
+  });
+
+  test("uses result.success.todos when merge args omit content", () => {
+    const mapped = mapCursorPrintToolCall(
+      {
+        updateTodosToolCall: {
+          args: {
+            todos: [
+              { id: "1", status: "TODO_STATUS_COMPLETED" },
+              { id: "2", status: "TODO_STATUS_COMPLETED" },
+            ],
+            merge: true,
+          },
+          result: {
+            success: {
+              todos: [
+                { id: "1", content: "Ship it", status: "TODO_STATUS_COMPLETED" },
+                { id: "2", content: "Write tests", status: "TODO_STATUS_COMPLETED" },
+              ],
+              wasMerge: true,
+            },
+          },
+        },
+      },
+      "call-todos-merge",
+    );
+    expect(mapped).toMatchObject({
+      name: "TodoWrite",
+      detail: {
+        type: "unknown",
+        input: {
+          todos: [
+            { content: "Ship it", status: "completed" },
+            { content: "Write tests", status: "completed" },
+          ],
+        },
+      },
+    });
+  });
+
   test("normalizes todo aliases and skips empty updates", () => {
     expect(
       normalizeCursorPrintTodos([
         { description: "Ship it", status: "IN-PROGRESS" },
         { title: "Done item", status: "done" },
         { text: "Cancelled", status: "cancelled" },
+        { content: "Enum pending", status: "TODO_STATUS_PENDING" },
+        { content: "Enum active", status: "TODO_STATUS_IN_PROGRESS" },
+        { content: "Enum done", status: "TODO_STATUS_COMPLETED" },
         { status: "pending" },
       ]),
     ).toEqual([
       { content: "Ship it", status: "in_progress" },
       { content: "Done item", status: "completed" },
       { content: "Cancelled", status: "completed" },
+      { content: "Enum pending", status: "pending" },
+      { content: "Enum active", status: "in_progress" },
+      { content: "Enum done", status: "completed" },
     ]);
 
     expect(

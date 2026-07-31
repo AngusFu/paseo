@@ -169,10 +169,14 @@ function normalizeCursorTodoStatus(value: unknown): NormalizedCursorTodo["status
   if (typeof value !== "string") {
     return null;
   }
-  const normalized = value
+  let normalized = value
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
+  // Cursor stream-json uses TODO_STATUS_PENDING / IN_PROGRESS / COMPLETED.
+  if (normalized.startsWith("todo_status_")) {
+    normalized = normalized.slice("todo_status_".length);
+  }
   switch (normalized) {
     case "pending":
     case "todo":
@@ -236,6 +240,10 @@ export function normalizeCursorPrintTodos(rawTodos: unknown): NormalizedCursorTo
 /**
  * Map Cursor `updateTodosToolCall` into Claude-shaped TodoWrite input so the
  * app Tasks card can reuse extractTaskEntriesFromToolCall (keeps in_progress).
+ *
+ * Prefer `result.success.todos` when present: Cursor's completed payload carries
+ * the authoritative list (incl. TODO_STATUS_* enums). Args alone are often merge
+ * patches without content, or statuses that only resolve correctly after success.
  */
 function mapUpdateTodosToolCall(
   updateTodos: Record<string, unknown>,
@@ -243,12 +251,14 @@ function mapUpdateTodosToolCall(
   toolCall: Record<string, unknown>,
 ): MappedCursorToolCall | null {
   const args = isRecord(updateTodos.args) ? updateTodos.args : {};
-  const todos = normalizeCursorPrintTodos(args.todos);
+  const failure = readNestedFailure(updateTodos.result);
+  const success = readNestedSuccess(updateTodos.result);
+  const fromResult = success ? normalizeCursorPrintTodos(success.todos) : [];
+  const fromArgs = normalizeCursorPrintTodos(args.todos);
+  const todos = fromResult.length > 0 ? fromResult : fromArgs;
   if (todos.length === 0) {
     return null;
   }
-  const failure = readNestedFailure(updateTodos.result);
-  const success = readNestedSuccess(updateTodos.result);
   return {
     callId:
       callIdFromEvent ?? readString(toolCall.toolCallId) ?? readString(updateTodos.toolCallId),

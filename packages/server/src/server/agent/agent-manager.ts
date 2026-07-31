@@ -3962,8 +3962,17 @@ export class AgentManager {
       return { timestamp: now.toISOString() };
     }
 
+    const committed = await this.durableTimelineStore.fetchCommitted(agentId, {
+      direction: "tail",
+      limit: 0,
+    });
+    if (committed.rows.length === 0) {
+      return { timestamp: now.toISOString() };
+    }
     return {
-      nextSeq: (await this.durableTimelineStore.getLatestCommittedSeq(agentId)) + 1,
+      epoch: committed.epoch,
+      nextSeq: committed.window.nextSeq,
+      rows: committed.rows,
       timestamp: now.toISOString(),
     };
   }

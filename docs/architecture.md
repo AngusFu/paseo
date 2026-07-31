@@ -289,7 +289,7 @@ initializing → idle ⇄ running
 - Timeline is append-only with epochs (each run starts a new epoch). Storage uses sequence numbers for client-side dedup; the default fetch page is 200 items
 - Timeline row `timestamp` values are canonical daemon-owned timestamps. Providers may supply original replay timestamps, but clients must not guess timestamp trust or hide time UI based on local clock heuristics.
 - Events stream to connected clients in real time; correctness is backed by authoritative timeline fetches and paged-to-completion catch-up.
-- Agent state persists to `$PASEO_HOME/agents/{cwd-with-dashes}/{agent-id}.json` (timeline rows live alongside the record). That storage path is derived from `cwd`, not from workspace id.
+- Agent state persists to `$PASEO_HOME/agents/{cwd-with-dashes}/{agent-id}.json`. Projected timeline rows persist separately to `$PASEO_HOME/agent-timelines/{agent-id}.json` so daemon restart can reseed without a sparse provider-history rebuild. The agent-record path is derived from `cwd`, not from workspace id.
 
 ## Right-sidebar boundary: directory-backed vs workspace-owned
 
@@ -395,7 +395,8 @@ Providers that can accept native tool definitions should set `supportsNativePase
 
 ```
 $PASEO_HOME/
-├── agents/{cwd-with-dashes}/{agent-id}.json   # Agent record + persisted timeline rows
+├── agents/{cwd-with-dashes}/{agent-id}.json   # Agent record
+├── agent-timelines/{agent-id}.json            # Durable projected timeline rows
 ├── projects/projects.json                      # Project registry
 ├── projects/workspaces.json                    # Workspace registry
 ├── chat/                                       # Chat rooms

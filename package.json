@@ -64,6 +64,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "typecheck:server": "npm run typecheck --workspace=@getpaseo/relay && npm run typecheck --workspace=@getpaseo/protocol && npm run typecheck --workspace=@getpaseo/client && npm run typecheck --workspace=@getpaseo/server && npm run typecheck --workspace=@getpaseo/cli",
     "test": "npm run test --workspaces --if-present",
+    "backfill:cursor-print-timelines": "tsx packages/server/scripts/backfill-cursor-print-timelines.ts",
     "format": "oxfmt .",
     "format:files": "oxfmt",
     "format:check": "oxfmt --check .",

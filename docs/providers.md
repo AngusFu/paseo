@@ -46,6 +46,21 @@ Every provider adapter owns its canonical user-message timeline rows. When a for
 
 `cursor-print` is a direct provider (`cursor-print-agent.ts`). Image prompts are dual-attached on the Cursor CLI wire (`--image` plus `@<path>` in the print prompt) so headless attach and `@`-file Read both work, but the timeline `user_message` must stay the raw user text — never bake those `@path` wire mentions into the durable row. Cursor CLI model rejections that return an empty `Available models:` list are retried once; final failures are rewritten into a short actionable error.
 
+When Cursor completes a `CreatePlan` tool call, the turn ends (same as IDE plan approval). Paseo then emits a synthetic plan-execute question (`plan-execute-question-*`, kind `question`) so mobile/desktop can show Execute / Not now. Choosing Execute keeps the current unattended mode when already off plan/ask; leaving `plan`/`ask` switches to `auto-review` (then `force`/`default`). AgentManager also drops unanswered plan-execute CTAs when the user sends a later message. This mirrors ACP's CreatePlan → execute CTA path.
+
+Live timeline rows are also written to `$PASEO_HOME/agent-timelines/{agentId}.json` so daemon restart reseeds the rich stream (tools included) without depending on Cursor's `store.db`. Provider `streamHistory` remains a fallback for agents without durable rows: it walks the full root blob (skipping non-message hash fields), drops system-injected user envelopes (`<user_info>`, conversation summaries, etc.), and projects `tool-call` / `tool-result` pairs into completed `tool_call` items. Cursor may still summarize the native store; durable Paseo rows are the source of truth for what the user already saw.
+
+To repair older cursor-print chats that were flattened before durable timelines existed, run an offline backfill that prefers Cursor `agent-transcripts` JSONL (richer than summarized `store.db`):
+
+```bash
+# dry-run
+npm run backfill:cursor-print-timelines -- --paseo-home ~/.paseo
+# write
+npm run backfill:cursor-print-timelines -- --paseo-home ~/.paseo --apply
+```
+
+Restart the Paseo daemon afterward so in-memory timelines reseed from `$PASEO_HOME/agent-timelines/`. Use `--agent <id-prefix>` or `--force` as needed.
+
 Cursor CLI has no `--mcp-config` / append-system-prompt for `--print`. Guidance and MCP are injected on separate paths:
 
 - **Host guidance** (daemon boot): upsert a managed block (`<!-- PASEO-CURSOR-PRINT-BEGIN/END -->`) into `~/AGENTS.md` (override with `PASEO_CURSOR_PRINT_AGENTS_FILE`). Cursor CLI's `LocalCursorRulesService` walks ancestors and loads `AGENTS.md` as alwaysApply, so home-level guidance reaches `--print` request context. Boot rewrites the managed block; other content in `~/AGENTS.md` is preserved.

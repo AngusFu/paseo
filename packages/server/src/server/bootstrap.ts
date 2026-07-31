@@ -131,6 +131,7 @@ import { AgentManager } from "./agent/agent-manager.js";
 import type { DaemonProviderOverrideLike } from "./agent/acp-auto-approve-default.js";
 import { writeCursorPrintGuidanceFileForDaemon } from "./agent/providers/cursor-print-agent.js";
 import { AgentStorage } from "./agent/agent-storage.js";
+import { FileAgentTimelineStore } from "./agent/durable-agent-timeline-store.js";
 import { QuestionStore } from "./question/store.js";
 import { createQuestionWaitSocket } from "./question/wait-socket.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
@@ -927,6 +928,9 @@ export async function createPaseoDaemon(
   });
   const initialAgentManagerState = providerSnapshotManager.getAgentManagerProviderState();
   const questionStore = new QuestionStore(path.join(config.paseoHome, "questions"));
+  const durableTimelineStore = new FileAgentTimelineStore(
+    path.join(config.paseoHome, "agent-timelines"),
+  );
   const agentManager = new AgentManager({
     clients: initialAgentManagerState.clients,
     providerDefinitions: initialAgentManagerState.providerDefinitions,
@@ -938,6 +942,7 @@ export async function createPaseoDaemon(
     },
     mcpAuthToken: agentMcpAuthToken,
     questionStore,
+    durableTimelineStore,
     logger,
   });
   const questionWaitSocket = createQuestionWaitSocket({

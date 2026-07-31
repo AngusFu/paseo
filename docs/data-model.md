@@ -52,6 +52,8 @@ $PASEO_HOME/
 ├── agents/
 │   └── {sanitized-cwd}/
 │       └── {agentId}.json               # One file per agent
+├── agent-timelines/
+│   └── {agentId}.json                   # Durable projected timeline rows (epoch/nextSeq/rows)
 ├── schedules/
 │   └── {scheduleId}.json                # One file per schedule
 ├── questions/
@@ -73,7 +75,26 @@ The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` b
 
 ---
 
-## 1. Agent Record
+## 1. Agent Timeline (durable)
+
+**Path:** `$PASEO_HOME/agent-timelines/{agentId}.json`
+
+Projected timeline rows written by the daemon as the live stream commits. On daemon restart,
+`AgentManager` reseeds the in-memory timeline from this file when present so clients do not fall
+back to a sparse provider-history rebuild (important for `cursor-print`, whose Cursor `store.db`
+history is often summarized and tool-incomplete).
+
+| Field     | Type                 | Description                                       |
+| --------- | -------------------- | ------------------------------------------------- |
+| `epoch`   | `string` (UUID)      | Timeline epoch; changes invalidate client cursors |
+| `nextSeq` | `number`             | Next sequence number to allocate                  |
+| `rows`    | `AgentTimelineRow[]` | Committed `{ seq, timestamp, item }` rows         |
+
+Archive/delete of an agent removes the corresponding timeline file.
+
+---
+
+## 2. Agent Record
 
 **Path:** `$PASEO_HOME/agents/{project-dir}/{agentId}.json`
 
@@ -174,7 +195,7 @@ Terminal activity contributes to the workspace status bucket **per `workspaceId`
 
 ---
 
-## 2. Daemon Configuration
+## 3. Daemon Configuration
 
 **Path:** `$PASEO_HOME/config.json`
 
@@ -276,7 +297,7 @@ Paseo uses these paths under the configured OpenAI base URL:
 
 ---
 
-## 3. Schedule
+## 4. Schedule
 
 **Path:** `$PASEO_HOME/schedules/{id}.json`
 
@@ -326,7 +347,7 @@ One file per schedule. ID is 8 hex characters.
 
 ---
 
-## 4. Chat
+## 5. Chat
 
 **Path:** `$PASEO_HOME/chat/rooms.json`
 
@@ -363,7 +384,7 @@ Single file containing all rooms and messages.
 
 ---
 
-## 5. Loop
+## 6. Loop
 
 **Path:** `$PASEO_HOME/loops/loops.json`
 
@@ -452,7 +473,7 @@ Single file containing an array of all loop records. Writes are direct (not atom
 
 ---
 
-## 6. Project Registry
+## 7. Project Registry
 
 **Path:** `$PASEO_HOME/projects/projects.json`
 
@@ -480,7 +501,7 @@ workspace together with its owning project.
 
 ---
 
-## 7. Workspace Registry
+## 8. Workspace Registry
 
 **Path:** `$PASEO_HOME/projects/workspaces.json`
 
@@ -513,7 +534,7 @@ than treating it as valid.
 
 ---
 
-## 8. Push Token Store
+## 9. Push Token Store
 
 **Path:** `$PASEO_HOME/push-tokens.json`
 
@@ -527,7 +548,7 @@ Simple set of Expo push notification tokens. Loaded with permissive parsing (fil
 
 ---
 
-## 9. Daemon meta files
+## 10. Daemon meta files
 
 These small files are not validated as full Zod schemas but are persisted under `$PASEO_HOME` for daemon identity and runtime coordination.
 

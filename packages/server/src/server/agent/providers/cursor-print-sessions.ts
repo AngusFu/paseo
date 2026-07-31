@@ -3,10 +3,13 @@ import { readdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-import type { ImportableProviderSession } from "../agent-sdk-types.js";
+import type { AgentTimelineItem, ImportableProviderSession } from "../agent-sdk-types.js";
 import { execCommand } from "../../../utils/spawn.js";
 
 const USER_QUERY_RE = /<user_query>\s*([\s\S]*?)\s*<\/user_query>/i;
+/** Known root-blob hash fields: message refs use 0x0a; siblings share the 0x20 + 32-byte shape. */
+const ROOT_HASH_FIELD_TAGS = new Set([0x0a, 0x12, 0x1a, 0x22, 0x2a]);
+const CONVERSATION_SUMMARY_RE = /^your conversation was summarized due to context constraints/i;
 
 export interface CursorPrintSessionInfo {
   id: string;
@@ -69,16 +72,109 @@ export async function listCursorWorkspaceChatDirs(
   return found;
 }
 
-async function sqliteQuery(dbPath: string, sql: string): Promise<string> {
+async function sqliteQuery(
+  dbPath: string,
+  sql: string,
+  options?: { maxBuffer?: number },
+): Promise<string> {
   try {
     const result = await execCommand("sqlite3", [dbPath, sql], {
       timeout: 5_000,
-      maxBuffer: 4 * 1024 * 1024,
+      maxBuffer: options?.maxBuffer ?? 4 * 1024 * 1024,
     });
     return result.stdout.trim();
   } catch {
     return "";
   }
+}
+
+function extractRootMessageIds(rootBytes: Buffer): string[] {
+  const childIds: string[] = [];
+  let i = 0;
+  while (i < rootBytes.length) {
+    if (
+      i + 33 < rootBytes.length &&
+      rootBytes[i + 1] === 0x20 &&
+      ROOT_HASH_FIELD_TAGS.has(rootBytes[i] ?? -1)
+    ) {
+      if (rootBytes[i] === 0x0a) {
+        childIds.push(rootBytes.subarray(i + 2, i + 34).toString("hex"));
+      }
+      i += 34;
+      continue;
+    }
+    i += 1;
+  }
+  return childIds;
+}
+
+function contentTextParts(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  const parts: string[] = [];
+  for (const item of content) {
+    if (
+      item &&
+      typeof item === "object" &&
+      "type" in item &&
+      (item as { type?: unknown }).type === "text" &&
+      "text" in item &&
+      typeof (item as { text?: unknown }).text === "string"
+    ) {
+      parts.push((item as { text: string }).text);
+    }
+  }
+  return parts.join("");
+}
+
+function contentReasoningParts(content: unknown): string {
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  const parts: string[] = [];
+  for (const item of content) {
+    if (
+      item &&
+      typeof item === "object" &&
+      "type" in item &&
+      (item as { type?: unknown }).type === "reasoning" &&
+      "text" in item &&
+      typeof (item as { text?: unknown }).text === "string"
+    ) {
+      const text = (item as { text: string }).text.trim();
+      if (text) {
+        parts.push(text);
+      }
+    }
+  }
+  return parts.join("\n");
+}
+
+export function isSkippableHydratedUserText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return true;
+  }
+  if (CONVERSATION_SUMMARY_RE.test(trimmed)) {
+    return true;
+  }
+  const lower = trimmed.toLowerCase();
+  // Only drop known Cursor/system envelopes. Do not treat arbitrary `<...>`
+  // (e.g. `<paseo_guidance>` inside a real `<user_query>`) as skippable.
+  return (
+    lower.startsWith("<user_info>") ||
+    lower.startsWith("<open_and_recently_viewed_files>") ||
+    lower.startsWith("<attached_files>") ||
+    lower.startsWith("<agent_transcripts>") ||
+    lower.startsWith("<hooks_context>") ||
+    lower.startsWith("<agent_skills>") ||
+    lower.startsWith("<mcp_file_system") ||
+    lower.startsWith("<claude_code_")
+  );
 }
 
 function decodeHexOrRaw(value: string): string {
@@ -185,27 +281,26 @@ async function readConversationBlobs(
   if (!rootBlobId) {
     return [];
   }
+  // Read the full root blob — Cursor roots commonly exceed 8 KiB after long sessions.
   const rootHex = await sqliteQuery(
     dbPath,
-    `SELECT hex(substr(data,1,8192)) FROM blobs WHERE id='${rootBlobId.replace(/'/g, "''")}' LIMIT 1;`,
+    `SELECT hex(data) FROM blobs WHERE id='${rootBlobId.replace(/'/g, "''")}' LIMIT 1;`,
+    { maxBuffer: 32 * 1024 * 1024 },
   );
   if (!rootHex) {
     return [];
   }
   const rootBytes = Buffer.from(rootHex, "hex");
-  const childIds: string[] = [];
-  let i = 0;
-  while (i + 33 < rootBytes.length && rootBytes[i] === 0x0a && rootBytes[i + 1] === 0x20) {
-    childIds.push(rootBytes.subarray(i + 2, i + 34).toString("hex"));
-    i += 34;
-  }
+  const childIds = extractRootMessageIds(rootBytes);
   if (childIds.length === 0) {
     return [];
   }
 
   const slice = childIds.slice(0, limit);
   const idsSql = slice.map((id) => `'${id}'`).join(",");
-  const out = await sqliteQuery(dbPath, `SELECT id, data FROM blobs WHERE id IN (${idsSql});`);
+  const out = await sqliteQuery(dbPath, `SELECT id, data FROM blobs WHERE id IN (${idsSql});`, {
+    maxBuffer: 64 * 1024 * 1024,
+  });
   if (!out) {
     return [];
   }
@@ -238,6 +333,107 @@ async function readConversationBlobs(
     }
   }
   return messages;
+}
+
+function readRecordString(record: Record<string, unknown>, keys: readonly string[]): string | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function collectToolResultsByCallId(
+  messages: Array<{ role: string; content: unknown }>,
+): Map<string, unknown> {
+  const results = new Map<string, unknown>();
+  for (const message of messages) {
+    if (message.role !== "tool" || !Array.isArray(message.content)) {
+      continue;
+    }
+    for (const part of message.content) {
+      if (!part || typeof part !== "object") {
+        continue;
+      }
+      const record = part as Record<string, unknown>;
+      if (record.type !== "tool-result") {
+        continue;
+      }
+      const callId = readRecordString(record, ["toolCallId", "tool_call_id"]);
+      if (!callId) {
+        continue;
+      }
+      results.set(callId, record.result ?? record.output ?? null);
+    }
+  }
+  return results;
+}
+
+/**
+ * Project Cursor store.db conversation blobs into Paseo timeline items for resume hydration.
+ * Skips system-injected user envelopes; maps tool-call / tool-result pairs into completed tool_call rows.
+ */
+export function projectCursorPrintMessagesToTimeline(
+  messages: Array<{ role: string; content: unknown }>,
+): AgentTimelineItem[] {
+  const toolResults = collectToolResultsByCallId(messages);
+  const items: AgentTimelineItem[] = [];
+
+  for (const message of messages) {
+    if (message.role === "user") {
+      const summary = extractCursorUserSummary(message.content);
+      if (!summary || isSkippableHydratedUserText(summary)) {
+        continue;
+      }
+      items.push({ type: "user_message", text: summary });
+      continue;
+    }
+
+    if (message.role !== "assistant") {
+      continue;
+    }
+
+    const reasoning = contentReasoningParts(message.content);
+    if (reasoning) {
+      items.push({ type: "reasoning", text: reasoning });
+    }
+
+    const text = contentTextParts(message.content).trim();
+    if (text) {
+      items.push({ type: "assistant_message", text });
+    }
+
+    if (!Array.isArray(message.content)) {
+      continue;
+    }
+    for (const part of message.content) {
+      if (!part || typeof part !== "object") {
+        continue;
+      }
+      const record = part as Record<string, unknown>;
+      if (record.type !== "tool-call" && record.type !== "tool_call") {
+        continue;
+      }
+      const callId =
+        readRecordString(record, ["toolCallId", "tool_call_id"]) ??
+        `cursor-history-${items.length}`;
+      const name = readRecordString(record, ["toolName", "name"]) ?? "Tool";
+      const input = record.args ?? record.input ?? record.arguments ?? null;
+      const output = toolResults.has(callId) ? toolResults.get(callId) : null;
+      items.push({
+        type: "tool_call",
+        callId,
+        name,
+        status: "completed",
+        error: null,
+        detail: { type: "unknown", input, output },
+      });
+    }
+  }
+
+  return items;
 }
 
 export async function listCursorPrintSessions(
@@ -365,6 +561,24 @@ export async function readCursorPrintHistory(options: {
   homeDir?: string;
   env?: NodeJS.ProcessEnv;
 }): Promise<Array<{ role: "user" | "assistant"; text: string }>> {
+  const items = await readCursorPrintTimelineHistory(options);
+  const history: Array<{ role: "user" | "assistant"; text: string }> = [];
+  for (const item of items) {
+    if (item.type === "user_message") {
+      history.push({ role: "user", text: item.text });
+    } else if (item.type === "assistant_message") {
+      history.push({ role: "assistant", text: item.text });
+    }
+  }
+  return history;
+}
+
+export async function readCursorPrintTimelineHistory(options: {
+  cwd: string;
+  sessionId: string;
+  homeDir?: string;
+  env?: NodeJS.ProcessEnv;
+}): Promise<AgentTimelineItem[]> {
   const dir = await findCursorPrintSessionDir(options.cwd, options.sessionId, {
     homeDir: options.homeDir,
     env: options.env,
@@ -374,22 +588,8 @@ export async function readCursorPrintHistory(options: {
   }
   const dbPath = join(dir, "store.db");
   const meta = await readSessionMeta(dbPath);
-  const messages = await readConversationBlobs(dbPath, meta.rootBlobId, 200);
-  const history: Array<{ role: "user" | "assistant"; text: string }> = [];
-  for (const message of messages) {
-    if (message.role !== "user" && message.role !== "assistant") {
-      continue;
-    }
-    const text =
-      message.role === "user"
-        ? extractCursorUserSummary(message.content) || messageContentText(message.content).trim()
-        : messageContentText(message.content).trim();
-    if (!text) {
-      continue;
-    }
-    history.push({ role: message.role, text });
-  }
-  return history;
+  const messages = await readConversationBlobs(dbPath, meta.rootBlobId, 500);
+  return projectCursorPrintMessagesToTimeline(messages);
 }
 
 export function isCursorResumeFailure(error: string): boolean {

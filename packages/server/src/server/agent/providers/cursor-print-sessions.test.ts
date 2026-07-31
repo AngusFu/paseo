@@ -11,8 +11,18 @@ import {
   isCursorResumeFailure,
   listCursorPrintImportableSessions,
   listCursorPrintSessions,
+  projectCursorPrintMessagesToTimeline,
+  readCursorPrintTimelineHistory,
   resolveAbsoluteWorkspace,
 } from "./cursor-print-sessions.js";
+
+function blobId(label: string): string {
+  return createHash("sha256").update(label).digest("hex");
+}
+
+function hashField(tag: number, idHex: string): Buffer {
+  return Buffer.concat([Buffer.from([tag, 0x20]), Buffer.from(idHex, "hex")]);
+}
 
 async function writeFixtureSession(options: {
   homeDir: string;
@@ -26,8 +36,12 @@ async function writeFixtureSession(options: {
   await mkdir(dir, { recursive: true });
   const dbPath = join(dir, "store.db");
 
-  const userBlobId = createHash("sha256").update("user").digest("hex");
-  const rootBlobId = createHash("sha256").update("root").digest("hex");
+  const userBlobId = blobId("user");
+  const systemBlobId = blobId("system-user");
+  const assistantBlobId = blobId("assistant");
+  const toolBlobId = blobId("tool");
+  const siblingBlobId = blobId("sibling");
+  const rootBlobId = blobId("root");
   const meta = Buffer.from(
     JSON.stringify({
       agentId: options.sessionId,
@@ -37,19 +51,55 @@ async function writeFixtureSession(options: {
     }),
     "utf8",
   ).toString("hex");
+  const systemJson = JSON.stringify({
+    role: "user",
+    content: "<user_info>\nhidden system dump\n</user_info>",
+  });
   const userJson = JSON.stringify({
     role: "user",
     content: [{ type: "text", text: `<user_query>\n${options.userText}\n</user_query>` }],
   });
-  // Root blob: field-1 entry (0x0a 0x20 + 32-byte hash of user blob)
-  const userHash = Buffer.from(userBlobId, "hex");
-  const rootBytes = Buffer.concat([Buffer.from([0x0a, 0x20]), userHash]);
+  const assistantJson = JSON.stringify({
+    role: "assistant",
+    content: [
+      { type: "text", text: "working on it" },
+      {
+        type: "tool-call",
+        toolCallId: "call_1",
+        toolName: "Shell",
+        args: { command: "ls" },
+      },
+    ],
+  });
+  const toolJson = JSON.stringify({
+    role: "tool",
+    content: [
+      {
+        type: "tool-result",
+        toolCallId: "call_1",
+        toolName: "Shell",
+        result: "ok\n",
+      },
+    ],
+  });
+  // Root includes a non-message 0x1a field between messages so naive parsers stop early.
+  const rootBytes = Buffer.concat([
+    hashField(0x0a, systemBlobId),
+    hashField(0x0a, userBlobId),
+    hashField(0x1a, siblingBlobId),
+    hashField(0x0a, assistantBlobId),
+    hashField(0x0a, toolBlobId),
+  ]);
 
   const sql = [
     "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);",
     "CREATE TABLE blobs (id TEXT PRIMARY KEY, data BLOB);",
     `INSERT INTO meta(key, value) VALUES ('0', '${meta}');`,
+    `INSERT INTO blobs(id, data) VALUES ('${systemBlobId}', X'${Buffer.from(systemJson, "utf8").toString("hex")}');`,
     `INSERT INTO blobs(id, data) VALUES ('${userBlobId}', X'${Buffer.from(userJson, "utf8").toString("hex")}');`,
+    `INSERT INTO blobs(id, data) VALUES ('${assistantBlobId}', X'${Buffer.from(assistantJson, "utf8").toString("hex")}');`,
+    `INSERT INTO blobs(id, data) VALUES ('${toolBlobId}', X'${Buffer.from(toolJson, "utf8").toString("hex")}');`,
+    `INSERT INTO blobs(id, data) VALUES ('${siblingBlobId}', X'${Buffer.from("{}", "utf8").toString("hex")}');`,
     `INSERT INTO blobs(id, data) VALUES ('${rootBlobId}', X'${rootBytes.toString("hex")}');`,
   ].join("\n");
   await execCommand("sqlite3", [dbPath, sql], { timeout: 5_000 });
@@ -105,6 +155,77 @@ describe("cursor-print-sessions", () => {
         cwd: resolveAbsoluteWorkspace(workDir),
         firstPromptPreview: expect.stringContaining("hello from fixture"),
       }),
+    ]);
+  });
+
+  test("projectCursorPrintMessagesToTimeline skips system dumps and maps tools", () => {
+    const items = projectCursorPrintMessagesToTimeline([
+      { role: "user", content: "<user_info>\nhidden</user_info>" },
+      {
+        role: "user",
+        content: [{ type: "text", text: "<user_query>\nfix it\n</user_query>" }],
+      },
+      {
+        role: "user",
+        content:
+          "Your conversation was summarized due to context constraints. Here is the summary...",
+      },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "on it" },
+          { type: "tool-call", toolCallId: "t1", toolName: "Read", args: { path: "a.ts" } },
+        ],
+      },
+      {
+        role: "tool",
+        content: [{ type: "tool-result", toolCallId: "t1", toolName: "Read", result: "file" }],
+      },
+    ]);
+
+    expect(items).toEqual([
+      { type: "user_message", text: "fix it" },
+      { type: "assistant_message", text: "on it" },
+      {
+        type: "tool_call",
+        callId: "t1",
+        name: "Read",
+        status: "completed",
+        error: null,
+        detail: { type: "unknown", input: { path: "a.ts" }, output: "file" },
+      },
+    ]);
+  });
+
+  test("readCursorPrintTimelineHistory continues past non-message root fields", async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), "cursor-print-home-"));
+    const workDir = await mkdtemp(join(tmpdir(), "cursor-print-work-"));
+    await writeFixtureSession({
+      homeDir,
+      workDir,
+      sessionId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      title: "New Agent",
+      userText: "resume me",
+    });
+
+    const items = await readCursorPrintTimelineHistory({
+      cwd: workDir,
+      sessionId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      homeDir,
+      env: {},
+    });
+
+    expect(items).toEqual([
+      { type: "user_message", text: "resume me" },
+      { type: "assistant_message", text: "working on it" },
+      {
+        type: "tool_call",
+        callId: "call_1",
+        name: "Shell",
+        status: "completed",
+        error: null,
+        detail: { type: "unknown", input: { command: "ls" }, output: "ok\n" },
+      },
     ]);
   });
 });

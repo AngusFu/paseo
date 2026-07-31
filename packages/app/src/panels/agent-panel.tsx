@@ -82,6 +82,7 @@ import {
   useSubagentsForParent,
 } from "@/subagents";
 import { SubagentsTrack } from "@/subagents/track";
+import { TodosTrack } from "@/todos/track";
 import type { PendingPermission } from "@/types/shared";
 import type { StreamItem } from "@/types/stream";
 import { getInitDeferred, getInitKey } from "@/utils/agent-initialization";
@@ -1538,6 +1539,11 @@ function ActiveAgentComposer({
         onArchiveSubagent={handleArchiveSubagent}
         onArchiveFinished={handleHideFinishedProviderSubagents}
         onDetachSubagent={canDetachSubagents ? handleDetachSubagent : undefined}
+      />
+      <TodosTrack
+        serverId={serverId}
+        agentId={agentId}
+        stackedBelowTrack={subagentRows.length > 0}
       />
       <Composer
         agentId={agentId}

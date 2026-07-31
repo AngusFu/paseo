@@ -71,6 +71,8 @@ import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { MarkdownRenderer, type MarkdownStyles } from "@/components/markdown/renderer";
 import { resolveInlineImageSize } from "@/components/markdown/inline-image-size";
 import type { StreamItem, TodoEntry, UserMessageImageAttachment } from "@/types/stream";
+import { deriveTodoListPresentation } from "@/todos/presentation";
+import { TodoListRows } from "@/todos/todo-list-rows";
 import type { StreamLayoutItem } from "@/agent-stream/layout";
 import { segmentUserMessage } from "@/utils/user-message-segments";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
@@ -179,7 +181,6 @@ const MARKDOWN_ALLOWED_IMAGE_HANDLERS = [
 const MARKDOWN_TOP_LEVEL_MAX_EXCEEDED_ITEM = <Text key="dotdotdot">...</Text>;
 
 const ThemedMicVocal = withUnistyles(MicVocal);
-const ThemedTodoCheckIcon = withUnistyles(Check);
 const ThemedFileSymlinkIcon = withUnistyles(FileSymlink);
 const ThemedTriangleAlertIcon = withUnistyles(TriangleAlertIcon);
 const ThemedChevronRightIcon = withUnistyles(ChevronRight);
@@ -191,9 +192,6 @@ const foregroundMutedColorMapping = (theme: Theme) => ({
 });
 const mutedForegroundColorMapping = (theme: Theme) => ({
   color: theme.colors.mutedForeground,
-});
-const primaryForegroundColorMapping = (theme: Theme) => ({
-  color: theme.colors.primaryForeground,
 });
 const destructiveColorMapping = (theme: Theme) => ({ color: theme.colors.destructive });
 const WEB_TOOLCALL_SHIMMER_KEYFRAME_CSS = `
@@ -2446,105 +2444,9 @@ interface TodoListCardProps {
   collapseSignal?: CollapseSignal;
 }
 
-interface TodoListItemRowProps {
-  text: string;
-  status: TodoEntry["status"];
-  isCurrent: boolean;
-}
-
-function TodoListItemRow({ text, status, isCurrent }: TodoListItemRowProps) {
-  const completed = status === "completed";
-  const inProgress = status === "in_progress";
-  const badgeStyle = useMemo(
-    () => [
-      todoListCardStylesheet.radioBadge,
-      completed && todoListCardStylesheet.radioBadgeComplete,
-      inProgress && todoListCardStylesheet.radioBadgeInProgress,
-      !completed && !inProgress && todoListCardStylesheet.radioBadgePending,
-    ],
-    [completed, inProgress],
-  );
-  const textStyle = useMemo(
-    () => [
-      todoListCardStylesheet.itemText,
-      inProgress && todoListCardStylesheet.itemTextInProgress,
-      completed && todoListCardStylesheet.itemTextCompleted,
-    ],
-    [completed, inProgress],
-  );
-  const rowStyle = useMemo(
-    () => [todoListCardStylesheet.itemRow, isCurrent && todoListCardStylesheet.itemRowCurrent],
-    [isCurrent],
-  );
-  return (
-    <View style={rowStyle}>
-      <View style={badgeStyle}>
-        {completed ? (
-          <ThemedTodoCheckIcon size={10} uniProps={primaryForegroundColorMapping} />
-        ) : null}
-      </View>
-      <Text style={textStyle}>{text}</Text>
-    </View>
-  );
-}
-
 const todoListCardStylesheet = StyleSheet.create((theme) => ({
   detailsWrapper: {
     padding: theme.spacing[2],
-  },
-  list: {
-    gap: theme.spacing[1],
-  },
-  itemRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-    paddingVertical: theme.spacing[1],
-    paddingHorizontal: theme.spacing[2],
-    marginHorizontal: -theme.spacing[2],
-    borderRadius: theme.borderRadius.md,
-  },
-  itemRowCurrent: {
-    backgroundColor: theme.colors.surface2,
-  },
-  radioBadge: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: theme.borderWidth[2],
-    borderColor: "transparent",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radioBadgePending: {
-    borderColor: theme.colors.foregroundMuted,
-    backgroundColor: "transparent",
-    opacity: 0.55,
-  },
-  radioBadgeInProgress: {
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.accent,
-  },
-  radioBadgeComplete: {
-    borderColor: theme.colors.foregroundMuted,
-    backgroundColor: theme.colors.foregroundMuted,
-    opacity: 0.9,
-  },
-  itemText: {
-    flex: 1,
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.sm,
-  },
-  itemTextInProgress: {
-    fontWeight: theme.fontWeight.medium,
-  },
-  itemTextCompleted: {
-    color: theme.colors.foregroundMuted,
-    textDecorationLine: "line-through",
-  },
-  emptyText: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.sm,
   },
 }));
 
@@ -2555,29 +2457,7 @@ export const TodoListCard = memo(function TodoListCard({
 }: TodoListCardProps) {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
-
-  const total = items.length;
-  const completedCount = useMemo(
-    () => items.reduce((count, item) => (item.completed ? count + 1 : count), 0),
-    [items],
-  );
-  // Current task = the in-progress row, or the first pending row if none is
-  // marked in progress. Drives both the header preview and the row highlight.
-  const currentIndex = useMemo(() => {
-    const inProgress = items.findIndex((item) => item.status === "in_progress");
-    if (inProgress !== -1) {
-      return inProgress;
-    }
-    return items.findIndex((item) => !item.completed);
-  }, [items]);
-  const currentTask = currentIndex === -1 ? undefined : items[currentIndex]?.text;
-  const secondaryLabel = useMemo(() => {
-    if (total === 0) {
-      return undefined;
-    }
-    const progress = `${completedCount}/${total}`;
-    return currentTask ? `${progress} · ${currentTask}` : progress;
-  }, [total, completedCount, currentTask]);
+  const { secondaryLabel } = deriveTodoListPresentation(items);
 
   const handleToggle = useCallback(() => {
     setIsExpanded((prev) => !prev);
@@ -2595,23 +2475,10 @@ export const TodoListCard = memo(function TodoListCard({
   const renderDetails = useCallback(() => {
     return (
       <View style={todoListCardStylesheet.detailsWrapper}>
-        <View style={todoListCardStylesheet.list}>
-          {items.length === 0 ? (
-            <Text style={todoListCardStylesheet.emptyText}>{t("message.todo.empty")}</Text>
-          ) : (
-            items.map((item, index) => (
-              <TodoListItemRow
-                key={item.text}
-                text={item.text}
-                status={item.status}
-                isCurrent={index === currentIndex}
-              />
-            ))
-          )}
-        </View>
+        <TodoListRows items={items} />
       </View>
     );
-  }, [items, currentIndex, t]);
+  }, [items]);
 
   return (
     <ExpandableBadge

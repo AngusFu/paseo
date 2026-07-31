@@ -85,6 +85,8 @@ import {
   parseACPAutoAcceptFeatureValue,
 } from "./acp-agent.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
+import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
+import { materializeProviderImage } from "./provider-image-output.js";
 
 export const CURSOR_PRINT_PROVIDER_ID = "cursor-print";
 /** Prefer auto-review: many orgs disable --force / YOLO. */
@@ -235,6 +237,8 @@ interface ActiveTurn {
   promptText: string;
   /** Raw user text for timeline user_message / retries. */
   userText: string;
+  /** Materialized image paths for Cursor CLI `--image` (resume retries reuse these). */
+  imagePaths: string[];
 }
 
 function isPlanLikePrintMode(modeId: string): boolean {
@@ -249,14 +253,56 @@ function readString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function promptToText(prompt: AgentPromptInput): string {
+/**
+ * Convert a Paseo prompt into Cursor CLI inputs.
+ * Images are materialized once (content-hash path reuse) and attached two ways:
+ * 1. `--image <path>` (native Cursor headless attach)
+ * 2. `@<path>` in the prompt text (so Read/@-file still works if --image is ignored)
+ * Other attachments become text. Timeline `user_message` keeps the text only.
+ */
+export function convertCursorPrintPrompt(prompt: AgentPromptInput): {
+  text: string;
+  imagePaths: string[];
+} {
   if (typeof prompt === "string") {
-    return prompt;
+    return { text: prompt, imagePaths: [] };
   }
-  return prompt
-    .flatMap((block) => (block.type === "text" ? [block.text] : []))
-    .join("\n")
-    .trim();
+
+  const textParts: string[] = [];
+  const imagePaths: string[] = [];
+  const seenImagePaths = new Set<string>();
+
+  for (const block of prompt) {
+    if (block.type === "text") {
+      textParts.push(block.text);
+      continue;
+    }
+    if (block.type === "image") {
+      try {
+        const materialized = materializeProviderImage({
+          data: block.data,
+          mimeType: block.mimeType,
+        });
+        if (!seenImagePaths.has(materialized.path)) {
+          seenImagePaths.add(materialized.path);
+          imagePaths.push(materialized.path);
+          // Dual path: Cursor @-file mention in addition to --image.
+          textParts.push(`@${materialized.path}`);
+        }
+      } catch (error) {
+        textParts.push(
+          `[Image attachment omitted: failed to write local file (${toDiagnosticErrorMessage(error)})]`,
+        );
+      }
+      continue;
+    }
+    textParts.push(renderPromptAttachmentAsText(block));
+  }
+
+  return {
+    text: textParts.join("\n\n").trim(),
+    imagePaths,
+  };
 }
 
 function normalizeModeId(modeId: string | null | undefined): string {
@@ -354,6 +400,7 @@ export function buildTurnArgs(options: {
   resumeChatId: string | null;
   workspace: string;
   prompt: string;
+  imagePaths?: readonly string[];
 }): string[] {
   const workspace = resolveAbsoluteWorkspace(options.workspace);
   const args = [
@@ -387,6 +434,10 @@ export function buildTurnArgs(options: {
   }
   if (options.model) {
     args.push("--model", options.model);
+  }
+  // Hidden Cursor CLI flag: attach image(s) to a headless prompt (repeatable).
+  for (const imagePath of options.imagePaths ?? []) {
+    args.push("--image", imagePath);
   }
   args.push("--workspace", workspace, "--", options.prompt);
   return args;
@@ -938,13 +989,14 @@ export class CursorPrintAgentSession implements AgentSession {
 
     const turnId = randomUUID();
     const assistantMessageId = randomUUID();
-    const userText = promptToText(prompt);
+    const { text: userText, imagePaths } = convertCursorPrintPrompt(prompt);
     const cliPrompt = buildCursorPrintCliPrompt(userText, this.config);
     this.launchTurnProcess({
       turnId,
       assistantMessageId,
       userText,
       cliPrompt,
+      imagePaths,
       resumeChatId: this.chatId,
       allowResumeFallback: Boolean(this.chatId),
       emitTurnStarted: true,
@@ -958,6 +1010,7 @@ export class CursorPrintAgentSession implements AgentSession {
     assistantMessageId: string;
     userText: string;
     cliPrompt: string;
+    imagePaths: readonly string[];
     resumeChatId: string | null;
     allowResumeFallback: boolean;
     emitTurnStarted: boolean;
@@ -971,6 +1024,7 @@ export class CursorPrintAgentSession implements AgentSession {
       resumeChatId: options.resumeChatId,
       workspace: this.config.cwd,
       prompt: options.cliPrompt,
+      imagePaths: options.imagePaths,
     });
 
     this.logger.debug(
@@ -1007,6 +1061,7 @@ export class CursorPrintAgentSession implements AgentSession {
       allowResumeFallback: options.allowResumeFallback,
       promptText: options.cliPrompt,
       userText: options.userText,
+      imagePaths: [...options.imagePaths],
     };
     this.stdoutBuffer = "";
     this.stderrBuffer = "";
@@ -1659,6 +1714,7 @@ export class CursorPrintAgentSession implements AgentSession {
         assistantMessageId: turn.assistantMessageId,
         userText: turn.userText,
         cliPrompt: turn.promptText,
+        imagePaths: turn.imagePaths,
         resumeChatId: null,
         allowResumeFallback: false,
         emitTurnStarted: false,

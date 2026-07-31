@@ -1,6 +1,6 @@
 /* eslint-disable max-nested-callbacks -- fake spawn + event collectors nest naturally */
 import { EventEmitter } from "node:events";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -15,6 +15,8 @@ import {
   buildCursorPrintAutoAcceptFeature,
   buildCursorPrintCliPrompt,
   buildCursorPrintPromptPointer,
+  buildTurnArgs,
+  convertCursorPrintPrompt,
   normalizeCursorPrintSessionConfig,
   writeCursorPrintGuidanceFileForDaemon,
   type CursorPrintLaunch,
@@ -25,6 +27,12 @@ import {
   groupCursorPrintModels,
 } from "./cursor-print-models.js";
 import { ACP_AUTO_ACCEPT_FEATURE_ID } from "./acp-agent.js";
+
+const ONE_BY_ONE_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+/** Distinct 1×1 red PNG so content-hash paths differ from ONE_BY_ONE_PNG_BASE64. */
+const RED_ONE_BY_ONE_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 const GROK_MODELS_STDOUT = [
   "Available models",
@@ -1163,5 +1171,122 @@ describe("CursorPrintAgentClient", () => {
     await vi.waitFor(() => {
       expect(stdinChunks.join("")).toContain('"approved"');
     });
+  });
+
+  test("convertCursorPrintPrompt materializes images once and dedupes identical bytes", () => {
+    const first = convertCursorPrintPrompt([
+      { type: "text", text: "look at these" },
+      { type: "image", data: ONE_BY_ONE_PNG_BASE64, mimeType: "image/png" },
+      { type: "image", data: ONE_BY_ONE_PNG_BASE64, mimeType: "image/png" },
+      { type: "image", data: RED_ONE_BY_ONE_PNG_BASE64, mimeType: "image/png" },
+    ]);
+
+    expect(first.imagePaths).toHaveLength(2);
+    expect(first.imagePaths[0]).not.toEqual(first.imagePaths[1]);
+    expect(first.text).toBe(
+      ["look at these", `@${first.imagePaths[0]}`, `@${first.imagePaths[1]}`].join("\n\n"),
+    );
+    for (const imagePath of first.imagePaths) {
+      expect(existsSync(imagePath)).toBe(true);
+      expect(imagePath).toMatch(/paseo-attachments(?:-[^/\\]+)?[/\\].+\.png$/);
+    }
+
+    const second = convertCursorPrintPrompt([
+      { type: "image", data: ONE_BY_ONE_PNG_BASE64, mimeType: "image/png" },
+    ]);
+    expect(second.imagePaths).toEqual([first.imagePaths[0]]);
+    expect(second.text).toBe(`@${first.imagePaths[0]}`);
+  });
+
+  test("buildTurnArgs repeats --image for each materialized path", () => {
+    const args = buildTurnArgs({
+      extraArgs: [],
+      modeId: "force",
+      model: "composer-2.5",
+      resumeChatId: null,
+      workspace: "/tmp/project",
+      prompt: "see images",
+      imagePaths: ["/tmp/a.png", "/tmp/b.png"],
+    });
+
+    expect(args).toEqual([
+      "--print",
+      "--output-format",
+      "stream-json",
+      "--stream-partial-output",
+      "--trust",
+      "--force",
+      "--model",
+      "composer-2.5",
+      "--image",
+      "/tmp/a.png",
+      "--image",
+      "/tmp/b.png",
+      "--workspace",
+      "/tmp/project",
+      "--",
+      "see images",
+    ]);
+  });
+
+  test("startTurn passes --image paths for prompt image blocks", async () => {
+    const { spawn, launches } = createFakeSpawn((child) => {
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "system",
+          subtype: "init",
+          session_id: "chat-img",
+          model: "composer-2.5",
+        })}\n`,
+      );
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "ok",
+          session_id: "chat-img",
+        })}\n`,
+      );
+      child.emit("exit", 0, null);
+    });
+
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      spawn,
+      execModels: async () => GROK_MODELS_STDOUT,
+      runtimeSettings: {
+        command: { mode: "replace", argv: ["/bin/agent"] },
+      },
+    });
+    const session = await client.createSession({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      modeId: "force",
+      model: "composer-2.5",
+    });
+
+    const eventsPromise = collectUntil(session, (events) =>
+      events.some((event) => event.type === "turn_completed"),
+    );
+    await session.startTurn([
+      { type: "text", text: "what tickets are in the screenshot?" },
+      { type: "image", data: ONE_BY_ONE_PNG_BASE64, mimeType: "image/png" },
+      { type: "image", data: RED_ONE_BY_ONE_PNG_BASE64, mimeType: "image/png" },
+    ]);
+    await eventsPromise;
+
+    expect(launches).toHaveLength(1);
+    const args = launches[0]?.args ?? [];
+    const imageFlags = args.flatMap((arg, index) =>
+      arg === "--image" && typeof args[index + 1] === "string" ? [args[index + 1]!] : [],
+    );
+    expect(imageFlags).toHaveLength(2);
+    expect(imageFlags[0]).not.toEqual(imageFlags[1]);
+    const promptArg = args.at(-1) ?? "";
+    expect(promptArg).toContain("what tickets are in the screenshot?");
+    expect(promptArg).toContain(`@${imageFlags[0]}`);
+    expect(promptArg).toContain(`@${imageFlags[1]}`);
+    expect(JSON.stringify(args)).not.toContain(ONE_BY_ONE_PNG_BASE64);
   });
 });

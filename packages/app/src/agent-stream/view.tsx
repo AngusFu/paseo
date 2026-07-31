@@ -115,6 +115,7 @@ import type { WorkspaceComposerAttachment } from "@/attachments/types";
 import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { toErrorMessage } from "@/utils/error-messages";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
+import { selectLatestTodoListIdForHide } from "@/todos/select-latest";
 
 function renderLiveAuxiliaryNode(input: {
   pendingPermissions: ReactNode;
@@ -279,6 +280,21 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
 
 const EMPTY_STREAM_HEAD: StreamItem[] = [];
 const GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT = 200;
+
+function streamItemRefsEqual(left: readonly StreamItem[], right: readonly StreamItem[]): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
 
 function buildChatHistoryAttachment(input: {
   draftId: string;
@@ -587,16 +603,65 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     }
     const effectiveStreamItems = isActive ? streamItems : frozenStreamItemsRef.current;
     const effectiveStreamHead = isActive ? streamHead : frozenStreamHeadRef.current;
+    // Hide the latest todo_list from the timeline (live dock owns it). Reuse the
+    // prior filtered array ref when hide id / visible item refs are stable so
+    // model.ts WeakMap caches are not systematically invalidated.
+    const visibleStreamItemsCacheRef = useRef<{
+      source: readonly StreamItem[];
+      hiddenTodoListId: string | null;
+      visible: StreamItem[];
+    } | null>(null);
+    const visibleStreamItems = useMemo(() => {
+      const hiddenTodoListId = selectLatestTodoListIdForHide(effectiveStreamItems);
+      const cache = visibleStreamItemsCacheRef.current;
+      if (
+        cache &&
+        cache.source === effectiveStreamItems &&
+        cache.hiddenTodoListId === hiddenTodoListId
+      ) {
+        return cache.visible;
+      }
+
+      let next: StreamItem[];
+      if (!hiddenTodoListId) {
+        next = effectiveStreamItems;
+      } else {
+        const filtered = effectiveStreamItems.filter(
+          (item) => item.kind !== "todo_list" || item.id !== hiddenTodoListId,
+        );
+        next = filtered.length === effectiveStreamItems.length ? effectiveStreamItems : filtered;
+      }
+
+      if (
+        cache &&
+        cache.hiddenTodoListId === hiddenTodoListId &&
+        streamItemRefsEqual(cache.visible, next)
+      ) {
+        visibleStreamItemsCacheRef.current = {
+          source: effectiveStreamItems,
+          hiddenTodoListId,
+          visible: cache.visible,
+        };
+        return cache.visible;
+      }
+
+      visibleStreamItemsCacheRef.current = {
+        source: effectiveStreamItems,
+        hiddenTodoListId,
+        visible: next,
+      };
+      return next;
+    }, [effectiveStreamItems]);
     // Keep retained history outside the 48ms live-head flush path.
     const preparedToolCallHistory = useMemo(
-      () => prepareToolCallHistory(toolCallDetailLevel, effectiveStreamItems),
-      [effectiveStreamItems, toolCallDetailLevel],
+      () => prepareToolCallHistory(toolCallDetailLevel, visibleStreamItems),
+      [visibleStreamItems, toolCallDetailLevel],
     );
     const projectedToolCalls = useMemo(
       () =>
         projectToolCallDetailLevel({
           level: toolCallDetailLevel,
-          tail: effectiveStreamItems,
+          tail: visibleStreamItems,
           head: effectiveStreamHead ?? EMPTY_STREAM_HEAD,
           preparedHistory: preparedToolCallHistory,
           isTurnActive: context.status === "running",
@@ -604,7 +669,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [
         context.status,
         effectiveStreamHead,
-        effectiveStreamItems,
+        visibleStreamItems,
         preparedToolCallHistory,
         toolCallDetailLevel,
       ],

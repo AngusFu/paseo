@@ -1,6 +1,6 @@
 /* eslint-disable max-nested-callbacks -- fake spawn + event collectors nest naturally */
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -8,23 +8,24 @@ import { describe, expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import {
+  CURSOR_PRINT_AGENTS_BLOCK_BEGIN,
+  CURSOR_PRINT_AGENTS_BLOCK_END,
   CURSOR_PRINT_DEFAULT_MODE_ID,
-  CURSOR_PRINT_GUIDANCE_FILENAME,
   CURSOR_PRINT_PROVIDER_ID,
   CURSOR_PRINT_RUNTIME_GUIDANCE,
   CursorPrintAgentClient,
   buildCursorPrintAutoAcceptFeature,
+  buildCursorPrintAgentsBlock,
   buildCursorPrintCliPrompt,
-  buildCursorPrintGlobalRuleMarkdown,
   buildTurnArgs,
   readCursorPrintGuidanceMarkdown,
   convertCursorPrintPrompt,
   formatCursorPrintModelRejection,
   isCursorEmptyModelCatalogFailure,
   normalizeCursorPrintSessionConfig,
-  removeCursorPrintGlobalCursorRule,
-  resolveCursorPrintPromptFilePath,
+  resolveCursorPrintGlobalAgentsPath,
   writeCursorPrintGuidanceFileForDaemon,
+  writeCursorPrintGlobalAgentsBlock,
   type CursorPrintLaunch,
   type CursorPrintSpawn,
 } from "./cursor-print-agent.js";
@@ -929,56 +930,71 @@ describe("CursorPrintAgentClient", () => {
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("paseo question create");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("$PASEO_AGENT_ID");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("AskUserQuestion");
-    // Host guidance is injected via ~/.cursor/rules alwaysApply at daemon boot.
+    // Host guidance is injected via ~/AGENTS.md managed block at daemon boot.
     expect(prompt).toBe("Agent system\n\ndo the thing");
     expect(prompt).not.toContain(CURSOR_PRINT_RUNTIME_GUIDANCE);
     expect(prompt).not.toContain("Daemon append");
     expect(prompt).not.toContain("paseo_guidance");
   });
 
-  test("guidance reference file defaults under paseo home", () => {
-    const prevPrompt = process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
-    delete process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
+  test("global AGENTS.md path defaults under home", () => {
+    const prev = process.env.PASEO_CURSOR_PRINT_AGENTS_FILE;
+    delete process.env.PASEO_CURSOR_PRINT_AGENTS_FILE;
     try {
-      const paseoHome = join(tmpdir(), "paseo-home-guidance");
-      expect(resolveCursorPrintPromptFilePath(paseoHome)).toBe(
-        join(paseoHome, "runtime", CURSOR_PRINT_GUIDANCE_FILENAME),
-      );
+      expect(resolveCursorPrintGlobalAgentsPath()).toMatch(/AGENTS\.md$/);
     } finally {
-      if (prevPrompt === undefined) {
-        delete process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
+      if (prev === undefined) {
+        delete process.env.PASEO_CURSOR_PRINT_AGENTS_FILE;
       } else {
-        process.env.PASEO_CURSOR_PRINT_PROMPT_FILE = prevPrompt;
+        process.env.PASEO_CURSOR_PRINT_AGENTS_FILE = prev;
       }
     }
   });
 
-  test("daemon boot writes guidance file + Cursor-global alwaysApply rule; CLI has no pointer", async () => {
-    const prevPrompt = process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
-    const prevRule = process.env.PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE;
+  test("writeCursorPrintGlobalAgentsBlock upserts managed block without clobbering other content", () => {
+    const dir = mkdtempSync(join(tmpdir(), "paseo-agents-"));
+    const agentsPath = join(dir, "AGENTS.md");
+    try {
+      writeFileSync(agentsPath, "# Keep me\n\nUser notes.\n", "utf8");
+      writeCursorPrintGlobalAgentsBlock("first body", agentsPath);
+      const once = readFileSync(agentsPath, "utf8");
+      expect(once).toContain("# Keep me");
+      expect(once).toContain("User notes.");
+      expect(once).toContain(CURSOR_PRINT_AGENTS_BLOCK_BEGIN);
+      expect(once).toContain("first body");
+      expect(once).toContain(CURSOR_PRINT_AGENTS_BLOCK_END);
+
+      writeCursorPrintGlobalAgentsBlock("second body", agentsPath);
+      const twice = readFileSync(agentsPath, "utf8");
+      expect(twice).toContain("# Keep me");
+      expect(twice).toContain("second body");
+      expect(twice).not.toContain("first body");
+      expect(twice).toBe(
+        `# Keep me\n\nUser notes.\n\n${buildCursorPrintAgentsBlock("second body")}\n`,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("daemon boot writes AGENTS.md managed block; CLI has no pointer", async () => {
+    const prevAgents = process.env.PASEO_CURSOR_PRINT_AGENTS_FILE;
     const dir = mkdtempSync(join(tmpdir(), "paseo-cursor-prompt-"));
-    const paseoHome = join(dir, "paseo-home");
-    const promptFilePath = join(paseoHome, "runtime", CURSOR_PRINT_GUIDANCE_FILENAME);
-    const globalRulePath = join(dir, "paseo-cursor-print-guidance.mdc");
-    delete process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
-    process.env.PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE = globalRulePath;
+    const agentsPath = join(dir, "AGENTS.md");
+    process.env.PASEO_CURSOR_PRINT_AGENTS_FILE = agentsPath;
     try {
       const written = await writeCursorPrintGuidanceFileForDaemon({
-        paseoHome,
         appendSystemPrompt: "Host append",
         includeProseStopPrevention: true,
-        globalRulePath,
+        agentsPath,
       });
-      expect(written.guidancePath).toBe(promptFilePath);
-      expect(written.globalRulePath).toBe(globalRulePath);
-      expect(readFileSync(promptFilePath, "utf8")).toContain(CURSOR_PRINT_RUNTIME_GUIDANCE);
-      expect(readFileSync(promptFilePath, "utf8")).toContain("Host append");
-      expect(readFileSync(promptFilePath, "utf8")).toContain("Decisions (Paseo)");
-      expect(readCursorPrintGuidanceMarkdown(promptFilePath)).toContain("Host append");
-      expect(readFileSync(globalRulePath, "utf8")).toBe(
-        buildCursorPrintGlobalRuleMarkdown(readFileSync(promptFilePath, "utf8").trim()),
-      );
-      expect(readFileSync(globalRulePath, "utf8")).toContain("alwaysApply: true");
+      expect(written.agentsPath).toBe(agentsPath);
+      const agents = readFileSync(agentsPath, "utf8");
+      expect(agents).toContain(CURSOR_PRINT_RUNTIME_GUIDANCE);
+      expect(agents).toContain("Host append");
+      expect(agents).toContain("Decisions (Paseo)");
+      expect(agents).toContain(CURSOR_PRINT_AGENTS_BLOCK_BEGIN);
+      expect(readCursorPrintGuidanceMarkdown(agentsPath)).toContain("Host append");
 
       const { spawn, launches } = createFakeSpawn((child) => {
         child.stdout.write(
@@ -1004,14 +1020,14 @@ describe("CursorPrintAgentClient", () => {
         systemPrompt: "Be concise.",
       });
 
-      const before = readFileSync(promptFilePath, "utf8");
+      const before = readFileSync(agentsPath, "utf8");
       const eventsPromise = collectUntil(session, (events) =>
         events.some((event) => event.type === "turn_completed"),
       );
       await session.startTurn("list files");
       const events = await eventsPromise;
 
-      expect(readFileSync(promptFilePath, "utf8")).toBe(before);
+      expect(readFileSync(agentsPath, "utf8")).toBe(before);
       expect(launches[0]?.args.at(-1)).toBe(
         buildCursorPrintCliPrompt("list files", { systemPrompt: "Be concise." }),
       );
@@ -1032,19 +1048,11 @@ describe("CursorPrintAgentClient", () => {
       expect(userEvent.item.text).not.toContain("Paseo cursor-print");
 
       await session.close();
-      removeCursorPrintGlobalCursorRule(globalRulePath);
-      expect(existsSync(globalRulePath)).toBe(false);
     } finally {
-      removeCursorPrintGlobalCursorRule(globalRulePath);
-      if (prevPrompt === undefined) {
-        delete process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
+      if (prevAgents === undefined) {
+        delete process.env.PASEO_CURSOR_PRINT_AGENTS_FILE;
       } else {
-        process.env.PASEO_CURSOR_PRINT_PROMPT_FILE = prevPrompt;
-      }
-      if (prevRule === undefined) {
-        delete process.env.PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE;
-      } else {
-        process.env.PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE = prevRule;
+        process.env.PASEO_CURSOR_PRINT_AGENTS_FILE = prevAgents;
       }
       rmSync(dir, { recursive: true, force: true });
     }

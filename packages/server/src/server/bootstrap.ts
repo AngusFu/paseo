@@ -954,16 +954,16 @@ export async function createPaseoDaemon(
   await agentStorage.initialize();
   logger.info({ elapsed: elapsed() }, "Agent storage initialized");
   try {
-    const { guidancePath, globalRulePath } = await writeCursorPrintGuidanceFileForDaemon({
+    const { agentsPath } = await writeCursorPrintGuidanceFileForDaemon({
       paseoHome: config.paseoHome,
       appendSystemPrompt: config.appendSystemPrompt,
     });
     logger.info(
-      { path: guidancePath, globalRulePath, elapsed: elapsed() },
-      "Wrote cursor-print guidance file and Cursor-global alwaysApply rule",
+      { agentsPath, elapsed: elapsed() },
+      "Wrote cursor-print host guidance into global AGENTS.md",
     );
   } catch (error) {
-    logger.warn({ err: error }, "Failed to write cursor-print guidance file");
+    logger.warn({ err: error }, "Failed to write cursor-print host guidance into AGENTS.md");
   }
   await bootstrapWorkspaceRegistries({
     serverId,
@@ -1777,9 +1777,6 @@ export async function createPaseoDaemon(
   };
 
   const stop = async () => {
-    // Keep ~/.cursor/rules/paseo-cursor-print-guidance.mdc across stop — multiple
-    // daemons (dev + desktop) share that path; removing here races the other.
-    // Boot always rewrites the file.
     workspaceReconciliation.dispose();
     scriptHealthMonitor.stop();
     clearInterval(idleAgentCollectionTimer);

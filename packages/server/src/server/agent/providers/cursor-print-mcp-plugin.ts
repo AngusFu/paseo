@@ -48,8 +48,8 @@ export function toCursorPrintMcpServerEntry(config: McpServerConfig): CursorPrin
 
 /**
  * Materialize a temporary Cursor plugin for cursor-print MCP only.
- * Host guidance is injected at daemon boot into `~/.cursor/rules/` (see
- * `writeCursorPrintGlobalCursorRule`), not via this plugin.
+ * Host guidance is injected at daemon boot into `~/AGENTS.md` (see
+ * `writeCursorPrintGlobalAgentsBlock`), not via this plugin.
  *
  * Caller must `cleanup()` when done. Returns null when no servers are provided.
  */

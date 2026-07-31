@@ -1,12 +1,11 @@
 import { type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Logger } from "pino";
 
 import { McpCliService } from "../../mcp-cli/service.js";
-import { resolvePaseoHome } from "../../paseo-home.js";
 import { PROSE_STOP_PREVENTION_PROMPT } from "../prose-stop/prevention-prompt.js";
 
 import type {
@@ -102,15 +101,14 @@ const CURSOR_PRINT_DEFAULT_COMMAND = ["agent"] as const;
 const MODELS_TIMEOUT_MS = 30_000;
 
 /**
- * Cursor CLI has no reliable append-system-prompt. Daemon boot writes host
- * guidance to `~/.cursor/rules/paseo-cursor-print-guidance.mdc` (alwaysApply;
- * reaches `--print` via LocalCursorRulesService ancestor walk) and a reference
- * copy under `$PASEO_HOME/runtime/cursor-print-guidance.md`. Per session, a temp
- * `--plugin-dir` carries daemon MCP only (`.mcp.json`). CLI turns keep only
- * per-agent systemPrompt + user text. Timeline user_message stays raw.
+ * Cursor CLI has no reliable append-system-prompt. Daemon boot upserts host
+ * guidance into a managed block in `~/AGENTS.md` (LocalCursorRulesService walks
+ * ancestors and loads AGENTS.md as alwaysApply — reaches `--print`, unlike
+ * `--plugin-dir` rules). Per session, a temp `--plugin-dir` carries daemon MCP
+ * only (`.mcp.json`). CLI turns keep only per-agent systemPrompt + user text.
+ * Timeline user_message stays raw.
  *
- * Override paths with PASEO_CURSOR_PRINT_PROMPT_FILE /
- * PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE (tests / non-default hosts).
+ * Override path with PASEO_CURSOR_PRINT_AGENTS_FILE (tests / non-default hosts).
  */
 export const CURSOR_PRINT_RUNTIME_GUIDANCE = [
   "Paseo cursor-print: daemon MCP (paseo) is injected via --plugin-dir. Prefer MCP tools (ask_question, create_agent, …) when GetMcpTools lists them.",
@@ -121,96 +119,69 @@ export const CURSOR_PRINT_RUNTIME_GUIDANCE = [
   "Permission notes: Paseo Auto Approve only auto-answers Cursor interaction_query over stdin; it cannot enable org-disabled --force / Run Everything. Prefer Auto-review mode; do not rely on Force/YOLO when the org blocks it.",
 ].join("\n");
 
-export const CURSOR_PRINT_GUIDANCE_FILENAME = "cursor-print-guidance.md";
-export const CURSOR_PRINT_GLOBAL_RULE_FILENAME = "paseo-cursor-print-guidance.mdc";
+export const CURSOR_PRINT_AGENTS_BLOCK_BEGIN = "<!-- PASEO-CURSOR-PRINT-BEGIN -->";
+export const CURSOR_PRINT_AGENTS_BLOCK_END = "<!-- PASEO-CURSOR-PRINT-END -->";
 
-export function resolveCursorPrintPromptFilePath(paseoHome?: string): string {
-  const fromEnv = process.env.PASEO_CURSOR_PRINT_PROMPT_FILE?.trim();
+/** Path to the home-level AGENTS.md Cursor CLI loads via ancestor walk. */
+export function resolveCursorPrintGlobalAgentsPath(): string {
+  const fromEnv = process.env.PASEO_CURSOR_PRINT_AGENTS_FILE?.trim();
   if (fromEnv && fromEnv.length > 0) {
     return fromEnv;
   }
-  return join(paseoHome ?? resolvePaseoHome(), "runtime", CURSOR_PRINT_GUIDANCE_FILENAME);
+  return join(homedir(), "AGENTS.md");
 }
 
-/**
- * Cursor CLI loads `AGENTS.md` / `.cursor/rules/*.mdc` from the workspace and
- * every ancestor directory. Writing under `~/.cursor/rules/` therefore applies
- * to all projects under the home directory — the Cursor-global alwaysApply path
- * that actually reaches `--print` request context (unlike `--plugin-dir` rules).
- */
-export function resolveCursorPrintGlobalRulePath(): string {
-  const fromEnv = process.env.PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE?.trim();
-  if (fromEnv && fromEnv.length > 0) {
-    return fromEnv;
-  }
-  return join(homedir(), ".cursor", "rules", CURSOR_PRINT_GLOBAL_RULE_FILENAME);
-}
-
-export function buildCursorPrintGlobalRuleMarkdown(guidanceMarkdown: string): string {
+export function buildCursorPrintAgentsBlock(guidanceMarkdown: string): string {
   const body = guidanceMarkdown.trim();
-  return [
-    "---",
-    "description: Paseo cursor-print host guidance (daemon-managed)",
-    "alwaysApply: true",
-    "---",
-    "",
-    body,
-    "",
-  ].join("\n");
+  return [CURSOR_PRINT_AGENTS_BLOCK_BEGIN, body, CURSOR_PRINT_AGENTS_BLOCK_END].join("\n");
 }
 
-/** Write guidance file contents. Returns the path. */
-export function writeCursorPrintGuidanceFile(
-  content: string,
-  path: string = resolveCursorPrintPromptFilePath(),
-): string {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${content}\n`, { encoding: "utf8", mode: 0o600 });
-  return path;
-}
-
-/**
- * Upsert the daemon-managed alwaysApply rule under `~/.cursor/rules/`.
- * Returns the path written.
- */
-export function writeCursorPrintGlobalCursorRule(
+/** Upsert the daemon-managed block inside AGENTS.md. Returns the file path. */
+export function writeCursorPrintGlobalAgentsBlock(
   guidanceMarkdown: string,
-  path: string = resolveCursorPrintGlobalRulePath(),
+  path: string = resolveCursorPrintGlobalAgentsPath(),
 ): string {
+  const block = buildCursorPrintAgentsBlock(guidanceMarkdown);
+  let existing = "";
+  try {
+    if (existsSync(path)) {
+      existing = readFileSync(path, "utf8");
+    }
+  } catch {
+    existing = "";
+  }
+
+  const begin = existing.indexOf(CURSOR_PRINT_AGENTS_BLOCK_BEGIN);
+  const end = existing.indexOf(CURSOR_PRINT_AGENTS_BLOCK_END);
+  let next: string;
+  if (begin !== -1 && end !== -1 && end > begin) {
+    const afterEnd = end + CURSOR_PRINT_AGENTS_BLOCK_END.length;
+    next = `${existing.slice(0, begin)}${block}${existing.slice(afterEnd)}`;
+  } else if (existing.trim().length === 0) {
+    next = `${block}\n`;
+  } else {
+    const trimmed = existing.replace(/\s+$/, "");
+    next = `${trimmed}\n\n${block}\n`;
+  }
+
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, buildCursorPrintGlobalRuleMarkdown(guidanceMarkdown), {
+  writeFileSync(path, next.endsWith("\n") ? next : `${next}\n`, {
     encoding: "utf8",
     mode: 0o600,
   });
   return path;
 }
 
-/** Remove the daemon-managed global rule if present. */
-export function removeCursorPrintGlobalCursorRule(
-  path: string = resolveCursorPrintGlobalRulePath(),
-): void {
-  try {
-    if (existsSync(path)) {
-      unlinkSync(path);
-    }
-  } catch {
-    // Best-effort cleanup on daemon stop.
-  }
-}
-
 /**
- * Daemon boot: write host-level cursor-print guidance (runtime + daemon appends)
- * to `$PASEO_HOME/runtime/cursor-print-guidance.md` and the Cursor-global
- * alwaysApply rule. Per-agent systemPrompt is not included — that stays on the
- * CLI wire when set.
+ * Daemon boot: compose host-level cursor-print guidance and upsert it into the
+ * managed block in `~/AGENTS.md`. Per-agent systemPrompt stays on the CLI wire.
  */
 export async function writeCursorPrintGuidanceFileForDaemon(input: {
   paseoHome?: string;
   appendSystemPrompt?: string;
   includeProseStopPrevention?: boolean;
-  path?: string;
-  globalRulePath?: string;
-}): Promise<{ guidancePath: string; globalRulePath: string }> {
+  agentsPath?: string;
+}): Promise<{ agentsPath: string }> {
   const parts: string[] = [CURSOR_PRINT_RUNTIME_GUIDANCE];
   const userAppend = input.appendSystemPrompt?.trim();
   if (userAppend) {
@@ -230,29 +201,34 @@ export async function writeCursorPrintGuidanceFileForDaemon(input: {
     }
   }
   const content = composeSystemPromptParts(...parts) ?? CURSOR_PRINT_RUNTIME_GUIDANCE;
-  const guidancePath = writeCursorPrintGuidanceFile(
+  const agentsPath = writeCursorPrintGlobalAgentsBlock(
     content,
-    input.path ?? resolveCursorPrintPromptFilePath(input.paseoHome),
+    input.agentsPath ?? resolveCursorPrintGlobalAgentsPath(),
   );
-  const globalRulePath = writeCursorPrintGlobalCursorRule(
-    content,
-    input.globalRulePath ?? resolveCursorPrintGlobalRulePath(),
-  );
-  return { guidancePath, globalRulePath };
+  return { agentsPath };
 }
 
 /**
- * Read host guidance written at daemon boot. Falls back to runtime guidance
- * when the file is missing (tests / early session before boot write).
+ * Read host guidance from the managed AGENTS.md block. Falls back to runtime
+ * guidance when missing (tests / early session before boot write).
  */
 export function readCursorPrintGuidanceMarkdown(
-  path: string = resolveCursorPrintPromptFilePath(),
+  path: string = resolveCursorPrintGlobalAgentsPath(),
 ): string {
   try {
     if (existsSync(path)) {
-      const content = readFileSync(path, "utf8").trim();
-      if (content.length > 0) {
-        return content;
+      const existing = readFileSync(path, "utf8");
+      const begin = existing.indexOf(CURSOR_PRINT_AGENTS_BLOCK_BEGIN);
+      const end = existing.indexOf(CURSOR_PRINT_AGENTS_BLOCK_END);
+      if (begin !== -1 && end !== -1 && end > begin) {
+        const body = existing
+          .slice(begin + CURSOR_PRINT_AGENTS_BLOCK_BEGIN.length, end)
+          .replace(/^\n/, "")
+          .replace(/\n$/, "")
+          .trim();
+        if (body.length > 0) {
+          return body;
+        }
       }
     }
   } catch {
@@ -263,13 +239,13 @@ export function readCursorPrintGuidanceMarkdown(
 
 /**
  * Build the prompt string passed to `agent --print` (not the timeline user row).
- * Host guidance is injected via the Cursor-global alwaysApply rule at daemon boot.
+ * Host guidance is injected via the home AGENTS.md block at daemon boot.
  */
 export function buildCursorPrintCliPrompt(
   userText: string,
   config: Pick<AgentSessionConfig, "systemPrompt" | "daemonAppendSystemPrompt"> = {},
 ): string {
-  // Host daemonAppend lives in ~/.cursor/rules; only per-agent systemPrompt stays here.
+  // Host daemonAppend lives in ~/AGENTS.md; only per-agent systemPrompt stays here.
   const agentPrompt = config.systemPrompt?.trim();
   const trimmed = userText.trim();
   if (agentPrompt && trimmed) {

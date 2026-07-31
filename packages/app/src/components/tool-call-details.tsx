@@ -633,7 +633,7 @@ function serializeUnknownValue(value: unknown): string {
 
 interface UnknownDetail {
   input: unknown;
-  output: unknown;
+  output?: unknown;
 }
 
 function buildUnknownSections(detail: UnknownDetail, ds: DetailStyles, t: TFunction): ReactNode[] {

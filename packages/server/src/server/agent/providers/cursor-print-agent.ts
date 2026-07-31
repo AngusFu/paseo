@@ -105,7 +105,7 @@ const MODELS_TIMEOUT_MS = 30_000;
  * Cursor CLI has no reliable append-system-prompt. Daemon boot writes host
  * guidance to `~/.cursor/rules/paseo-cursor-print-guidance.mdc` (alwaysApply;
  * reaches `--print` via LocalCursorRulesService ancestor walk) and a reference
- * copy under `$PASEO_HOME/cursor-print-guidance.md`. Per session, a temp
+ * copy under `$PASEO_HOME/runtime/cursor-print-guidance.md`. Per session, a temp
  * `--plugin-dir` carries daemon MCP only (`.mcp.json`). CLI turns keep only
  * per-agent systemPrompt + user text. Timeline user_message stays raw.
  *
@@ -129,7 +129,7 @@ export function resolveCursorPrintPromptFilePath(paseoHome?: string): string {
   if (fromEnv && fromEnv.length > 0) {
     return fromEnv;
   }
-  return join(paseoHome ?? resolvePaseoHome(), CURSOR_PRINT_GUIDANCE_FILENAME);
+  return join(paseoHome ?? resolvePaseoHome(), "runtime", CURSOR_PRINT_GUIDANCE_FILENAME);
 }
 
 /**
@@ -200,8 +200,9 @@ export function removeCursorPrintGlobalCursorRule(
 
 /**
  * Daemon boot: write host-level cursor-print guidance (runtime + daemon appends)
- * to `$PASEO_HOME/cursor-print-guidance.md` and the Cursor-global alwaysApply rule.
- * Per-agent systemPrompt is not included — that stays on the CLI wire when set.
+ * to `$PASEO_HOME/runtime/cursor-print-guidance.md` and the Cursor-global
+ * alwaysApply rule. Per-agent systemPrompt is not included — that stays on the
+ * CLI wire when set.
  */
 export async function writeCursorPrintGuidanceFileForDaemon(input: {
   paseoHome?: string;

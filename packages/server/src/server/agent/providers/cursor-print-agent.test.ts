@@ -942,7 +942,7 @@ describe("CursorPrintAgentClient", () => {
     try {
       const paseoHome = join(tmpdir(), "paseo-home-guidance");
       expect(resolveCursorPrintPromptFilePath(paseoHome)).toBe(
-        join(paseoHome, CURSOR_PRINT_GUIDANCE_FILENAME),
+        join(paseoHome, "runtime", CURSOR_PRINT_GUIDANCE_FILENAME),
       );
     } finally {
       if (prevPrompt === undefined) {
@@ -958,7 +958,7 @@ describe("CursorPrintAgentClient", () => {
     const prevRule = process.env.PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE;
     const dir = mkdtempSync(join(tmpdir(), "paseo-cursor-prompt-"));
     const paseoHome = join(dir, "paseo-home");
-    const promptFilePath = join(paseoHome, CURSOR_PRINT_GUIDANCE_FILENAME);
+    const promptFilePath = join(paseoHome, "runtime", CURSOR_PRINT_GUIDANCE_FILENAME);
     const globalRulePath = join(dir, "paseo-cursor-print-guidance.mdc");
     delete process.env.PASEO_CURSOR_PRINT_PROMPT_FILE;
     process.env.PASEO_CURSOR_PRINT_GLOBAL_RULE_FILE = globalRulePath;

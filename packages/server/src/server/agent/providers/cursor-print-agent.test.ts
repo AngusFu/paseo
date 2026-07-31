@@ -17,6 +17,8 @@ import {
   buildCursorPrintPromptPointer,
   buildTurnArgs,
   convertCursorPrintPrompt,
+  formatCursorPrintModelRejection,
+  isCursorEmptyModelCatalogFailure,
   normalizeCursorPrintSessionConfig,
   writeCursorPrintGuidanceFileForDaemon,
   type CursorPrintLaunch,
@@ -400,6 +402,95 @@ describe("CursorPrintAgentClient", () => {
     expect(launches[0]?.args).toContain("--resume");
     expect(launches[1]?.args).not.toContain("--resume");
     expect(session.id).toBe("fresh-after-resume-fail");
+  });
+
+  test("empty model catalog rejection retries the turn once", async () => {
+    let attempt = 0;
+    const { spawn, launches } = createFakeSpawn((child) => {
+      attempt += 1;
+      if (attempt === 1) {
+        child.stderr.write("Cannot use this model: cursor-grok-4.5-high-fast. Available models:\n");
+        child.emit("exit", 1, null);
+        return;
+      }
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "system",
+          subtype: "init",
+          session_id: "chat-after-model-retry",
+        })}\n`,
+      );
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "ok after retry",
+          session_id: "chat-after-model-retry",
+        })}\n`,
+      );
+      child.emit("exit", 0, null);
+    });
+
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      spawn,
+      execModels: async () => GROK_MODELS_STDOUT,
+    });
+    const session = await client.createSession({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      modeId: "force",
+      model: "cursor-grok-4.5",
+      thinkingOptionId: "high",
+      featureValues: { [CURSOR_PRINT_FAST_MODE_FEATURE_ID]: true },
+    });
+    (session as unknown as { chatId: string }).chatId = "chat-resume";
+
+    const done = collectUntil(session, (events) =>
+      events.some((event) => event.type === "turn_completed"),
+    );
+    await session.startTurn("retry me");
+    await done;
+
+    expect(launches).toHaveLength(2);
+    expect(launches[0]?.args).toContain("--resume");
+    expect(launches[0]?.args).toContain("chat-resume");
+    expect(launches[1]?.args).toContain("--resume");
+    expect(launches[1]?.args).toContain("chat-resume");
+    expect(launches[1]?.args).toContain("cursor-grok-4.5-high-fast");
+  });
+
+  test("empty model catalog rejection formats the final error after retry fails", async () => {
+    const { spawn } = createFakeSpawn((child) => {
+      child.stderr.write("Cannot use this model: cursor-grok-4.5-high-fast. Available models:\n");
+      child.emit("exit", 1, null);
+    });
+
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      spawn,
+      execModels: async () => GROK_MODELS_STDOUT,
+    });
+    const session = await client.createSession({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      modeId: "force",
+      model: "cursor-grok-4.5",
+      thinkingOptionId: "high",
+      featureValues: { [CURSOR_PRINT_FAST_MODE_FEATURE_ID]: true },
+    });
+
+    const done = collectUntil(session, (events) =>
+      events.some((event) => event.type === "turn_failed"),
+    );
+    await session.startTurn("still broken");
+    const events = await done;
+    const failed = events.find((event) => event.type === "turn_failed") as {
+      error?: string;
+    };
+    expect(failed.error).toContain("empty model catalog");
+    expect(failed.error).toContain("cursor-grok-4.5-high-fast");
   });
 
   test("listFeatures exposes composer-managed auto_accept", async () => {
@@ -1189,10 +1280,11 @@ describe("CursorPrintAgentClient", () => {
       },
     ]);
     expect(reused.imagePaths).toEqual([existingPath]);
-    expect(reused.text).toBe(`@${existingPath}`);
+    expect(reused.timelineText).toBe("");
+    expect(reused.wireText).toBe(`@${existingPath}`);
   });
 
-  test("convertCursorPrintPrompt materializes images once and dedupes identical bytes", () => {
+  test("convertCursorPrintPrompt keeps timeline text raw and puts @path only on the wire", () => {
     const first = convertCursorPrintPrompt([
       { type: "text", text: "look at these" },
       { type: "image", data: ONE_BY_ONE_PNG_BASE64, mimeType: "image/png" },
@@ -1202,7 +1294,8 @@ describe("CursorPrintAgentClient", () => {
 
     expect(first.imagePaths).toHaveLength(2);
     expect(first.imagePaths[0]).not.toEqual(first.imagePaths[1]);
-    expect(first.text).toBe(
+    expect(first.timelineText).toBe("look at these");
+    expect(first.wireText).toBe(
       ["look at these", `@${first.imagePaths[0]}`, `@${first.imagePaths[1]}`].join("\n\n"),
     );
     for (const imagePath of first.imagePaths) {
@@ -1214,7 +1307,33 @@ describe("CursorPrintAgentClient", () => {
       { type: "image", data: ONE_BY_ONE_PNG_BASE64, mimeType: "image/png" },
     ]);
     expect(second.imagePaths).toEqual([first.imagePaths[0]]);
-    expect(second.text).toBe(`@${first.imagePaths[0]}`);
+    expect(second.timelineText).toBe("");
+    expect(second.wireText).toBe(`@${first.imagePaths[0]}`);
+  });
+
+  test("isCursorEmptyModelCatalogFailure / formatCursorPrintModelRejection", () => {
+    expect(
+      isCursorEmptyModelCatalogFailure(
+        "Cannot use this model: cursor-grok-4.5-high-fast. Available models:",
+      ),
+    ).toBe(true);
+    expect(
+      isCursorEmptyModelCatalogFailure(
+        "Cannot use this model: cursor-grok-4.5-high-fast. Available models: auto, composer-2.5",
+      ),
+    ).toBe(false);
+    expect(isCursorEmptyModelCatalogFailure("network timeout")).toBe(false);
+
+    expect(
+      formatCursorPrintModelRejection(
+        "Cannot use this model: cursor-grok-4.5-high-fast. Available models:",
+      ),
+    ).toContain("empty model catalog");
+    expect(
+      formatCursorPrintModelRejection(
+        "Cannot use this model: Cursor Grok 4.5 High Fast. Available models: auto, composer-2.5, gpt-5.5",
+      ),
+    ).toMatch(/^Cursor rejected model Cursor Grok 4\.5 High Fast\. Available:/);
   });
 
   test("buildTurnArgs repeats --image for each materialized path", () => {
@@ -1293,7 +1412,7 @@ describe("CursorPrintAgentClient", () => {
       { type: "image", data: ONE_BY_ONE_PNG_BASE64, mimeType: "image/png" },
       { type: "image", data: RED_ONE_BY_ONE_PNG_BASE64, mimeType: "image/png" },
     ]);
-    await eventsPromise;
+    const events = await eventsPromise;
 
     expect(launches).toHaveLength(1);
     const args = launches[0]?.args ?? [];
@@ -1307,5 +1426,13 @@ describe("CursorPrintAgentClient", () => {
     expect(promptArg).toContain(`@${imageFlags[0]}`);
     expect(promptArg).toContain(`@${imageFlags[1]}`);
     expect(JSON.stringify(args)).not.toContain(ONE_BY_ONE_PNG_BASE64);
+
+    const userEvent = events.find(
+      (event) =>
+        event.type === "timeline" && (event.item as { type?: string }).type === "user_message",
+    ) as { item: { text: string } };
+    expect(userEvent.item.text).toBe("what tickets are in the screenshot?");
+    expect(userEvent.item.text).not.toContain("@");
+    expect(userEvent.item.text).not.toContain(imageFlags[0]!);
   });
 });

@@ -233,9 +233,11 @@ interface ActiveTurn {
   completed: boolean;
   resumedWith: string | null;
   allowResumeFallback: boolean;
+  /** One retry when Cursor returns "Cannot use this model" with an empty catalog. */
+  allowEmptyModelCatalogRetry: boolean;
   /** Prompt passed to Cursor CLI (includes runtime guidance / system prompts). */
   promptText: string;
-  /** Raw user text for timeline user_message / retries. */
+  /** Raw user text for timeline user_message / retries (no CLI `@path` wire mentions). */
   userText: string;
   /** Materialized image paths for Cursor CLI `--image` (resume retries reuse these). */
   imagePaths: string[];
@@ -253,28 +255,35 @@ function readString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-/**
- * Convert a Paseo prompt into Cursor CLI inputs.
- * Images are materialized once (content-hash path reuse) and attached two ways:
- * 1. `--image <path>` (native Cursor headless attach)
- * 2. `@<path>` in the prompt text (so Read/@-file still works if --image is ignored)
- * Other attachments become text. Timeline `user_message` keeps the text only.
- */
-export function convertCursorPrintPrompt(prompt: AgentPromptInput): {
-  text: string;
+export interface CursorPrintConvertedPrompt {
+  /** Raw user-visible text for the timeline `user_message` (no CLI `@path` mentions). */
+  timelineText: string;
+  /** Wire prompt text for Cursor CLI (includes `@path` image mentions). */
+  wireText: string;
   imagePaths: string[];
-} {
+}
+
+/**
+ * Convert a Paseo prompt into Cursor CLI inputs + timeline text.
+ * Images are materialized once (content-hash path reuse) and attached two ways on the wire:
+ * 1. `--image <path>` (native Cursor headless attach)
+ * 2. `@<path>` in the CLI prompt text (so Read/@-file still works if --image is ignored)
+ * Timeline text stays raw — never bake `@path` into the user_message row.
+ */
+export function convertCursorPrintPrompt(prompt: AgentPromptInput): CursorPrintConvertedPrompt {
   if (typeof prompt === "string") {
-    return { text: prompt, imagePaths: [] };
+    return { timelineText: prompt, wireText: prompt, imagePaths: [] };
   }
 
-  const textParts: string[] = [];
+  const timelineParts: string[] = [];
+  const wireParts: string[] = [];
   const imagePaths: string[] = [];
   const seenImagePaths = new Set<string>();
 
   for (const block of prompt) {
     if (block.type === "text") {
-      textParts.push(block.text);
+      timelineParts.push(block.text);
+      wireParts.push(block.text);
       continue;
     }
     if (block.type === "image") {
@@ -287,23 +296,60 @@ export function convertCursorPrintPrompt(prompt: AgentPromptInput): {
         if (!seenImagePaths.has(materialized.path)) {
           seenImagePaths.add(materialized.path);
           imagePaths.push(materialized.path);
-          // Dual path: Cursor @-file mention in addition to --image.
-          textParts.push(`@${materialized.path}`);
+          // Dual path: Cursor @-file mention in addition to --image (CLI only).
+          wireParts.push(`@${materialized.path}`);
         }
       } catch (error) {
-        textParts.push(
-          `[Image attachment omitted: failed to write local file (${toDiagnosticErrorMessage(error)})]`,
-        );
+        const omitted = `[Image attachment omitted: failed to write local file (${toDiagnosticErrorMessage(error)})]`;
+        timelineParts.push(omitted);
+        wireParts.push(omitted);
       }
       continue;
     }
-    textParts.push(renderPromptAttachmentAsText(block));
+    const rendered = renderPromptAttachmentAsText(block);
+    timelineParts.push(rendered);
+    wireParts.push(rendered);
   }
 
   return {
-    text: textParts.join("\n\n").trim(),
+    timelineText: timelineParts.join("\n\n").trim(),
+    wireText: wireParts.join("\n\n").trim(),
     imagePaths,
   };
+}
+
+/** Cursor rejected `--model` and returned an empty Available models list (transient catalog miss). */
+export function isCursorEmptyModelCatalogFailure(error: string): boolean {
+  const match = error.match(/Cannot use this model:\s*.+?\.\s*Available models:\s*(.*)$/is);
+  if (!match) {
+    return false;
+  }
+  const listed = match[1]
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && line !== "Available models" && !line.startsWith("Tip:"))
+    .join(" ")
+    .trim();
+  return listed.length === 0;
+}
+
+/** Rewrite Cursor model rejections into a shorter, actionable timeline error. */
+export function formatCursorPrintModelRejection(error: string): string {
+  const match = error.match(/Cannot use this model:\s*(.+?)\.\s*Available models:\s*(.*)$/is);
+  if (!match) {
+    return error;
+  }
+  const rejected = match[1].trim();
+  const listed = match[2]
+    .split(/[\n,]/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0 && part !== "Available models" && !part.startsWith("Tip:"));
+  if (listed.length === 0) {
+    return `Cursor rejected model ${rejected} (empty model catalog from CLI). Retry the turn, or switch model/effort/Fast.`;
+  }
+  const preview = listed.slice(0, 8).join(", ");
+  const more = listed.length > 8 ? `, …(+${listed.length - 8})` : "";
+  return `Cursor rejected model ${rejected}. Available: ${preview}${more}`;
 }
 
 function normalizeModeId(modeId: string | null | undefined): string {
@@ -990,16 +1036,17 @@ export class CursorPrintAgentSession implements AgentSession {
 
     const turnId = randomUUID();
     const assistantMessageId = randomUUID();
-    const { text: userText, imagePaths } = convertCursorPrintPrompt(prompt);
-    const cliPrompt = buildCursorPrintCliPrompt(userText, this.config);
+    const { timelineText, wireText, imagePaths } = convertCursorPrintPrompt(prompt);
+    const cliPrompt = buildCursorPrintCliPrompt(wireText, this.config);
     this.launchTurnProcess({
       turnId,
       assistantMessageId,
-      userText,
+      userText: timelineText,
       cliPrompt,
       imagePaths,
       resumeChatId: this.chatId,
       allowResumeFallback: Boolean(this.chatId),
+      allowEmptyModelCatalogRetry: true,
       emitTurnStarted: true,
       clientMessageId: options?.clientMessageId,
     });
@@ -1014,6 +1061,7 @@ export class CursorPrintAgentSession implements AgentSession {
     imagePaths: readonly string[];
     resumeChatId: string | null;
     allowResumeFallback: boolean;
+    allowEmptyModelCatalogRetry: boolean;
     emitTurnStarted: boolean;
     clientMessageId?: string;
   }): void {
@@ -1060,6 +1108,7 @@ export class CursorPrintAgentSession implements AgentSession {
       completed: false,
       resumedWith: options.resumeChatId,
       allowResumeFallback: options.allowResumeFallback,
+      allowEmptyModelCatalogRetry: options.allowEmptyModelCatalogRetry,
       promptText: options.cliPrompt,
       userText: options.userText,
       imagePaths: [...options.imagePaths],
@@ -1661,6 +1710,13 @@ export class CursorPrintAgentSession implements AgentSession {
     }
 
     const isError = raw.is_error === true || readString(raw.subtype) === "error";
+    if (isError) {
+      const error = readString(raw.result) ?? "cursor-print turn failed";
+      if (this.tryRetryActiveTurn(error)) {
+        return;
+      }
+    }
+
     const child = turn.child;
     this.clearPendingInteractions(turn, isError ? "Turn failed" : "Turn completed");
     turn.completed = true;
@@ -1675,7 +1731,9 @@ export class CursorPrintAgentSession implements AgentSession {
         type: "turn_failed",
         provider: this.provider,
         turnId: turn.turnId,
-        error: readString(raw.result) ?? "cursor-print turn failed",
+        error: formatCursorPrintModelRejection(
+          readString(raw.result) ?? "cursor-print turn failed",
+        ),
       });
       return;
     }
@@ -1694,32 +1752,7 @@ export class CursorPrintAgentSession implements AgentSession {
       return;
     }
 
-    // cc-connect engine pattern: resume/continue failure → clear id and retry fresh.
-    if (turn.allowResumeFallback && turn.resumedWith && isCursorResumeFailure(error)) {
-      this.logger.warn(
-        { sessionId: turn.resumedWith, error },
-        "cursor-print: resume failed; retrying as fresh session",
-      );
-      this.clearPendingInteractions(turn, "Resume failed; retrying");
-      const child = turn.child;
-      turn.child = null;
-      if (child) {
-        void terminateWithTreeKill(child, {
-          gracefulTimeoutMs: 2_000,
-          forceTimeoutMs: 2_000,
-        });
-      }
-      this.chatId = null;
-      this.launchTurnProcess({
-        turnId: turn.turnId,
-        assistantMessageId: turn.assistantMessageId,
-        userText: turn.userText,
-        cliPrompt: turn.promptText,
-        imagePaths: turn.imagePaths,
-        resumeChatId: null,
-        allowResumeFallback: false,
-        emitTurnStarted: false,
-      });
+    if (this.tryRetryActiveTurn(error)) {
       return;
     }
 
@@ -1738,8 +1771,74 @@ export class CursorPrintAgentSession implements AgentSession {
       type: "turn_failed",
       provider: this.provider,
       turnId: turn.turnId,
-      error,
+      error: formatCursorPrintModelRejection(error),
     });
+  }
+
+  /** Resume-miss or empty-model-catalog retries. Returns true when a relaunch was started. */
+  private tryRetryActiveTurn(error: string): boolean {
+    const turn = this.activeTurn;
+    if (!turn || turn.completed) {
+      return false;
+    }
+
+    // cc-connect engine pattern: resume/continue failure → clear id and retry fresh.
+    if (turn.allowResumeFallback && turn.resumedWith && isCursorResumeFailure(error)) {
+      this.logger.warn(
+        { sessionId: turn.resumedWith, error },
+        "cursor-print: resume failed; retrying as fresh session",
+      );
+      this.clearPendingInteractions(turn, "Resume failed; retrying");
+      this.replaceActiveTurnChild(turn);
+      this.chatId = null;
+      this.launchTurnProcess({
+        turnId: turn.turnId,
+        assistantMessageId: turn.assistantMessageId,
+        userText: turn.userText,
+        cliPrompt: turn.promptText,
+        imagePaths: turn.imagePaths,
+        resumeChatId: null,
+        allowResumeFallback: false,
+        allowEmptyModelCatalogRetry: turn.allowEmptyModelCatalogRetry,
+        emitTurnStarted: false,
+      });
+      return true;
+    }
+
+    if (turn.allowEmptyModelCatalogRetry && isCursorEmptyModelCatalogFailure(error)) {
+      this.logger.warn(
+        { error, wireModel: this.resolveWireModelId() },
+        "cursor-print: empty model catalog; retrying turn once",
+      );
+      this.clearPendingInteractions(turn, "Empty model catalog; retrying");
+      this.replaceActiveTurnChild(turn);
+      turn.allowEmptyModelCatalogRetry = false;
+      this.launchTurnProcess({
+        turnId: turn.turnId,
+        assistantMessageId: turn.assistantMessageId,
+        userText: turn.userText,
+        cliPrompt: turn.promptText,
+        imagePaths: turn.imagePaths,
+        resumeChatId: turn.resumedWith,
+        allowResumeFallback: turn.allowResumeFallback,
+        allowEmptyModelCatalogRetry: false,
+        emitTurnStarted: false,
+      });
+      return true;
+    }
+
+    return false;
+  }
+
+  private replaceActiveTurnChild(turn: ActiveTurn): void {
+    const child = turn.child;
+    turn.child = null;
+    if (child) {
+      void terminateWithTreeKill(child, {
+        gracefulTimeoutMs: 2_000,
+        forceTimeoutMs: 2_000,
+      });
+    }
   }
 
   private writeInteractionResponse(

@@ -1173,6 +1173,25 @@ describe("CursorPrintAgentClient", () => {
     });
   });
 
+  test("convertCursorPrintPrompt prefers an existing wire path over rematerializing", () => {
+    const onDisk = convertCursorPrintPrompt([
+      { type: "image", data: ONE_BY_ONE_PNG_BASE64, mimeType: "image/png" },
+    ]);
+    expect(onDisk.imagePaths).toHaveLength(1);
+    const existingPath = onDisk.imagePaths[0]!;
+
+    const reused = convertCursorPrintPrompt([
+      {
+        type: "image",
+        data: "not-the-same-bytes",
+        mimeType: "image/png",
+        path: existingPath,
+      },
+    ]);
+    expect(reused.imagePaths).toEqual([existingPath]);
+    expect(reused.text).toBe(`@${existingPath}`);
+  });
+
   test("convertCursorPrintPrompt materializes images once and dedupes identical bytes", () => {
     const first = convertCursorPrintPrompt([
       { type: "text", text: "look at these" },

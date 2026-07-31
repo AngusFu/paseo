@@ -6,7 +6,7 @@ const REVIEW_LINE_MARKERS = { add: "+", remove: "-", context: " " } as const;
 
 export function buildAgentPrompt(
   text: string,
-  images?: Array<{ data: string; mimeType: string }>,
+  images?: Array<{ data: string; mimeType: string; path?: string }>,
   attachments?: AgentAttachment[],
 ): AgentPromptInput {
   const normalized = text.trim();
@@ -31,7 +31,13 @@ export function buildAgentPrompt(
     blocks.push({ type: "text", text: normalized });
   }
   for (const image of images ?? []) {
-    blocks.push({ type: "image", data: image.data, mimeType: image.mimeType });
+    const path = image.path?.trim();
+    blocks.push({
+      type: "image",
+      data: image.data,
+      mimeType: image.mimeType,
+      ...(path && path.length > 0 ? { path } : {}),
+    });
   }
   blocks.push(...otherAttachments);
   return blocks;

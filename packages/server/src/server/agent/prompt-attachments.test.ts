@@ -37,6 +37,26 @@ describe("prompt attachments", () => {
     ]);
   });
 
+  it("forwards optional image paths into prompt image blocks", () => {
+    expect(
+      buildAgentPrompt("see", [
+        {
+          data: "image-data",
+          mimeType: "image/png",
+          path: "/Users/yywl/.paseo/desktop-attachments/att.png",
+        },
+      ]),
+    ).toEqual([
+      { type: "text", text: "see" },
+      {
+        type: "image",
+        data: "image-data",
+        mimeType: "image/png",
+        path: "/Users/yywl/.paseo/desktop-attachments/att.png",
+      },
+    ]);
+  });
+
   it("renders github_pr attachments as readable text", () => {
     expect(
       renderPromptAttachmentAsText({

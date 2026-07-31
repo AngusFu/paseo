@@ -99,6 +99,25 @@ export function materializeProviderImage(image: {
   return { path: filePath };
 }
 
+/**
+ * Prefer a caller-supplied absolute path when the file still exists (desktop/native
+ * attachments already on disk). Otherwise materialize from base64 (content-hash reuse).
+ */
+export function resolveOrMaterializeProviderImage(image: {
+  data: string;
+  mimeType: string | null;
+  path?: string | null;
+}): MaterializedProviderImage {
+  const existingPath = image.path?.trim();
+  if (existingPath && existingPath.length > 0 && fsSync.existsSync(existingPath)) {
+    return { path: existingPath };
+  }
+  return materializeProviderImage({
+    data: image.data,
+    mimeType: image.mimeType,
+  });
+}
+
 // Recognizes markdown rendered for a materialized provider image: its source is a content-hashed
 // file in the attachments dir. Matching the full <hash>.<ext> shape (not just a leading "![")
 // keeps user-authored text from being mistaken for a provider image during history replay. The

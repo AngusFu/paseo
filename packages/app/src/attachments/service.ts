@@ -1,5 +1,21 @@
 import type { AttachmentMetadata } from "@/attachments/types";
 import { getAttachmentStore } from "@/attachments/store";
+import { isAbsolutePath } from "@/utils/path";
+
+export interface EncodedImageAttachment {
+  data: string;
+  mimeType: string;
+  /** Absolute local path when the attachment is already on disk (desktop/native). */
+  path?: string;
+}
+
+function resolveSendableAttachmentPath(attachment: AttachmentMetadata): string | undefined {
+  if (attachment.storageType !== "desktop-file" && attachment.storageType !== "native-file") {
+    return undefined;
+  }
+  const candidate = attachment.storageKey.trim();
+  return isAbsolutePath(candidate) ? candidate : undefined;
+}
 
 export async function persistAttachmentFromBlob(input: {
   blob: Blob;
@@ -63,7 +79,7 @@ export async function persistAttachmentFromFileUri(input: {
 
 export async function encodeAttachmentsForSend(
   attachments: readonly AttachmentMetadata[] | undefined,
-): Promise<Array<{ data: string; mimeType: string }> | undefined> {
+): Promise<EncodedImageAttachment[] | undefined> {
   if (!attachments || attachments.length === 0) {
     return undefined;
   }
@@ -73,10 +89,12 @@ export async function encodeAttachmentsForSend(
     attachments.map(async (attachment) => {
       try {
         const data = await store.encodeBase64({ attachment });
+        const path = resolveSendableAttachmentPath(attachment);
         return {
           data,
           mimeType: attachment.mimeType,
-        };
+          ...(path ? { path } : {}),
+        } satisfies EncodedImageAttachment;
       } catch (error) {
         console.error("[attachments] Failed to encode attachment for send", {
           id: attachment.id,
@@ -87,9 +105,7 @@ export async function encodeAttachmentsForSend(
     }),
   );
 
-  const valid = encoded.filter(
-    (entry): entry is { data: string; mimeType: string } => entry !== null,
-  );
+  const valid = encoded.filter((entry): entry is EncodedImageAttachment => entry !== null);
   return valid.length > 0 ? valid : undefined;
 }
 

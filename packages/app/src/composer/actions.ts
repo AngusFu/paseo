@@ -48,7 +48,7 @@ export interface ComposerSendClient {
     text: string,
     options: {
       messageId: string;
-      images: Array<{ data: string; mimeType: string }>;
+      images: Array<{ data: string; mimeType: string; path?: string }>;
       attachments: ReturnType<typeof splitComposerAttachmentsForSubmit>["attachments"];
     },
   ) => Promise<void>;

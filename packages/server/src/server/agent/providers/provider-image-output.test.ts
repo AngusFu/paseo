@@ -6,6 +6,7 @@ import {
   isProviderImageMarkdown,
   materializeProviderImage,
   renderProviderImageOutputAsAssistantMarkdown,
+  resolveOrMaterializeProviderImage,
 } from "./provider-image-output.js";
 
 const HASH = "a".repeat(64);
@@ -111,5 +112,29 @@ describe("materializeProviderImage", () => {
     } finally {
       rmSync(secondDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("resolveOrMaterializeProviderImage", () => {
+  test("reuses an existing absolute path and falls back to base64 materialization", () => {
+    const materialized = materializeProviderImage({
+      data: "YWJjMTIz",
+      mimeType: "image/png",
+    });
+
+    const reused = resolveOrMaterializeProviderImage({
+      data: "unused-when-path-exists",
+      mimeType: "image/png",
+      path: materialized.path,
+    });
+    expect(reused.path).toBe(materialized.path);
+
+    const missing = resolveOrMaterializeProviderImage({
+      data: "ZGVmNDU2",
+      mimeType: "image/png",
+      path: "/tmp/paseo-missing-attachment-does-not-exist.png",
+    });
+    expect(existsSync(missing.path)).toBe(true);
+    expect(missing.path).not.toBe("/tmp/paseo-missing-attachment-does-not-exist.png");
   });
 });

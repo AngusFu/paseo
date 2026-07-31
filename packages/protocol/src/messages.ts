@@ -1190,6 +1190,9 @@ export const ChangeRequestCheckoutSourceSchema = z.object({
 const ImageAttachmentSchema = z.object({
   data: z.string(), // base64 encoded image
   mimeType: z.string(), // e.g., "image/jpeg", "image/png"
+  // Absolute local path when the sender already materialized the file (desktop/native).
+  // Optional for protocol back-compat; daemons may prefer path and fall back to `data`.
+  path: z.string().optional(),
 });
 
 export const SendAgentMessageSchema = z.object({

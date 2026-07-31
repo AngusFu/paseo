@@ -4191,7 +4191,7 @@ export class Session {
     agentId: string,
     text: string,
     messageId?: string,
-    images?: Array<{ data: string; mimeType: string }>,
+    images?: Array<{ data: string; mimeType: string; path?: string }>,
     attachments?: AgentAttachment[],
     runOptions?: AgentRunOptions,
     options?: { spokenInput?: boolean },

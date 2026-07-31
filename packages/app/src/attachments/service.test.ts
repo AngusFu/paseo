@@ -94,4 +94,30 @@ describe("attachment service", () => {
       { data: "att_send:base64", mimeType: "image/jpeg" },
     ]);
   });
+
+  it("includes absolute desktop/native storage paths on the wire", async () => {
+    const store = createRecordingStore();
+    __setAttachmentStoreForTests(store);
+    const desktop = createAttachment({
+      id: "att_desktop",
+      mimeType: "image/png",
+      storageType: "desktop-file",
+      storageKey: "/Users/yywl/.paseo/desktop-attachments/att_desktop.png",
+    });
+    const web = createAttachment({
+      id: "att_web",
+      mimeType: "image/png",
+      storageType: "web-indexeddb",
+      storageKey: "att_web",
+    });
+
+    await expect(encodeAttachmentsForSend([desktop, web])).resolves.toEqual([
+      {
+        data: "att_desktop:base64",
+        mimeType: "image/png",
+        path: "/Users/yywl/.paseo/desktop-attachments/att_desktop.png",
+      },
+      { data: "att_web:base64", mimeType: "image/png" },
+    ]);
+  });
 });

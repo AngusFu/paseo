@@ -59,7 +59,7 @@ interface SessionHandlerInternals {
     agentId: string,
     text: string,
     messageId?: string,
-    images?: Array<{ data: string; mimeType: string }>,
+    images?: Array<{ data: string; mimeType: string; path?: string }>,
     attachments?: unknown[],
     runOptions?: unknown,
     options?: { spokenInput?: boolean },

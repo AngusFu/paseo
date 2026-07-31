@@ -86,7 +86,7 @@ import {
 } from "./acp-agent.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
-import { materializeProviderImage } from "./provider-image-output.js";
+import { resolveOrMaterializeProviderImage } from "./provider-image-output.js";
 
 export const CURSOR_PRINT_PROVIDER_ID = "cursor-print";
 /** Prefer auto-review: many orgs disable --force / YOLO. */
@@ -279,9 +279,10 @@ export function convertCursorPrintPrompt(prompt: AgentPromptInput): {
     }
     if (block.type === "image") {
       try {
-        const materialized = materializeProviderImage({
+        const materialized = resolveOrMaterializeProviderImage({
           data: block.data,
           mimeType: block.mimeType,
+          path: block.path,
         });
         if (!seenImagePaths.has(materialized.path)) {
           seenImagePaths.add(materialized.path);

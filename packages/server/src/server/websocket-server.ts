@@ -874,6 +874,15 @@ export class VoiceAssistantWebSocketServer {
     this.sendMessageToSockets(trustedSockets, message);
   }
 
+  /**
+   * Persist worktree setup progress for later `workspace_setup_status_request`s.
+   * MCP/tool create_workspace must use this same map as UI-created worktrees —
+   * otherwise the Setup panel spins forever after missing live progress events.
+   */
+  public cacheWorkspaceSetupSnapshot(workspaceId: string, snapshot: WorkspaceSetupSnapshot): void {
+    this.workspaceSetupSnapshots.set(workspaceId, snapshot);
+  }
+
   public listActiveSessions(): Session[] {
     return Array.from(
       new Set(

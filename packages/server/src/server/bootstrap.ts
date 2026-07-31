@@ -1163,7 +1163,9 @@ export async function createPaseoDaemon(
         emitWorkspaceUpdateForWorkspaceId: async (workspaceId) => {
           await emitWorkspaceUpdatesExternal([workspaceId]);
         },
-        cacheWorkspaceSetupSnapshot: () => {},
+        cacheWorkspaceSetupSnapshot: (workspaceId, snapshot) => {
+          wsServer?.cacheWorkspaceSetupSnapshot(workspaceId, snapshot);
+        },
         emit: emitExternalSessionMessage,
         sessionLogger: logger,
         terminalManager,

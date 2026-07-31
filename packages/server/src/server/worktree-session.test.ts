@@ -1274,6 +1274,76 @@ describe("runWorktreeSetupInBackground", () => {
       },
     });
   });
+
+  // Regression: MCP/tools create_workspace must share this map with status requests.
+  // A no-op cache leaves Setup panel on "Waiting for setup output" forever.
+  test("tools-path cache callback is visible to workspace_setup_status_request", async () => {
+    const { tempDir, repoDir } = createGitRepo();
+    cleanupPaths.push(tempDir);
+
+    const paseoHome = path.join(tempDir, ".paseo");
+    const createdWorktree = await createLegacyWorktreeForTest({
+      branchName: "feature-tools-cache",
+      cwd: repoDir,
+      baseBranch: "main",
+      worktreeSlug: "feature-tools-cache",
+      runSetup: false,
+      paseoHome,
+    });
+    const worktreePath = createdWorktree.worktreePath;
+    const workspaceId = "wks_tools_cache";
+    const snapshots = new Map();
+    const statusEmitted: SessionOutboundMessage[] = [];
+
+    await runWorktreeSetupInBackground(
+      {
+        paseoHome,
+        emitWorkspaceUpdateForWorkspaceId: async () => {},
+        cacheWorkspaceSetupSnapshot: (id, snapshot) => {
+          snapshots.set(id, snapshot);
+        },
+        emit: () => {},
+        sessionLogger: createLogger(),
+        terminalManager: null,
+        archiveWorkspaceRecord: async () => {},
+      },
+      {
+        requestCwd: repoDir,
+        repoRoot: repoDir,
+        workspaceId,
+        worktree: {
+          branchName: "feature-tools-cache",
+          worktreePath,
+        },
+        shouldBootstrap: true,
+        slug: "feature-tools-cache",
+        worktreePath,
+      },
+    );
+
+    expect(snapshots.get(workspaceId)?.status).toBe("completed");
+
+    await handleWorkspaceSetupStatusRequest(
+      {
+        emit: (message) => statusEmitted.push(message),
+        workspaceSetupSnapshots: snapshots,
+      },
+      {
+        type: "workspace_setup_status_request",
+        workspaceId,
+        requestId: "req-tools-cache",
+      },
+    );
+
+    expect(statusEmitted).toContainEqual({
+      type: "workspace_setup_status_response",
+      payload: {
+        requestId: "req-tools-cache",
+        workspaceId,
+        snapshot: snapshots.get(workspaceId),
+      },
+    });
+  });
 });
 
 describe("handleCreatePaseoWorktreeRequest", () => {

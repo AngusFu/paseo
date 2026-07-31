@@ -1102,6 +1102,215 @@ describe("CursorPrintAgentClient", () => {
     expect(typeof userEvent?.item.messageId).toBe("string");
   });
 
+  test("CreatePlan completion emits an execute question after turn completes", async () => {
+    const { spawn } = createFakeSpawn((child) => {
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "tool_call",
+          subtype: "completed",
+          call_id: "call-create-plan",
+          tool_call: {
+            createPlanToolCall: {
+              args: {
+                name: "hooks parity",
+                plan: "- Step one\n- Step two",
+              },
+              result: { success: {} },
+            },
+          },
+        })}\n`,
+      );
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "result",
+          subtype: "success",
+          session_id: "chat-plan-1",
+          result: "ok",
+        })}\n`,
+      );
+    });
+
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      spawn,
+    });
+    const session = await client.createSession({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      modeId: "force",
+    });
+
+    const eventsPromise = collectUntil(session, (events) =>
+      events.some((event) => event.type === "permission_requested"),
+    );
+    await session.startTurn("draft a plan");
+    const events = await eventsPromise;
+
+    const toolEvent = events.find(
+      (event) =>
+        event.type === "timeline" &&
+        (event.item as { type?: string; name?: string }).type === "tool_call" &&
+        (event.item as { name?: string }).name === "CreatePlan",
+    ) as {
+      item: { type: string; name: string; detail: { type: string; text?: string } };
+    };
+    expect(toolEvent?.item).toMatchObject({
+      name: "CreatePlan",
+      detail: { type: "plan", text: "- Step one\n- Step two" },
+    });
+
+    const permission = events.find((event) => event.type === "permission_requested") as {
+      request: { id: string; kind: string; name: string; input: { plan?: string } };
+    };
+    expect(permission.request).toMatchObject({
+      kind: "question",
+      name: "AskUserQuestion",
+      id: expect.stringMatching(/^plan-execute-question-/),
+    });
+    expect(permission.request.input.plan).toContain("Step one");
+    expect(session.getPendingPermissions()).toHaveLength(1);
+
+    const result = await session.respondToPermission(permission.request.id, {
+      behavior: "allow",
+      updatedInput: {
+        answers: { Execute: "Execute" },
+      },
+    });
+    expect(result?.followUpPrompt).toEqual(expect.stringContaining("Step one"));
+    expect(await session.getCurrentMode()).toBe("force");
+    expect(session.getPendingPermissions()).toHaveLength(0);
+  });
+
+  test("CreatePlan execute from plan mode switches to auto-review", async () => {
+    const { spawn } = createFakeSpawn((child) => {
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "tool_call",
+          subtype: "completed",
+          call_id: "call-create-plan-2",
+          tool_call: {
+            createPlanToolCall: {
+              args: { plan: "- Do the thing" },
+              result: { success: {} },
+            },
+          },
+        })}\n`,
+      );
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "result",
+          subtype: "success",
+          session_id: "chat-plan-2",
+          result: "ok",
+        })}\n`,
+      );
+    });
+
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      spawn,
+    });
+    const session = await client.createSession({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      modeId: "plan",
+    });
+
+    const eventsPromise = collectUntil(session, (events) =>
+      events.some((event) => event.type === "permission_requested"),
+    );
+    await session.startTurn("plan first");
+    const events = await eventsPromise;
+    const permission = events.find((event) => event.type === "permission_requested") as {
+      request: { id: string };
+    };
+
+    await session.respondToPermission(permission.request.id, {
+      behavior: "allow",
+      updatedInput: { answers: { Execute: "Execute" } },
+    });
+    expect(await session.getCurrentMode()).toBe("auto-review");
+  });
+
+  test("a later user message dismisses an unanswered plan-execute question", async () => {
+    let launches = 0;
+    const { spawn } = createFakeSpawn((child) => {
+      launches += 1;
+      if (launches === 1) {
+        child.stdout.write(
+          `${JSON.stringify({
+            type: "tool_call",
+            subtype: "completed",
+            call_id: "call-create-plan-3",
+            tool_call: {
+              createPlanToolCall: {
+                args: { plan: "- Sweep paths" },
+                result: { success: {} },
+              },
+            },
+          })}\n`,
+        );
+        child.stdout.write(
+          `${JSON.stringify({
+            type: "result",
+            subtype: "success",
+            session_id: "chat-plan-3",
+            result: "ok",
+          })}\n`,
+        );
+        return;
+      }
+      child.stdout.write(
+        `${JSON.stringify({
+          type: "result",
+          subtype: "success",
+          session_id: "chat-plan-3",
+          result: "ok",
+        })}\n`,
+      );
+    });
+
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      spawn,
+    });
+    const session = await client.createSession({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      modeId: "force",
+    });
+
+    const events: Array<{ type: string; [key: string]: unknown }> = [];
+    const unsubscribe = session.subscribe((event) => {
+      events.push(event as { type: string; [key: string]: unknown });
+    });
+
+    const firstPromise = collectUntil(session, (collected) =>
+      collected.some((event) => event.type === "permission_requested"),
+    );
+    await session.startTurn("draft");
+    await firstPromise;
+    expect(session.getPendingPermissions()).toHaveLength(1);
+
+    const secondPromise = collectUntil(
+      session,
+      (collected) => collected.filter((event) => event.type === "turn_completed").length >= 1,
+    );
+    await session.startTurn("do something else");
+    await secondPromise;
+    unsubscribe();
+
+    expect(session.getPendingPermissions()).toHaveLength(0);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "permission_resolved" &&
+          (event.resolution as { behavior?: string })?.behavior === "deny" &&
+          String(event.requestId).startsWith("plan-execute-question-"),
+      ),
+    ).toBe(true);
+  });
+
   test("plan mode surfaces interaction_query even when auto_accept is on", async () => {
     let childRef: FakeChild | null = null;
     const { spawn } = createFakeSpawn((child) => {

@@ -1,4 +1,5 @@
 import type { ToolCallDetail, ToolCallTimelineItem } from "../agent-sdk-types.js";
+import { extractPlanTextFromRecord } from "../plan-execute-question.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -370,6 +371,32 @@ function mapAskQuestionToolCall(
   };
 }
 
+function mapCreatePlanToolCall(
+  createPlan: Record<string, unknown>,
+  callIdFromEvent: string | null | undefined,
+  toolCall: Record<string, unknown>,
+): MappedCursorToolCall {
+  const args = isRecord(createPlan.args) ? createPlan.args : {};
+  const success = readNestedSuccess(createPlan.result);
+  const failure = readNestedFailure(createPlan.result);
+  const planText =
+    extractPlanTextFromRecord(args) ??
+    extractPlanTextFromRecord(success) ??
+    readString(createPlan.description) ??
+    "Approved plan";
+  return {
+    callId: callIdFromEvent ?? readString(toolCall.toolCallId) ?? readString(createPlan.toolCallId),
+    name: "CreatePlan",
+    callKey: "createPlanToolCall",
+    failed: failure.failed,
+    errorMessage: failure.failed ? (failure.message ?? "CreatePlan failed") : null,
+    detail: {
+      type: "plan",
+      text: planText,
+    },
+  };
+}
+
 /**
  * Map Cursor print/stream-json `tool_call` payloads into Paseo ToolCallDetail.
  * Wire shape is NOT ACP — this is the adaptation layer (cf. acp-agent mapToolDetail).
@@ -690,6 +717,11 @@ export function mapCursorPrintToolCall(
   const updateTodos = toolCall.updateTodosToolCall ?? toolCall.todoToolCall;
   if (isRecord(updateTodos)) {
     return mapUpdateTodosToolCall(updateTodos, callIdFromEvent, toolCall);
+  }
+
+  const createPlan = toolCall.createPlanToolCall;
+  if (isRecord(createPlan)) {
+    return mapCreatePlanToolCall(createPlan, callIdFromEvent, toolCall);
   }
 
   // Unknown nested *ToolCall shapes (e.g. webSearchToolCall, getMcpToolsToolCall) → plain_text.

@@ -3,6 +3,8 @@ import {
   buildPlanExecuteQuestionRequestId,
   buildPlanExecuteQuestions,
   buildPlanImplementationPrompt,
+  CURSOR_PRINT_IMPLEMENTATION_MODE_PREFERENCE,
+  extractPlanTextFromRecord,
   isCreatePlanToolName,
   isPlanExecuteAnswer,
   isPlanExecuteQuestionRequestId,
@@ -49,5 +51,26 @@ describe("plan-execute-question helpers", () => {
     expect(resolveImplementationModeId([{ id: "plan" }, { id: "default" }])).toBe("default");
     expect(resolveImplementationModeId([{ id: "plan" }, { id: "agent" }])).toBe("agent");
     expect(resolveImplementationModeId([{ id: "plan" }, { id: "review" }])).toBe("review");
+  });
+
+  it("extracts plan markdown from CreatePlan-shaped records", () => {
+    expect(
+      extractPlanTextFromRecord({
+        name: "hooks",
+        overview: "short",
+        plan: "- Step one\n- Step two",
+      }),
+    ).toBe("- Step one\n- Step two");
+    expect(extractPlanTextFromRecord({ name: "hooks only" })).toBe("hooks only");
+    expect(extractPlanTextFromRecord({})).toBeNull();
+  });
+
+  it("prefers auto-review/force for cursor-print implementation modes", () => {
+    expect(
+      resolveImplementationModeId(
+        [{ id: "plan" }, { id: "force" }, { id: "auto-review" }, { id: "default" }],
+        CURSOR_PRINT_IMPLEMENTATION_MODE_PREFERENCE,
+      ),
+    ).toBe("auto-review");
   });
 });

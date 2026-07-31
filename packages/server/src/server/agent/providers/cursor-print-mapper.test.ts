@@ -252,6 +252,31 @@ describe("mapCursorPrintToolCall", () => {
     });
   });
 
+  test("maps createPlanToolCall into plan detail for execute CTA", () => {
+    const mapped = mapCursorPrintToolCall(
+      {
+        createPlanToolCall: {
+          args: {
+            name: "hooks parity",
+            overview: "Wire remaining hooks",
+            plan: "- Step one\n- Step two",
+          },
+          result: { success: {} },
+        },
+      },
+      "plan-1",
+    );
+    expect(mapped).toMatchObject({
+      name: "CreatePlan",
+      callKey: "createPlanToolCall",
+      failed: false,
+      detail: {
+        type: "plan",
+        text: "- Step one\n- Step two",
+      },
+    });
+  });
+
   test("maps askQuestionToolCall into AskUserQuestion unknown/questions shape", () => {
     const mapped = mapCursorPrintToolCall(
       {

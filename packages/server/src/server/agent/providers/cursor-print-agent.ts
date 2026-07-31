@@ -61,9 +61,20 @@ import {
   findCursorPrintSessionDir,
   isCursorResumeFailure,
   listCursorPrintImportableSessions,
-  readCursorPrintHistory,
+  readCursorPrintTimelineHistory,
   resolveAbsoluteWorkspace,
 } from "./cursor-print-sessions.js";
+import { CLAUDE_ASK_USER_QUESTION_TOOL_NAME } from "../ask-question-timeline.js";
+import {
+  buildPlanExecuteQuestionRequestId,
+  buildPlanExecuteQuestions,
+  buildPlanImplementationPrompt,
+  CURSOR_PRINT_IMPLEMENTATION_MODE_PREFERENCE,
+  isCreatePlanToolName,
+  isPlanExecuteAnswer,
+  isPlanExecuteQuestionRequestId,
+  resolveImplementationModeId,
+} from "../plan-execute-question.js";
 import {
   mapCursorPrintToolCall,
   resolveAssistantEmitText,
@@ -315,6 +326,11 @@ interface ActiveTurn {
   userText: string;
   /** Materialized image paths for Cursor CLI `--image` (resume retries reuse these). */
   imagePaths: string[];
+}
+
+interface PendingPlanExecutePermission {
+  request: AgentPermissionRequest;
+  planText: string;
 }
 
 function isPlanLikePrintMode(modeId: string): boolean {
@@ -1006,6 +1022,9 @@ export class CursorPrintAgentSession implements AgentSession {
   private stderrBuffer = "";
   private mcpPlugin: CursorPrintMcpPlugin | null = null;
   private mcpPluginResolved = false;
+  private readonly planExecutePermissions = new Map<string, PendingPlanExecutePermission>();
+  /** Set when CreatePlan completes; consumed on successful turn_completed. */
+  private pendingPlanExecuteText: string | null = null;
 
   constructor(options: CursorPrintAgentSessionOptions) {
     this.config = options.config;
@@ -1145,6 +1164,9 @@ export class CursorPrintAgentSession implements AgentSession {
     if (this.activeTurn) {
       throw new Error("A cursor-print turn is already active");
     }
+
+    // A later user message supersedes an unanswered plan-execute CTA.
+    this.dismissPlanExecutePermissions("Superseded by a new user message");
 
     const turnId = randomUUID();
     const assistantMessageId = randomUUID();
@@ -1286,18 +1308,15 @@ export class CursorPrintAgentSession implements AgentSession {
     if (!this.chatId) {
       return;
     }
-    const history = await readCursorPrintHistory({
+    const history = await readCursorPrintTimelineHistory({
       cwd: this.config.cwd,
       sessionId: this.chatId,
     });
-    for (const entry of history) {
+    for (const item of history) {
       yield {
         type: "timeline",
         provider: this.provider,
-        item:
-          entry.role === "user"
-            ? { type: "user_message", text: entry.text }
-            : { type: "assistant_message", text: entry.text },
+        item,
       };
     }
   }
@@ -1333,17 +1352,23 @@ export class CursorPrintAgentSession implements AgentSession {
   }
 
   getPendingPermissions(): AgentPermissionRequest[] {
-    const pending = this.activeTurn?.pendingInteractions;
-    if (!pending || pending.size === 0) {
-      return [];
-    }
-    return Array.from(pending.values(), (entry) => entry.request);
+    const interactionPending = this.activeTurn
+      ? Array.from(this.activeTurn.pendingInteractions.values(), (entry) => entry.request)
+      : [];
+    return [
+      ...interactionPending,
+      ...Array.from(this.planExecutePermissions.values(), (entry) => entry.request),
+    ];
   }
 
   async respondToPermission(
     requestId: string,
     response: AgentPermissionResponse,
   ): Promise<AgentPermissionResult | void> {
+    if (isPlanExecuteQuestionRequestId(requestId)) {
+      return this.respondToPlanExecutePermission(requestId, response);
+    }
+
     const turn = this.activeTurn;
     const pending = turn?.pendingInteractions.get(requestId);
     if (!turn || !pending) {
@@ -1381,6 +1406,8 @@ export class CursorPrintAgentSession implements AgentSession {
 
   async interrupt(): Promise<void> {
     const turn = this.activeTurn;
+    this.dismissPlanExecutePermissions("Interrupted");
+    this.pendingPlanExecuteText = null;
     if (!turn?.child) {
       return;
     }
@@ -1402,6 +1429,8 @@ export class CursorPrintAgentSession implements AgentSession {
 
   async close(): Promise<void> {
     this.closed = true;
+    this.dismissPlanExecutePermissions("Session closed");
+    this.pendingPlanExecuteText = null;
     await this.interrupt();
     this.subscribers.clear();
     if (this.mcpPlugin) {
@@ -1524,6 +1553,99 @@ export class CursorPrintAgentSession implements AgentSession {
       });
     }
     turn.pendingInteractions.clear();
+  }
+
+  private maybeEmitPlanExecuteQuestion(): void {
+    const planText = this.pendingPlanExecuteText;
+    if (!planText) {
+      this.pendingPlanExecuteText = null;
+      return;
+    }
+    this.pendingPlanExecuteText = null;
+    this.emitPlanExecuteQuestion(planText);
+  }
+
+  private emitPlanExecuteQuestion(planText: string): void {
+    this.dismissPlanExecutePermissions("Replaced by a newer plan");
+
+    const requestId = buildPlanExecuteQuestionRequestId(randomUUID());
+    const questions = buildPlanExecuteQuestions();
+    const request: AgentPermissionRequest = {
+      id: requestId,
+      provider: this.provider,
+      name: CLAUDE_ASK_USER_QUESTION_TOOL_NAME,
+      kind: "question",
+      title: "Plan",
+      description: "Review the proposed plan before implementation starts.",
+      input: { questions, plan: planText },
+      metadata: {
+        planText,
+        source: "cursor_print_plan_execute",
+      },
+    };
+    this.planExecutePermissions.set(requestId, { request, planText });
+    this.emit({
+      type: "permission_requested",
+      provider: this.provider,
+      request,
+    });
+  }
+
+  private dismissPlanExecutePermissions(message: string): void {
+    if (this.planExecutePermissions.size === 0) {
+      return;
+    }
+    for (const [requestId] of this.planExecutePermissions) {
+      this.emit({
+        type: "permission_resolved",
+        provider: this.provider,
+        requestId,
+        resolution: { behavior: "deny", message },
+      });
+    }
+    this.planExecutePermissions.clear();
+  }
+
+  private async respondToPlanExecutePermission(
+    requestId: string,
+    response: AgentPermissionResponse,
+  ): Promise<AgentPermissionResult | void> {
+    const pending = this.planExecutePermissions.get(requestId);
+    if (!pending) {
+      throw new Error(`No pending permission request with id '${requestId}'`);
+    }
+    this.planExecutePermissions.delete(requestId);
+
+    let followUpPrompt: string | undefined;
+    const shouldExecute =
+      response.behavior === "allow" &&
+      isPlanExecuteAnswer(
+        response.updatedInput && typeof response.updatedInput === "object"
+          ? (response.updatedInput as { answers?: unknown }).answers
+          : null,
+      );
+    if (shouldExecute) {
+      if (isPlanLikePrintMode(this.modeId)) {
+        const modes = await this.getAvailableModes();
+        const modeId = resolveImplementationModeId(
+          modes,
+          CURSOR_PRINT_IMPLEMENTATION_MODE_PREFERENCE,
+        );
+        await this.setMode(modeId);
+      }
+      followUpPrompt = buildPlanImplementationPrompt(pending.planText);
+    }
+
+    this.emit({
+      type: "permission_resolved",
+      provider: this.provider,
+      requestId,
+      resolution: response,
+    });
+
+    if (followUpPrompt) {
+      return { followUpPrompt };
+    }
   }
 
   private buildInteractionPermissionDetail(
@@ -1728,6 +1850,16 @@ export class CursorPrintAgentSession implements AgentSession {
         turn.toolCallIds.get(lookupKey) ?? mapped.callId ?? `${turn.turnId}:${mapped.callKey}:done`;
       const status = mapped.failed ? "failed" : "completed";
       this.emitTimeline(turn.turnId, toToolCallTimelineItem({ callId, mapped, status }));
+      if (
+        status === "completed" &&
+        (isCreatePlanToolName(mapped.name) || mapped.callKey === "createPlanToolCall")
+      ) {
+        const planText =
+          mapped.detail.type === "plan" && mapped.detail.text.trim()
+            ? mapped.detail.text
+            : mapped.name;
+        this.pendingPlanExecuteText = planText;
+      }
     }
   }
 
@@ -1851,6 +1983,7 @@ export class CursorPrintAgentSession implements AgentSession {
     }
 
     if (isError) {
+      this.pendingPlanExecuteText = null;
       this.emit({
         type: "turn_failed",
         provider: this.provider,
@@ -1868,6 +2001,7 @@ export class CursorPrintAgentSession implements AgentSession {
       turnId: turn.turnId,
       usage,
     });
+    this.maybeEmitPlanExecuteQuestion();
   }
 
   private failTurn(error: string): void {
@@ -1881,6 +2015,7 @@ export class CursorPrintAgentSession implements AgentSession {
     }
 
     this.clearPendingInteractions(turn, error);
+    this.pendingPlanExecuteText = null;
     const child = turn.child;
     turn.completed = true;
     turn.child = null;

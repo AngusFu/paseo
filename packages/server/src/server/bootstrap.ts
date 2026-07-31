@@ -129,10 +129,7 @@ import type { RequestedSpeechProviders } from "./speech/speech-types.js";
 import { createSpeechService } from "./speech/speech-runtime.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import type { DaemonProviderOverrideLike } from "./agent/acp-auto-approve-default.js";
-import {
-  removeCursorPrintGlobalCursorRule,
-  writeCursorPrintGuidanceFileForDaemon,
-} from "./agent/providers/cursor-print-agent.js";
+import { writeCursorPrintGuidanceFileForDaemon } from "./agent/providers/cursor-print-agent.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { QuestionStore } from "./question/store.js";
 import { createQuestionWaitSocket } from "./question/wait-socket.js";
@@ -1780,7 +1777,9 @@ export async function createPaseoDaemon(
   };
 
   const stop = async () => {
-    removeCursorPrintGlobalCursorRule();
+    // Keep ~/.cursor/rules/paseo-cursor-print-guidance.mdc across stop — multiple
+    // daemons (dev + desktop) share that path; removing here races the other.
+    // Boot always rewrites the file.
     workspaceReconciliation.dispose();
     scriptHealthMonitor.stop();
     clearInterval(idleAgentCollectionTimer);

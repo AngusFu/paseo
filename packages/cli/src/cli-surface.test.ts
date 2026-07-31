@@ -7,7 +7,20 @@ describe("canonical CLI surface", () => {
     const help = cli.helpInformation();
     expect(help).toContain("workspace");
     expect(help).toContain("heartbeat");
+    expect(help).toContain("markdown");
     expect(help).not.toContain("worktree");
+  });
+
+  it("exposes markdown render options", () => {
+    const markdown = createCli().commands.find((command) => command.name() === "markdown");
+    const help = markdown?.helpInformation();
+    expect(help).toContain("[md]");
+    expect(help).toContain("--stdout");
+    expect(help).toContain("--serve");
+    expect(help).toContain("--template");
+    expect(help).toContain("--no-cache");
+    expect(help).toContain("--clear-all");
+    expect(help).toContain("--cache-dir");
   });
 
   it("names explicit workspace creation without exposing older syntax", () => {

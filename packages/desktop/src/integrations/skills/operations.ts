@@ -38,6 +38,7 @@ export const PASEO_SKILL_NAMES = [
   "paseo-goal",
   "paseo-handoff",
   "paseo-loop",
+  "paseo-markdown",
   "paseo-setup-config",
   // Keep removed bundle names here so auto-update deletes stale installed copies.
   "paseo-epic",

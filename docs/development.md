@@ -433,7 +433,12 @@ npm run cli -- provider ls                                  # Providers + mode i
 npm run cli -- provider models claude --thinking            # Models + effort ids
 npm run cli -- provider features claude --cwd . --model <id>  # Fast/plan/… features
 npm run cli -- clone owner/repo --dir ~/workspace           # Clone GitHub repo and register project
+npm run cli -- markdown report.md    # Render md → styled HTML and open (needs uv; no daemon)
 ```
+
+### Markdown preview (`paseo markdown`)
+
+Local helper (no daemon) that turns an archived `.md` report into a styled standalone HTML page. Implementation lives at `packages/cli/tools/markdown/` (PEP-723 Python script run through `uv`). Default output is under `$TMPDIR/paseo-markdown/` (system temp, OS-reclaimable) — it does **not** write a sibling `.html` next to the markdown. Cache controls: `--no-cache`, `--clear`, `--clear-all`, `--cache-dir`, `--ls-cache`. See that directory's README and skill `paseo-markdown`.
 
 ### Getting a workspace id back from worktree creation
 

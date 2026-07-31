@@ -8,7 +8,10 @@
   "files": [
     "bin",
     "dist",
-    "!dist/**/*.map"
+    "!dist/**/*.map",
+    "tools/markdown/render.py",
+    "tools/markdown/templates",
+    "tools/markdown/README.md"
   ],
   "type": "module",
   "publishConfig": {

@@ -74,6 +74,11 @@ describe("desktop packaging", () => {
     );
   });
 
+  it("unpacks paseo markdown python assets for uv", () => {
+    const config = readFileSync(join(packageRoot, "electron-builder.yml"), "utf8");
+    expect(config).toContain("node_modules/@getpaseo/cli/tools/markdown/**/*");
+  });
+
   it("excludes package debug/source files from the packaged app", () => {
     const config = readFileSync(join(packageRoot, "electron-builder.yml"), "utf8");
 

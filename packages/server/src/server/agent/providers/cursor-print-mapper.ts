@@ -737,7 +737,7 @@ export function mapCursorPrintToolCall(
       callKey: "generic",
       failed: false,
       errorMessage: null,
-      detail: { type: "unknown", input: description, output: undefined },
+      detail: { type: "unknown", input: description, output: null },
     };
   }
   return null;

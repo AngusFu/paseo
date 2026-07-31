@@ -305,6 +305,23 @@ describe("toAgentPayload", () => {
     expect(payload.pendingPermissions).toEqual([]);
   });
 
+  it("coerces unknown permission detail output undefined to null for the wire", () => {
+    const permission = createPermission({
+      id: "perm-unknown",
+      detail: { type: "unknown", input: { path: "/tmp/x" }, output: undefined },
+    });
+    const agent = createManagedAgent({
+      pendingPermissions: new Map([[permission.id, permission]]),
+    });
+    const payload = toAgentPayload(agent);
+    expect(payload.pendingPermissions).toHaveLength(1);
+    expect(payload.pendingPermissions[0]?.detail).toEqual({
+      type: "unknown",
+      input: { path: "/tmp/x" },
+      output: null,
+    });
+  });
+
   it("propagates lifecycle status for all states", () => {
     for (const status of AGENT_LIFECYCLE_STATUSES) {
       const agent = createManagedAgent({ lifecycle: status });

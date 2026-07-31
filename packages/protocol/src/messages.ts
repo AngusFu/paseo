@@ -723,7 +723,9 @@ const ToolCallDetailPayloadSchema: z.ZodType<ToolCallDetail, unknown> = z.discri
     z.object({
       type: z.literal("unknown"),
       input: UnknownValueSchema,
-      output: UnknownValueSchema,
+      // COMPAT(cursor-print-unknown-output): producers used to omit/undefined output;
+      // accept missing so fetch_agent* does not hard-fail. Prefer explicit null.
+      output: UnknownValueSchema.optional(),
     }),
   ],
 );

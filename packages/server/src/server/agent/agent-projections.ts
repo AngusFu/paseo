@@ -331,11 +331,29 @@ function sanitizePendingPermissions(
   return Array.from(pending.values()).map((request) =>
     Object.assign({}, request, {
       input: sanitizeMetadata(request.input),
+      detail: sanitizePermissionDetail(request.detail),
       suggestions: sanitizeMetadataArray(request.suggestions),
       actions: request.actions?.map((action) => Object.assign({}, action)),
       metadata: sanitizeMetadata(request.metadata),
     }),
   );
+}
+
+/** Wire JSON drops `undefined`; unknown tool details must emit null for output. */
+function sanitizePermissionDetail(
+  detail: AgentPermissionRequest["detail"],
+): AgentPermissionRequest["detail"] {
+  if (!detail || typeof detail !== "object") {
+    return detail;
+  }
+  if (detail.type !== "unknown") {
+    return detail;
+  }
+  return {
+    type: "unknown",
+    input: detail.input === undefined ? null : detail.input,
+    output: detail.output === undefined ? null : detail.output,
+  };
 }
 
 function sanitizePersistenceHandle(

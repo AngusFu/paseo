@@ -291,7 +291,8 @@ export type ToolCallDetail =
   | {
       type: "unknown";
       input: unknown;
-      output: unknown;
+      // Prefer null over omitting; optional for wire back-compat with older producers.
+      output?: unknown;
     };
 
 interface ToolCallBase {

@@ -1539,7 +1539,7 @@ export class CursorPrintAgentSession implements AgentSession {
         url: readString(args.url) ?? "",
       };
     }
-    return { type: "unknown", input: args, output: undefined };
+    return { type: "unknown", input: args, output: null };
   }
 
   private handleStdoutChunk(chunk: string): void {

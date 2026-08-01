@@ -8947,6 +8947,64 @@ test("askAgentQuestion times out without dismissing the pending permission", asy
   }
 });
 
+test("askAgentQuestion after timeout supersedes the orphaned pending form", async () => {
+  const { manager, agentId, cleanup } = await createAskQuestionFixture({
+    withQuestionStore: true,
+  });
+  try {
+    const controller = new AbortController();
+    const firstPromise = manager.askAgentQuestion({
+      agentId,
+      questions: ASK_QUESTION_QUESTIONS,
+      signal: controller.signal,
+    });
+    expect(manager.getPendingPermissions(agentId)).toHaveLength(1);
+    const firstRequestId = manager.getPendingPermissions(agentId)[0]?.id;
+    expect(firstRequestId).toMatch(/^mcp-question-/);
+
+    controller.abort();
+    await expect(firstPromise).resolves.toMatchObject({ outcome: "timed_out" });
+    expect(manager.getPendingPermissions(agentId)).toHaveLength(1);
+
+    await vi.waitFor(async () => {
+      expect((await manager.listInboxQuestions({ status: "pending" })).questions).toHaveLength(1);
+    });
+    const firstQuestionId = (await manager.listInboxQuestions({ status: "pending" })).questions[0]
+      ?.id;
+    expect(firstQuestionId).toEqual(expect.any(String));
+    const firstWait = manager.waitInboxQuestion({ questionId: firstQuestionId! });
+
+    const secondPromise = manager.askAgentQuestion({
+      agentId,
+      questions: ASK_QUESTION_QUESTIONS,
+    });
+    await vi.waitFor(() => {
+      const pending = manager.getPendingPermissions(agentId);
+      expect(pending).toHaveLength(1);
+      expect(pending[0]?.id).not.toBe(firstRequestId);
+    });
+
+    await expect(firstWait).resolves.toMatchObject({ status: "expired" });
+    expect((await manager.listInboxQuestions({ status: "pending" })).questions).toHaveLength(1);
+    expect((await manager.listInboxQuestions({ status: "expired" })).questions).toHaveLength(1);
+
+    await manager.respondToPermission(agentId, manager.getPendingPermissions(agentId)[0]!.id, {
+      behavior: "allow",
+      updatedInput: { answers: { Env: "production" } },
+    });
+    await expect(secondPromise).resolves.toMatchObject({
+      outcome: "answered",
+      response: {
+        behavior: "allow",
+        updatedInput: { answers: { Env: "production" } },
+      },
+    });
+    expect(manager.getPendingPermissions(agentId)).toHaveLength(0);
+  } finally {
+    cleanup();
+  }
+});
+
 test("askAgentQuestion interrupt expires the inbox row and dismisses the MCP waiter", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-ask-question-interrupt-"));
   let session: TestAgentSession | null = null;

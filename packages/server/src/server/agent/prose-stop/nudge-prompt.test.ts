@@ -9,6 +9,8 @@ describe("prose-stop nudge prompts", () => {
     });
     expect(body).toContain("Matched pattern /let me know/");
     expect(body).toContain("Fix now:");
+    expect(body).toContain("timedOut with questionId");
+    expect(body).not.toContain("re-ask the same decision with ask_question");
   });
 
   it("keeps the reentry warning short", () => {

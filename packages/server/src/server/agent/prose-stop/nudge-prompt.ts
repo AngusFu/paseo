@@ -14,11 +14,13 @@ export function formatProseStopNudgePrompt(args?: { pattern?: string; source?: s
     "",
     "Rule: decisions go through the ask ladder — prefer native AskUserQuestion when reliable,",
     "else MCP ask_question. On timedOut/timeout/unavailable, follow the paseo-ask skill:",
-    "`paseo question wait <questionId>` (same inbox id) or create+wait. Never re-ask in prose.",
+    "`paseo question wait <questionId>` (same inbox id) or create+wait. Never re-ask in prose,",
+    "and do not call ask_question again when you already have a timedOut questionId.",
     "User dismiss (dismissed=true) is a real outcome — do not treat it as timeout fallback.",
     "",
-    "Fix now: re-ask the same decision with ask_question (≤4 options), or continue with the",
-    "next tool call if no decision is required. Do not end the turn waiting in prose again.",
+    "Fix now: if you have no open question yet, call ask_question (≤4 options); if MCP already",
+    "returned timedOut with questionId, wait that id. Or continue with the next tool call if no",
+    "decision is required. Do not end the turn waiting in prose again.",
   ].join("\n");
 }
 

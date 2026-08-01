@@ -127,7 +127,7 @@ export const CURSOR_PRINT_RUNTIME_GUIDANCE = [
   "Prefer project CLIs for tools that are also FastMCP CLIs: atlassian (Jira/Confluence), glab (GitLab; use env -u GITLAB_TOKEN glab …), figma, chrome-devtools, gh.",
   "If a skill/doc names a CLI, run that CLI — do not substitute an MCP server with the same job.",
   "Never use AskUserQuestion / AskQuestion (or similar IDE questionnaire tools): --print has no questionnaire UI and they return Questions skipped.",
-  'To ask the user a decision: prefer MCP ask_question. On timeout / missing tool, use Paseo Question Inbox via Shell — `paseo question create --agent "$PASEO_AGENT_ID" --source skill --title "…" --questions \'[{"header":"…","question":"…","options":[{"label":"…"},{"label":"…"}]}]\' --json` then `paseo question wait <id> --timeout 30m --json`. Do not re-ask in chat prose; treat dismissed=true as a real outcome.',
+  'To ask the user a decision: prefer MCP ask_question. On timedOut=true with questionId, run `paseo question wait <questionId> --timeout 30m --json` — do not create a second inbox row and do not call ask_question again. If ask_question is missing, use Shell create+wait: `paseo question create --agent "$PASEO_AGENT_ID" --source skill --title "…" --questions \'[{"header":"…","question":"…","options":[{"label":"…"},{"label":"…"}]}]\' --json` then `paseo question wait <id> --timeout 30m --json`. Do not re-ask in chat prose; treat dismissed=true as a real outcome.',
   "Permission notes: Paseo Auto Approve only auto-answers Cursor interaction_query over stdin; it cannot enable org-disabled --force / Run Everything. Prefer Auto-review mode; do not rely on Force/YOLO when the org blocks it.",
 ].join("\n");
 

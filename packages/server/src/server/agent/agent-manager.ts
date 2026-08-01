@@ -2556,6 +2556,11 @@ export class AgentManager {
     if (isOrchestratedBackgroundAgent(agent)) {
       throw new Error("ask_question is not available to orchestrated agents");
     }
+    // Timeout keeps the first form pending for skill wait. Agents often re-ask
+    // instead — drop the orphan form synchronously so callers still see the new
+    // permission registered before the first await, then expire inbox rows.
+    this.dismissPendingInboxQuestionPermissions(agent);
+    const expirePriorInbox = this.expireOrphanPendingInboxQuestions(agent);
     const requestId = `mcp-question-${this.idFactory()}`;
     // COMPAT(askQuestionAskUserQuestionDisguise): added in v0.1.105, remove after
     // 2027-01-24 once floor clients render generic ask_question tool names /
@@ -2603,20 +2608,21 @@ export class AgentManager {
         provider: agent.provider,
         request,
       });
-      // Persist after the live waiter/permission are registered so callers can
-      // observe pending permissions synchronously. Settlement looks up by
-      // mcpRequestId map once create finishes (or falls back to store scan).
-      // Keep the promise so timeout TTL can await the same create.
+      // Persist after prior orphans expire so Approvals does not briefly show two
+      // pending rows. Settlement looks up by mcpRequestId map once create finishes
+      // (or falls back to store scan). Keep the promise so timeout TTL can await.
       this.trackInboxQuestionPersist(
         requestId,
-        this.persistInboxQuestionRecord({
-          agentId: agent.id,
-          workspaceId: agent.workspaceId,
-          requestId,
-          questions: input.questions,
-          title: input.title,
-          source: "mcp",
-        }),
+        expirePriorInbox.then(() =>
+          this.persistInboxQuestionRecord({
+            agentId: agent.id,
+            workspaceId: agent.workspaceId,
+            requestId,
+            questions: input.questions,
+            title: input.title,
+            source: "mcp",
+          }),
+        ),
       );
     });
 
@@ -2647,6 +2653,10 @@ export class AgentManager {
     if (agent.internal) {
       throw new Error("question.create is not available to internal agents");
     }
+    // Prefer wait-on-same-id after MCP timeout; create is a recovery path. If
+    // create still happens while an orphaned MCP form is pending, replace it.
+    this.dismissPendingInboxQuestionPermissions(agent);
+    await this.expireOrphanPendingInboxQuestions(agent);
     const source = input.source ?? "cli";
     const question = await this.questionStore.create({
       agentId: agent.id,
@@ -2828,6 +2838,47 @@ export class AgentManager {
     void this.beginInboxQuestionRecoveryTtl(requestId).finally(() => {
       resolveWaiter(null);
     });
+  }
+
+  /**
+   * Drop prior inbox question forms/waiters synchronously. Does not touch
+   * plan-execute CTAs or tool permissions. Pair with
+   * `expireOrphanPendingInboxQuestions` to settle durable rows.
+   */
+  private dismissPendingInboxQuestionPermissions(agent: ActiveManagedAgent): void {
+    const staleRequestIds: string[] = [];
+    for (const [requestId, request] of agent.pendingPermissions) {
+      if (request.kind === "question" && this.isInboxPermissionRequestId(requestId)) {
+        staleRequestIds.push(requestId);
+      }
+    }
+    for (const requestId of staleRequestIds) {
+      this.settleMcpQuestion(agent.id, requestId, null, { persistInbox: false });
+    }
+  }
+
+  /** Expire pending inbox rows for an agent that no longer have a live form. */
+  private async expireOrphanPendingInboxQuestions(agent: ActiveManagedAgent): Promise<void> {
+    if (!this.questionStore) {
+      return;
+    }
+    const pending = await this.questionStore.list({
+      status: "pending",
+      agentId: agent.id,
+    });
+    for (const question of pending) {
+      if (question.mcpRequestId && agent.pendingPermissions.has(question.mcpRequestId)) {
+        continue;
+      }
+      const expired = await this.questionStore.markExpired(question.id);
+      if (expired?.status !== "expired") {
+        continue;
+      }
+      if (question.mcpRequestId) {
+        this.inboxQuestionIdByMcpRequest.delete(question.mcpRequestId);
+      }
+      this.notifyInboxQuestionWaiters(expired);
+    }
   }
 
   private trackInboxQuestionPersist(requestId: string, job: Promise<void>): void {

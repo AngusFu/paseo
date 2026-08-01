@@ -68,6 +68,7 @@ import type { ToastApi } from "@/components/toast-host";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { ToolCallDetailsContent } from "@/components/tool-call-details";
 import { QuestionFormCard } from "@/components/question-form-card";
+import { selectVisiblePendingPermissions } from "@/questions/select-visible-pending-permissions";
 import { ToolCallSheetProvider } from "@/components/tool-call-sheet";
 import {
   prepareToolCallHistory,
@@ -1036,7 +1037,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
 
     const pendingPermissionItems = useMemo(
-      () => Array.from(pendingPermissions.values()).filter((perm) => perm.agentId === agentId),
+      () =>
+        selectVisiblePendingPermissions(
+          Array.from(pendingPermissions.values()).filter((perm) => perm.agentId === agentId),
+        ),
       [pendingPermissions, agentId],
     );
 

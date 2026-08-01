@@ -927,9 +927,11 @@ describe("CursorPrintAgentClient", () => {
     });
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("--plugin-dir");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("ask_question");
+    expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("paseo question wait");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("paseo question create");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("$PASEO_AGENT_ID");
     expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("AskUserQuestion");
+    expect(CURSOR_PRINT_RUNTIME_GUIDANCE).toContain("do not call ask_question again");
     // Host guidance is injected via ~/AGENTS.md managed block at daemon boot.
     expect(prompt).toBe("Agent system\n\ndo the thing");
     expect(prompt).not.toContain(CURSOR_PRINT_RUNTIME_GUIDANCE);

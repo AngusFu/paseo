@@ -148,6 +148,7 @@ Closed rows (`dismissed` / `expired`) record `closedAt` and are **hard-deleted**
 ## Risks
 
 - **Double UI**: Native AskUserQuestion and Paseo card must not both block the same decision. Policy: native wins when chosen; MCP/skill own the inbox path.
+- **Timeout re-ask doubles**: MCP timeout keeps the first permission pending so skill can `wait` the same id. If the agent still opens a second `ask_question` / `question.create`, daemon **supersedes** prior inbox question permissions/rows for that agent (expire + drop the orphan form). App UI also keeps only the newest inbox question form as a client-side backstop. Plan-execute CTAs are not superseded.
 - **False fallback**: User dismiss or slow answer must not look like MCP timeout. Classify errors before invoking the skill.
 - **Two waiters**: MCP promise and CLI `wait` must share one inbox id / one resolve; never fork two pending rows for one decision.
 - **Protocol**: Keep MCP tool schema backward-compatible; new RPCs are additive `question.*` pairs.

@@ -36,6 +36,7 @@ import {
   Code2,
   Terminal,
   MessageSquareWarning,
+  BookOpen,
 } from "lucide-react-native";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
@@ -106,6 +107,7 @@ import {
   HostTerminalsPage,
 } from "@/screens/settings/host-page";
 import { HostFastMcpPage } from "@/screens/settings/host-fastmcp-page";
+import { HostKnowledgeBasesPage } from "@/screens/settings/host-knowledge-bases-page";
 import { HostProseStopPage } from "@/screens/settings/host-prose-stop-page";
 import ProjectsScreen from "@/screens/projects-screen";
 import ProjectSettingsScreen from "@/screens/project-settings-screen";
@@ -176,6 +178,11 @@ const HOST_SECTION_ITEMS: HostSectionItem[] = [
   { id: "connections", labelKey: "settings.hostSections.connections", icon: Network },
   { id: "agents", labelKey: "settings.hostSections.agents", icon: Bot },
   { id: "workspaces", labelKey: "settings.hostSections.workspaces", icon: FolderGit2 },
+  {
+    id: "knowledge-bases",
+    labelKey: "settings.hostSections.knowledgeBases.nav",
+    icon: BookOpen,
+  },
   { id: "providers", labelKey: "settings.hostSections.providers", icon: Boxes },
   { id: "integrations", labelKey: "settings.hostSections.integrations", icon: Puzzle },
   { id: "fastmcp", labelKey: "settings.hostSections.fastmcp.nav", icon: Terminal },
@@ -195,6 +202,8 @@ function renderHostSettingsContent(
       return <HostAgentsPage serverId={view.serverId} />;
     case "workspaces":
       return <HostWorkspacesPage serverId={view.serverId} />;
+    case "knowledge-bases":
+      return <HostKnowledgeBasesPage serverId={view.serverId} />;
     case "providers":
       return <HostProvidersPage serverId={view.serverId} />;
     case "integrations":

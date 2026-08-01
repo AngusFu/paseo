@@ -522,6 +522,7 @@ export const HOST_SECTION_SLUGS = [
   "connections",
   "agents",
   "workspaces",
+  "knowledge-bases",
   "providers",
   "integrations",
   "fastmcp",

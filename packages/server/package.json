@@ -27,6 +27,11 @@
       "types": "./dist/server/terminal/agent-hooks/provider-registry.d.ts",
       "source": "./src/terminal/agent-hooks/provider-registry.ts",
       "default": "./dist/server/terminal/agent-hooks/provider-registry.js"
+    },
+    "./docs-vfs": {
+      "types": "./dist/server/server/docs-vfs/index.d.ts",
+      "source": "./src/server/docs-vfs/index.ts",
+      "default": "./dist/server/server/docs-vfs/index.js"
     }
   },
   "publishConfig": {
@@ -79,6 +84,7 @@
     "ai": "5.0.78",
     "ajv": "^8.20.0",
     "bcryptjs": "^3.0.3",
+    "chromadb": "3.5.0",
     "dotenv": "^17.2.3",
     "express": "^4.18.2",
     "fast-deep-equal": "^3.1.3",

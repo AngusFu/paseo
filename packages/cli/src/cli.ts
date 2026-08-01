@@ -17,6 +17,7 @@ import { createWorkspaceCommand } from "./commands/workspace/index.js";
 import { createHeartbeatCommand } from "./commands/heartbeat/index.js";
 import { createHooksCommand } from "./commands/hooks.js";
 import { createMarkdownCommand } from "./commands/markdown.js";
+import { createKbCommand } from "./commands/kb/index.js";
 import { startCommand as daemonStartCommand } from "./commands/daemon/start.js";
 import { runStatusCommand as runDaemonStatusCommand } from "./commands/daemon/status.js";
 import { runRestartCommand as runDaemonRestartCommand } from "./commands/daemon/restart.js";
@@ -210,6 +211,9 @@ export function createCli(): Command {
 
   // Local markdown → HTML renderer (no daemon)
   program.addCommand(createMarkdownCommand());
+
+  // Knowledge bases + VFS (local $PASEO_HOME; no daemon RPC yet)
+  program.addCommand(createKbCommand());
 
   return program;
 }

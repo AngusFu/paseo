@@ -992,6 +992,9 @@ describe("CursorPrintAgentClient", () => {
       const agents = readFileSync(agentsPath, "utf8");
       expect(agents).toContain(CURSOR_PRINT_RUNTIME_GUIDANCE);
       expect(agents).toContain("Host append");
+      expect(agents).toContain("Knowledge bases (read-only)");
+      expect(agents).toContain("/paseo-vfs/<mountSlug>/");
+      expect(agents).toContain("Mount knowledge bases");
       expect(agents).toContain("Decisions (Paseo)");
       expect(agents).toContain(CURSOR_PRINT_AGENTS_BLOCK_BEGIN);
       expect(readCursorPrintGuidanceMarkdown(agentsPath)).toContain("Host append");

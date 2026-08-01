@@ -79,6 +79,15 @@ const PersistedWorkspaceRecordSchema = z.object({
     .nullable()
     .optional()
     .transform((value) => value ?? null),
+  // COMPAT(knowledgeBaseMounts): added in v0.1.106 on 2026-07-31; keep optional for old clients.
+  knowledgeBaseMounts: z
+    .array(
+      z.object({
+        knowledgeBaseId: z.string(),
+        mountSlug: z.string(),
+      }),
+    )
+    .optional(),
 });
 
 export type PersistedProjectRecord = z.infer<typeof PersistedProjectRecordSchema>;

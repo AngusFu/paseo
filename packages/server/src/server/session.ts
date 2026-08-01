@@ -131,6 +131,7 @@ import {
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
 import { McpCliService } from "./mcp-cli/index.js";
+import { KnowledgeBaseService } from "./knowledge-base/service.js";
 import {
   ImportSessionsRequestError,
   importProviderSession,
@@ -579,6 +580,7 @@ export class Session {
   private readonly paseoHome: string;
   private readonly worktreesRoot: string | undefined;
   private mcpCliService: McpCliService | null = null;
+  private knowledgeBaseService: KnowledgeBaseService | null = null;
 
   private agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
@@ -3032,6 +3034,30 @@ export class Session {
       case "mcp_cli.servers.import_local.request":
         return this.handleMcpCliServersImportLocalRequest(msg);
       default:
+        // Knowledge base manage RPCs — nested to keep this switch under complexity.
+        return this.dispatchKnowledgeBaseMessage(msg);
+    }
+  }
+
+  private dispatchKnowledgeBaseMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "knowledge_base.list.request":
+        return this.handleKnowledgeBaseListRequest(msg);
+      case "knowledge_base.import.request":
+        return this.handleKnowledgeBaseImportRequest(msg);
+      case "knowledge_base.export.request":
+        return this.handleKnowledgeBaseExportRequest(msg);
+      case "knowledge_base.delete.request":
+        return this.handleKnowledgeBaseDeleteRequest(msg);
+      case "knowledge_base.list_mounts.request":
+        return this.handleKnowledgeBaseListMountsRequest(msg);
+      case "knowledge_base.mount.request":
+        return this.handleKnowledgeBaseMountRequest(msg);
+      case "knowledge_base.unmount.request":
+        return this.handleKnowledgeBaseUnmountRequest(msg);
+      case "knowledge_base.list_usages.request":
+        return this.handleKnowledgeBaseListUsagesRequest(msg);
+      default:
         return undefined;
     }
   }
@@ -3148,6 +3174,235 @@ export class Session {
       this.mcpCliService = new McpCliService(this.paseoHome);
     }
     return this.mcpCliService;
+  }
+
+  private getKnowledgeBaseService(): KnowledgeBaseService {
+    if (!this.knowledgeBaseService) {
+      // Must share the daemon WorkspaceRegistry so mount writes stay in the same
+      // cache rename/archive persist from (avoids wiping knowledgeBaseMounts).
+      this.knowledgeBaseService = new KnowledgeBaseService(this.paseoHome, this.workspaceRegistry);
+    }
+    return this.knowledgeBaseService;
+  }
+
+  private async handleKnowledgeBaseListRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.list.request" }>,
+  ): Promise<void> {
+    try {
+      const knowledgeBases = await this.getKnowledgeBaseService().list();
+      this.emit({
+        type: "knowledge_base.list.response",
+        payload: { requestId: msg.requestId, knowledgeBases, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.list.response",
+        payload: {
+          requestId: msg.requestId,
+          knowledgeBases: [],
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleKnowledgeBaseImportRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.import.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.getKnowledgeBaseService().import({
+        slug: msg.slug,
+        fromPath: msg.fromPath,
+        sourceKind: msg.sourceKind,
+        ...(msg.name !== undefined ? { name: msg.name } : {}),
+      });
+      this.emit({
+        type: "knowledge_base.import.response",
+        payload: {
+          requestId: msg.requestId,
+          knowledgeBase: result.knowledgeBase,
+          meta: result.meta,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.import.response",
+        payload: {
+          requestId: msg.requestId,
+          knowledgeBase: null,
+          meta: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleKnowledgeBaseExportRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.export.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.getKnowledgeBaseService().export({
+        idOrSlug: msg.idOrSlug,
+        outDir: msg.outDir,
+      });
+      this.emit({
+        type: "knowledge_base.export.response",
+        payload: {
+          requestId: msg.requestId,
+          outDir: result.outDir,
+          pageCount: result.pageCount,
+          format: result.format,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.export.response",
+        payload: {
+          requestId: msg.requestId,
+          outDir: null,
+          pageCount: null,
+          format: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleKnowledgeBaseDeleteRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.delete.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.getKnowledgeBaseService().delete({ idOrSlug: msg.idOrSlug });
+      if (!result.ok) {
+        this.emit({
+          type: "knowledge_base.delete.response",
+          payload: {
+            requestId: msg.requestId,
+            deleted: null,
+            error: result.error,
+            code: result.code,
+            workspaces: result.workspaces,
+          },
+        });
+        return;
+      }
+      this.emit({
+        type: "knowledge_base.delete.response",
+        payload: {
+          requestId: msg.requestId,
+          deleted: result.deleted,
+          error: null,
+          code: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.delete.response",
+        payload: {
+          requestId: msg.requestId,
+          deleted: null,
+          error: error instanceof Error ? error.message : String(error),
+          code: null,
+        },
+      });
+    }
+  }
+
+  private async handleKnowledgeBaseListMountsRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.list_mounts.request" }>,
+  ): Promise<void> {
+    try {
+      const mounts = await this.getKnowledgeBaseService().listMounts({
+        workspaceId: msg.workspaceId,
+      });
+      this.emit({
+        type: "knowledge_base.list_mounts.response",
+        payload: { requestId: msg.requestId, mounts, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.list_mounts.response",
+        payload: {
+          requestId: msg.requestId,
+          mounts: [],
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleKnowledgeBaseMountRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.mount.request" }>,
+  ): Promise<void> {
+    try {
+      const mount = await this.getKnowledgeBaseService().mount({
+        workspaceId: msg.workspaceId,
+        idOrSlug: msg.idOrSlug,
+        ...(msg.mountSlug !== undefined ? { mountSlug: msg.mountSlug } : {}),
+      });
+      this.emit({
+        type: "knowledge_base.mount.response",
+        payload: { requestId: msg.requestId, mount, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.mount.response",
+        payload: {
+          requestId: msg.requestId,
+          mount: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleKnowledgeBaseUnmountRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.unmount.request" }>,
+  ): Promise<void> {
+    try {
+      const unmounted = await this.getKnowledgeBaseService().unmount({
+        workspaceId: msg.workspaceId,
+        mountSlugOrKbId: msg.mountSlugOrKbId,
+      });
+      this.emit({
+        type: "knowledge_base.unmount.response",
+        payload: { requestId: msg.requestId, unmounted, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.unmount.response",
+        payload: {
+          requestId: msg.requestId,
+          unmounted: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleKnowledgeBaseListUsagesRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.list_usages.request" }>,
+  ): Promise<void> {
+    try {
+      const workspaces = await this.getKnowledgeBaseService().listUsages({
+        idOrSlug: msg.idOrSlug,
+      });
+      this.emit({
+        type: "knowledge_base.list_usages.response",
+        payload: { requestId: msg.requestId, workspaces, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.list_usages.response",
+        payload: {
+          requestId: msg.requestId,
+          workspaces: [],
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
   }
 
   private async handleMcpCliRuntimeStatusRequest(

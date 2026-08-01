@@ -57,7 +57,7 @@ import {
   type ToggleSidebarWorkspacePin,
 } from "@/hooks/use-sidebar-workspace-pin";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
-import { useHostFeatureMap } from "@/runtime/host-features";
+import { useHostFeature, useHostFeatureMap } from "@/runtime/host-features";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useProjectIconDataByProjectKey } from "@/projects/project-icons";
 import {
@@ -90,10 +90,14 @@ import { confirmDialog } from "@/utils/confirm-dialog";
 import { projectIconPlaceholderLabelFromDisplayName } from "@/utils/project-display-name";
 import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
 import { isEmphasizedStatusDotBucket } from "@/utils/status-dot-color";
-import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
+import {
+  isSidebarActiveWorkspaceBucket,
+  type SidebarStateBucket,
+} from "@/utils/sidebar-agent-state";
 import { SidebarStatusWorkspaceList } from "@/components/sidebar/sidebar-status-list";
 import type { StatusGroup } from "@/hooks/sidebar-status-view-model";
 import { SidebarWorkspaceMenu } from "@/components/sidebar/sidebar-workspace-menu";
+import { KnowledgeBaseMountsSheet } from "@/components/knowledge-bases/knowledge-base-mounts-sheet";
 import { useLongPressDragInteraction } from "@/components/sidebar/use-long-press-drag-interaction";
 import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
@@ -298,6 +302,7 @@ interface WorkspaceRowInnerProps {
   onCopyPath?: () => void;
   onRename?: () => void;
   onMarkAsRead?: () => void;
+  onMountKnowledgeBases?: () => void;
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
@@ -709,6 +714,7 @@ function WorkspaceRowRightGroup({
   archiveShortcutKeys,
   onArchive,
   onMarkAsRead,
+  onMountKnowledgeBases,
   onCopyBranchName,
   onCopyPath,
   onRename,
@@ -727,6 +733,7 @@ function WorkspaceRowRightGroup({
   archiveShortcutKeys?: ShortcutKey[][] | null;
   onArchive?: () => void;
   onMarkAsRead?: () => void;
+  onMountKnowledgeBases?: () => void;
   onCopyBranchName?: () => void;
   onCopyPath?: () => void;
   onRename?: () => void;
@@ -775,6 +782,7 @@ function WorkspaceRowRightGroup({
             onCopyBranchName={onCopyBranchName}
             onRename={onRename}
             onMarkAsRead={onMarkAsRead}
+            onMountKnowledgeBases={onMountKnowledgeBases}
             onArchive={onArchive}
             archiveLabel={archiveLabel}
             archiveStatus={archiveStatus}
@@ -1207,6 +1215,8 @@ function WorkspaceRowInner({
   onCopyBranchName,
   onCopyPath,
   onRename,
+  onMarkAsRead,
+  onMountKnowledgeBases,
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
@@ -1295,6 +1305,8 @@ function WorkspaceRowInner({
                   archivePendingLabel={archivePendingLabel}
                   archiveShortcutKeys={archiveShortcutKeys}
                   onArchive={onArchive}
+                  onMarkAsRead={onMarkAsRead}
+                  onMountKnowledgeBases={onMountKnowledgeBases}
                   onCopyBranchName={onCopyBranchName}
                   onCopyPath={onCopyPath}
                   onRename={onRename}
@@ -1345,6 +1357,9 @@ function WorkspaceRowWithMenu({
   const toast = useToast();
   const [isHidingWorkspace, setIsHidingWorkspace] = useState(false);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
+  const [isMountsSheetOpen, setIsMountsSheetOpen] = useState(false);
+  // COMPAT(knowledgeBases): added in v0.1.106, drop the gate when floor >= v0.1.106.
+  const supportsKnowledgeBases = useHostFeature(workspace.serverId, "knowledgeBases");
   const isArchiving = workspace.archivingAt !== null || isHidingWorkspace;
   const redirectAfterArchive = useCallback(() => {
     redirectIfArchivingActiveWorkspace({
@@ -1440,6 +1455,14 @@ function WorkspaceRowWithMenu({
     });
   }, [clearAttention, toast]);
 
+  const handleOpenMountsSheet = useCallback(() => {
+    setIsMountsSheetOpen(true);
+  }, []);
+
+  const handleCloseMountsSheet = useCallback(() => {
+    setIsMountsSheetOpen(false);
+  }, []);
+
   useKeyboardActionHandler({
     handlerId: `workspace-archive-${workspace.workspaceKey}`,
     actions: ["workspace.archive"],
@@ -1474,6 +1497,7 @@ function WorkspaceRowWithMenu({
         onCopyPath={handleCopyPath}
         onRename={handleOpenRename}
         onMarkAsRead={hasClearableAttention ? handleMarkAsRead : undefined}
+        onMountKnowledgeBases={supportsKnowledgeBases ? handleOpenMountsSheet : undefined}
         archiveShortcutKeys={selected ? archiveShortcutKeys : null}
         isPinned={isPinned}
         onTogglePin={onTogglePin}
@@ -1489,6 +1513,17 @@ function WorkspaceRowWithMenu({
         onSubmit={handleSubmitRename}
         testID={`sidebar-workspace-rename-modal-${workspace.workspaceKey}`}
       />
+      {supportsKnowledgeBases && isMountsSheetOpen ? (
+        <KnowledgeBaseMountsSheet
+          key={workspace.workspaceId}
+          serverId={workspace.serverId}
+          workspaceId={workspace.workspaceId}
+          workspaceName={workspace.title ?? workspace.name}
+          hasRunningAgents={isSidebarActiveWorkspaceBucket(workspace.statusBucket)}
+          visible={isMountsSheetOpen}
+          onClose={handleCloseMountsSheet}
+        />
+      ) : null}
     </>
   );
 }

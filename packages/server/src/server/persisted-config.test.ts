@@ -58,6 +58,35 @@ describe("PersistedConfigSchema daemon browser tools config", () => {
   });
 });
 
+describe("PersistedConfigSchema localTools embeddings config", () => {
+  test("accepts optional docs embeddings settings", () => {
+    const parsed = PersistedConfigSchema.parse({
+      localTools: {
+        embeddings: {
+          enabled: true,
+          baseUrl: "http://127.0.0.1:11434/v1",
+          apiKey: "ollama",
+          model: "qwen3-embedding:0.6b",
+        },
+      },
+    });
+
+    expect(parsed.localTools?.embeddings?.enabled).toBe(true);
+    expect(parsed.localTools?.embeddings?.model).toBe("qwen3-embedding:0.6b");
+  });
+
+  test("rejects unknown localTools keys", () => {
+    const result = PersistedConfigSchema.safeParse({
+      localTools: {
+        embeddings: { enabled: true },
+        unknownTool: { enabled: true },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
 describe("PersistedConfigSchema daemon relay config", () => {
   test("accepts optional relay TLS setting", () => {
     const parsed = PersistedConfigSchema.parse({

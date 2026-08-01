@@ -208,6 +208,24 @@ import {
   McpCliServersTestResponseSchema,
   McpCliServersImportLocalResponseSchema,
 } from "./mcp-cli/rpc-schemas.js";
+import {
+  KnowledgeBaseListRequestSchema,
+  KnowledgeBaseImportRequestSchema,
+  KnowledgeBaseExportRequestSchema,
+  KnowledgeBaseDeleteRequestSchema,
+  KnowledgeBaseListMountsRequestSchema,
+  KnowledgeBaseMountRequestSchema,
+  KnowledgeBaseUnmountRequestSchema,
+  KnowledgeBaseListUsagesRequestSchema,
+  KnowledgeBaseListResponseSchema,
+  KnowledgeBaseImportResponseSchema,
+  KnowledgeBaseExportResponseSchema,
+  KnowledgeBaseDeleteResponseSchema,
+  KnowledgeBaseListMountsResponseSchema,
+  KnowledgeBaseMountResponseSchema,
+  KnowledgeBaseUnmountResponseSchema,
+  KnowledgeBaseListUsagesResponseSchema,
+} from "./knowledge-base/rpc-schemas.js";
 import { BrowserAutomationHostCapabilitySchema } from "./browser-automation/capabilities.js";
 import {
   PaseoConfigRawSchema,
@@ -2964,6 +2982,14 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   McpCliServersDeleteRequestSchema,
   McpCliServersTestRequestSchema,
   McpCliServersImportLocalRequestSchema,
+  KnowledgeBaseListRequestSchema,
+  KnowledgeBaseImportRequestSchema,
+  KnowledgeBaseExportRequestSchema,
+  KnowledgeBaseDeleteRequestSchema,
+  KnowledgeBaseListMountsRequestSchema,
+  KnowledgeBaseMountRequestSchema,
+  KnowledgeBaseUnmountRequestSchema,
+  KnowledgeBaseListUsagesRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -3262,6 +3288,8 @@ export const ServerInfoStatusPayloadSchema = z
         questionWaitSocket: z.boolean().optional(),
         // COMPAT(mcpCli): added in v0.1.115, remove gate after 2027-01-25.
         mcpCli: z.boolean().optional(),
+        // COMPAT(knowledgeBases): added in v0.1.106, drop the gate when floor >= v0.1.106.
+        knowledgeBases: z.boolean().optional(),
         // COMPAT(workspaceScriptManagement): added in v0.1.105, remove gate after 2027-01-10.
         workspaceScriptManagement: z.boolean().optional(),
       })
@@ -5865,6 +5893,14 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   McpCliServersDeleteResponseSchema,
   McpCliServersTestResponseSchema,
   McpCliServersImportLocalResponseSchema,
+  KnowledgeBaseListResponseSchema,
+  KnowledgeBaseImportResponseSchema,
+  KnowledgeBaseExportResponseSchema,
+  KnowledgeBaseDeleteResponseSchema,
+  KnowledgeBaseListMountsResponseSchema,
+  KnowledgeBaseMountResponseSchema,
+  KnowledgeBaseUnmountResponseSchema,
+  KnowledgeBaseListUsagesResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
   InstallDifftasticProgressMessageSchema,
@@ -6094,6 +6130,22 @@ export type McpCliServersTestResponse = z.infer<typeof McpCliServersTestResponse
 export type McpCliServersImportLocalResponse = z.infer<
   typeof McpCliServersImportLocalResponseSchema
 >;
+export type KnowledgeBaseListRequest = z.infer<typeof KnowledgeBaseListRequestSchema>;
+export type KnowledgeBaseImportRequest = z.infer<typeof KnowledgeBaseImportRequestSchema>;
+export type KnowledgeBaseExportRequest = z.infer<typeof KnowledgeBaseExportRequestSchema>;
+export type KnowledgeBaseDeleteRequest = z.infer<typeof KnowledgeBaseDeleteRequestSchema>;
+export type KnowledgeBaseListMountsRequest = z.infer<typeof KnowledgeBaseListMountsRequestSchema>;
+export type KnowledgeBaseMountRequest = z.infer<typeof KnowledgeBaseMountRequestSchema>;
+export type KnowledgeBaseUnmountRequest = z.infer<typeof KnowledgeBaseUnmountRequestSchema>;
+export type KnowledgeBaseListUsagesRequest = z.infer<typeof KnowledgeBaseListUsagesRequestSchema>;
+export type KnowledgeBaseListResponse = z.infer<typeof KnowledgeBaseListResponseSchema>;
+export type KnowledgeBaseImportResponse = z.infer<typeof KnowledgeBaseImportResponseSchema>;
+export type KnowledgeBaseExportResponse = z.infer<typeof KnowledgeBaseExportResponseSchema>;
+export type KnowledgeBaseDeleteResponse = z.infer<typeof KnowledgeBaseDeleteResponseSchema>;
+export type KnowledgeBaseListMountsResponse = z.infer<typeof KnowledgeBaseListMountsResponseSchema>;
+export type KnowledgeBaseMountResponse = z.infer<typeof KnowledgeBaseMountResponseSchema>;
+export type KnowledgeBaseUnmountResponse = z.infer<typeof KnowledgeBaseUnmountResponseSchema>;
+export type KnowledgeBaseListUsagesResponse = z.infer<typeof KnowledgeBaseListUsagesResponseSchema>;
 
 // Type exports for payload types
 export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;

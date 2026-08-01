@@ -93,6 +93,7 @@ import {
   formatProseStopReentryWarningPrompt,
 } from "./prose-stop/nudge-prompt.js";
 import { PROSE_STOP_PREVENTION_PROMPT } from "./prose-stop/prevention-prompt.js";
+import { KNOWLEDGE_BASES_AGENT_GUIDANCE } from "./knowledge-bases-guidance.js";
 import {
   applyDaemonAcpAutoAcceptDefault,
   applyOrchestratedAcpAutoAccept,
@@ -5820,6 +5821,7 @@ export class AgentManager {
     if (userAppend.length > 0) {
       parts.push(userAppend);
     }
+    parts.push(KNOWLEDGE_BASES_AGENT_GUIDANCE.trim());
     const skipProseStopPrevention = labels != null && isOrchestratedBackgroundAgent({ labels });
     if (this.getProseStopPreventionPromptEnabled() && !skipProseStopPrevention) {
       parts.push(PROSE_STOP_PREVENTION_PROMPT.trim());

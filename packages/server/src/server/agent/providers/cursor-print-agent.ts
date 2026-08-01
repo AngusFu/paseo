@@ -7,6 +7,7 @@ import type { Logger } from "pino";
 
 import { McpCliService } from "../../mcp-cli/service.js";
 import { PROSE_STOP_PREVENTION_PROMPT } from "../prose-stop/prevention-prompt.js";
+import { KNOWLEDGE_BASES_AGENT_GUIDANCE } from "../knowledge-bases-guidance.js";
 
 import type {
   AgentCapabilityFlags,
@@ -198,6 +199,7 @@ export async function writeCursorPrintGuidanceFileForDaemon(input: {
   if (userAppend) {
     parts.push(userAppend);
   }
+  parts.push(KNOWLEDGE_BASES_AGENT_GUIDANCE.trim());
   if (input.includeProseStopPrevention !== false) {
     parts.push(PROSE_STOP_PREVENTION_PROMPT.trim());
   }

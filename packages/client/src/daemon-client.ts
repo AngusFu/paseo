@@ -26,6 +26,7 @@ import type {
 } from "@getpaseo/protocol/workflow/types";
 import type { AgentAttentionNotificationPayload } from "@getpaseo/protocol/agent-attention-notification";
 import type { McpCliServerConfig } from "@getpaseo/protocol/mcp-cli/types";
+import type { KnowledgeBaseImportSourceKind } from "@getpaseo/protocol/knowledge-base/types";
 import {
   AgentCreateFailedStatusPayloadSchema,
   AgentCreatedStatusPayloadSchema,
@@ -676,6 +677,40 @@ type McpCliServersImportLocalPayload = Extract<
   { type: "mcp_cli.servers.import_local.response" }
 >["payload"];
 const MCP_CLI_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
+/** Import embeds the full corpus; match other long host RPCs (no progress events in v1). */
+const KNOWLEDGE_BASE_IMPORT_TIMEOUT_MS = 10 * 60 * 1000;
+type KnowledgeBaseListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.list.response" }
+>["payload"];
+type KnowledgeBaseImportPayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.import.response" }
+>["payload"];
+type KnowledgeBaseExportPayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.export.response" }
+>["payload"];
+type KnowledgeBaseDeletePayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.delete.response" }
+>["payload"];
+type KnowledgeBaseListMountsPayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.list_mounts.response" }
+>["payload"];
+type KnowledgeBaseMountPayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.mount.response" }
+>["payload"];
+type KnowledgeBaseUnmountPayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.unmount.response" }
+>["payload"];
+type KnowledgeBaseListUsagesPayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.list_usages.response" }
+>["payload"];
 type QuestionListPayload = Extract<
   SessionOutboundMessage,
   { type: "question.list.response" }
@@ -5761,6 +5796,120 @@ export class DaemonClient {
       requestId,
       timeout: MCP_CLI_INSTALL_TIMEOUT_MS,
       message: { type: "mcp_cli.servers.import_local.request" },
+    });
+  }
+
+  async knowledgeBaseList(requestId?: string): Promise<KnowledgeBaseListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "knowledge_base.list.request" },
+    });
+  }
+
+  async knowledgeBaseImport(options: {
+    slug: string;
+    fromPath: string;
+    sourceKind: KnowledgeBaseImportSourceKind;
+    name?: string;
+    requestId?: string;
+    timeoutMs?: number;
+  }): Promise<KnowledgeBaseImportPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      timeout: options.timeoutMs ?? KNOWLEDGE_BASE_IMPORT_TIMEOUT_MS,
+      message: {
+        type: "knowledge_base.import.request",
+        slug: options.slug,
+        fromPath: options.fromPath,
+        sourceKind: options.sourceKind,
+        ...(options.name !== undefined ? { name: options.name } : {}),
+      },
+    });
+  }
+
+  async knowledgeBaseExport(options: {
+    idOrSlug: string;
+    outDir: string;
+    requestId?: string;
+  }): Promise<KnowledgeBaseExportPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "knowledge_base.export.request",
+        idOrSlug: options.idOrSlug,
+        outDir: options.outDir,
+      },
+    });
+  }
+
+  async knowledgeBaseDelete(options: {
+    idOrSlug: string;
+    requestId?: string;
+  }): Promise<KnowledgeBaseDeletePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "knowledge_base.delete.request",
+        idOrSlug: options.idOrSlug,
+      },
+    });
+  }
+
+  async knowledgeBaseListMounts(options: {
+    workspaceId: string;
+    requestId?: string;
+  }): Promise<KnowledgeBaseListMountsPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "knowledge_base.list_mounts.request",
+        workspaceId: options.workspaceId,
+      },
+    });
+  }
+
+  async knowledgeBaseMount(options: {
+    workspaceId: string;
+    idOrSlug: string;
+    mountSlug?: string;
+    requestId?: string;
+  }): Promise<KnowledgeBaseMountPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "knowledge_base.mount.request",
+        workspaceId: options.workspaceId,
+        idOrSlug: options.idOrSlug,
+        ...(options.mountSlug !== undefined ? { mountSlug: options.mountSlug } : {}),
+      },
+    });
+  }
+
+  async knowledgeBaseUnmount(options: {
+    workspaceId: string;
+    mountSlugOrKbId: string;
+    requestId?: string;
+  }): Promise<KnowledgeBaseUnmountPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "knowledge_base.unmount.request",
+        workspaceId: options.workspaceId,
+        mountSlugOrKbId: options.mountSlugOrKbId,
+      },
+    });
+  }
+
+  async knowledgeBaseListUsages(options: {
+    idOrSlug: string;
+    requestId?: string;
+  }): Promise<KnowledgeBaseListUsagesPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "knowledge_base.list_usages.request",
+        idOrSlug: options.idOrSlug,
+      },
     });
   }
 

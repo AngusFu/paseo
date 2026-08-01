@@ -102,6 +102,15 @@ import {
   resolveNewWorkspaceInitialServerId,
 } from "./new-workspace-initial-context";
 import { useNewWorkspaceProjectPicker } from "./new-workspace/project-picker";
+import { NewWorkspaceMountPicker } from "@/components/knowledge-bases/new-workspace-mount-picker";
+import {
+  formatMountFailuresMessage,
+  mountKnowledgeBaseSelections,
+} from "@/knowledge-bases/mount-after-create";
+import {
+  mountSelectionsAreValid,
+  type KnowledgeBaseMountSelection,
+} from "@/knowledge-bases/mount-selection";
 
 const ThemedFolderPlus = withUnistyles(FolderPlus);
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
@@ -1543,11 +1552,21 @@ export function NewWorkspaceScreen({
   // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
   const supportsWorkspaceMultiplicity = useHostFeature(selectedServerId, "workspaceMultiplicity");
   const supportsForgeSearch = useHostFeature(selectedServerId, "forgeSearch");
+  // COMPAT(knowledgeBases): added in v0.1.106, drop the gate when floor >= v0.1.106.
+  const supportsKnowledgeBases = useHostFeature(selectedServerId, "knowledgeBases");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [createdWorkspace, setCreatedWorkspace] = useState<ReturnType<
     typeof normalizeWorkspaceDescriptor
   > | null>(null);
   const [pendingAction, setPendingAction] = useState<"chat" | "empty" | null>(null);
+  const [pendingKbMounts, setPendingKbMounts] = useState<KnowledgeBaseMountSelection[]>([]);
+  const pendingKbMountsRef = useRef(pendingKbMounts);
+  pendingKbMountsRef.current = pendingKbMounts;
+  // Picker remounts on host change via key, but parent selection must clear too —
+  // otherwise create mounts stale KB ids/slugs from the previous host.
+  useEffect(() => {
+    setPendingKbMounts([]);
+  }, [selectedServerId]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const openAddProjectPicker = useOpenAddProject();
@@ -1926,9 +1945,10 @@ export function NewWorkspaceScreen({
       if (!selectedSourceDirectory) {
         throw new Error("Choose a host for this project");
       }
+      const connectedClient = withConnectedClient();
       const normalizedWorkspace = supportsWorkspaceMultiplicity
         ? await createMultiplicityWorkspace({
-            client: withConnectedClient(),
+            client: connectedClient,
             isolation: effectiveIsolation,
             project: selectedProject,
             sourceDirectory: selectedSourceDirectory,
@@ -1942,13 +1962,31 @@ export function NewWorkspaceScreen({
             createFailedMessage: t("newWorkspace.errors.createWorktreeFailed"),
           })
         : await createAndMergeWorkspace({
-            client: withConnectedClient(),
+            client: connectedClient,
             createInput: buildCreateWorktreeInput(input),
             mergeWorkspaces,
             serverId: selectedServerId,
             createFailedMessage: t("newWorkspace.errors.createWorktreeFailed"),
           });
       setCreatedWorkspace(normalizedWorkspace);
+
+      const selections = pendingKbMountsRef.current;
+      if (supportsKnowledgeBases && selections.length > 0) {
+        const mountResult = await mountKnowledgeBaseSelections({
+          client: connectedClient,
+          workspaceId: normalizedWorkspace.id,
+          selections,
+        });
+        const failureMessage = formatMountFailuresMessage({
+          failures: mountResult.failures,
+          partialFailed: (count) => t("knowledgeBases.mountsSheet.mountPartialFailed", { count }),
+          singleFailed: (error) => t("knowledgeBases.mountsSheet.mountFailed", { error }),
+        });
+        if (failureMessage) {
+          toast.error(failureMessage);
+        }
+      }
+
       return normalizedWorkspace;
     },
     [
@@ -1961,8 +1999,10 @@ export function NewWorkspaceScreen({
       selectedProject,
       selectedServerId,
       selectedSourceDirectory,
+      supportsKnowledgeBases,
       supportsWorkspaceMultiplicity,
       t,
+      toast,
       withConnectedClient,
     ],
   );
@@ -1971,6 +2011,16 @@ export function NewWorkspaceScreen({
     async (payload: MessagePayload) => {
       try {
         setErrorMessage(null);
+        if (
+          supportsKnowledgeBases &&
+          pendingKbMounts.length > 0 &&
+          !mountSelectionsAreValid(pendingKbMounts)
+        ) {
+          const message = t("knowledgeBases.mountSlugInvalid");
+          setErrorMessage(message);
+          toast.error(message);
+          return;
+        }
         await composerState?.persistFormPreferences();
         if (isEmptyWorkspaceSubmission(payload)) {
           setPendingAction("empty");
@@ -2012,8 +2062,10 @@ export function NewWorkspaceScreen({
       draftKey,
       ensureWorkspace,
       forkDraftSetup,
+      pendingKbMounts,
       selectedServerId,
       supportsForgeSearch,
+      supportsKnowledgeBases,
       t,
       toast,
     ],
@@ -2151,6 +2203,14 @@ export function NewWorkspaceScreen({
             <Text style={styles.composerTitle}>{t("newWorkspace.title")}</Text>
           </View>
           {formStack}
+          {supportsKnowledgeBases ? (
+            <NewWorkspaceMountPicker
+              key={selectedServerId}
+              serverId={selectedServerId}
+              disabled={isPending}
+              onSelectionChange={setPendingKbMounts}
+            />
+          ) : null}
           <Composer
             externalKeyboardShift
             agentId={draftKey}

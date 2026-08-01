@@ -24,6 +24,7 @@ import { StyleSheet, UnistylesRuntime, useUnistyles } from "react-native-unistyl
 import { CommandCenter, CommandCenterRootActions } from "@/command-center/command-center";
 import { CommandCenterProvider } from "@/command-center/provider";
 import { AddProjectFlowHost } from "@/components/add-project-flow-host";
+import { EmptyMountsCalloutSource } from "@/components/knowledge-bases/empty-mounts-callout-source";
 import { WorktreeSetupCalloutSource } from "@/components/worktree-setup-callout-source";
 import { DownloadToast } from "@/components/download-toast";
 import { QuittingOverlay } from "@/components/quitting-overlay";
@@ -550,6 +551,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
       <RosettaCalloutSource />
       <UpdateCalloutSource />
       <WorktreeSetupCalloutSource />
+      <EmptyMountsCalloutSource />
       <CommandCenterRootActions />
       <WorkspacePinShortcutHandler />
       <CommandCenter />

@@ -12,6 +12,7 @@ import type {
   AgentSessionConfig,
 } from "../agent-sdk-types.js";
 import { PROSE_STOP_PREVENTION_PROMPT } from "./prevention-prompt.js";
+import { KNOWLEDGE_BASES_AGENT_GUIDANCE } from "../knowledge-bases-guidance.js";
 import { PARENT_AGENT_ID_LABEL, WORKFLOW_RUN_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 
 const logger = createTestLogger();
@@ -106,7 +107,11 @@ describe("prose-stop prevention prompt injection", () => {
     );
 
     expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe(
-      `User daemon append.\n\n${PROSE_STOP_PREVENTION_PROMPT.trim()}`,
+      [
+        "User daemon append.",
+        KNOWLEDGE_BASES_AGENT_GUIDANCE.trim(),
+        PROSE_STOP_PREVENTION_PROMPT.trim(),
+      ].join("\n\n"),
     );
   });
 
@@ -127,7 +132,7 @@ describe("prose-stop prevention prompt injection", () => {
     });
 
     expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe(
-      PROSE_STOP_PREVENTION_PROMPT.trim(),
+      [KNOWLEDGE_BASES_AGENT_GUIDANCE.trim(), PROSE_STOP_PREVENTION_PROMPT.trim()].join("\n\n"),
     );
   });
 
@@ -150,7 +155,9 @@ describe("prose-stop prevention prompt injection", () => {
       labels: { [WORKFLOW_RUN_ID_LABEL]: "run-1" },
     });
 
-    expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe("User daemon append.");
+    expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe(
+      ["User daemon append.", KNOWLEDGE_BASES_AGENT_GUIDANCE.trim()].join("\n\n"),
+    );
 
     client.createdConfigs.length = 0;
     await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
@@ -158,6 +165,8 @@ describe("prose-stop prevention prompt injection", () => {
       labels: { [PARENT_AGENT_ID_LABEL]: "parent-1" },
     });
 
-    expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe("User daemon append.");
+    expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe(
+      ["User daemon append.", KNOWLEDGE_BASES_AGENT_GUIDANCE.trim()].join("\n\n"),
+    );
   });
 });

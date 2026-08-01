@@ -94,13 +94,11 @@ function showDeleteBlockedAlert(
 function KnowledgeBaseRow({
   kb,
   busy,
-  canPickPaths,
   onExport,
   onDelete,
 }: {
   kb: KnowledgeBase;
   busy: boolean;
-  canPickPaths: boolean;
   onExport: (kb: KnowledgeBase) => void;
   onDelete: (kb: KnowledgeBase) => void;
 }) {
@@ -177,15 +175,13 @@ function KnowledgeBaseRow({
             )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" width={200}>
-            {canPickPaths ? (
-              <DropdownMenuItem
-                leading={exportLeading}
-                onSelect={handleExport}
-                testID={`host-kb-export-${kb.slug}`}
-              >
-                {t("settings.hostSections.knowledgeBases.export")}
-              </DropdownMenuItem>
-            ) : null}
+            <DropdownMenuItem
+              leading={exportLeading}
+              onSelect={handleExport}
+              testID={`host-kb-export-${kb.slug}`}
+            >
+              {t("settings.hostSections.knowledgeBases.export")}
+            </DropdownMenuItem>
             <DropdownMenuItem
               destructive
               leading={deleteLeading}
@@ -269,18 +265,17 @@ function KnowledgeBasesBody({
               <Text style={settingsStyles.rowHint}>
                 {t("settings.hostSections.knowledgeBases.useDesktop")}
               </Text>
-            ) : (
-              <View style={styles.actions}>
-                <Button
-                  size="sm"
-                  disabled={!connected || busy}
-                  onPress={onOpenImport}
-                  testID="host-kb-empty-import"
-                >
-                  {t("settings.hostSections.knowledgeBases.importAction")}
-                </Button>
-              </View>
-            )}
+            ) : null}
+            <View style={styles.actions}>
+              <Button
+                size="sm"
+                disabled={!connected || busy}
+                onPress={onOpenImport}
+                testID="host-kb-empty-import"
+              >
+                {t("settings.hostSections.knowledgeBases.importAction")}
+              </Button>
+            </View>
           </View>
         </View>
       </View>
@@ -290,14 +285,7 @@ function KnowledgeBasesBody({
   return (
     <>
       {loadState.data.map((kb) => (
-        <KnowledgeBaseRow
-          key={kb.id}
-          kb={kb}
-          busy={busy}
-          canPickPaths={canPickPaths}
-          onExport={onExport}
-          onDelete={onDelete}
-        />
+        <KnowledgeBaseRow key={kb.id} kb={kb} busy={busy} onExport={onExport} onDelete={onDelete} />
       ))}
       {!canPickPaths ? (
         <Text style={settingsStyles.rowHint}>
@@ -572,7 +560,15 @@ export function HostKnowledgeBasesPage({ serverId }: { serverId: string }) {
 
   const handleExport = useCallback(
     (kb: KnowledgeBase) => {
-      if (!client || !canPickPaths) return;
+      if (!canPickPaths) {
+        toast.show(
+          t("settings.hostSections.knowledgeBases.exportCliHint", {
+            slug: kb.slug,
+          }),
+        );
+        return;
+      }
+      if (!client) return;
       void (async () => {
         try {
           const outDir = await pickDirectory();
@@ -646,7 +642,6 @@ export function HostKnowledgeBasesPage({ serverId }: { serverId: string }) {
   );
 
   const sectionTrailing = useMemo(() => {
-    if (!canPickPaths) return null;
     return (
       <Button
         size="sm"
@@ -658,7 +653,7 @@ export function HostKnowledgeBasesPage({ serverId }: { serverId: string }) {
         {t("settings.hostSections.knowledgeBases.importAction")}
       </Button>
     );
-  }, [busy, canPickPaths, connected, loadState.status, openImport, t]);
+  }, [busy, connected, loadState.status, openImport, t]);
 
   if (!host) {
     return (

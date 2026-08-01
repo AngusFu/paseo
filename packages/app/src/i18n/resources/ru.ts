@@ -1855,6 +1855,8 @@ export const ru: TranslationResources = {
         export: "Export",
         exportOk: "Exported to {{path}}",
         exportFailed: "Export failed",
+        exportCliHint:
+          "Export path pickers require Desktop with a local host. On this host, use: paseo kb export {{slug}} --out <dir>",
         delete: "Delete",
         deleteTitle: "Delete knowledge base?",
         deleteMessage: "Delete {{name}}? This cannot be undone.",

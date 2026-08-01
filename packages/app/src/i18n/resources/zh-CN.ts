@@ -1798,6 +1798,8 @@ export const zhCN: TranslationResources = {
         export: "导出",
         exportOk: "已导出到 {{path}}",
         exportFailed: "导出失败",
+        exportCliHint:
+          "导出路径选择需要 Desktop 且连接本地 Host。在此 Host 上请用：paseo kb export {{slug}} --out <dir>",
         delete: "删除",
         deleteTitle: "删除 Knowledge base？",
         deleteMessage: "删除 {{name}}？此操作不可撤销。",

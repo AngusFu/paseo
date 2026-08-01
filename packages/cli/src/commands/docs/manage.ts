@@ -4,18 +4,24 @@ import {
   exportKnowledgeBase,
   getKnowledgeBase,
   importKnowledgeBase,
-  knowledgeBaseHasMounts,
   knowledgeBaseLastEmbeddedAt,
   listKnowledgeBases,
-  listWorkspaceKnowledgeBaseMounts,
   loadEmbeddingsConfig,
-  mountKnowledgeBaseOnWorkspace,
-  unmountKnowledgeBaseFromWorkspace,
 } from "@getpaseo/server/docs-vfs";
-import { addJsonOption } from "../../utils/command-options.js";
+import { addDaemonHostOption, addJsonOption } from "../../utils/command-options.js";
+import {
+  knowledgeBaseHasMountsPreferDaemon,
+  listKbMountsPreferDaemon,
+  mountKbPreferDaemon,
+  unmountKbPreferDaemon,
+} from "./kb-mount-daemon.js";
 
 interface JsonOptions {
   json?: boolean;
+}
+
+interface HostOptions {
+  host?: string;
 }
 
 function fail(error: unknown): never {
@@ -102,11 +108,20 @@ export async function runDocsExportCommand(
   }
 }
 
-export async function runDocsDeleteCommand(idOrSlug: string, options: JsonOptions): Promise<void> {
+export async function runDocsDeleteCommand(
+  idOrSlug: string,
+  options: JsonOptions & HostOptions,
+): Promise<void> {
   try {
     const record = await getKnowledgeBase(idOrSlug);
     if (!record) throw new Error(`Knowledge base not found: ${idOrSlug}`);
-    if (await knowledgeBaseHasMounts(record.id)) {
+    if (
+      await knowledgeBaseHasMountsPreferDaemon({
+        idOrSlug,
+        knowledgeBaseId: record.id,
+        host: options.host,
+      })
+    ) {
       throw new Error(
         `Knowledge base ${record.slug} is still mounted on one or more workspaces. Unmount first.`,
       );
@@ -122,13 +137,18 @@ export async function runDocsDeleteCommand(idOrSlug: string, options: JsonOption
   }
 }
 
-export async function runDocsMountsCommand(options: {
-  workspace?: string;
-  json?: boolean;
-}): Promise<void> {
+export async function runDocsMountsCommand(
+  options: {
+    workspace?: string;
+    json?: boolean;
+  } & HostOptions,
+): Promise<void> {
   try {
     const workspaceId = workspaceIdOrEnv(options.workspace);
-    const mounts = await listWorkspaceKnowledgeBaseMounts({ workspaceId });
+    const mounts = await listKbMountsPreferDaemon({
+      workspaceId,
+      host: options.host,
+    });
     if (options.json) {
       console.log(JSON.stringify({ workspaceId, mounts }, null, 2));
       return;
@@ -147,14 +167,15 @@ export async function runDocsMountsCommand(options: {
 
 export async function runDocsMountCommand(
   idOrSlug: string,
-  options: { workspace?: string; slug?: string; json?: boolean },
+  options: { workspace?: string; slug?: string; json?: boolean } & HostOptions,
 ): Promise<void> {
   try {
     const workspaceId = workspaceIdOrEnv(options.workspace);
-    const mount = await mountKnowledgeBaseOnWorkspace({
+    const mount = await mountKbPreferDaemon({
       workspaceId,
-      knowledgeBaseIdOrSlug: idOrSlug,
+      idOrSlug,
       mountSlug: options.slug,
+      host: options.host,
     });
     if (options.json) {
       console.log(JSON.stringify({ workspaceId, mount }, null, 2));
@@ -168,13 +189,14 @@ export async function runDocsMountCommand(
 
 export async function runDocsUnmountCommand(
   mountSlugOrKbId: string,
-  options: { workspace?: string; json?: boolean },
+  options: { workspace?: string; json?: boolean } & HostOptions,
 ): Promise<void> {
   try {
     const workspaceId = workspaceIdOrEnv(options.workspace);
-    const mount = await unmountKnowledgeBaseFromWorkspace({
+    const mount = await unmountKbPreferDaemon({
       workspaceId,
       mountSlugOrKbId,
+      host: options.host,
     });
     if (options.json) {
       console.log(JSON.stringify({ workspaceId, unmounted: mount }, null, 2));
@@ -220,44 +242,60 @@ export function addDocsManageCommands(kb: Command): void {
     await runDocsExportCommand(idOrSlug, options);
   });
 
-  addJsonOption(
-    kb
-      .command("delete")
-      .description("Delete a knowledge base (refuses if still mounted)")
-      .argument("<id-or-slug>", "Knowledge base id or slug"),
-  ).action(async (idOrSlug: string, options: JsonOptions) => {
+  addDaemonHostOption(
+    addJsonOption(
+      kb
+        .command("delete")
+        .description("Delete a knowledge base (refuses if still mounted)")
+        .argument("<id-or-slug>", "Knowledge base id or slug"),
+    ),
+  ).action(async (idOrSlug: string, options: JsonOptions & HostOptions) => {
     await runDocsDeleteCommand(idOrSlug, options);
   });
 
-  addJsonOption(
-    kb
-      .command("mounts")
-      .description("List knowledge base mounts for a workspace")
-      .option("--workspace <id>", "Workspace id (default: PASEO_WORKSPACE_ID)"),
-  ).action(async (options: { workspace?: string; json?: boolean }) => {
+  addDaemonHostOption(
+    addJsonOption(
+      kb
+        .command("mounts")
+        .description("List knowledge base mounts for a workspace")
+        .option("--workspace <id>", "Workspace id (default: PASEO_WORKSPACE_ID)"),
+    ),
+  ).action(async (options: { workspace?: string; json?: boolean } & HostOptions) => {
     await runDocsMountsCommand(options);
   });
 
-  addJsonOption(
-    kb
-      .command("mount")
-      .description("Mount a knowledge base on a workspace")
-      .argument("<id-or-slug>", "Knowledge base id or slug")
-      .option("--workspace <id>", "Workspace id (default: PASEO_WORKSPACE_ID)")
-      .option("--slug <mountSlug>", "Mount slug under /paseo-vfs (default: KB slug)"),
+  addDaemonHostOption(
+    addJsonOption(
+      kb
+        .command("mount")
+        .description("Mount a knowledge base on a workspace")
+        .argument("<id-or-slug>", "Knowledge base id or slug")
+        .option("--workspace <id>", "Workspace id (default: PASEO_WORKSPACE_ID)")
+        .option("--slug <mountSlug>", "Mount slug under /paseo-vfs (default: KB slug)"),
+    ),
   ).action(
-    async (idOrSlug: string, options: { workspace?: string; slug?: string; json?: boolean }) => {
+    async (
+      idOrSlug: string,
+      options: { workspace?: string; slug?: string; json?: boolean } & HostOptions,
+    ) => {
       await runDocsMountCommand(idOrSlug, options);
     },
   );
 
-  addJsonOption(
-    kb
-      .command("unmount")
-      .description("Remove a knowledge base mount from a workspace")
-      .argument("<mount-slug-or-kb-id>", "Mount slug or knowledge base id")
-      .option("--workspace <id>", "Workspace id (default: PASEO_WORKSPACE_ID)"),
-  ).action(async (mountSlugOrKbId: string, options: { workspace?: string; json?: boolean }) => {
-    await runDocsUnmountCommand(mountSlugOrKbId, options);
-  });
+  addDaemonHostOption(
+    addJsonOption(
+      kb
+        .command("unmount")
+        .description("Remove a knowledge base mount from a workspace")
+        .argument("<mount-slug-or-kb-id>", "Mount slug or knowledge base id")
+        .option("--workspace <id>", "Workspace id (default: PASEO_WORKSPACE_ID)"),
+    ),
+  ).action(
+    async (
+      mountSlugOrKbId: string,
+      options: { workspace?: string; json?: boolean } & HostOptions,
+    ) => {
+      await runDocsUnmountCommand(mountSlugOrKbId, options);
+    },
+  );
 }

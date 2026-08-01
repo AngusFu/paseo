@@ -53,7 +53,7 @@ Agent (PASEO_WORKSPACE_ID)
 | 3. Workspace mounts     | Sidebar workspace kebab → **"Mount knowledge bases"** → `AdaptiveModalSheet` (v1). No full Workspace Settings page required yet                                                | Schedule / Kanban sheets; footer rules from forms.md                                |
 | 4. Agent empty / tip    | Skill / `AGENTS.md` guidance + optional workspace empty callout when mounts are empty; not a Host settings page                                                                | Sidebar callouts / setup panel tone — calm, factual                                 |
 
-**Desktop-only affordances:** folder/package pickers and export destination use Electron `pickDirectory` (`packages/app/src/desktop/pick-directory.ts`). Non-Electron web: hide Import/Export path pickers or show "Update / use Desktop" — do not invent a remote path text box as a fallback product path.
+**Desktop-only affordances:** folder/package pickers and export destination use Electron `pickDirectory` (`packages/app/src/desktop/pick-directory.ts`). Non-Electron web / remote hosts: always show **Import knowledge base** and row **Export** when the capability is present; open the Import sheet with CLI / Desktop hint copy and disable submit + folder picker; Export shows a CLI hint toast instead of hiding the menu item — do not invent a remote path text box as a fallback product path.
 
 ---
 
@@ -423,7 +423,7 @@ Notes:
 ## Open questions
 
 1. ~~**Import progress UX**~~ — **Locked in D1:** blocking long RPC (10m timeout); no progress events. Sheet UX in D2 stays open until response.
-2. **Remote host paths** — Import/Export path pickers are meaningful for local Desktop-managed daemons; for remote SSH-style hosts, path picking may be wrong. **Lock for v1:** enable Import/Export path UI only when `getIsElectron()` and host is local/desktop-managed; otherwise show CLI hint (`paseo kb import …` on that host).
+2. **Remote host paths** — Import/Export path pickers are meaningful for local Desktop-managed daemons; for remote SSH-style hosts, path picking may be wrong. **Lock for v1:** enable path pickers + Import submit only when `getIsElectron()` and host is local/desktop-managed; always keep Import/Export entry points visible and show CLI hint (`paseo kb import …` / `paseo kb export …`) otherwise.
 
 Locked here (do not reopen without product change):
 
@@ -452,14 +452,15 @@ Locked here (do not reopen without product change):
 
 ### D1 deviations / call notes for UI waves
 
-| Topic           | Choice                                                                                                                     |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Import progress | No progress events; 10m correlated RPC timeout                                                                             |
-| Capability      | `features.knowledgeBases === true` (optional boolean; absent = old host)                                                   |
-| Client API      | `daemonClient.knowledgeBaseList/Import/Export/Delete/ListMounts/Mount/Unmount/ListUsages`                                  |
-| Delete blocked  | Prefer `knowledgeBaseListUsages` before confirm; `knowledgeBaseDelete` also returns `code: "still_mounted"` + `workspaces` |
-| Paths           | `fromPath` / `outDir` are **host filesystem** paths (local Desktop daemon)                                                 |
-| Mount writes    | Daemon RPC mounts use Session `WorkspaceRegistry` (not a second writer on `workspaces.json`) so rename cannot drop mounts  |
+| Topic           | Choice                                                                                                                                                                                                                                                                                                           |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Import progress | No progress events; 10m correlated RPC timeout                                                                                                                                                                                                                                                                   |
+| Capability      | `features.knowledgeBases === true` (optional boolean; absent = old host)                                                                                                                                                                                                                                         |
+| Client API      | `daemonClient.knowledgeBaseList/Import/Export/Delete/ListMounts/Mount/Unmount/ListUsages`                                                                                                                                                                                                                        |
+| Delete blocked  | Prefer `knowledgeBaseListUsages` before confirm; `knowledgeBaseDelete` also returns `code: "still_mounted"` + `workspaces`                                                                                                                                                                                       |
+| Paths           | `fromPath` / `outDir` are **host filesystem** paths (local Desktop daemon)                                                                                                                                                                                                                                       |
+| Mount writes    | Daemon RPC mounts use Session `WorkspaceRegistry` (not a second writer on `workspaces.json`) so rename cannot drop mounts                                                                                                                                                                                        |
+| CLI mounts      | `paseo kb mount\|unmount\|mounts` prefer `DaemonClient.knowledgeBase*` when a capable daemon is reachable; fall back to local docs-vfs writers only offline (avoids stale `FileBackedWorkspaceRegistry` cache). Delete usages check also prefers daemon `list_usages`. Import/export/list stay local filesystem. |
 
 Ship order intent: **D1 → D2 → D3 → D4**. D2 without D3 still lets power users mount via CLI; D3 without D2 is weak (nowhere to import). Prefer D2 and D3 in one Desktop milestone if capacity allows.
 

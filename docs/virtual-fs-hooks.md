@@ -63,7 +63,7 @@ Daemon/CLI do **not** ship weights. **Docs VFS ingest is text-only** (`.md` / `.
 }
 ```
 
-Until a daemon build includes `localTools.embeddings` on `PersistedConfigSchema`, prefer env: `PASEO_EMBEDDINGS_ENABLED=1` / `PASEO_EMBEDDINGS_MODEL=…`. Do **not** write unknown keys into an older packaged daemon's `config.json`.
+**Source of truth:** Host settings → Knowledge bases → Embeddings (persists `localTools.embeddings` via `get_daemon_config` / `set_daemon_config`). Daemon/CLI read the same file config only — no `PASEO_EMBEDDINGS_*` env control.
 
 **Out of scope (2026-07-31):** HunyuanOCR, Nanbeige VLM, VideoChat3, `qwen2.5vl`, PDF/image/video ingest. Local Tools Scan/Image/Video (if any) is a **separate** product track — do not fold into `/paseo-vfs`.
 
@@ -188,14 +188,15 @@ disk or corpus package  ──import once──►  KB store (path_tree + text +
                                         ◄──export──  corpus package (text + meta)
 ```
 
-| Op                      | Behavior                                                                                                                                  |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **Import**              | Create KB + copy text into store + embed. Forget source path afterward (optional provenance note only).                                   |
-| **Export**              | Emit portable corpus (pages + tree + metadata). No embedding BLOBs in the default package.                                                |
-| **Maintain**            | Add/edit/remove pages **inside** the KB. Agents still see a read-only VFS; authoring is a Desktop/CLI concern.                            |
-| **Re-import from disk** | **Forbidden** as a product path. Need a fresh snapshot → **new KB** (or future explicit "replace from package" if we add package import). |
+| Op                      | Behavior                                                                                                                                                                                                                           |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Create (empty)**      | Register a blank KB + empty SQLite corpus under `docs-vfs/<kbId>/`. `importedAt: null` until a one-shot import sets it. No pages yet.                                                                                              |
+| **Import**              | Create KB + copy text into store + embed. Forget source path afterward (optional provenance note only). Sets `importedAt`.                                                                                                         |
+| **Export**              | Emit portable corpus (pages + tree + metadata). No embedding BLOBs in the default package.                                                                                                                                         |
+| **Maintain**            | Add/edit/remove pages **inside** the KB via `knowledge_base.upsert_page` / `delete_page` (SQLite pages + path_tree + chunks; Chroma refresh when embeddings enabled — not required for success). Agents still see a read-only VFS. |
+| **Re-import from disk** | **Forbidden** as a product path. Need a fresh snapshot → **new KB** (or future explicit "replace from package" if we add package import).                                                                                          |
 
-**Product CLI:** `paseo kb import --slug … --from <folder|package>` / `paseo kb export <id> --out <dir>`. Dogfood explore without a registered KB: `paseo kb index --root <dir>` (hash-keyed). No disk re-sync / no `create --root` bridge.
+**Product CLI:** `paseo kb create --slug … [--name …]` (empty) / `paseo kb import --slug … --from <folder|package>` / `paseo kb export <id> --out <dir>` / `paseo kb put <path> --kb … --file -|path [--from …]` / `paseo kb rm <path> --kb …`. Dogfood explore without a registered KB: `paseo kb index --root <dir>` (hash-keyed). No disk re-sync / no `create --root` bridge.
 
 ### Persistence
 
@@ -221,7 +222,7 @@ Design (low-fi wireframes + IA + RPC gaps): **[knowledge-bases-desktop.md](./kno
 
 Summary (locked product behavior; UI not built yet):
 
-- Host settings section **Knowledge bases**: **import** (folder or corpus package), **export**, delete KBs — not "watch a folder". In-KB page edit is a later Desktop phase.
+- Host settings section **Knowledge bases**: redirect to the dedicated hub. In-KB page edit uses `upsert_page` / `delete_page` (daemon/host authoring); agents remain read-only on `/paseo-vfs`.
 - New Workspace screen: multi-select mounts (default **none**; remember last selection as form preference later).
 - Workspace kebab → **Mount knowledge bases** sheet: add/remove mounts without recreating the workspace.
 - Agent: read-only tip / empty `/paseo-vfs` when no mounts.
@@ -230,16 +231,16 @@ Summary (locked product behavior; UI not built yet):
 
 One command tree — agents explore; hosts manage KBs.
 
-| Kind                 | Commands                                                        | Notes                                                                    |
-| -------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| **Explore** (agents) | `paseo kb ls\|cat\|grep\|search\|index`                         | Mounted KBs / `--kb` / dogfood `--root`. Hooks rewrite to this prefix.   |
-| **Manage**           | `paseo kb import\|export\|list\|delete\|mount\|unmount\|mounts` | Registry + corpus packages + workspace mounts                            |
-| Escape               | `--unsafe`                                                      | When workspace context would otherwise deny `--root` or unmounted `--kb` |
+| Kind                 | Commands                                                                         | Notes                                                                         |
+| -------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **Explore** (agents) | `paseo kb ls\|cat\|grep\|search\|index`                                          | Mounted KBs / `--kb` / dogfood `--root`. Hooks rewrite to this prefix.        |
+| **Manage**           | `paseo kb create\|import\|export\|list\|delete\|mount\|unmount\|mounts\|put\|rm` | Registry + empty create + corpus packages + workspace mounts + page authoring |
+| Escape               | `--unsafe`                                                                       | When workspace context would otherwise deny `--root` or unmounted `--kb`      |
 
 ```text
 paseo kb
   ls | cat | grep | search | index [--root]     # explore (+ dogfood index)
-  import | export | list | delete               # KB registry / corpus
+  create | import | export | list | delete      # KB registry / corpus (create = empty)
   mount | unmount | mounts                      # workspace mounts
 ```
 
@@ -339,7 +340,7 @@ Lazy pointers for huge artifacts (OpenAPI in object storage): appear in `ls`, fe
 - **E2E verified (2026-07-31):** host Ollama has `qwen3-embedding:0.6b` (1024-d); index wrote **523** chunks (then SQLite BLOBs; now Chroma).
 - **Code:** core in `packages/server/src/server/docs-vfs/` (`chroma-sidecar.ts`, `chroma-vector-index.ts`, SQLite corpus); CLI thin wrapper in `packages/cli/src/commands/docs/`.
 - **Tests:** unit tests next to the server module (real Chroma sidecar under temp `$PASEO_HOME`); CLI spawn under `packages/cli/src/commands/docs/`. Run: `npx vitest run packages/server/src/server/docs-vfs packages/cli/src/commands/docs packages/server/src/server/persisted-config.test.ts --bail=1`.
-- **Config:** `localTools.embeddings` on `PersistedConfigSchema`. Until that schema is running, enable via `PASEO_EMBEDDINGS_ENABLED=1` / `PASEO_EMBEDDINGS_MODEL=qwen3-embedding:0.6b` — do **not** write `localTools` into an older packaged daemon's `config.json`.
+- **Config:** `localTools.embeddings` on `PersistedConfigSchema` / mutable daemon config. Product path: Host settings → Knowledge bases → Embeddings (file+UI only; no env overrides).
 - **Dependency:** `chromadb@3.5.0` exact on `@getpaseo/server` (official JS client + CLI; optional platform bindings). Search fail-closes on embedding dimension mismatch.
 - Still TODO: skill / guidance; PreToolUse router.
 
@@ -396,7 +397,7 @@ Dropped 2026-07-31: stay text-only. OCR/Nanbeige/VideoChat/`qwen2.5vl` are not p
 ## Open questions
 
 1. Daemon setting name and hook marker string (implementation detail).
-2. In-KB page edit CLI/API surface (add/update/remove pages without re-import).
+2. Product direction is now locked by [knowledge-bases-product.md](./knowledge-bases-product.md): empty create is first-class, and in-KB page add/update/remove is the committed maintenance path. The remaining question is only the exact CLI/API shape and phase timing.
 3. Whether a future "replace corpus from package" into the same `kbId` is ever needed (today: **always new KB**).
 
 ## Locked decisions

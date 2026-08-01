@@ -130,6 +130,19 @@ describe("paseo kb CLI (chroma + stub embeddings)", () => {
     const stub = await startStubEmbeddingsServer();
     baseUrl = stub.baseUrl;
     closeServer = stub.close;
+    writeFileSync(
+      join(paseoHome, "config.json"),
+      `${JSON.stringify({
+        localTools: {
+          embeddings: {
+            enabled: true,
+            baseUrl,
+            model: "qwen3-embedding:0.6b",
+            apiKey: "test",
+          },
+        },
+      })}\n`,
+    );
   }, 30_000);
 
   afterAll(async () => {
@@ -139,10 +152,6 @@ describe("paseo kb CLI (chroma + stub embeddings)", () => {
   function env(): NodeJS.ProcessEnv {
     return {
       PASEO_HOME: paseoHome,
-      PASEO_EMBEDDINGS_ENABLED: "1",
-      PASEO_EMBEDDINGS_BASE_URL: baseUrl,
-      PASEO_EMBEDDINGS_MODEL: "qwen3-embedding:0.6b",
-      PASEO_EMBEDDINGS_API_KEY: "test",
       // Parent agent shells often inject this; dogfood --root must not see it.
       PASEO_WORKSPACE_ID: "",
     };
@@ -219,11 +228,24 @@ describe("paseo kb CLI (chroma + stub embeddings)", () => {
   }, 30_000);
 
   it("fails index when embeddings are disabled", async () => {
+    const disabledHome = mkdtempSync(join(tmpdir(), "paseo-home-docs-cli-off-"));
+    writeFileSync(
+      join(disabledHome, "config.json"),
+      `${JSON.stringify({
+        localTools: {
+          embeddings: {
+            enabled: false,
+            baseUrl,
+            model: "qwen3-embedding:0.6b",
+          },
+        },
+      })}\n`,
+    );
     const result = await runDocsCli(["--root", docsRoot, "index"], {
-      PASEO_HOME: paseoHome,
-      PASEO_EMBEDDINGS_ENABLED: "0",
+      PASEO_HOME: disabledHome,
+      PASEO_WORKSPACE_ID: "",
     });
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toMatch(/Embeddings disabled|PASEO_EMBEDDINGS/i);
+    expect(result.stderr).toMatch(/Embeddings disabled|Host settings/i);
   }, 30_000);
 });

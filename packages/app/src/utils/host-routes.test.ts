@@ -7,6 +7,7 @@ import {
   buildNewWorkspaceRoute,
   buildOpenProjectRoute,
   resolveKnownHostRoute,
+  buildKnowledgeBasesRoute,
   buildSessionsRoute,
   buildSettingsAddHostRoute,
   buildProjectSettingsRoute,
@@ -219,6 +220,15 @@ describe("global routes", () => {
 
   it("buildNewWorkspaceRoute accepts an initial host", () => {
     expect(buildNewWorkspaceRoute({ serverId: "local" })).toBe("/new?serverId=local");
+  });
+
+  it("buildKnowledgeBasesRoute returns the hub route", () => {
+    expect(buildKnowledgeBasesRoute()).toBe("/knowledge-bases");
+  });
+
+  it("buildKnowledgeBasesRoute accepts an initial host", () => {
+    expect(buildKnowledgeBasesRoute("host-b")).toBe("/knowledge-bases?serverId=host-b");
+    expect(buildKnowledgeBasesRoute("host a")).toBe("/knowledge-bases?serverId=host%20a");
   });
 
   it("buildNewWorkspaceRoute accepts initial project context", () => {

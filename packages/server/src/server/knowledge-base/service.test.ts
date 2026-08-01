@@ -82,6 +82,23 @@ async function makeService(
 }
 
 describe("KnowledgeBaseService RPC façade", () => {
+  it("creates an empty knowledge base with importedAt null", async () => {
+    const home = makeHome();
+    const { service } = await makeService(home);
+
+    const created = await service.create({ slug: "scratch", name: "Scratch" });
+    expect(created.slug).toBe("scratch");
+    expect(created.name).toBe("Scratch");
+    expect(created.importedAt).toBeNull();
+
+    const listed = await service.list();
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.importedAt).toBeNull();
+    expect(listed[0]?.mountedWorkspaceCount).toBe(0);
+
+    await expect(service.create({ slug: "scratch" })).rejects.toThrow(/already exists/);
+  });
+
   it("lists, imports, exports, mounts, unmounts, and deletes against real docs-vfs", async () => {
     const home = makeHome();
     const docs = makeDocsFolder();
@@ -203,5 +220,171 @@ describe("KnowledgeBaseService RPC façade", () => {
         sourceKind: "package",
       }),
     ).rejects.toThrow(/not a corpus package/);
+  });
+
+  it("lists tree, gets page, and searches within one knowledge base", async () => {
+    const home = makeHome();
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        localTools: {
+          embeddings: {
+            enabled: true,
+            baseUrl: "http://example.invalid/v1",
+            apiKey: "x",
+            model: "qwen3-embedding:0.6b",
+          },
+        },
+      }),
+    );
+    const docs = makeDocsFolder();
+    const { service } = await makeService(home);
+
+    await service.import({
+      slug: "runbooks",
+      fromPath: docs,
+      sourceKind: "folder",
+    });
+
+    const empty = await service.create({ slug: "scratch" });
+    expect(await service.listTree({ idOrSlug: empty.id })).toEqual([]);
+
+    const nodes = await service.listTree({ idOrSlug: "runbooks" });
+    expect(nodes).toEqual(
+      expect.arrayContaining([
+        { path: "guides", name: "guides", kind: "directory", parentPath: null },
+        { path: "guides/b.md", name: "b.md", kind: "file", parentPath: "guides" },
+        { path: "a.md", name: "a.md", kind: "file", parentPath: null },
+      ]),
+    );
+
+    const page = await service.getPage({ idOrSlug: "runbooks", path: "guides/b.md" });
+    expect(page.path).toBe("guides/b.md");
+    expect(page.content).toContain("Beta content");
+
+    await expect(service.getPage({ idOrSlug: "runbooks", path: "missing.md" })).rejects.toThrow(
+      /No such document/,
+    );
+
+    const grep = await service.search({
+      idOrSlug: "runbooks",
+      query: "Alpha",
+      mode: "grep",
+    });
+    expect(grep.mode).toBe("grep");
+    expect(grep.hits.some((hit) => hit.path === "a.md")).toBe(true);
+    expect(grep.hits.find((hit) => hit.path === "a.md")?.snippet).toMatch(/Alpha/i);
+
+    const byPath = await service.search({
+      idOrSlug: "runbooks",
+      query: "guides",
+      mode: "grep",
+    });
+    expect(byPath.hits.some((hit) => hit.path === "guides/b.md")).toBe(true);
+
+    const vector = await service.search({
+      idOrSlug: "runbooks",
+      query: "Alpha content",
+      mode: "vector",
+      limit: 3,
+    });
+    expect(vector.mode).toBe("vector");
+    expect(vector.hits.length).toBeGreaterThan(0);
+    expect(vector.hits[0]?.path).toBeTruthy();
+    expect(vector.hits[0]?.score).toEqual(expect.any(Number));
+    expect(vector.hits[0]?.snippet.length).toBeGreaterThan(0);
+
+    const usages = await service.listUsages({ idOrSlug: "runbooks" });
+    expect(usages).toEqual([]);
+  });
+
+  it("upserts, renames, and deletes pages on an empty knowledge base", async () => {
+    const home = makeHome();
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        localTools: {
+          embeddings: {
+            enabled: true,
+            baseUrl: "http://example.invalid/v1",
+            apiKey: "x",
+            model: "qwen3-embedding:0.6b",
+          },
+        },
+      }),
+    );
+    const { service } = await makeService(home);
+    const created = await service.create({ slug: "scratch", name: "Scratch" });
+
+    const written = await service.upsertPage({
+      idOrSlug: created.id,
+      path: "guides/first.md",
+      content: "# First\n\nHello page.\n",
+    });
+    expect(written.path).toBe("guides/first.md");
+
+    const page = await service.getPage({ idOrSlug: "scratch", path: "guides/first.md" });
+    expect(page.content).toContain("Hello page");
+
+    const tree = await service.listTree({ idOrSlug: "scratch" });
+    expect(tree).toEqual(
+      expect.arrayContaining([
+        { path: "guides", name: "guides", kind: "directory", parentPath: null },
+        { path: "guides/first.md", name: "first.md", kind: "file", parentPath: "guides" },
+      ]),
+    );
+
+    const renamed = await service.upsertPage({
+      idOrSlug: "scratch",
+      path: "notes/second.md",
+      content: "# Second\n\nMoved.\n",
+      fromPath: "guides/first.md",
+    });
+    expect(renamed.path).toBe("notes/second.md");
+    await expect(service.getPage({ idOrSlug: "scratch", path: "guides/first.md" })).rejects.toThrow(
+      /No such document/,
+    );
+    expect(
+      (await service.getPage({ idOrSlug: "scratch", path: "notes/second.md" })).content,
+    ).toContain("Moved");
+
+    const deleted = await service.deletePage({ idOrSlug: "scratch", path: "notes/second.md" });
+    expect(deleted.path).toBe("notes/second.md");
+    expect(await service.listTree({ idOrSlug: "scratch" })).toEqual([]);
+
+    await expect(
+      service.deletePage({ idOrSlug: "scratch", path: "notes/second.md" }),
+    ).rejects.toThrow(/No such document/);
+
+    await expect(
+      service.upsertPage({
+        idOrSlug: "scratch",
+        path: "../escape.md",
+        content: "nope",
+      }),
+    ).rejects.toThrow(/Invalid page path/);
+  });
+
+  it("upserts pages when embeddings are disabled", async () => {
+    const home = makeHome();
+    const { service } = await makeService(home);
+    await service.create({ slug: "offline" });
+
+    const written = await service.upsertPage({
+      idOrSlug: "offline",
+      path: "readme.md",
+      content: "# Offline\n\nNo embeddings.\n",
+    });
+    expect(written.path).toBe("readme.md");
+    expect((await service.getPage({ idOrSlug: "offline", path: "readme.md" })).content).toContain(
+      "No embeddings",
+    );
+
+    const grep = await service.search({
+      idOrSlug: "offline",
+      query: "embeddings",
+      mode: "grep",
+    });
+    expect(grep.hits.some((hit) => hit.path === "readme.md")).toBe(true);
   });
 });

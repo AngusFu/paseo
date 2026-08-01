@@ -225,8 +225,8 @@ export async function runDocsIndexCommand(options: DocsCommandOptions): Promise<
     const config = loadEmbeddingsConfig({});
     if (!config?.enabled) {
       throw new Error(
-        "Embeddings disabled. Set localTools.embeddings.enabled=true in $PASEO_HOME/config.json " +
-          "(model default qwen3-embedding:0.6b), or export PASEO_EMBEDDINGS_MODEL.",
+        "Embeddings disabled. Enable embeddings in Host settings → Knowledge bases " +
+          "(or set localTools.embeddings.enabled=true in $PASEO_HOME/config.json).",
       );
     }
     if (process.env.PASEO_WORKSPACE_ID?.trim() && !options.unsafe) {
@@ -268,7 +268,7 @@ export async function runDocsSearchCommand(
     const config = loadEmbeddingsConfig({});
     if (!config?.enabled) {
       throw new Error(
-        "Embeddings disabled. Configure localTools.embeddings or PASEO_EMBEDDINGS_MODEL, then run `paseo kb index` or `paseo kb import`.",
+        "Embeddings disabled. Enable embeddings in Host settings → Knowledge bases, then run `paseo kb index` or `paseo kb import`.",
       );
     }
     const target = await resolveTarget(options);

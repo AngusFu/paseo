@@ -550,6 +550,63 @@ describe("DaemonConfigStore", () => {
     expect(persisted.agents?.metadataGeneration).toEqual({ providers: [] });
   });
 
+  test("patch persists embeddings into localTools.embeddings (not daemon.localLlm)", () => {
+    const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
+    tempDirs.push(paseoHome);
+
+    const store = new DaemonConfigStore(
+      paseoHome,
+      {
+        mcp: { injectIntoAgents: false },
+        browserTools: { enabled: false },
+        providers: {},
+        metadataGeneration: { providers: [] },
+        autoArchiveAfterMerge: false,
+        enableTerminalAgentHooks: false,
+        appendSystemPrompt: "",
+      },
+      undefined,
+    );
+
+    const next = store.patch({
+      embeddings: {
+        enabled: true,
+        baseUrl: "http://127.0.0.1:11434/v1",
+        apiKey: "ollama",
+        model: "qwen3-embedding:0.6b",
+      },
+    });
+
+    expect(next.embeddings).toEqual({
+      enabled: true,
+      baseUrl: "http://127.0.0.1:11434/v1",
+      apiKey: "ollama",
+      model: "qwen3-embedding:0.6b",
+    });
+
+    const persisted = loadPersistedConfig(paseoHome);
+    expect(persisted.localTools?.embeddings).toEqual({
+      enabled: true,
+      baseUrl: "http://127.0.0.1:11434/v1",
+      apiKey: "ollama",
+      model: "qwen3-embedding:0.6b",
+    });
+    expect(persisted.daemon?.localLlm).toBeUndefined();
+
+    store.patch({
+      embeddings: {
+        enabled: true,
+        model: "nomic-embed-text",
+      },
+    });
+    expect(loadPersistedConfig(paseoHome).localTools?.embeddings).toEqual({
+      enabled: true,
+      baseUrl: "http://127.0.0.1:11434/v1",
+      apiKey: "ollama",
+      model: "nomic-embed-text",
+    });
+  });
+
   test("patch persists custom ACP provider overrides into config.json", () => {
     const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
     tempDirs.push(paseoHome);

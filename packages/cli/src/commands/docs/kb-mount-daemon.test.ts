@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DaemonClient } from "@getpaseo/client";
 import {
+  createKbPreferDaemon,
   knowledgeBaseHasMountsPreferDaemon,
   listKbMountsPreferDaemon,
   mountKbPreferDaemon,
@@ -14,8 +15,23 @@ const MOUNT = {
   name: "Runbooks",
 };
 
+const EMPTY_KB = {
+  id: "kb_scratch",
+  slug: "scratch",
+  name: "Scratch",
+  createdAt: "2026-08-01T00:00:00.000Z",
+  updatedAt: "2026-08-01T00:00:00.000Z",
+  importedAt: null,
+  lastEmbeddedAt: null,
+};
+
 function createFakeDaemonClient(overrides: {
   knowledgeBases?: boolean;
+  create?: () => Promise<{
+    knowledgeBase: typeof EMPTY_KB | null;
+    error: string | null;
+    requestId: string;
+  }>;
   listMounts?: () => Promise<{ mounts: (typeof MOUNT)[]; error: string | null; requestId: string }>;
   mount?: () => Promise<{
     mount: typeof MOUNT | null;
@@ -38,6 +54,9 @@ function createFakeDaemonClient(overrides: {
     getLastServerInfoMessage: () => ({
       features: { knowledgeBases },
     }),
+    knowledgeBaseCreate:
+      overrides.create ??
+      (async () => ({ knowledgeBase: EMPTY_KB, error: null, requestId: "req-create" })),
     knowledgeBaseListMounts:
       overrides.listMounts ??
       (async () => ({ mounts: [MOUNT], error: null, requestId: "req-list" })),
@@ -58,6 +77,25 @@ function createFakeDaemonClient(overrides: {
 }
 
 describe("kb mount CLI prefers daemon when provided", () => {
+  it("create uses DaemonClient.knowledgeBaseCreate when connect succeeds", async () => {
+    const knowledgeBaseCreate = vi.fn(async () => ({
+      knowledgeBase: EMPTY_KB,
+      error: null,
+      requestId: "req-create",
+    }));
+    const client = createFakeDaemonClient({ create: knowledgeBaseCreate });
+    const tryConnectToDaemon = vi.fn(async () => client);
+
+    const created = await createKbPreferDaemon(
+      { slug: "scratch", name: "Scratch" },
+      { tryConnectToDaemon },
+    );
+
+    expect(tryConnectToDaemon).toHaveBeenCalledTimes(1);
+    expect(knowledgeBaseCreate).toHaveBeenCalledWith({ slug: "scratch", name: "Scratch" });
+    expect(created).toEqual(EMPTY_KB);
+  });
+
   it("mount uses DaemonClient.knowledgeBaseMount when connect succeeds", async () => {
     const knowledgeBaseMount = vi.fn(async () => ({
       mount: MOUNT,

@@ -61,6 +61,27 @@ export function normalizeSlug(input: string): string {
   return parseVirtualPath(input).docSlug;
 }
 
+/**
+ * Normalize + reject empty / traversal / empty segments for page authoring paths.
+ * Same shape as get_page / list_tree slugs (posix-style, e.g. `guides/a.md`).
+ */
+export function assertValidPageSlug(input: string): string {
+  const slug = normalizeSlug(input);
+  if (!slug) {
+    throw new Error("Page path must not be empty");
+  }
+  const parts = slug.split("/");
+  for (const part of parts) {
+    if (!part || part === "." || part === "..") {
+      throw new Error(`Invalid page path: ${input}`);
+    }
+  }
+  if (slug.includes("\0")) {
+    throw new Error(`Invalid page path: ${input}`);
+  }
+  return slug;
+}
+
 export function resolveDocsRoot(options: {
   explicitRoot?: string;
   cwd?: string;

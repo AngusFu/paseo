@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  createEmptyKnowledgeBase,
   deleteKnowledgeBase,
   docsVfsDirForKnowledgeBase,
   getKnowledgeBase,
@@ -15,12 +16,47 @@ import {
   unmountKnowledgeBaseFromWorkspace,
 } from "./knowledge-base-mounts.js";
 import { writeJsonFileAtomic } from "../atomic-file.js";
+import { openDocsVectorStore } from "./vector-store.js";
+import { sqliteDbPath } from "./vector-store-sqlite.js";
 
 function makeHome(): string {
   return mkdtempSync(join(tmpdir(), "paseo-kb-"));
 }
 
 describe("knowledge base registry", () => {
+  it("creates an empty KB with importedAt null and an openable corpus store", async () => {
+    const home = makeHome();
+    const created = await createEmptyKnowledgeBase({
+      slug: "scratch",
+      name: "Scratch pad",
+      paseoHome: home,
+      now: "2026-08-01T12:00:00.000Z",
+    });
+
+    expect(created.id).toMatch(/^kb_[0-9a-f]{16}$/);
+    expect(created.slug).toBe("scratch");
+    expect(created.name).toBe("Scratch pad");
+    expect(created.importedAt).toBeNull();
+    expect(created.lastEmbeddedAt).toBeNull();
+    expect(created.importProvenance).toBeNull();
+
+    const storeDir = docsVfsDirForKnowledgeBase(home, created.id);
+    expect(existsSync(sqliteDbPath(storeDir))).toBe(true);
+    const store = openDocsVectorStore(storeDir);
+    try {
+      expect(store.pathTree()).toEqual({});
+      expect(store.pageContents()).toEqual({});
+      expect(store.meta().chunkCount).toBe(0);
+    } finally {
+      await store.close();
+    }
+
+    expect(await getKnowledgeBase("scratch", home)).toEqual(created);
+    await expect(createEmptyKnowledgeBase({ slug: "scratch", paseoHome: home })).rejects.toThrow(
+      /already exists/,
+    );
+  });
+
   it("registers, lists, and deletes imported KBs under kbId dirs", async () => {
     const home = makeHome();
     const root = join(home, "runbooks");

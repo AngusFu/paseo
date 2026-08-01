@@ -25,6 +25,7 @@ import { CommandCenter, CommandCenterRootActions } from "@/command-center/comman
 import { CommandCenterProvider } from "@/command-center/provider";
 import { AddProjectFlowHost } from "@/components/add-project-flow-host";
 import { EmptyMountsCalloutSource } from "@/components/knowledge-bases/empty-mounts-callout-source";
+import { KnowledgeBaseMountsSheetHost } from "@/components/knowledge-bases/knowledge-base-mounts-sheet-host";
 import { WorktreeSetupCalloutSource } from "@/components/worktree-setup-callout-source";
 import { DownloadToast } from "@/components/download-toast";
 import { QuittingOverlay } from "@/components/quitting-overlay";
@@ -552,6 +553,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
       <UpdateCalloutSource />
       <WorktreeSetupCalloutSource />
       <EmptyMountsCalloutSource />
+      <KnowledgeBaseMountsSheetHost />
       <CommandCenterRootActions />
       <WorkspacePinShortcutHandler />
       <CommandCenter />
@@ -861,6 +863,8 @@ function AppWithSidebar({ children }: { children: ReactNode }) {
       pathname === "/schedules" ||
       pathname === "/kanban" ||
       pathname === "/workflows" ||
+      pathname === "/knowledge-bases" ||
+      pathname.startsWith("/knowledge-bases/") ||
       pathname === "/approvals" ||
       routeHasKnownHost);
 
@@ -894,6 +898,8 @@ function RootStack() {
         <Stack.Screen name="schedules" />
         <Stack.Screen name="kanban" />
         <Stack.Screen name="workflows" />
+        <Stack.Screen name="knowledge-bases/index" />
+        <Stack.Screen name="knowledge-bases/[id]" />
         <Stack.Screen name="approvals" />
         <Stack.Screen name="pair-scan" />
       </Stack.Protected>

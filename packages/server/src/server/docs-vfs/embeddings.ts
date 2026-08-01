@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import {
+  defaultOllamaOpenAiBaseUrl,
+  listOllamaModels,
+  resolveOllamaOrigin,
+} from "../llm/ollama.js";
 
 export interface EmbeddingsConfig {
   enabled: boolean;
@@ -9,8 +14,16 @@ export interface EmbeddingsConfig {
   model: string;
 }
 
+export interface EmbeddingsConfigOverride {
+  enabled?: boolean;
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+}
+
 const DEFAULT_MODEL = "qwen3-embedding:0.6b";
 const DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1";
+const EMBEDDINGS_PROBE_TEXT = "paseo embeddings probe";
 
 export function resolvePaseoHomeForDocs(env: NodeJS.ProcessEnv = process.env): string {
   return env.PASEO_HOME?.trim() || join(homedir(), ".paseo");
@@ -29,11 +42,11 @@ function readEmbeddingsFromConfigFile(paseoHome: string): Partial<EmbeddingsConf
   }
 }
 
-function envFlagTrue(value: string | undefined): boolean | undefined {
-  if (value === undefined) return undefined;
-  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
-}
-
+/**
+ * Load embeddings config from `$PASEO_HOME/config.json` `localTools.embeddings` only.
+ * `env` / `PASEO_HOME` locate the home directory — they do not control embeddings.
+ * `enabled` must be explicitly `true` in file config.
+ */
 export function loadEmbeddingsConfig(options: {
   paseoHome?: string;
   env?: NodeJS.ProcessEnv;
@@ -42,22 +55,144 @@ export function loadEmbeddingsConfig(options: {
   const paseoHome = options.paseoHome ?? resolvePaseoHomeForDocs(env);
   const fromFile = readEmbeddingsFromConfigFile(paseoHome);
 
-  const enabled =
-    envFlagTrue(env.PASEO_EMBEDDINGS_ENABLED) ??
-    fromFile.enabled ??
-    Boolean(env.PASEO_EMBEDDINGS_MODEL?.trim());
-  if (!enabled) return null;
+  if (fromFile.enabled !== true) return null;
 
   return {
     enabled: true,
-    baseUrl: (
-      env.PASEO_EMBEDDINGS_BASE_URL?.trim() ||
-      fromFile.baseUrl ||
-      DEFAULT_BASE_URL
-    ).replace(/\/$/, ""),
-    apiKey: env.PASEO_EMBEDDINGS_API_KEY?.trim() || fromFile.apiKey || "ollama",
-    model: env.PASEO_EMBEDDINGS_MODEL?.trim() || fromFile.model || DEFAULT_MODEL,
+    baseUrl: (fromFile.baseUrl?.trim() || DEFAULT_BASE_URL).replace(/\/$/, ""),
+    apiKey: fromFile.apiKey?.trim() || "ollama",
+    model: fromFile.model?.trim() || DEFAULT_MODEL,
   };
+}
+
+/**
+ * Prefer a tag whose name contains "embedding"; else the documented default
+ * when present; else the first tag (or null).
+ */
+export function suggestEmbeddingModel(models: readonly string[]): string | null {
+  const embeddingNamed = models.find((name) => name.toLowerCase().includes("embedding"));
+  if (embeddingNamed) {
+    return embeddingNamed;
+  }
+  if (models.includes(DEFAULT_MODEL)) {
+    return DEFAULT_MODEL;
+  }
+  return models[0] ?? null;
+}
+
+export async function detectOllamaForEmbeddings(options: {
+  baseUrl?: string | null;
+  fetchImpl?: typeof fetch;
+}): Promise<{
+  available: boolean;
+  baseUrl: string | null;
+  models: string[];
+  suggestedModel: string | null;
+  error: string | null;
+}> {
+  const fillBaseUrl = options.baseUrl?.trim()
+    ? `${resolveOllamaOrigin(options.baseUrl)}/v1`
+    : defaultOllamaOpenAiBaseUrl();
+  try {
+    const models = await listOllamaModels({
+      baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
+      fetchImpl: options.fetchImpl,
+    });
+    return {
+      available: true,
+      baseUrl: fillBaseUrl,
+      models,
+      suggestedModel: suggestEmbeddingModel(models),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      available: false,
+      baseUrl: null,
+      models: [],
+      suggestedModel: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function embeddingsOverridePresent(override: EmbeddingsConfigOverride): boolean {
+  return (
+    override.enabled !== undefined ||
+    override.baseUrl !== undefined ||
+    override.apiKey !== undefined ||
+    override.model !== undefined
+  );
+}
+
+function mergeEmbeddingsProbeConfig(
+  override: EmbeddingsConfigOverride,
+  fromEffective: EmbeddingsConfig | null,
+): EmbeddingsConfig | null {
+  const enabled = override.enabled ?? fromEffective?.enabled ?? true;
+  if (!enabled) {
+    return null;
+  }
+  return {
+    enabled: true,
+    baseUrl: (override.baseUrl?.trim() || fromEffective?.baseUrl || DEFAULT_BASE_URL).replace(
+      /\/$/,
+      "",
+    ),
+    apiKey: override.apiKey?.trim() || fromEffective?.apiKey || "ollama",
+    model: override.model?.trim() || fromEffective?.model || DEFAULT_MODEL,
+  };
+}
+
+/**
+ * Resolve config for a settings "Test" probe. When any override field is set,
+ * merge onto file defaults (form values before save). Otherwise use
+ * `loadEmbeddingsConfig` only.
+ */
+export function resolveEmbeddingsConfigForProbe(options: {
+  paseoHome?: string;
+  env?: NodeJS.ProcessEnv;
+  override?: EmbeddingsConfigOverride;
+}): EmbeddingsConfig | null {
+  const override = options.override ?? {};
+  const fromEffective = loadEmbeddingsConfig({
+    paseoHome: options.paseoHome,
+    env: options.env,
+  });
+  if (!embeddingsOverridePresent(override)) {
+    return fromEffective;
+  }
+  return mergeEmbeddingsProbeConfig(override, fromEffective);
+}
+
+export async function testEmbeddingsProbe(options: {
+  paseoHome?: string;
+  env?: NodeJS.ProcessEnv;
+  override?: EmbeddingsConfigOverride;
+  fetchImpl?: typeof fetch;
+}): Promise<{ ok: boolean; dimensions: number | null; error: string | null }> {
+  const config = resolveEmbeddingsConfigForProbe(options);
+  if (!config) {
+    return {
+      ok: false,
+      dimensions: null,
+      error: "Embeddings disabled. Enable embeddings in Host settings → Knowledge bases.",
+    };
+  }
+  try {
+    const vectors = await embedTexts(config, [EMBEDDINGS_PROBE_TEXT], options.fetchImpl ?? fetch);
+    const dimensions = vectors[0]?.length ?? 0;
+    if (dimensions <= 0) {
+      return { ok: false, dimensions: null, error: "Empty embedding dimensions" };
+    }
+    return { ok: true, dimensions, error: null };
+  } catch (error) {
+    return {
+      ok: false,
+      dimensions: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export async function embedTexts(

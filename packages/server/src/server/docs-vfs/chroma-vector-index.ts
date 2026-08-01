@@ -122,6 +122,65 @@ export async function replaceDocsChromaIndex(options: {
   return { collectionName: name, chunkCount: options.chunks.length };
 }
 
+/** Incremental upsert into an existing (or new) collection — does not wipe other pages. */
+export async function upsertDocsChromaChunks(options: {
+  storeDir: string;
+  chunks: DocsChunkRow[];
+  batchSize?: number;
+}): Promise<{ collectionName: string; chunkCount: number }> {
+  if (options.chunks.length === 0) {
+    const name = chromaCollectionNameForStoreKey(storeKeyFromStoreDir(options.storeDir));
+    return { collectionName: name, chunkCount: 0 };
+  }
+
+  const dims = options.chunks[0]!.embedding.length;
+  for (const chunk of options.chunks) {
+    assertEmbeddingDimCount(chunk.embedding, dims, `chunk ${chunk.id}`);
+  }
+
+  const { collection, name } = await getCollection(options.storeDir, { create: false });
+  const { client } = await createDocsChromaClient(paseoHomeFromStoreDir(options.storeDir));
+  const maxBatch = Math.min(options.batchSize ?? 100, await client.getMaxBatchSize());
+
+  for (let i = 0; i < options.chunks.length; i += maxBatch) {
+    const batch = options.chunks.slice(i, i + maxBatch);
+    await collection.upsert({
+      ids: batch.map((chunk) => chunk.id),
+      embeddings: batch.map((chunk) => chunk.embedding),
+      documents: batch.map((chunk) => chunk.text),
+      metadatas: batch.map((chunk) => ({
+        slug: chunk.slug,
+        chunk_index: chunk.chunkIndex,
+      })),
+    });
+  }
+
+  return { collectionName: name, chunkCount: options.chunks.length };
+}
+
+/** Best-effort delete of chunk ids (missing collection / ids are ignored). */
+export async function deleteDocsChromaChunkIds(options: {
+  storeDir: string;
+  ids: string[];
+}): Promise<void> {
+  if (options.ids.length === 0) return;
+  const paseoHome = paseoHomeFromStoreDir(options.storeDir);
+  if (!chromaDataExists(paseoHome)) return;
+  const name = chromaCollectionNameForStoreKey(storeKeyFromStoreDir(options.storeDir));
+  const { client } = await createDocsChromaClient(paseoHome);
+  let collection: Collection;
+  try {
+    collection = await client.getCollection({ name });
+  } catch {
+    return;
+  }
+  try {
+    await collection.delete({ ids: options.ids });
+  } catch {
+    // ignore missing ids
+  }
+}
+
 export async function queryDocsChromaIndex(options: {
   storeDir: string;
   queryEmbedding: number[];

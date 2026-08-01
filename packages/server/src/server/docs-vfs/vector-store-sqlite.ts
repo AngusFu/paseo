@@ -19,6 +19,11 @@ import {
   type PathTree,
 } from "./vector-store.js";
 
+export interface UpsertPageCorpusResult {
+  previousChunkIds: string[];
+  newChunkIds: string[];
+}
+
 const DB_FILENAME = "docs.sqlite";
 
 function compilePattern(pattern: string, ignoreCase: boolean, fixedStrings: boolean): RegExp {
@@ -148,6 +153,28 @@ export class SqliteDocsVectorStore implements DocsVectorStore {
     }
 
     return new SqliteDocsVectorStore(dir, db, mountSlug);
+  }
+
+  /** Empty corpus (no pages / chunks) for blank Knowledge base create. */
+  static createEmpty(
+    dir: string,
+    options?: { createdAt?: string; rootDirLabel?: string; mountSlug?: string },
+  ): SqliteDocsVectorStore {
+    const createdAt = options?.createdAt ?? new Date().toISOString();
+    return SqliteDocsVectorStore.create(
+      dir,
+      {
+        rootDir: options?.rootDirLabel ?? "empty-knowledge-base",
+        model: "",
+        createdAt,
+        chunkCount: 0,
+        embeddingDims: 0,
+      },
+      {},
+      [],
+      options?.mountSlug ?? DEFAULT_DOCS_MOUNT_SLUG,
+      {},
+    );
   }
 
   storeDir(): string {
@@ -305,6 +332,106 @@ export class SqliteDocsVectorStore implements DocsVectorStore {
       limit: options.limit,
       expectedDims: dims > 0 ? dims : undefined,
     });
+  }
+
+  listChunkIdsForSlug(slug: string): string[] {
+    const rows = this.db
+      .prepare("SELECT id FROM chunks WHERE slug = ? ORDER BY chunk_index ASC")
+      .all(slug) as Array<{ id: string }>;
+    return rows.map((row) => row.id);
+  }
+
+  hasPage(slug: string): boolean {
+    const row = this.db.prepare("SELECT 1 AS ok FROM pages WHERE slug = ?").get(slug) as
+      | { ok: number }
+      | undefined;
+    return row !== undefined;
+  }
+
+  /**
+   * Upsert one page into the corpus plane (pages + path_tree + chunks).
+   * Embeddings may be empty when embeddings are disabled — grep still uses chunk text.
+   */
+  upsertPageCorpus(options: {
+    slug: string;
+    content: string;
+    chunks: DocsChunkRow[];
+  }): UpsertPageCorpusResult {
+    const previousChunkIds = this.listChunkIdsForSlug(options.slug);
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO path_tree(slug, is_public, groups_json) VALUES (?, 1, '[]')
+           ON CONFLICT(slug) DO UPDATE SET is_public = excluded.is_public, groups_json = excluded.groups_json`,
+        )
+        .run(options.slug);
+      this.db
+        .prepare(
+          `INSERT INTO pages(slug, content) VALUES (?, ?)
+           ON CONFLICT(slug) DO UPDATE SET content = excluded.content`,
+        )
+        .run(options.slug, options.content);
+      this.db.prepare("DELETE FROM chunks WHERE slug = ?").run(options.slug);
+      // Corpus-only: empty embedding BLOB. Vectors live in Chroma when embeddings are enabled.
+      const putChunk = this.db.prepare(
+        "INSERT INTO chunks(id, slug, chunk_index, text, embedding) VALUES (?, ?, ?, ?, ?)",
+      );
+      const empty = Buffer.alloc(0);
+      const newChunkIds: string[] = [];
+      for (const chunk of options.chunks) {
+        putChunk.run(chunk.id, chunk.slug, chunk.chunkIndex, chunk.text, empty);
+        newChunkIds.push(chunk.id);
+      }
+      this.refreshChunkCountMeta();
+      this.db.exec("COMMIT");
+      this.treeCache = null;
+      return { previousChunkIds, newChunkIds };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  /** Delete one page + tree entry + chunks. Throws if the page is missing. */
+  deletePageCorpus(slug: string): { chunkIds: string[] } {
+    if (!this.hasPage(slug)) {
+      throw new Error(`No such document in vector store: ${toVirtualPath(slug, this.mountSlug)}`);
+    }
+    const chunkIds = this.listChunkIdsForSlug(slug);
+    this.db.exec("BEGIN");
+    try {
+      this.db.prepare("DELETE FROM pages WHERE slug = ?").run(slug);
+      this.db.prepare("DELETE FROM path_tree WHERE slug = ?").run(slug);
+      this.db.prepare("DELETE FROM chunks WHERE slug = ?").run(slug);
+      this.refreshChunkCountMeta();
+      this.db.exec("COMMIT");
+      this.treeCache = null;
+      return { chunkIds };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  setEmbeddingMeta(options: { model: string; embeddingDims: number }): void {
+    const putMeta = this.db.prepare(
+      `INSERT INTO meta(key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    );
+    putMeta.run("model", options.model);
+    putMeta.run("embeddingDims", String(options.embeddingDims));
+    putMeta.run("vectorBackend", "chroma");
+  }
+
+  private refreshChunkCountMeta(): void {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM chunks").get() as { n: number };
+    this.db
+      .prepare(
+        `INSERT INTO meta(key, value) VALUES ('chunkCount', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(String(row.n));
   }
 
   async close(): Promise<void> {

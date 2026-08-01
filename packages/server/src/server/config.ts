@@ -513,6 +513,7 @@ export function loadConfig(
     appendSystemPrompt,
     proseStop,
     localLlm: persisted.daemon?.localLlm,
+    embeddings: persisted.localTools?.embeddings,
     terminalProfiles,
     mcpDebug: env.MCP_DEBUG === "1",
     isDev: resolvePaseoNodeEnv(env) === "development",

@@ -132,6 +132,7 @@ import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
 import { McpCliService } from "./mcp-cli/index.js";
 import { KnowledgeBaseService } from "./knowledge-base/service.js";
+import { detectOllamaForEmbeddings, testEmbeddingsProbe } from "./docs-vfs/embeddings.js";
 import {
   ImportSessionsRequestError,
   importProviderSession,
@@ -3043,6 +3044,8 @@ export class Session {
     switch (msg.type) {
       case "knowledge_base.list.request":
         return this.handleKnowledgeBaseListRequest(msg);
+      case "knowledge_base.create.request":
+        return this.handleKnowledgeBaseCreateRequest(msg);
       case "knowledge_base.import.request":
         return this.handleKnowledgeBaseImportRequest(msg);
       case "knowledge_base.export.request":
@@ -3057,6 +3060,20 @@ export class Session {
         return this.handleKnowledgeBaseUnmountRequest(msg);
       case "knowledge_base.list_usages.request":
         return this.handleKnowledgeBaseListUsagesRequest(msg);
+      case "knowledge_base.list_tree.request":
+        return this.handleKnowledgeBaseListTreeRequest(msg);
+      case "knowledge_base.get_page.request":
+        return this.handleKnowledgeBaseGetPageRequest(msg);
+      case "knowledge_base.search.request":
+        return this.handleKnowledgeBaseSearchRequest(msg);
+      case "knowledge_base.upsert_page.request":
+        return this.handleKnowledgeBaseUpsertPageRequest(msg);
+      case "knowledge_base.delete_page.request":
+        return this.handleKnowledgeBaseDeletePageRequest(msg);
+      case "knowledge_base.embeddings.detect_ollama.request":
+        return this.handleKnowledgeBaseEmbeddingsDetectOllamaRequest(msg);
+      case "knowledge_base.embeddings.test.request":
+        return this.handleKnowledgeBaseEmbeddingsTestRequest(msg);
       default:
         return undefined;
     }
@@ -3200,6 +3217,30 @@ export class Session {
         payload: {
           requestId: msg.requestId,
           knowledgeBases: [],
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleKnowledgeBaseCreateRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.create.request" }>,
+  ): Promise<void> {
+    try {
+      const knowledgeBase = await this.getKnowledgeBaseService().create({
+        slug: msg.slug,
+        ...(msg.name !== undefined ? { name: msg.name } : {}),
+      });
+      this.emit({
+        type: "knowledge_base.create.response",
+        payload: { requestId: msg.requestId, knowledgeBase, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.create.response",
+        payload: {
+          requestId: msg.requestId,
+          knowledgeBase: null,
           error: error instanceof Error ? error.message : String(error),
         },
       });
@@ -3403,6 +3444,194 @@ export class Session {
         },
       });
     }
+  }
+
+  private async handleKnowledgeBaseListTreeRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.list_tree.request" }>,
+  ): Promise<void> {
+    try {
+      const nodes = await this.getKnowledgeBaseService().listTree({
+        idOrSlug: msg.idOrSlug,
+      });
+      this.emit({
+        type: "knowledge_base.list_tree.response",
+        payload: { requestId: msg.requestId, nodes, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.list_tree.response",
+        payload: {
+          requestId: msg.requestId,
+          nodes: [],
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleKnowledgeBaseGetPageRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.get_page.request" }>,
+  ): Promise<void> {
+    try {
+      const page = await this.getKnowledgeBaseService().getPage({
+        idOrSlug: msg.idOrSlug,
+        path: msg.path,
+      });
+      this.emit({
+        type: "knowledge_base.get_page.response",
+        payload: {
+          requestId: msg.requestId,
+          path: page.path,
+          content: page.content,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.get_page.response",
+        payload: {
+          requestId: msg.requestId,
+          path: null,
+          content: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleKnowledgeBaseSearchRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.search.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.getKnowledgeBaseService().search({
+        idOrSlug: msg.idOrSlug,
+        query: msg.query,
+        mode: msg.mode,
+        ...(msg.limit !== undefined ? { limit: msg.limit } : {}),
+      });
+      this.emit({
+        type: "knowledge_base.search.response",
+        payload: {
+          requestId: msg.requestId,
+          mode: result.mode,
+          hits: result.hits,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.search.response",
+        payload: {
+          requestId: msg.requestId,
+          mode: null,
+          hits: [],
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleKnowledgeBaseUpsertPageRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.upsert_page.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.getKnowledgeBaseService().upsertPage({
+        idOrSlug: msg.idOrSlug,
+        path: msg.path,
+        content: msg.content,
+        ...(msg.fromPath !== undefined ? { fromPath: msg.fromPath } : {}),
+      });
+      this.emit({
+        type: "knowledge_base.upsert_page.response",
+        payload: {
+          requestId: msg.requestId,
+          path: result.path,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.upsert_page.response",
+        payload: {
+          requestId: msg.requestId,
+          path: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleKnowledgeBaseDeletePageRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.delete_page.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.getKnowledgeBaseService().deletePage({
+        idOrSlug: msg.idOrSlug,
+        path: msg.path,
+      });
+      this.emit({
+        type: "knowledge_base.delete_page.response",
+        payload: {
+          requestId: msg.requestId,
+          path: result.path,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "knowledge_base.delete_page.response",
+        payload: {
+          requestId: msg.requestId,
+          path: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleKnowledgeBaseEmbeddingsDetectOllamaRequest(
+    msg: Extract<
+      SessionInboundMessage,
+      { type: "knowledge_base.embeddings.detect_ollama.request" }
+    >,
+  ): Promise<void> {
+    const result = await detectOllamaForEmbeddings({
+      baseUrl: msg.baseUrl,
+    });
+    this.emit({
+      type: "knowledge_base.embeddings.detect_ollama.response",
+      payload: {
+        requestId: msg.requestId,
+        available: result.available,
+        baseUrl: result.baseUrl,
+        models: result.models,
+        suggestedModel: result.suggestedModel,
+        error: result.error,
+      },
+    });
+  }
+
+  private async handleKnowledgeBaseEmbeddingsTestRequest(
+    msg: Extract<SessionInboundMessage, { type: "knowledge_base.embeddings.test.request" }>,
+  ): Promise<void> {
+    const result = await testEmbeddingsProbe({
+      paseoHome: this.paseoHome,
+      override: {
+        ...(msg.enabled !== undefined ? { enabled: msg.enabled } : {}),
+        ...(msg.baseUrl !== undefined ? { baseUrl: msg.baseUrl } : {}),
+        ...(msg.apiKey !== undefined ? { apiKey: msg.apiKey } : {}),
+        ...(msg.model !== undefined ? { model: msg.model } : {}),
+      },
+    });
+    this.emit({
+      type: "knowledge_base.embeddings.test.response",
+      payload: {
+        requestId: msg.requestId,
+        ok: result.ok,
+        dimensions: result.dimensions,
+        error: result.error,
+      },
+    });
   }
 
   private async handleMcpCliRuntimeStatusRequest(

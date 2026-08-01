@@ -1,12 +1,30 @@
 import type { DaemonClient } from "@getpaseo/client";
-import type { KnowledgeBaseMount } from "@getpaseo/protocol/knowledge-base/types";
+import type { KnowledgeBase, KnowledgeBaseMount } from "@getpaseo/protocol/knowledge-base/types";
 import {
+  createEmptyKnowledgeBase,
+  deleteKnowledgeBasePage,
   knowledgeBaseHasMounts,
   listWorkspaceKnowledgeBaseMounts,
   mountKnowledgeBaseOnWorkspace,
+  resolvePaseoHomeForDocs,
   unmountKnowledgeBaseFromWorkspace,
+  upsertKnowledgeBasePage,
+  type KnowledgeBaseRecord,
 } from "@getpaseo/server/docs-vfs";
 import { tryConnectToDaemon } from "../../utils/client.js";
+
+function toWireKnowledgeBase(record: KnowledgeBaseRecord): KnowledgeBase {
+  return {
+    id: record.id,
+    slug: record.slug,
+    name: record.name,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    ...(record.importedAt !== undefined ? { importedAt: record.importedAt } : {}),
+    ...(record.lastEmbeddedAt !== undefined ? { lastEmbeddedAt: record.lastEmbeddedAt } : {}),
+    ...(record.importProvenance !== undefined ? { importProvenance: record.importProvenance } : {}),
+  };
+}
 
 export type TryConnectToDaemon = typeof tryConnectToDaemon;
 
@@ -37,6 +55,34 @@ async function withOptionalKbDaemonClient<T>(
   } finally {
     await client.close().catch(() => {});
   }
+}
+
+/** Create a blank KB via daemon RPC when reachable; else local docs-vfs. */
+export async function createKbPreferDaemon(
+  input: {
+    slug: string;
+    name?: string;
+    host?: string;
+  },
+  deps: KbMountDaemonDeps = {},
+): Promise<KnowledgeBase> {
+  return withOptionalKbDaemonClient(input.host, deps, async (client) => {
+    if (!client) {
+      const record = await createEmptyKnowledgeBase({
+        slug: input.slug,
+        name: input.name,
+      });
+      return toWireKnowledgeBase(record);
+    }
+    const payload = await client.knowledgeBaseCreate({
+      slug: input.slug,
+      ...(input.name !== undefined ? { name: input.name } : {}),
+    });
+    if (payload.error || !payload.knowledgeBase) {
+      throw new Error(payload.error ?? "Create failed");
+    }
+    return payload.knowledgeBase;
+  });
 }
 
 /** List workspace mounts via daemon RPC when reachable; else local docs-vfs. */
@@ -137,5 +183,67 @@ export async function knowledgeBaseHasMountsPreferDaemon(
       throw new Error(payload.error);
     }
     return payload.workspaces.length > 0;
+  });
+}
+
+/** Upsert (create/update/rename) a page via daemon RPC when reachable; else local docs-vfs. */
+export async function upsertKbPagePreferDaemon(
+  input: {
+    idOrSlug: string;
+    path: string;
+    content: string;
+    fromPath?: string;
+    host?: string;
+  },
+  deps: KbMountDaemonDeps = {},
+): Promise<{ path: string }> {
+  return withOptionalKbDaemonClient(input.host, deps, async (client) => {
+    if (!client) {
+      return upsertKnowledgeBasePage({
+        idOrSlug: input.idOrSlug,
+        path: input.path,
+        content: input.content,
+        ...(input.fromPath !== undefined ? { fromPath: input.fromPath } : {}),
+        paseoHome: resolvePaseoHomeForDocs(),
+      });
+    }
+    const payload = await client.knowledgeBaseUpsertPage({
+      idOrSlug: input.idOrSlug,
+      path: input.path,
+      content: input.content,
+      ...(input.fromPath !== undefined ? { fromPath: input.fromPath } : {}),
+    });
+    if (payload.error || !payload.path) {
+      throw new Error(payload.error ?? "Upsert page failed");
+    }
+    return { path: payload.path };
+  });
+}
+
+/** Delete a page via daemon RPC when reachable; else local docs-vfs. */
+export async function deleteKbPagePreferDaemon(
+  input: {
+    idOrSlug: string;
+    path: string;
+    host?: string;
+  },
+  deps: KbMountDaemonDeps = {},
+): Promise<{ path: string }> {
+  return withOptionalKbDaemonClient(input.host, deps, async (client) => {
+    if (!client) {
+      return deleteKnowledgeBasePage({
+        idOrSlug: input.idOrSlug,
+        path: input.path,
+        paseoHome: resolvePaseoHomeForDocs(),
+      });
+    }
+    const payload = await client.knowledgeBaseDeletePage({
+      idOrSlug: input.idOrSlug,
+      path: input.path,
+    });
+    if (payload.error || !payload.path) {
+      throw new Error(payload.error ?? "Delete page failed");
+    }
+    return { path: payload.path };
   });
 }

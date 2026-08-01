@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  assertValidPageSlug,
   buildDocsStore,
   grepDocs,
   listDocs,
@@ -34,6 +35,14 @@ describe("docs store", () => {
       docSlug: "a.md",
     });
     expect(parseVirtualPath(VIRTUAL_VFS_ROOT)).toEqual({ mountSlug: null, docSlug: "" });
+  });
+
+  it("rejects invalid page authoring paths", () => {
+    expect(assertValidPageSlug("guides/a.md")).toBe("guides/a.md");
+    expect(() => assertValidPageSlug("")).toThrow(/must not be empty/);
+    expect(() => assertValidPageSlug("../escape.md")).toThrow(/Invalid page path/);
+    expect(() => assertValidPageSlug("guides//a.md")).toThrow(/Invalid page path/);
+    expect(() => assertValidPageSlug("guides/../a.md")).toThrow(/Invalid page path/);
   });
 
   it("resolves docs/ by walking parents", () => {

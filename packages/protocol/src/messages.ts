@@ -210,6 +210,7 @@ import {
 } from "./mcp-cli/rpc-schemas.js";
 import {
   KnowledgeBaseListRequestSchema,
+  KnowledgeBaseCreateRequestSchema,
   KnowledgeBaseImportRequestSchema,
   KnowledgeBaseExportRequestSchema,
   KnowledgeBaseDeleteRequestSchema,
@@ -217,7 +218,15 @@ import {
   KnowledgeBaseMountRequestSchema,
   KnowledgeBaseUnmountRequestSchema,
   KnowledgeBaseListUsagesRequestSchema,
+  KnowledgeBaseListTreeRequestSchema,
+  KnowledgeBaseGetPageRequestSchema,
+  KnowledgeBaseSearchRequestSchema,
+  KnowledgeBaseUpsertPageRequestSchema,
+  KnowledgeBaseDeletePageRequestSchema,
+  KnowledgeBaseEmbeddingsDetectOllamaRequestSchema,
+  KnowledgeBaseEmbeddingsTestRequestSchema,
   KnowledgeBaseListResponseSchema,
+  KnowledgeBaseCreateResponseSchema,
   KnowledgeBaseImportResponseSchema,
   KnowledgeBaseExportResponseSchema,
   KnowledgeBaseDeleteResponseSchema,
@@ -225,6 +234,13 @@ import {
   KnowledgeBaseMountResponseSchema,
   KnowledgeBaseUnmountResponseSchema,
   KnowledgeBaseListUsagesResponseSchema,
+  KnowledgeBaseListTreeResponseSchema,
+  KnowledgeBaseGetPageResponseSchema,
+  KnowledgeBaseSearchResponseSchema,
+  KnowledgeBaseUpsertPageResponseSchema,
+  KnowledgeBaseDeletePageResponseSchema,
+  KnowledgeBaseEmbeddingsDetectOllamaResponseSchema,
+  KnowledgeBaseEmbeddingsTestResponseSchema,
 } from "./knowledge-base/rpc-schemas.js";
 import { BrowserAutomationHostCapabilitySchema } from "./browser-automation/capabilities.js";
 import {
@@ -353,6 +369,17 @@ export const MutableDaemonConfigSchema = z
       })
       .passthrough()
       .optional(),
+    // Knowledge base embeddings backend. Persists to localTools.embeddings
+    // (not daemon.localLlm). File + Host settings UI only — no env overrides.
+    embeddings: z
+      .object({
+        enabled: z.boolean().optional(),
+        baseUrl: z.string().optional(),
+        apiKey: z.string().optional(),
+        model: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 
@@ -385,6 +412,15 @@ export const MutableDaemonConfigPatchSchema = z
         modelFilename: z.string().optional(),
         // COMPAT(localLlmGguf): added in v0.1.110, remove after 2027-01-16.
         modelUrls: z.array(z.string()).optional(),
+      })
+      .passthrough()
+      .optional(),
+    embeddings: z
+      .object({
+        enabled: z.boolean().optional(),
+        baseUrl: z.string().optional(),
+        apiKey: z.string().optional(),
+        model: z.string().optional(),
       })
       .passthrough()
       .optional(),
@@ -2983,6 +3019,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   McpCliServersTestRequestSchema,
   McpCliServersImportLocalRequestSchema,
   KnowledgeBaseListRequestSchema,
+  KnowledgeBaseCreateRequestSchema,
   KnowledgeBaseImportRequestSchema,
   KnowledgeBaseExportRequestSchema,
   KnowledgeBaseDeleteRequestSchema,
@@ -2990,6 +3027,13 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   KnowledgeBaseMountRequestSchema,
   KnowledgeBaseUnmountRequestSchema,
   KnowledgeBaseListUsagesRequestSchema,
+  KnowledgeBaseListTreeRequestSchema,
+  KnowledgeBaseGetPageRequestSchema,
+  KnowledgeBaseSearchRequestSchema,
+  KnowledgeBaseUpsertPageRequestSchema,
+  KnowledgeBaseDeletePageRequestSchema,
+  KnowledgeBaseEmbeddingsDetectOllamaRequestSchema,
+  KnowledgeBaseEmbeddingsTestRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -5894,6 +5938,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   McpCliServersTestResponseSchema,
   McpCliServersImportLocalResponseSchema,
   KnowledgeBaseListResponseSchema,
+  KnowledgeBaseCreateResponseSchema,
   KnowledgeBaseImportResponseSchema,
   KnowledgeBaseExportResponseSchema,
   KnowledgeBaseDeleteResponseSchema,
@@ -5901,6 +5946,13 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   KnowledgeBaseMountResponseSchema,
   KnowledgeBaseUnmountResponseSchema,
   KnowledgeBaseListUsagesResponseSchema,
+  KnowledgeBaseListTreeResponseSchema,
+  KnowledgeBaseGetPageResponseSchema,
+  KnowledgeBaseSearchResponseSchema,
+  KnowledgeBaseUpsertPageResponseSchema,
+  KnowledgeBaseDeletePageResponseSchema,
+  KnowledgeBaseEmbeddingsDetectOllamaResponseSchema,
+  KnowledgeBaseEmbeddingsTestResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
   InstallDifftasticProgressMessageSchema,
@@ -6131,6 +6183,7 @@ export type McpCliServersImportLocalResponse = z.infer<
   typeof McpCliServersImportLocalResponseSchema
 >;
 export type KnowledgeBaseListRequest = z.infer<typeof KnowledgeBaseListRequestSchema>;
+export type KnowledgeBaseCreateRequest = z.infer<typeof KnowledgeBaseCreateRequestSchema>;
 export type KnowledgeBaseImportRequest = z.infer<typeof KnowledgeBaseImportRequestSchema>;
 export type KnowledgeBaseExportRequest = z.infer<typeof KnowledgeBaseExportRequestSchema>;
 export type KnowledgeBaseDeleteRequest = z.infer<typeof KnowledgeBaseDeleteRequestSchema>;
@@ -6138,7 +6191,19 @@ export type KnowledgeBaseListMountsRequest = z.infer<typeof KnowledgeBaseListMou
 export type KnowledgeBaseMountRequest = z.infer<typeof KnowledgeBaseMountRequestSchema>;
 export type KnowledgeBaseUnmountRequest = z.infer<typeof KnowledgeBaseUnmountRequestSchema>;
 export type KnowledgeBaseListUsagesRequest = z.infer<typeof KnowledgeBaseListUsagesRequestSchema>;
+export type KnowledgeBaseListTreeRequest = z.infer<typeof KnowledgeBaseListTreeRequestSchema>;
+export type KnowledgeBaseGetPageRequest = z.infer<typeof KnowledgeBaseGetPageRequestSchema>;
+export type KnowledgeBaseSearchRequest = z.infer<typeof KnowledgeBaseSearchRequestSchema>;
+export type KnowledgeBaseUpsertPageRequest = z.infer<typeof KnowledgeBaseUpsertPageRequestSchema>;
+export type KnowledgeBaseDeletePageRequest = z.infer<typeof KnowledgeBaseDeletePageRequestSchema>;
+export type KnowledgeBaseEmbeddingsDetectOllamaRequest = z.infer<
+  typeof KnowledgeBaseEmbeddingsDetectOllamaRequestSchema
+>;
+export type KnowledgeBaseEmbeddingsTestRequest = z.infer<
+  typeof KnowledgeBaseEmbeddingsTestRequestSchema
+>;
 export type KnowledgeBaseListResponse = z.infer<typeof KnowledgeBaseListResponseSchema>;
+export type KnowledgeBaseCreateResponse = z.infer<typeof KnowledgeBaseCreateResponseSchema>;
 export type KnowledgeBaseImportResponse = z.infer<typeof KnowledgeBaseImportResponseSchema>;
 export type KnowledgeBaseExportResponse = z.infer<typeof KnowledgeBaseExportResponseSchema>;
 export type KnowledgeBaseDeleteResponse = z.infer<typeof KnowledgeBaseDeleteResponseSchema>;
@@ -6146,6 +6211,17 @@ export type KnowledgeBaseListMountsResponse = z.infer<typeof KnowledgeBaseListMo
 export type KnowledgeBaseMountResponse = z.infer<typeof KnowledgeBaseMountResponseSchema>;
 export type KnowledgeBaseUnmountResponse = z.infer<typeof KnowledgeBaseUnmountResponseSchema>;
 export type KnowledgeBaseListUsagesResponse = z.infer<typeof KnowledgeBaseListUsagesResponseSchema>;
+export type KnowledgeBaseListTreeResponse = z.infer<typeof KnowledgeBaseListTreeResponseSchema>;
+export type KnowledgeBaseGetPageResponse = z.infer<typeof KnowledgeBaseGetPageResponseSchema>;
+export type KnowledgeBaseSearchResponse = z.infer<typeof KnowledgeBaseSearchResponseSchema>;
+export type KnowledgeBaseUpsertPageResponse = z.infer<typeof KnowledgeBaseUpsertPageResponseSchema>;
+export type KnowledgeBaseDeletePageResponse = z.infer<typeof KnowledgeBaseDeletePageResponseSchema>;
+export type KnowledgeBaseEmbeddingsDetectOllamaResponse = z.infer<
+  typeof KnowledgeBaseEmbeddingsDetectOllamaResponseSchema
+>;
+export type KnowledgeBaseEmbeddingsTestResponse = z.infer<
+  typeof KnowledgeBaseEmbeddingsTestResponseSchema
+>;
 
 // Type exports for payload types
 export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;

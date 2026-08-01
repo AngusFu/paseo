@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { Command } from "commander";
 import {
   deleteKnowledgeBase,
@@ -10,10 +11,13 @@ import {
 } from "@getpaseo/server/docs-vfs";
 import { addDaemonHostOption, addJsonOption } from "../../utils/command-options.js";
 import {
+  createKbPreferDaemon,
+  deleteKbPagePreferDaemon,
   knowledgeBaseHasMountsPreferDaemon,
   listKbMountsPreferDaemon,
   mountKbPreferDaemon,
   unmountKbPreferDaemon,
+  upsertKbPagePreferDaemon,
 } from "./kb-mount-daemon.js";
 
 interface JsonOptions {
@@ -54,6 +58,29 @@ export async function runDocsListCommand(options: JsonOptions): Promise<void> {
       const provenance = row.importProvenance ?? "-";
       console.log(`${row.slug}\t${row.id}\tembedded=${embedded}\t${provenance}`);
     }
+  } catch (error) {
+    fail(error);
+  }
+}
+
+export async function runDocsCreateCommand(
+  options: {
+    slug: string;
+    name?: string;
+    json?: boolean;
+  } & HostOptions,
+): Promise<void> {
+  try {
+    const knowledgeBase = await createKbPreferDaemon({
+      slug: options.slug,
+      name: options.name,
+      host: options.host,
+    });
+    if (options.json) {
+      console.log(JSON.stringify({ knowledgeBase }, null, 2));
+      return;
+    }
+    console.log(`Created ${knowledgeBase.slug} (${knowledgeBase.id})`);
   } catch (error) {
     fail(error);
   }
@@ -208,6 +235,65 @@ export async function runDocsUnmountCommand(
   }
 }
 
+async function readPutContent(file: string): Promise<string> {
+  if (file === "-") {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  }
+  return readFileSync(file, "utf8");
+}
+
+export async function runDocsPutCommand(
+  path: string,
+  options: {
+    kb: string;
+    file: string;
+    from?: string;
+    json?: boolean;
+  } & HostOptions,
+): Promise<void> {
+  try {
+    const content = await readPutContent(options.file);
+    const result = await upsertKbPagePreferDaemon({
+      idOrSlug: options.kb,
+      path,
+      content,
+      ...(options.from !== undefined ? { fromPath: options.from } : {}),
+      host: options.host,
+    });
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(`Wrote ${result.path}`);
+  } catch (error) {
+    fail(error);
+  }
+}
+
+export async function runDocsRmCommand(
+  path: string,
+  options: { kb: string; json?: boolean } & HostOptions,
+): Promise<void> {
+  try {
+    const result = await deleteKbPagePreferDaemon({
+      idOrSlug: options.kb,
+      path,
+      host: options.host,
+    });
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(`Deleted ${result.path}`);
+  } catch (error) {
+    fail(error);
+  }
+}
+
 /** Register KB management subcommands on `paseo kb`. */
 export function addDocsManageCommands(kb: Command): void {
   addJsonOption(kb.command("list").description("List knowledge bases on this daemon")).action(
@@ -215,6 +301,18 @@ export function addDocsManageCommands(kb: Command): void {
       await runDocsListCommand(options);
     },
   );
+
+  addDaemonHostOption(
+    addJsonOption(
+      kb
+        .command("create")
+        .description("Create an empty knowledge base (no pages yet; importedAt stays null)")
+        .requiredOption("--slug <slug>", "Daemon-unique slug (a-z0-9-)")
+        .option("--name <name>", "Display name (defaults to slug)"),
+    ),
+  ).action(async (options: { slug: string; name?: string; json?: boolean } & HostOptions) => {
+    await runDocsCreateCommand(options);
+  });
 
   addJsonOption(
     kb
@@ -298,4 +396,35 @@ export function addDocsManageCommands(kb: Command): void {
       await runDocsUnmountCommand(mountSlugOrKbId, options);
     },
   );
+
+  addDaemonHostOption(
+    addJsonOption(
+      kb
+        .command("put")
+        .description("Create or update a page in a knowledge base (host authoring; not VFS)")
+        .argument("<path>", "Page path inside the KB (e.g. guides/a.md)")
+        .requiredOption("--kb <id-or-slug>", "Knowledge base id or slug")
+        .requiredOption("--file <path>", "Markdown file path, or - for stdin")
+        .option("--from <path>", "Rename/move from this existing path"),
+    ),
+  ).action(
+    async (
+      path: string,
+      options: { kb: string; file: string; from?: string; json?: boolean } & HostOptions,
+    ) => {
+      await runDocsPutCommand(path, options);
+    },
+  );
+
+  addDaemonHostOption(
+    addJsonOption(
+      kb
+        .command("rm")
+        .description("Delete a page from a knowledge base (host authoring; not VFS)")
+        .argument("<path>", "Page path inside the KB")
+        .requiredOption("--kb <id-or-slug>", "Knowledge base id or slug"),
+    ),
+  ).action(async (path: string, options: { kb: string; json?: boolean } & HostOptions) => {
+    await runDocsRmCommand(path, options);
+  });
 }

@@ -169,4 +169,29 @@ describe("browser automation protocol integration", () => {
       }).browserTools,
     ).toEqual({ enabled: true });
   });
+
+  test("mutable daemon config accepts optional embeddings patch", () => {
+    expect(
+      MutableDaemonConfigSchema.parse({
+        mcp: { injectIntoAgents: false },
+        embeddings: {
+          enabled: true,
+          baseUrl: "http://127.0.0.1:11434/v1",
+          apiKey: "ollama",
+          model: "qwen3-embedding:0.6b",
+        },
+      }).embeddings,
+    ).toEqual({
+      enabled: true,
+      baseUrl: "http://127.0.0.1:11434/v1",
+      apiKey: "ollama",
+      model: "qwen3-embedding:0.6b",
+    });
+
+    expect(
+      MutableDaemonConfigPatchSchema.parse({
+        embeddings: { enabled: true, model: "nomic-embed-text" },
+      }).embeddings,
+    ).toEqual({ enabled: true, model: "nomic-embed-text" });
+  });
 });

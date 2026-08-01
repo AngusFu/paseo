@@ -26,7 +26,10 @@ import type {
 } from "@getpaseo/protocol/workflow/types";
 import type { AgentAttentionNotificationPayload } from "@getpaseo/protocol/agent-attention-notification";
 import type { McpCliServerConfig } from "@getpaseo/protocol/mcp-cli/types";
-import type { KnowledgeBaseImportSourceKind } from "@getpaseo/protocol/knowledge-base/types";
+import type {
+  KnowledgeBaseImportSourceKind,
+  KnowledgeBaseSearchMode,
+} from "@getpaseo/protocol/knowledge-base/types";
 import {
   AgentCreateFailedStatusPayloadSchema,
   AgentCreatedStatusPayloadSchema,
@@ -683,6 +686,10 @@ type KnowledgeBaseListPayload = Extract<
   SessionOutboundMessage,
   { type: "knowledge_base.list.response" }
 >["payload"];
+type KnowledgeBaseCreatePayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.create.response" }
+>["payload"];
 type KnowledgeBaseImportPayload = Extract<
   SessionOutboundMessage,
   { type: "knowledge_base.import.response" }
@@ -710,6 +717,34 @@ type KnowledgeBaseUnmountPayload = Extract<
 type KnowledgeBaseListUsagesPayload = Extract<
   SessionOutboundMessage,
   { type: "knowledge_base.list_usages.response" }
+>["payload"];
+type KnowledgeBaseListTreePayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.list_tree.response" }
+>["payload"];
+type KnowledgeBaseGetPagePayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.get_page.response" }
+>["payload"];
+type KnowledgeBaseSearchPayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.search.response" }
+>["payload"];
+type KnowledgeBaseUpsertPagePayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.upsert_page.response" }
+>["payload"];
+type KnowledgeBaseDeletePagePayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.delete_page.response" }
+>["payload"];
+type KnowledgeBaseEmbeddingsDetectOllamaPayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.embeddings.detect_ollama.response" }
+>["payload"];
+type KnowledgeBaseEmbeddingsTestPayload = Extract<
+  SessionOutboundMessage,
+  { type: "knowledge_base.embeddings.test.response" }
 >["payload"];
 type QuestionListPayload = Extract<
   SessionOutboundMessage,
@@ -5806,6 +5841,21 @@ export class DaemonClient {
     });
   }
 
+  async knowledgeBaseCreate(options: {
+    slug: string;
+    name?: string;
+    requestId?: string;
+  }): Promise<KnowledgeBaseCreatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "knowledge_base.create.request",
+        slug: options.slug,
+        ...(options.name !== undefined ? { name: options.name } : {}),
+      },
+    });
+  }
+
   async knowledgeBaseImport(options: {
     slug: string;
     fromPath: string;
@@ -5909,6 +5959,125 @@ export class DaemonClient {
       message: {
         type: "knowledge_base.list_usages.request",
         idOrSlug: options.idOrSlug,
+      },
+    });
+  }
+
+  async knowledgeBaseListTree(options: {
+    idOrSlug: string;
+    requestId?: string;
+  }): Promise<KnowledgeBaseListTreePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "knowledge_base.list_tree.request",
+        idOrSlug: options.idOrSlug,
+      },
+    });
+  }
+
+  async knowledgeBaseGetPage(options: {
+    idOrSlug: string;
+    path: string;
+    requestId?: string;
+  }): Promise<KnowledgeBaseGetPagePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "knowledge_base.get_page.request",
+        idOrSlug: options.idOrSlug,
+        path: options.path,
+      },
+    });
+  }
+
+  async knowledgeBaseSearch(options: {
+    idOrSlug: string;
+    query: string;
+    mode: KnowledgeBaseSearchMode;
+    limit?: number;
+    requestId?: string;
+  }): Promise<KnowledgeBaseSearchPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "knowledge_base.search.request",
+        idOrSlug: options.idOrSlug,
+        query: options.query,
+        mode: options.mode,
+        ...(options.limit !== undefined ? { limit: options.limit } : {}),
+      },
+    });
+  }
+
+  async knowledgeBaseUpsertPage(options: {
+    idOrSlug: string;
+    path: string;
+    content: string;
+    fromPath?: string;
+    requestId?: string;
+  }): Promise<KnowledgeBaseUpsertPagePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "knowledge_base.upsert_page.request",
+        idOrSlug: options.idOrSlug,
+        path: options.path,
+        content: options.content,
+        ...(options.fromPath !== undefined ? { fromPath: options.fromPath } : {}),
+      },
+    });
+  }
+
+  async knowledgeBaseDeletePage(options: {
+    idOrSlug: string;
+    path: string;
+    requestId?: string;
+  }): Promise<KnowledgeBaseDeletePagePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "knowledge_base.delete_page.request",
+        idOrSlug: options.idOrSlug,
+        path: options.path,
+      },
+    });
+  }
+
+  async knowledgeBaseEmbeddingsDetectOllama(
+    options: {
+      baseUrl?: string;
+      requestId?: string;
+    } = {},
+  ): Promise<KnowledgeBaseEmbeddingsDetectOllamaPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "knowledge_base.embeddings.detect_ollama.request",
+        ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
+      },
+    });
+  }
+
+  async knowledgeBaseEmbeddingsTest(
+    options: {
+      enabled?: boolean;
+      baseUrl?: string;
+      apiKey?: string;
+      model?: string;
+      requestId?: string;
+      timeoutMs?: number;
+    } = {},
+  ): Promise<KnowledgeBaseEmbeddingsTestPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      timeout: options.timeoutMs ?? LLM_GENERATE_TIMEOUT_MS,
+      message: {
+        type: "knowledge_base.embeddings.test.request",
+        ...(options.enabled !== undefined ? { enabled: options.enabled } : {}),
+        ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
+        ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
+        ...(options.model !== undefined ? { model: options.model } : {}),
       },
     });
   }

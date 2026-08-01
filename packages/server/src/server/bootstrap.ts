@@ -396,6 +396,13 @@ export interface PaseoDaemonConfig {
     modelFilename?: string;
     modelUrls?: string[];
   };
+  /** Knowledge base embeddings — maps to persisted `localTools.embeddings`. */
+  embeddings?: {
+    enabled?: boolean;
+    baseUrl?: string;
+    apiKey?: string;
+    model?: string;
+  };
   terminalProfiles?: TerminalProfile[];
   staticDir: string;
   mcpDebug: boolean;
@@ -528,6 +535,10 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
 
   if (config.localLlm !== undefined) {
     initialConfig.localLlm = config.localLlm;
+  }
+
+  if (config.embeddings !== undefined) {
+    initialConfig.embeddings = config.embeddings;
   }
 
   if (config.terminalProfiles !== undefined) {

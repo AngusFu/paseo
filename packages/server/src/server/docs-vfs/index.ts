@@ -14,6 +14,7 @@ export {
   grepDocs,
   listAllFileSlugs,
   listDocs,
+  assertValidPageSlug,
   normalizeSlug,
   parseVirtualPath,
   readDoc,
@@ -28,10 +29,15 @@ export {
   assertEmbeddingDimCount,
   assertSameEmbeddingDimensions,
   cosineSimilarity,
+  detectOllamaForEmbeddings,
   embedTexts,
   loadEmbeddingsConfig,
+  resolveEmbeddingsConfigForProbe,
   resolvePaseoHomeForDocs,
+  suggestEmbeddingModel,
+  testEmbeddingsProbe,
   type EmbeddingsConfig,
+  type EmbeddingsConfigOverride,
 } from "./embeddings.js";
 
 export {
@@ -66,12 +72,14 @@ export {
 
 export {
   chromaCollectionNameForStoreKey,
+  deleteDocsChromaChunkIds,
   deleteDocsChromaIndex,
   docsChromaIndexCount,
   paseoHomeFromStoreDir,
   queryDocsChromaIndex,
   replaceDocsChromaIndex,
   storeKeyFromStoreDir,
+  upsertDocsChromaChunks,
 } from "./chroma-vector-index.js";
 
 export { escapeFixedString, parseGrepArgv, type ParsedGrepArgs } from "./unix-args.js";
@@ -80,6 +88,7 @@ export {
   KB_SLUG_PATTERN,
   KnowledgeBaseRecordSchema,
   assertValidKbSlug,
+  createEmptyKnowledgeBase,
   deleteKnowledgeBase,
   docsVfsDirForKnowledgeBase,
   generateKnowledgeBaseId,
@@ -90,8 +99,11 @@ export {
   loadKnowledgeBaseRegistry,
   markKnowledgeBaseEmbedded,
   registerImportedKnowledgeBase,
+  touchKnowledgeBase,
   type KnowledgeBaseRecord,
 } from "./knowledge-base-registry.js";
+
+export { deleteKnowledgeBasePage, upsertKnowledgeBasePage } from "./knowledge-base-pages.js";
 
 export {
   KnowledgeBaseMountSchema,

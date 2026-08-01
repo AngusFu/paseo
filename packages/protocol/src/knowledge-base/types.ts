@@ -55,3 +55,33 @@ export type KnowledgeBaseUsage = z.infer<typeof KnowledgeBaseUsageSchema>;
 export const KnowledgeBaseDeleteErrorCodeSchema = z.enum(["still_mounted"]);
 
 export type KnowledgeBaseDeleteErrorCode = z.infer<typeof KnowledgeBaseDeleteErrorCodeSchema>;
+
+/**
+ * Flat tree node for Knowledge base detail browse.
+ * UI builds a hierarchy from `parentPath` (null = root).
+ */
+export const KnowledgeBaseTreeNodeSchema = z.object({
+  path: z.string(),
+  name: z.string(),
+  kind: z.enum(["file", "directory"]),
+  parentPath: z.string().nullable(),
+});
+
+export type KnowledgeBaseTreeNode = z.infer<typeof KnowledgeBaseTreeNodeSchema>;
+
+/** In-KB search mode: text grep or vector ANN (not cross-KB). */
+export const KnowledgeBaseSearchModeSchema = z.enum(["grep", "vector"]);
+
+export type KnowledgeBaseSearchMode = z.infer<typeof KnowledgeBaseSearchModeSchema>;
+
+/** One hit inside a single Knowledge base (path + snippet for detail UI). */
+export const KnowledgeBaseSearchHitSchema = z.object({
+  path: z.string(),
+  snippet: z.string(),
+  /** Present for vector mode (higher is better / closer). */
+  score: z.number().optional(),
+  /** Present for grep mode (1-based line of the snippet). */
+  line: z.number().int().positive().optional(),
+});
+
+export type KnowledgeBaseSearchHit = z.infer<typeof KnowledgeBaseSearchHitSchema>;

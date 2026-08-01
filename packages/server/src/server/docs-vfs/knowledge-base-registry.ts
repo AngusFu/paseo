@@ -6,6 +6,7 @@ import { z } from "zod";
 import { writeJsonFileAtomic } from "../atomic-file.js";
 import { resolvePaseoHomeForDocs } from "./embeddings.js";
 import { knowledgeBaseHasMounts } from "./knowledge-base-mounts.js";
+import { SqliteDocsVectorStore } from "./vector-store-sqlite.js";
 
 export const KB_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
@@ -126,6 +127,51 @@ export async function registerImportedKnowledgeBase(input: {
   return record;
 }
 
+/**
+ * Create a blank Knowledge base (registry row + empty SQLite corpus).
+ * `importedAt` stays null until a one-shot import path sets it.
+ */
+export async function createEmptyKnowledgeBase(input: {
+  slug: string;
+  name?: string;
+  paseoHome?: string;
+  now?: string;
+}): Promise<KnowledgeBaseRecord> {
+  const paseoHome = input.paseoHome ?? resolvePaseoHomeForDocs();
+  const slug = input.slug.trim();
+  assertValidKbSlug(slug);
+
+  const list = await loadKnowledgeBaseRegistry(paseoHome);
+  if (list.some((kb) => kb.slug === slug)) {
+    throw new Error(`Knowledge base slug already exists: ${slug}`);
+  }
+
+  const now = input.now ?? new Date().toISOString();
+  const record: KnowledgeBaseRecord = {
+    id: generateKnowledgeBaseId(),
+    slug,
+    name: input.name?.trim() || slug,
+    createdAt: now,
+    updatedAt: now,
+    importedAt: null,
+    lastEmbeddedAt: null,
+    importProvenance: null,
+  };
+  KnowledgeBaseRecordSchema.parse(record);
+
+  const storeDir = docsVfsDirForKnowledgeBase(paseoHome, record.id);
+  const store = SqliteDocsVectorStore.createEmpty(storeDir, { createdAt: now });
+  await store.close();
+
+  try {
+    await saveKnowledgeBaseRegistry(paseoHome, [...list, record]);
+  } catch (error) {
+    rmSync(storeDir, { recursive: true, force: true });
+    throw error;
+  }
+  return record;
+}
+
 export async function markKnowledgeBaseEmbedded(input: {
   id: string;
   paseoHome?: string;
@@ -140,6 +186,26 @@ export async function markKnowledgeBaseEmbedded(input: {
     ...list[index]!,
     updatedAt: now,
     lastEmbeddedAt: now,
+  };
+  list[index] = next;
+  await saveKnowledgeBaseRegistry(paseoHome, list);
+  return next;
+}
+
+/** Bump `updatedAt` after corpus page mutations that do not refresh embeddings. */
+export async function touchKnowledgeBase(input: {
+  id: string;
+  paseoHome?: string;
+  updatedAt?: string;
+}): Promise<KnowledgeBaseRecord> {
+  const paseoHome = input.paseoHome ?? resolvePaseoHomeForDocs();
+  const list = await loadKnowledgeBaseRegistry(paseoHome);
+  const index = list.findIndex((kb) => kb.id === input.id);
+  if (index < 0) throw new Error(`Knowledge base not found: ${input.id}`);
+  const now = input.updatedAt ?? new Date().toISOString();
+  const next: KnowledgeBaseRecord = {
+    ...list[index]!,
+    updatedAt: now,
   };
   list[index] = next;
   await saveKnowledgeBaseRegistry(paseoHome, list);

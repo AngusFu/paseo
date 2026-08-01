@@ -1,12 +1,14 @@
 # Knowledge bases — Desktop UX design
 
-Low-fidelity Desktop / Host UX for daemon-scoped **Knowledge bases** and workspace **Knowledge base mounts**. Product semantics are locked in [virtual-fs-hooks.md](./virtual-fs-hooks.md); terminology in [glossary.md](./glossary.md). This page is the placement + interaction contract for UI — not React implementation.
+Desktop-specific UX notes for daemon-scoped **Knowledge bases** and workspace **Knowledge base mounts**. The dedicated hub product contract now lives in [knowledge-bases-product.md](./knowledge-bases-product.md). Product semantics are locked in [virtual-fs-hooks.md](./virtual-fs-hooks.md); terminology in [glossary.md](./glossary.md). This page focuses on Desktop placement details, mount surfaces, and RPC/capability notes rather than being the primary product spec.
 
 Related: [forms.md](./forms.md), [design.md](./design.md), [rpc-namespacing.md](./rpc-namespacing.md), [expo-router.md](./expo-router.md).
 
+Status note (2026-08-01): the dedicated `/knowledge-bases` hub is the primary Knowledge bases surface. `Settings -> Host -> Knowledge bases` is redirect-only and must not grow a duplicate manage UI.
+
 ## Goals
 
-- Let a host operator **import / export / list / delete** Knowledge bases from Desktop (Host settings), without watching a folder or re-syncing disk.
+- Let a host operator reach the dedicated hub from Desktop and **import / export / list / delete** Knowledge bases there, without watching a folder or re-syncing disk.
 - Let users **opt in** to mounts at New Workspace create time (default **empty**) and **add/remove mounts** later without recreating the workspace.
 - Give agents a clear **read-only / empty** story for `/paseo-vfs` when nothing is mounted.
 - Keep UI labels and copy aligned with glossary: **Knowledge base**, **Knowledge bases**, **Mount knowledge bases**. No "Docs library", "RAG corpus", "Vector store" as UI labels.
@@ -15,7 +17,7 @@ Related: [forms.md](./forms.md), [design.md](./design.md), [rpc-namespacing.md](
 ## Non-goals
 
 - No Expo/React implementation in this design pass.
-- No in-KB page authoring UI (add/edit/remove pages) in the first Desktop ship — CLI/corpus maintain stays later (see Phased UI delivery).
+- ~~No in-KB page authoring UI in the first Desktop ship~~ — **superseded:** D5 / product P2 shipped hub detail browse/edit (K2/K3).
 - No disk re-sync, folder watch, `create --root` bridge, or `paseo docs` shim.
 - No Project-owned KB catalog; Project may later suggest mounts only.
 - No mobile-first layout work (Desktop / Electron path first; compact can reuse the same Host section later).
@@ -24,12 +26,13 @@ Related: [forms.md](./forms.md), [design.md](./design.md), [rpc-namespacing.md](
 
 ## Information architecture
 
-| Surface                               | Sees                                                | Owns                                      | Does not own                             |
-| ------------------------------------- | --------------------------------------------------- | ----------------------------------------- | ---------------------------------------- |
-| **Host settings → Knowledge bases**   | Full daemon KB registry for that host               | Import, export, delete, list              | Mount list (workspace-owned)             |
-| **New Workspace**                     | Host's KB catalog as mount candidates               | Initial mount selection (default none)    | Creating KB content                      |
-| **Workspace → Mount knowledge bases** | Mounts for this workspace + host catalog            | Add / remove mounts; mount slug at attach | Corpus bytes; KB delete                  |
-| **Agent**                             | Only mounted slugs under `/paseo-vfs/<mountSlug>/…` | Read via tools / `paseo kb`               | Registry, import/export, mount mutations |
+| Surface                                      | Sees                                                | Owns                                                                | Does not own                             |
+| -------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------- |
+| **Knowledge bases hub** (`/knowledge-bases`) | Full daemon KB registry (host-scoped)               | New empty, import, export, delete, list; detail browse/edit (K2/K3) | Mount mutations (workspace-owned)        |
+| **Host settings → Knowledge bases**          | Jump / redirect copy only                           | Navigate to hub                                                     | Full manage UI (moved to hub)            |
+| **New Workspace**                            | Host's KB catalog as mount candidates               | Initial mount selection (default none)                              | Creating KB content                      |
+| **Workspace → Mount knowledge bases**        | Mounts for this workspace + host catalog            | Add / remove mounts; mount slug at attach                           | Corpus bytes; KB delete                  |
+| **Agent**                                    | Only mounted slugs under `/paseo-vfs/<mountSlug>/…` | Read via tools / `paseo kb`                                         | Registry, import/export, mount mutations |
 
 ```text
 Host (daemon)
@@ -46,50 +49,51 @@ Agent (PASEO_WORKSPACE_ID)
 
 ### Placement in existing Desktop navigation
 
-| Screen                  | Where it lands                                                                                                                                                                 | Existing pattern to mirror                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| 1. Host manage          | New Host settings section slug `knowledge-bases` — route `buildSettingsHostSectionRoute(serverId, "knowledge-bases")` next to `workspaces` / `fastmcp` in `HOST_SECTION_ITEMS` | Host FastMCP / Workspaces pages; settings cards + sheets                            |
-| 2. New Workspace mounts | Optional section on `new-workspace-screen` after Isolation / before submit — same class of create-time preference as Isolation                                                 | Form kit + load-state gating ([forms.md](./forms.md)); hide when capability missing |
-| 3. Workspace mounts     | Sidebar workspace kebab → **"Mount knowledge bases"** → `AdaptiveModalSheet` (v1). No full Workspace Settings page required yet                                                | Schedule / Kanban sheets; footer rules from forms.md                                |
-| 4. Agent empty / tip    | Skill / `AGENTS.md` guidance + optional workspace empty callout when mounts are empty; not a Host settings page                                                                | Sidebar callouts / setup panel tone — calm, factual                                 |
+| Screen                  | Where it lands                                                                                                                                                                                                                                                                                                                    | Existing pattern to mirror                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 1. Knowledge bases hub  | Left-rail **Knowledge bases** → `/knowledge-bases` (`buildKnowledgeBasesRoute()`). Host settings section slug `knowledge-bases` is a short jump to the hub (no duplicate manage UI). Primary CTA: **New knowledge base** (Empty \| Import). Empty uses `knowledge_base.create` / `DaemonClient.knowledgeBaseCreate` when present. | Schedules / Workflows top-level screens (`HostRouteBootstrapBoundary`)              |
+| 2. New Workspace mounts | Optional section on `new-workspace-screen` after Isolation / before submit — same class of create-time preference as Isolation                                                                                                                                                                                                    | Form kit + load-state gating ([forms.md](./forms.md)); hide when capability missing |
+| 3. Workspace mounts     | Sidebar workspace kebab → **"Mount knowledge bases"** → `AdaptiveModalSheet` (v1). No full Workspace Settings page required yet                                                                                                                                                                                                   | Schedule / Kanban sheets; footer rules from forms.md                                |
+| 4. Agent empty / tip    | Skill / `AGENTS.md` guidance + optional workspace empty callout when mounts are empty; not a Host settings page                                                                                                                                                                                                                   | Sidebar callouts / setup panel tone — calm, factual                                 |
 
 **Desktop-only affordances:** folder/package pickers and export destination use Electron `pickDirectory` (`packages/app/src/desktop/pick-directory.ts`). Non-Electron web / remote hosts: always show **Import knowledge base** and row **Export** when the capability is present; open the Import sheet with CLI / Desktop hint copy and disable submit + folder picker; Export shows a CLI hint toast instead of hiding the menu item — do not invent a remote path text box as a fallback product path.
 
 ---
 
-## Screen 1 — Host: Knowledge bases manage
+## Screen 1 — Hub: Knowledge bases manage
 
 ### Purpose
 
-Daemon-scoped registry UI: import once into a self-contained corpus, export a text corpus package, delete when unmounted, browse list.
+Daemon-scoped registry UI: create empty Knowledge bases, import once into a self-contained corpus, export a text corpus package, delete when unmounted, browse list.
 
 ### Entry
 
-- Settings → Host → **Knowledge bases** (`/settings/hosts/:serverId/knowledge-bases`).
+- Left rail → **Knowledge bases** (`/knowledge-bases`).
+- Settings → Host → **Knowledge bases** jumps to the same hub (short copy + Open).
 - Capability gate: `server_info.features.knowledgeBases`. If false → single line: "Update the host to use Knowledge bases." (no partial UI).
 
 ### States
 
-| State                          | UI                                                                                                                                                                                     |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Connecting / loading           | Aggregate load gate — not "empty"                                                                                                                                                      |
-| Empty (loaded, zero KBs)       | Short empty copy + primary **Import knowledge base**                                                                                                                                   |
-| Loaded list                    | Rows: name, slug, id (muted), importedAt / lastEmbeddedAt, optional provenance note                                                                                                    |
-| Import in progress             | Sheet stays open; indeterminate or chunk progress; Cancel only if daemon supports abort (v1: no abort — disable dismiss until done or failed)                                          |
-| Import success                 | Close sheet; list refreshes; toast optional                                                                                                                                            |
-| Import / export / delete error | Inline error on sheet or toast; list unchanged                                                                                                                                         |
-| Delete blocked (still mounted) | Confirm disabled path: explain mounts remain; list workspace titles/ids if RPC returns them; CTA to open mount management is out of scope from Host — copy tells user to unmount first |
+| State                          | UI                                                                                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Connecting / loading           | Aggregate load gate — not "empty"                                                                                                                                         |
+| Empty (loaded, zero KBs)       | Short empty copy + primary **New knowledge base** (Empty \| Import)                                                                                                       |
+| Loaded list                    | Rows: name, slug, id (muted), importedAt / lastEmbeddedAt, optional provenance note                                                                                       |
+| Import in progress             | Sheet stays open; indeterminate or chunk progress; Cancel only if daemon supports abort (v1: no abort — disable dismiss until done or failed)                             |
+| Import success                 | Close sheet; list refreshes; toast optional                                                                                                                               |
+| Import / export / delete error | Inline error on sheet or toast; list unchanged                                                                                                                            |
+| Delete blocked (still mounted) | Confirm disabled path: explain mounts remain; list workspace titles/ids if RPC returns them; copy tells user to unmount first because mount management is workspace-owned |
 
 ### Primary actions
 
-1. **Import knowledge base** → Import sheet
+1. **New knowledge base** → Empty / Import sheet
 2. Row overflow / detail: **Export**, **Delete**
 
 ### Dangerous actions
 
 - **Delete** — footer left on edit/detail sheet (`variant="destructive"`), then `confirmDialog({ destructive: true })`. Daemon refuses if any workspace still mounts the KB.
 
-### Import sheet (key interaction)
+### New knowledge base sheet (Desktop-specific interaction)
 
 ```text
 ┌─ Import knowledge base ─────────────────────────────┐
@@ -113,6 +117,7 @@ Daemon-scoped registry UI: import once into a self-contained corpus, export a te
 
 Notes:
 
+- The `Empty` flow is defined in [knowledge-bases-product.md](./knowledge-bases-product.md). This Desktop doc keeps the import-path details because path picking is Desktop-specific.
 - Source is a **directory** in both modes (folder of text files, or package root with `manifest.json` + `pages/`). Desktop directory picker covers both; UI copy distinguishes intent so users do not expect embeddings in packages.
 - Slug: `^[a-z0-9][a-z0-9-]{0,62}$`, unique on daemon. Default name = slug if blank.
 - Import always creates a **new** `kbId` (no replace-into-existing).
@@ -164,12 +169,13 @@ Host settings › Knowledge bases
 
 ### CLI correspondence
 
-| UI     | CLI                                                            |
-| ------ | -------------------------------------------------------------- |
-| List   | `paseo kb list`                                                |
-| Import | `paseo kb import --slug … --from <folder\|package> [--name …]` |
-| Export | `paseo kb export <id-or-slug> --out <dir>`                     |
-| Delete | `paseo kb delete <id-or-slug>`                                 |
+| UI           | CLI                                                            |
+| ------------ | -------------------------------------------------------------- |
+| List         | `paseo kb list`                                                |
+| Create empty | `paseo kb create --slug … [--name …]` (prefers daemon RPC)     |
+| Import       | `paseo kb import --slug … --from <folder\|package> [--name …]` |
+| Export       | `paseo kb export <id-or-slug> --out <dir>`                     |
+| Delete       | `paseo kb delete <id-or-slug>`                                 |
 
 ---
 
@@ -377,7 +383,7 @@ Knowledge bases (read-only)
 
 ## RPC / capability gaps
 
-CLI manage path already exists (`paseo kb import|export|list|delete|mount|unmount|mounts`). **Desktop needs WebSocket RPCs** — none exist in `packages/protocol` today for Knowledge bases. All below are **需新增** (names follow [rpc-namespacing.md](./rpc-namespacing.md)).
+CLI manage path already exists (`paseo kb import|export|list|delete|mount|unmount|mounts`). The dedicated hub and workspace mount surfaces use WebSocket RPCs; names below are the contract and should continue to follow [rpc-namespacing.md](./rpc-namespacing.md).
 
 ### Capability
 
@@ -387,20 +393,26 @@ CLI manage path already exists (`paseo kb import|export|list|delete|mount|unmoun
 knowledgeBases: z.boolean().optional();
 ```
 
-Client: one gate; if false, hide Host section + New Workspace mount section + workspace mount menu item; show upgrade copy only where a nav entry would otherwise appear (Host section can show the upgrade line).
+Client: one gate. If false, keep the dedicated hub reachable so it can show upgrade copy, keep the Host settings redirect reachable, and hide only the New Workspace mount section + workspace mount menu item.
 
-### Proposed RPCs (shapes only)
+### RPC contract (shapes only)
 
-| RPC                                  | Direction     | Purpose                                   | Rough request / payload                                                                            |
-| ------------------------------------ | ------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `knowledge_base.list.request`        | ↔ `.response` | Registry list for host                    | `{}` → `payload.knowledgeBases[]` (+ optional `mountedWorkspaceCount` or `mounts[]` for delete UX) |
-| `knowledge_base.import.request`      | ↔ `.response` | One-shot import                           | `{ slug, name?, fromPath, sourceKind: "folder" \| "package" }` → `{ knowledgeBase, meta }`         |
-| `knowledge_base.export.request`      | ↔ `.response` | Corpus package to directory               | `{ idOrSlug, outDir }` → `{ outDir, pageCount, format }`                                           |
-| `knowledge_base.delete.request`      | ↔ `.response` | Delete if unmounted                       | `{ idOrSlug }` → `{ deleted }` or structured error `still_mounted` + workspace refs                |
-| `knowledge_base.list_mounts.request` | ↔ `.response` | Mounts for one workspace                  | `{ workspaceId }` → `{ mounts: [{ knowledgeBaseId, mountSlug, slug?, name? }] }`                   |
-| `knowledge_base.mount.request`       | ↔ `.response` | Attach                                    | `{ workspaceId, idOrSlug, mountSlug? }` → `{ mount }`                                              |
-| `knowledge_base.unmount.request`     | ↔ `.response` | Detach                                    | `{ workspaceId, mountSlugOrKbId }` → `{ unmounted }`                                               |
-| `knowledge_base.list_usages.request` | ↔ `.response` | **Optional** helper for delete-blocked UI | `{ idOrSlug }` → `{ workspaces: [{ workspaceId, title?, mountSlug }] }`                            |
+| RPC                                  | Direction     | Purpose                                     | Rough request / payload                                                                               |
+| ------------------------------------ | ------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `knowledge_base.list.request`        | ↔ `.response` | Registry list for host                      | `{}` → `payload.knowledgeBases[]` (+ optional `mountedWorkspaceCount` or `mounts[]` for delete UX)    |
+| `knowledge_base.create.request`      | ↔ `.response` | Blank KB (empty corpus; `importedAt: null`) | `{ slug, name? }` → `{ knowledgeBase }`                                                               |
+| `knowledge_base.import.request`      | ↔ `.response` | One-shot import                             | `{ slug, name?, fromPath, sourceKind: "folder" \| "package" }` → `{ knowledgeBase, meta }`            |
+| `knowledge_base.export.request`      | ↔ `.response` | Corpus package to directory                 | `{ idOrSlug, outDir }` → `{ outDir, pageCount, format }`                                              |
+| `knowledge_base.delete.request`      | ↔ `.response` | Delete if unmounted                         | `{ idOrSlug }` → `{ deleted }` or structured error `still_mounted` + workspace refs                   |
+| `knowledge_base.list_mounts.request` | ↔ `.response` | Mounts for one workspace                    | `{ workspaceId }` → `{ mounts: [{ knowledgeBaseId, mountSlug, slug?, name? }] }`                      |
+| `knowledge_base.mount.request`       | ↔ `.response` | Attach                                      | `{ workspaceId, idOrSlug, mountSlug? }` → `{ mount }`                                                 |
+| `knowledge_base.unmount.request`     | ↔ `.response` | Detach                                      | `{ workspaceId, mountSlugOrKbId }` → `{ unmounted }`                                                  |
+| `knowledge_base.list_usages.request` | ↔ `.response` | Mount usage for delete-blocked + detail UI  | `{ idOrSlug }` → `{ workspaces: [{ workspaceId, title?, mountSlug }] }` (`Mounted on N` = length)     |
+| `knowledge_base.list_tree.request`   | ↔ `.response` | In-KB page tree for detail browse           | `{ idOrSlug }` → `{ nodes: [{ path, name, kind: file\|directory, parentPath }] }`                     |
+| `knowledge_base.get_page.request`    | ↔ `.response` | Page preview content                        | `{ idOrSlug, path }` → `{ path, content }`                                                            |
+| `knowledge_base.search.request`      | ↔ `.response` | **In-KB only** search (grep or vector)      | `{ idOrSlug, query, mode: "grep"\|"vector", limit? }` → `{ mode, hits: [{ path, snippet, … }] }`      |
+| `knowledge_base.upsert_page.request` | ↔ `.response` | Create/update/rename-move a page (P2)       | `{ idOrSlug, path, content, fromPath? }` → `{ path }` (embeddings refresh when enabled; not required) |
+| `knowledge_base.delete_page.request` | ↔ `.response` | Delete one page (not the whole KB)          | `{ idOrSlug, path }` → `{ path }`                                                                     |
 
 Notes:
 
@@ -409,7 +421,7 @@ Notes:
 - **`list_usages` shipped** in D1 (preferred for delete-blocked UX). `delete` also returns `code: "still_mounted"` + `workspaces[]` when refused.
 - **Do not** add mounts onto `workspace.create.request` in v1 unless create+mount atomicity becomes a hard requirement — client sequences `workspace.create` then `knowledge_base.mount` (matches CLI). Optional later: `knowledge_base.set_mounts.request` replace-all for sheet Save.
 - Wire schemas: pure structural Zod; no `.transform()` on WS schemas; optional fields for back-compat.
-- Embeddings config remains daemon-side (`localTools.embeddings` / env); Desktop import surfaces a clear error if embeddings are required and unavailable — no Local Tools settings fold-in here.
+- Embeddings config remains daemon-side (`localTools.embeddings` via Host settings / `config.json` only — no env); Desktop import surfaces a clear error if embeddings are required and unavailable — no Local Tools settings fold-in here.
 
 ### Desktop bridge (not RPC)
 
@@ -422,8 +434,10 @@ Notes:
 
 ## Open questions
 
-1. ~~**Import progress UX**~~ — **Locked in D1:** blocking long RPC (10m timeout); no progress events. Sheet UX in D2 stays open until response.
-2. **Remote host paths** — Import/Export path pickers are meaningful for local Desktop-managed daemons; for remote SSH-style hosts, path picking may be wrong. **Lock for v1:** enable path pickers + Import submit only when `getIsElectron()` and host is local/desktop-managed; always keep Import/Export entry points visible and show CLI hint (`paseo kb import …` / `paseo kb export …`) otherwise.
+1. ~~**Import progress UX**~~ — **Locked in D1:** blocking long RPC (10m timeout); no progress events. Sheet UX stays open until response.
+2. ~~**Settings as the primary manage surface**~~ — **Superseded:** the dedicated `/knowledge-bases` hub is primary. Host settings is redirect-only.
+3. **Remote host paths** — Import/Export path pickers are meaningful for local Desktop-managed daemons; for remote SSH-style hosts, path picking may be wrong. **Lock for v1:** enable path pickers + Import submit only when `getIsElectron()` and host is local/desktop-managed; always keep Import/Export entry points visible and show CLI hint (`paseo kb import …` / `paseo kb export …`) otherwise.
+4. ~~**Edit APIs / empty create**~~ — Empty create, page mutation RPCs (`upsert_page` / `delete_page`), `paseo kb put|rm`, and hub detail editor UI (K3b / D5) shipped.
 
 Locked here (do not reopen without product change):
 
@@ -440,27 +454,28 @@ Locked here (do not reopen without product change):
 
 ## Phased UI delivery
 
-| Phase  | Scope                                                                                 | Status                                                                                                                                                                            |
-| ------ | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D0** | This design page + IA / RPC names                                                     | **Shipped**                                                                                                                                                                       |
-| **D1** | Capability + RPCs (list/import/export/delete/mount/unmount/list_mounts + list_usages) | **Shipped** (2026-08-01) — `server_info.features.knowledgeBases`; client helpers on `DaemonClient.knowledgeBase*`                                                                 |
-| **D2** | Host Knowledge bases section (list + import + export + delete)                        | **Shipped** (2026-08-01) — Host section slug `knowledge-bases`; `host-knowledge-bases-page.tsx`                                                                                   |
-| **D3** | New Workspace mount picker (default empty) + Workspace Mount sheet                    | **Shipped** (2026-08-01) — `NewWorkspaceMountPicker` + kebab → `KnowledgeBaseMountsSheet`                                                                                         |
-| **D4** | Agent guidance + optional empty `/paseo-vfs` callout                                  | **Shipped** (2026-08-01) — `KNOWLEDGE_BASES_AGENT_GUIDANCE` via daemonAppend + cursor-print AGENTS.md + `skills/paseo`; empty-mounts sidebar callout → `KnowledgeBaseMountsSheet` |
-| **D5** | In-KB page browse/edit in Desktop (maintain corpus without re-import)                 | Later — depends on edit APIs in virtual-fs-hooks open questions                                                                                                                   |
-| **D6** | Remember last mount selection; Project suggested mounts                               | Later                                                                                                                                                                             |
+| Phase   | Scope                                                                                 | Status                                                                                                                                                                                                         |
+| ------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D0**  | This design page + IA / RPC names                                                     | **Shipped**                                                                                                                                                                                                    |
+| **D1**  | Capability + RPCs (list/import/export/delete/mount/unmount/list_mounts + list_usages) | **Shipped** (2026-08-01) — `server_info.features.knowledgeBases`; client helpers on `DaemonClient.knowledgeBase*`                                                                                              |
+| **D2**  | Host Knowledge bases section (transition step before the dedicated hub)               | **Shipped** (2026-08-01) — Host section slug `knowledge-bases`; superseded as the primary manage surface by the hub                                                                                            |
+| **K1b** | Dedicated `/knowledge-bases` hub + Settings jump + New empty/import CTA               | **Shipped** (2026-08-01) — left-rail entry; `KnowledgeBasesScreen`; Host settings redirects to hub                                                                                                             |
+| **D3**  | New Workspace mount picker (default empty) + Workspace Mount sheet                    | **Shipped** (2026-08-01) — `NewWorkspaceMountPicker` + kebab → `KnowledgeBaseMountsSheet`                                                                                                                      |
+| **D4**  | Agent guidance + optional empty `/paseo-vfs` callout                                  | **Shipped** (2026-08-01) — `KNOWLEDGE_BASES_AGENT_GUIDANCE` via daemonAppend + cursor-print AGENTS.md + `skills/paseo`; empty-mounts sidebar callout → `KnowledgeBaseMountsSheet`                              |
+| **D5**  | In-KB page browse/edit in Desktop (maintain corpus without re-import)                 | **Shipped** (2026-08-01) — hub detail browse/edit via product K2/K3; see [knowledge-bases-product.md](./knowledge-bases-product.md) and [knowledge-bases-v1-acceptance.md](./knowledge-bases-v1-acceptance.md) |
+| **D6**  | Remember last mount selection; Project suggested mounts                               | Later                                                                                                                                                                                                          |
 
 ### D1 deviations / call notes for UI waves
 
-| Topic           | Choice                                                                                                                                                                                                                                                                                                           |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Import progress | No progress events; 10m correlated RPC timeout                                                                                                                                                                                                                                                                   |
-| Capability      | `features.knowledgeBases === true` (optional boolean; absent = old host)                                                                                                                                                                                                                                         |
-| Client API      | `daemonClient.knowledgeBaseList/Import/Export/Delete/ListMounts/Mount/Unmount/ListUsages`                                                                                                                                                                                                                        |
-| Delete blocked  | Prefer `knowledgeBaseListUsages` before confirm; `knowledgeBaseDelete` also returns `code: "still_mounted"` + `workspaces`                                                                                                                                                                                       |
-| Paths           | `fromPath` / `outDir` are **host filesystem** paths (local Desktop daemon)                                                                                                                                                                                                                                       |
-| Mount writes    | Daemon RPC mounts use Session `WorkspaceRegistry` (not a second writer on `workspaces.json`) so rename cannot drop mounts                                                                                                                                                                                        |
-| CLI mounts      | `paseo kb mount\|unmount\|mounts` prefer `DaemonClient.knowledgeBase*` when a capable daemon is reachable; fall back to local docs-vfs writers only offline (avoids stale `FileBackedWorkspaceRegistry` cache). Delete usages check also prefers daemon `list_usages`. Import/export/list stay local filesystem. |
+| Topic           | Choice                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Import progress | No progress events; 10m correlated RPC timeout                                                                                                                                                                                                                                                                                                                                                     |
+| Capability      | `features.knowledgeBases === true` (optional boolean; absent = old host)                                                                                                                                                                                                                                                                                                                           |
+| Client API      | `daemonClient.knowledgeBaseList/Create/Import/Export/Delete/ListMounts/Mount/Unmount/ListUsages/ListTree/GetPage/Search`                                                                                                                                                                                                                                                                           |
+| Delete blocked  | Prefer `knowledgeBaseListUsages` before confirm; `knowledgeBaseDelete` also returns `code: "still_mounted"` + `workspaces`                                                                                                                                                                                                                                                                         |
+| Paths           | `fromPath` / `outDir` are **host filesystem** paths (local Desktop daemon)                                                                                                                                                                                                                                                                                                                         |
+| Mount writes    | Daemon RPC mounts use Session `WorkspaceRegistry` (not a second writer on `workspaces.json`) so rename cannot drop mounts                                                                                                                                                                                                                                                                          |
+| CLI mounts      | `paseo kb mount\|unmount\|mounts` prefer `DaemonClient.knowledgeBase*` when a capable daemon is reachable; fall back to local docs-vfs writers only offline (avoids stale `FileBackedWorkspaceRegistry` cache). Delete usages check also prefers daemon `list_usages`. `paseo kb create` prefers daemon `knowledgeBaseCreate` (else local empty create). Import/export/list stay local filesystem. |
 
 Ship order intent: **D1 → D2 → D3 → D4**. D2 without D3 still lets power users mount via CLI; D3 without D2 is weak (nowhere to import). Prefer D2 and D3 in one Desktop milestone if capacity allows.
 

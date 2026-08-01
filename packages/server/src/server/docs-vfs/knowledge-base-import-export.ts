@@ -48,9 +48,7 @@ export interface ExportKnowledgeBaseResult {
 
 function assertEmbeddingsEnabled(config: EmbeddingsConfig | null | undefined): EmbeddingsConfig {
   if (!config?.enabled) {
-    throw new Error(
-      "Embeddings disabled. Set localTools.embeddings.enabled=true or PASEO_EMBEDDINGS_ENABLED=1.",
-    );
+    throw new Error("Embeddings disabled. Enable embeddings in Host settings → Knowledge bases.");
   }
   return config;
 }

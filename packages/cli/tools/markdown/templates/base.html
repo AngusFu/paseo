@@ -1,329 +1,345 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{title}}</title>
-<script>
-// apply stored theme BEFORE first paint (avoids light->dark flash). "auto" = no attr.
-(() => {
-  const t = localStorage.getItem("paseo-markdown-theme");
-  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
-})();
-</script>
-<style>
-  /* token system: light default, auto dark via media query, manual override via
-     [data-theme] (higher specificity than the media-query :root block, so the
-     attribute always wins — same pattern in all three blocks). */
-  :root {
-    --ground: #f6f7f9;
-    --panel: #ffffff;
-    --panel-2: #fbfcfd;
-    --ink: #1a1f29;
-    --ink-soft: #566072;
-    --ink-faint: #8892a4;
-    --line: #e4e8ee;
-    --line-strong: #d3d9e2;
-    --accent: {{accent}};
-    --good: #1f8a4c; --good-soft: #e6f4ec;
-    --warn: #b7791f; --warn-soft: #fbf1dd;
-    --crit: #c23b3b; --crit-soft: #fbe8e8;
-    --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--panel));
-    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, Helvetica, sans-serif;
-    --radius: 10px;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --ground: #0f131a;
-      --panel: #161b24;
-      --panel-2: #1a212c;
-      --ink: #e7ecf3;
-      --ink-soft: #a3adbf;
-      --ink-faint: #6b7688;
-      --line: #262d39;
-      --line-strong: #333c4a;
-      --accent: {{accent_dark}};
-      --good: #4cc37e; --good-soft: #12291d;
-      --warn: #e0a53c; --warn-soft: #2c2312;
-      --crit: #e56d6d; --crit-soft: #2e1717;
-    }
-  }
-  :root[data-theme="light"] {
-    --ground: #f6f7f9; --panel: #ffffff; --panel-2: #fbfcfd;
-    --ink: #1a1f29; --ink-soft: #566072; --ink-faint: #8892a4;
-    --line: #e4e8ee; --line-strong: #d3d9e2;
-    --accent: {{accent}};
-    --good: #1f8a4c; --good-soft: #e6f4ec;
-    --warn: #b7791f; --warn-soft: #fbf1dd;
-    --crit: #c23b3b; --crit-soft: #fbe8e8;
-  }
-  :root[data-theme="dark"] {
-    --ground: #0f131a; --panel: #161b24; --panel-2: #1a212c;
-    --ink: #e7ecf3; --ink-soft: #a3adbf; --ink-faint: #6b7688;
-    --line: #262d39; --line-strong: #333c4a;
-    --accent: {{accent_dark}};
-    --good: #4cc37e; --good-soft: #12291d;
-    --warn: #e0a53c; --warn-soft: #2c2312;
-    --crit: #e56d6d; --crit-soft: #2e1717;
-  }
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}}</title>
+    <script>
+      // apply stored theme BEFORE first paint (avoids light->dark flash). "auto" = no attr.
+      (() => {
+        const t = localStorage.getItem("paseo-markdown-theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      })();
+    </script>
+    <style>
+        /* token system: light default, auto dark via media query, manual override via
+           [data-theme] (higher specificity than the media-query :root block, so the
+           attribute always wins — same pattern in all three blocks). */
+        :root {
+          --ground: #f6f7f9;
+          --panel: #ffffff;
+          --panel-2: #fbfcfd;
+          --ink: #1a1f29;
+          --ink-soft: #566072;
+          --ink-faint: #8892a4;
+          --line: #e4e8ee;
+          --line-strong: #d3d9e2;
+          --accent: {{accent}};
+          --good: #1f8a4c; --good-soft: #e6f4ec;
+          --warn: #b7791f; --warn-soft: #fbf1dd;
+          --crit: #c23b3b; --crit-soft: #fbe8e8;
+          --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--panel));
+          --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+          --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, Helvetica, sans-serif;
+          --radius: 10px;
+        }
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --ground: #0f131a;
+            --panel: #161b24;
+            --panel-2: #1a212c;
+            --ink: #e7ecf3;
+            --ink-soft: #a3adbf;
+            --ink-faint: #6b7688;
+            --line: #262d39;
+            --line-strong: #333c4a;
+            --accent: {{accent_dark}};
+            --good: #4cc37e; --good-soft: #12291d;
+            --warn: #e0a53c; --warn-soft: #2c2312;
+            --crit: #e56d6d; --crit-soft: #2e1717;
+          }
+        }
+        :root[data-theme="light"] {
+          --ground: #f6f7f9; --panel: #ffffff; --panel-2: #fbfcfd;
+          --ink: #1a1f29; --ink-soft: #566072; --ink-faint: #8892a4;
+          --line: #e4e8ee; --line-strong: #d3d9e2;
+          --accent: {{accent}};
+          --good: #1f8a4c; --good-soft: #e6f4ec;
+          --warn: #b7791f; --warn-soft: #fbf1dd;
+          --crit: #c23b3b; --crit-soft: #fbe8e8;
+        }
+        :root[data-theme="dark"] {
+          --ground: #0f131a; --panel: #161b24; --panel-2: #1a212c;
+          --ink: #e7ecf3; --ink-soft: #a3adbf; --ink-faint: #6b7688;
+          --line: #262d39; --line-strong: #333c4a;
+          --accent: {{accent_dark}};
+          --good: #4cc37e; --good-soft: #12291d;
+          --warn: #e0a53c; --warn-soft: #2c2312;
+          --crit: #e56d6d; --crit-soft: #2e1717;
+        }
 
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--ground); color: var(--ink);
-    font-family: var(--sans); font-size: 15px; line-height: 1.65;
-    -webkit-font-smoothing: antialiased;
-    padding: clamp(1rem, 3vw, 2.75rem);
-  }
-  .wrap { max-width: 1160px; margin: 0 auto; }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  @media (prefers-reduced-motion: reduce) {
-    * { transition: none !important; animation: none !important; }
-  }
+        * { box-sizing: border-box; }
+        body {
+          margin: 0; background: var(--ground); color: var(--ink);
+          font-family: var(--sans); font-size: 15px; line-height: 1.65;
+          -webkit-font-smoothing: antialiased;
+          padding: clamp(1rem, 3vw, 2.75rem);
+        }
+        .wrap { max-width: 1160px; margin: 0 auto; }
+        :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        @media (prefers-reduced-motion: reduce) {
+          * { transition: none !important; animation: none !important; }
+        }
 
-  header.doc {
-    border-bottom: 1px solid var(--line); padding-bottom: 1.1rem; margin-bottom: 1.5rem;
-    position: relative;
-  }
-  .eyebrow {
-    font-family: var(--mono); font-size: .72rem; letter-spacing: .14em;
-    text-transform: uppercase; color: var(--ink-faint); margin: 0 0 .5rem;
-  }
-  header.doc h1 {
-    font-size: clamp(1.4rem, 3.5vw, 2rem); margin: 0 0 .6rem;
-    font-weight: 680; letter-spacing: -.02em; line-height: 1.25; text-wrap: balance;
-  }
-  a.back { display: inline-block; color: var(--ink-faint); font-size: .8rem;
-           text-decoration: none; margin-bottom: .4rem; }
-  a.back:hover { color: var(--accent); }
-  button.theme {
-    position: absolute; top: 0; right: 0;
-    font-family: var(--mono); font-size: .72rem; padding: .25rem .6rem;
-    border-radius: 999px; border: 1px solid var(--line-strong);
-    background: var(--panel); color: var(--ink-soft); cursor: pointer;
-  }
-  button.theme:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+        header.doc {
+          border-bottom: 1px solid var(--line); padding-bottom: 1.1rem; margin-bottom: 1.5rem;
+          position: relative;
+        }
+        .eyebrow {
+          font-family: var(--mono); font-size: .72rem; letter-spacing: .14em;
+          text-transform: uppercase; color: var(--ink-faint); margin: 0 0 .5rem;
+        }
+        header.doc h1 {
+          font-size: clamp(1.4rem, 3.5vw, 2rem); margin: 0 0 .6rem;
+          font-weight: 680; letter-spacing: -.02em; line-height: 1.25; text-wrap: balance;
+        }
+        a.back { display: inline-block; color: var(--ink-faint); font-size: .8rem;
+                 text-decoration: none; margin-bottom: .4rem; }
+        a.back:hover { color: var(--accent); }
+        button.theme {
+          position: absolute; top: 0; right: 0;
+          font-family: var(--mono); font-size: .72rem; padding: .25rem .6rem;
+          border-radius: 999px; border: 1px solid var(--line-strong);
+          background: var(--panel); color: var(--ink-soft); cursor: pointer;
+        }
+        button.theme:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 
-  .badges { display: flex; flex-wrap: wrap; gap: .5rem; }
-  .badge {
-    display: inline-block; font-family: var(--mono); font-size: .7rem;
-    padding: .2rem .55rem; border-radius: 999px; white-space: nowrap;
-    border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink-soft);
-  }
+        .badges { display: flex; flex-wrap: wrap; gap: .5rem; }
+        .badge {
+          display: inline-block; font-family: var(--mono); font-size: .7rem;
+          padding: .2rem .55rem; border-radius: 999px; white-space: nowrap;
+          border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink-soft);
+        }
 
-  /* front-matter panels: meta key/value card + todos checklist (injected pre-body) */
-  .fm-meta, .fm-todos {
-    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 12px 16px; margin: 0 0 18px;
-  }
-  .fm-heading {
-    font-family: var(--mono); font-size: .72rem; letter-spacing: .12em;
-    text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px;
-    font-weight: 500; border: 0; padding: 0;
-  }
-  article .fm-heading { font-size: .72rem; margin: 0 0 10px; color: var(--ink-faint);
-                        border-left: 0; padding-left: 0; }
-  .fm-dl { margin: 0; display: grid; gap: 8px 16px; }
-  .fm-dl > div { display: grid; grid-template-columns: minmax(7rem, 10rem) 1fr;
-                 gap: 4px 14px; align-items: start; }
-  .fm-dl dt {
-    font-family: var(--mono); font-size: .75rem; color: var(--ink-faint);
-    margin: 0; word-break: break-all;
-  }
-  .fm-dl dd { margin: 0; color: var(--ink-soft); font-size: .9rem; }
-  .fm-dl dd .fm-yaml {
-    margin: 0; padding: 8px 10px; font-size: 12px; white-space: pre-wrap;
-    background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
-  }
-  @media (max-width: 560px) {
-    .fm-dl > div { grid-template-columns: 1fr; }
-  }
-  ul.todo-list { list-style: none; margin: 0; padding: 0; }
-  li.todo {
-    display: grid; grid-template-columns: 1.2rem 1fr auto; gap: 8px 10px;
-    align-items: start; padding: 7px 0; border-bottom: 1px solid var(--line);
-    font-size: .92rem;
-  }
-  li.todo:last-child { border-bottom: 0; padding-bottom: 0; }
-  li.todo:first-child { padding-top: 0; }
-  .todo-mark {
-    font-family: var(--mono); font-size: .85rem; line-height: 1.5;
-    color: var(--ink-faint); text-align: center;
-  }
-  .todo-content { color: var(--ink); min-width: 0; }
-  .todo-id {
-    font-size: .7rem; color: var(--ink-faint); align-self: start;
-    background: var(--panel-2); border-color: var(--line);
-  }
-  li.todo-done .todo-mark { color: var(--good); }
-  li.todo-done .todo-content { color: var(--ink-soft); text-decoration: line-through; }
-  li.todo-doing .todo-mark { color: var(--accent); }
-  li.todo-cancelled .todo-mark { color: var(--crit); }
-  li.todo-cancelled .todo-content { color: var(--ink-faint); text-decoration: line-through; }
+        /* front-matter panels: meta key/value card + todos checklist (injected pre-body) */
+        .fm-meta, .fm-todos {
+          background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+          padding: 12px 16px; margin: 0 0 18px;
+        }
+        .fm-heading {
+          font-family: var(--mono); font-size: .72rem; letter-spacing: .12em;
+          text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px;
+          font-weight: 500; border: 0; padding: 0;
+        }
+        article .fm-heading { font-size: .72rem; margin: 0 0 10px; color: var(--ink-faint);
+                              border-left: 0; padding-left: 0; }
+        .fm-dl { margin: 0; display: grid; gap: 8px 16px; }
+        .fm-dl > div { display: grid; grid-template-columns: minmax(7rem, 10rem) 1fr;
+                       gap: 4px 14px; align-items: start; }
+        .fm-dl dt {
+          font-family: var(--mono); font-size: .75rem; color: var(--ink-faint);
+          margin: 0; word-break: break-all;
+        }
+        .fm-dl dd { margin: 0; color: var(--ink-soft); font-size: .9rem; }
+        .fm-dl dd .fm-yaml {
+          margin: 0; padding: 8px 10px; font-size: 12px; white-space: pre-wrap;
+          background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+        }
+        @media (max-width: 560px) {
+          .fm-dl > div { grid-template-columns: 1fr; }
+        }
+        ul.todo-list { list-style: none; margin: 0; padding: 0; }
+        li.todo {
+          display: grid; grid-template-columns: 1.2rem 1fr auto; gap: 8px 10px;
+          align-items: start; padding: 7px 0; border-bottom: 1px solid var(--line);
+          font-size: .92rem;
+        }
+        li.todo:last-child { border-bottom: 0; padding-bottom: 0; }
+        li.todo:first-child { padding-top: 0; }
+        .todo-mark {
+          font-family: var(--mono); font-size: .85rem; line-height: 1.5;
+          color: var(--ink-faint); text-align: center;
+        }
+        .todo-content { color: var(--ink); min-width: 0; }
+        .todo-id {
+          font-size: .7rem; color: var(--ink-faint); align-self: start;
+          background: var(--panel-2); border-color: var(--line);
+        }
+        li.todo-done .todo-mark { color: var(--good); }
+        li.todo-done .todo-content { color: var(--ink-soft); text-decoration: line-through; }
+        li.todo-doing .todo-mark { color: var(--accent); }
+        li.todo-cancelled .todo-mark { color: var(--crit); }
+        li.todo-cancelled .todo-content { color: var(--ink-faint); text-decoration: line-through; }
 
-  /* layout: article + sticky TOC sidebar on wide screens; TOC folds on top when narrow */
-  .layout.with-toc { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 36px; }
-  @media (min-width: 1100px) {
-    .layout.with-toc { grid-template-columns: minmax(0, 1fr) 240px; }
-    .layout.with-toc nav.toc {
-      order: 2; position: sticky; top: 24px; align-self: start;
-      max-height: calc(100vh - 48px); overflow-y: auto; margin: 0;
-    }
-    .layout.with-toc article { order: 1; max-width: 860px; }
-  }
-  nav.toc {
-    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 10px 18px; font-size: 13px; margin: 0 0 18px;
-  }
-  nav.toc:empty { display: none; }
-  nav.toc ul { margin: 6px 0; padding-left: 16px; list-style: none; }
-  nav.toc > ul { padding-left: 0; }
-  nav.toc li { margin: 2px 0; }
-  nav.toc a { color: var(--ink-soft); text-decoration: none; display: inline-block; padding: 1px 0; }
-  nav.toc a:hover { color: var(--accent); }
-  nav.toc a.cur { color: var(--accent); font-weight: 600; }
+        /* layout: article + sticky TOC sidebar on wide screens; TOC folds on top when narrow */
+        .layout.with-toc { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 36px; }
+        @media (min-width: 1100px) {
+          .layout.with-toc { grid-template-columns: minmax(0, 1fr) 240px; }
+          .layout.with-toc nav.toc {
+            order: 2; position: sticky; top: 24px; align-self: start;
+            max-height: calc(100vh - 48px); overflow-y: auto; margin: 0;
+          }
+          .layout.with-toc article { order: 1; max-width: 860px; }
+        }
+        nav.toc {
+          background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+          padding: 10px 18px; font-size: 13px; margin: 0 0 18px;
+        }
+        nav.toc:empty { display: none; }
+        nav.toc ul { margin: 6px 0; padding-left: 16px; list-style: none; }
+        nav.toc > ul { padding-left: 0; }
+        nav.toc li { margin: 2px 0; }
+        nav.toc a { color: var(--ink-soft); text-decoration: none; display: inline-block; padding: 1px 0; }
+        nav.toc a:hover { color: var(--accent); }
+        nav.toc a.cur { color: var(--accent); font-weight: 600; }
 
-  article h1 { font-size: 1.35rem; margin: 34px 0 12px; letter-spacing: -.01em; }
-  article h2 {
-    font-size: 1.15rem; margin: 34px 0 14px; padding-left: 10px;
-    border-left: 4px solid var(--accent); line-height: 1.3; letter-spacing: -.01em;
-    font-weight: 640;
-  }
-  article h3 { font-size: 1rem; margin: 22px 0 10px; color: var(--accent); font-weight: 640; }
-  article h4 { font-size: .95rem; margin: 18px 0 8px; }
-  p { margin: 8px 0; }
-  ul, ol { margin: 8px 0; padding-left: 22px; }
-  li { margin: 4px 0; }
-  a { color: var(--accent); }
-  hr { border: 0; border-top: 1px solid var(--line); margin: 24px 0; }
-  strong { font-weight: 640; }
-  code {
-    background: var(--panel-2); border: 1px solid var(--line);
-    padding: 1px 5px; border-radius: 5px;
-    font: .84em/1.5 var(--mono);
-  }
-  pre {
-    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
-    padding: 12px 14px; overflow-x: auto; position: relative;
-  }
-  pre code { background: none; border: 0; padding: 0; font-size: 12.5px; }
-  .hl { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
-        margin: 12px 0; }
-  .hl pre { background: none; border: 0; margin: 0; }
-  pre.mermaid { background: var(--panel); text-align: center; }
-  button.cpy {
-    position: absolute; top: 6px; right: 6px; font-size: 11px; padding: 2px 9px;
-    border-radius: 6px; border: 1px solid var(--line); background: var(--panel);
-    color: var(--ink-soft); cursor: pointer; opacity: 0; transition: opacity .12s;
-  }
-  pre:hover button.cpy, .hl:hover button.cpy, button.cpy:focus-visible { opacity: 1; }
-  button.cpy:hover { color: var(--accent); }
-  blockquote {
-    margin: 10px 0; padding: 8px 14px; border-left: 4px solid var(--warn);
-    background: var(--warn-soft); border-radius: 0 8px 8px 0; color: var(--ink-soft);
-  }
-  .admonition {
-    margin: 12px 0; padding: 10px 14px; border-left: 4px solid var(--accent);
-    background: var(--accent-soft); border-radius: 0 8px 8px 0;
-  }
-  .admonition-title { font-weight: 640; margin: 0 0 4px; }
-  .admonition.warning, .admonition.caution { border-left-color: var(--warn); background: var(--warn-soft); }
-  .admonition.danger, .admonition.error { border-left-color: var(--crit); background: var(--crit-soft); }
+        article h1 { font-size: 1.35rem; margin: 34px 0 12px; letter-spacing: -.01em; }
+        article h2 {
+          font-size: 1.15rem; margin: 34px 0 14px; padding-left: 10px;
+          border-left: 4px solid var(--accent); line-height: 1.3; letter-spacing: -.01em;
+          font-weight: 640;
+        }
+        article h3 { font-size: 1rem; margin: 22px 0 10px; color: var(--accent); font-weight: 640; }
+        article h4 { font-size: .95rem; margin: 18px 0 8px; }
+        p { margin: 8px 0; }
+        ul, ol { margin: 8px 0; padding-left: 22px; }
+        li { margin: 4px 0; }
+        a { color: var(--accent); }
+        hr { border: 0; border-top: 1px solid var(--line); margin: 24px 0; }
+        strong { font-weight: 640; }
+        code {
+          background: var(--panel-2); border: 1px solid var(--line);
+          padding: 1px 5px; border-radius: 5px;
+          font: .84em/1.5 var(--mono);
+        }
+        pre {
+          background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+          padding: 12px 14px; overflow-x: auto; position: relative;
+        }
+        pre code { background: none; border: 0; padding: 0; font-size: 12.5px; }
+        .hl { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+              margin: 12px 0; }
+        .hl pre { background: none; border: 0; margin: 0; }
+        pre.mermaid { background: var(--panel); text-align: center; }
+        button.cpy {
+          position: absolute; top: 6px; right: 6px; font-size: 11px; padding: 2px 9px;
+          border-radius: 6px; border: 1px solid var(--line); background: var(--panel);
+          color: var(--ink-soft); cursor: pointer; opacity: 0; transition: opacity .12s;
+        }
+        pre:hover button.cpy, .hl:hover button.cpy, button.cpy:focus-visible { opacity: 1; }
+        button.cpy:hover { color: var(--accent); }
+        blockquote {
+          margin: 10px 0; padding: 8px 14px; border-left: 4px solid var(--warn);
+          background: var(--warn-soft); border-radius: 0 8px 8px 0; color: var(--ink-soft);
+        }
+        .admonition {
+          margin: 12px 0; padding: 10px 14px; border-left: 4px solid var(--accent);
+          background: var(--accent-soft); border-radius: 0 8px 8px 0;
+        }
+        .admonition-title { font-weight: 640; margin: 0 0 4px; }
+        .admonition.warning, .admonition.caution { border-left-color: var(--warn); background: var(--warn-soft); }
+        .admonition.danger, .admonition.error { border-left-color: var(--crit); background: var(--crit-soft); }
 
-  /* tables: rounded panel with its own horizontal scroll (renderer wraps every
-     <table> in .table-scroll). Row borders only — vertical grid lines are noise. */
-  .table-scroll {
-    overflow-x: auto; border: 1px solid var(--line); border-radius: 12px;
-    background: var(--panel); margin: 14px 0;
-  }
-  table { border-collapse: collapse; width: 100%; font-size: .88rem; font-variant-numeric: tabular-nums; }
-  thead th {
-    text-align: left; font-family: var(--mono); font-size: .68rem;
-    letter-spacing: .09em; text-transform: uppercase; color: var(--ink-faint);
-    font-weight: 500; padding: .65rem .9rem; border-bottom: 1px solid var(--line-strong);
-    background: var(--panel-2); white-space: nowrap;
-  }
-  tbody td { padding: .7rem .9rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-  tbody tr:last-child td { border-bottom: none; }
-  td code, th code { background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
+        /* tables: rounded panel with its own horizontal scroll (renderer wraps every
+           <table> in .table-scroll). Row borders only — vertical grid lines are noise. */
+        .table-scroll {
+          overflow-x: auto; border: 1px solid var(--line); border-radius: 12px;
+          background: var(--panel); margin: 14px 0;
+        }
+        table { border-collapse: collapse; width: 100%; font-size: .88rem; font-variant-numeric: tabular-nums; }
+        thead th {
+          text-align: left; font-family: var(--mono); font-size: .68rem;
+          letter-spacing: .09em; text-transform: uppercase; color: var(--ink-faint);
+          font-weight: 500; padding: .65rem .9rem; border-bottom: 1px solid var(--line-strong);
+          background: var(--panel-2); white-space: nowrap;
+        }
+        tbody td { padding: .7rem .9rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+        tbody tr:last-child td { border-bottom: none; }
+        td code, th code { background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
 
-  footer {
-    margin-top: 48px; color: var(--ink-faint); font-size: .82rem;
-    border-top: 1px solid var(--line); padding-top: 14px;
-  }
-  footer code { font-size: .78rem; color: var(--ink-soft); background: none; border: 0; padding: 0; }
+        footer {
+          margin-top: 48px; color: var(--ink-faint); font-size: .82rem;
+          border-top: 1px solid var(--line); padding-top: 14px;
+        }
+        footer code { font-size: .78rem; color: var(--ink-soft); background: none; border: 0; padding: 0; }
 
-  /* pygments token colors (generated: light default + auto-dark + forced-dark) */
-{{highlight_css}}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <header class="doc">
-    {{backlink}}
-    <p class="eyebrow">{{eyebrow}}</p>
-    <h1>{{title}}</h1>
-    <div class="badges">
-    {{badges}}
+        /* pygments token colors (generated: light default + auto-dark + forced-dark) */
+      {{highlight_css}}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="doc">
+        {{backlink}}
+        <p class="eyebrow">{{eyebrow}}</p>
+        <h1>{{title}}</h1>
+        <div class="badges">{{badges}}</div>
+        <button class="theme" type="button" id="theme-toggle" title="切换主题"></button>
+      </header>
+      <div class="layout {{layout_class}}">
+        <nav class="toc">{{toc}}</nav>
+        <article>{{body}}</article>
+      </div>
+      <footer>archive: <code>{{source}}</code> · rendered by paseo markdown</footer>
     </div>
-    <button class="theme" type="button" id="theme-toggle" title="切换主题"></button>
-  </header>
-  <div class="layout {{layout_class}}">
-    <nav class="toc">{{toc}}</nav>
-    <article>
-{{body}}
-    </article>
-  </div>
-  <footer>archive: <code>{{source}}</code> · rendered by paseo markdown</footer>
-</div>
-<script>
-// theme toggle: auto -> light -> dark -> auto. auto = follow system (no attr).
-(() => {
-  const KEY = "paseo-markdown-theme", btn = document.getElementById("theme-toggle");
-  const label = { auto: "主题:自动", light: "主题:浅色", dark: "主题:深色" };
-  const cur = () => document.documentElement.dataset.theme || "auto";
-  const show = () => { btn.textContent = label[cur()]; };
-  btn.addEventListener("click", () => {
-    const next = { auto: "light", light: "dark", dark: "auto" }[cur()];
-    if (next === "auto") { delete document.documentElement.dataset.theme; localStorage.removeItem(KEY); }
-    else { document.documentElement.dataset.theme = next; localStorage.setItem(KEY, next); }
-    show();
-  });
-  show();
-})();
+    <script>
+      // theme toggle: auto -> light -> dark -> auto. auto = follow system (no attr).
+      (() => {
+        const KEY = "paseo-markdown-theme",
+          btn = document.getElementById("theme-toggle");
+        const label = { auto: "主题:自动", light: "主题:浅色", dark: "主题:深色" };
+        const cur = () => document.documentElement.dataset.theme || "auto";
+        const show = () => {
+          btn.textContent = label[cur()];
+        };
+        btn.addEventListener("click", () => {
+          const next = { auto: "light", light: "dark", dark: "auto" }[cur()];
+          if (next === "auto") {
+            delete document.documentElement.dataset.theme;
+            localStorage.removeItem(KEY);
+          } else {
+            document.documentElement.dataset.theme = next;
+            localStorage.setItem(KEY, next);
+          }
+          show();
+        });
+        show();
+      })();
 
-// copy button on every code block (skip mermaid diagrams)
-document.querySelectorAll("article pre").forEach(pre => {
-  if (pre.classList.contains("mermaid")) return;
-  const b = document.createElement("button");
-  b.className = "cpy"; b.type = "button"; b.textContent = "复制";
-  b.addEventListener("click", async () => {
-    const c = pre.cloneNode(true);
-    c.querySelectorAll(".cpy").forEach(x => x.remove());
-    try { await navigator.clipboard.writeText(c.innerText); b.textContent = "✓ 已复制"; }
-    catch { b.textContent = "复制失败"; }
-    setTimeout(() => { b.textContent = "复制"; }, 1200);
-  });
-  pre.appendChild(b);
-});
+      // copy button on every code block (skip mermaid diagrams)
+      document.querySelectorAll("article pre").forEach((pre) => {
+        if (pre.classList.contains("mermaid")) return;
+        const b = document.createElement("button");
+        b.className = "cpy";
+        b.type = "button";
+        b.textContent = "复制";
+        b.addEventListener("click", async () => {
+          const c = pre.cloneNode(true);
+          c.querySelectorAll(".cpy").forEach((x) => x.remove());
+          try {
+            await navigator.clipboard.writeText(c.innerText);
+            b.textContent = "✓ 已复制";
+          } catch {
+            b.textContent = "复制失败";
+          }
+          setTimeout(() => {
+            b.textContent = "复制";
+          }, 1200);
+        });
+        pre.appendChild(b);
+      });
 
-// scroll-spy: highlight current TOC entry
-(() => {
-  const links = [...document.querySelectorAll("nav.toc a[href^='#']")];
-  if (!links.length) return;
-  const heads = links
-    .map(a => document.getElementById(decodeURIComponent(a.hash.slice(1))))
-    .filter(Boolean);
-  const spy = () => {
-    let cur = heads[0];
-    for (const h of heads) { if (h.getBoundingClientRect().top <= 90) cur = h; else break; }
-    links.forEach(a =>
-      a.classList.toggle("cur", decodeURIComponent(a.hash.slice(1)) === cur?.id));
-  };
-  document.addEventListener("scroll", spy, { passive: true });
-  spy();
-})();
-</script>
-{{extra_scripts}}
-</body>
+      // scroll-spy: highlight current TOC entry
+      (() => {
+        const links = [...document.querySelectorAll("nav.toc a[href^='#']")];
+        if (!links.length) return;
+        const heads = links
+          .map((a) => document.getElementById(decodeURIComponent(a.hash.slice(1))))
+          .filter(Boolean);
+        const spy = () => {
+          let cur = heads[0];
+          for (const h of heads) {
+            if (h.getBoundingClientRect().top <= 90) cur = h;
+            else break;
+          }
+          links.forEach((a) =>
+            a.classList.toggle("cur", decodeURIComponent(a.hash.slice(1)) === cur?.id),
+          );
+        };
+        document.addEventListener("scroll", spy, { passive: true });
+        spy();
+      })();
+    </script>
+    {{extra_scripts}}
+  </body>
 </html>

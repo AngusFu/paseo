@@ -1,11 +1,15 @@
 import { useCallback, useMemo, useState, type ReactElement } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react-native";
 import type { KnowledgeBase, KnowledgeBaseMount } from "@getpaseo/protocol/knowledge-base/types";
-import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
+import {
+  AdaptiveModalSheet,
+  SheetToneText,
+  type SheetHeader,
+} from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
@@ -55,12 +59,12 @@ function MountRow({
   return (
     <View style={styles.row} testID={`kb-mount-row-${mount.mountSlug}`}>
       <View style={styles.rowText}>
-        <Text style={styles.rowTitle} numberOfLines={1}>
+        <SheetToneText tone="foreground" style={styles.rowTitle} numberOfLines={1}>
           {vfsPathForMountSlug(mount.mountSlug)}
-        </Text>
-        <Text style={styles.rowMeta} numberOfLines={1}>
+        </SheetToneText>
+        <SheetToneText style={styles.rowMeta} numberOfLines={1}>
           {mountLabel(mount)}
-        </Text>
+        </SheetToneText>
       </View>
       <Button
         size="sm"
@@ -134,17 +138,17 @@ function AddMountForm({
 
   if (knowledgeBases.length === 0) {
     return (
-      <Text style={styles.emptyText} testID="kb-add-mount-empty-catalog">
+      <SheetToneText style={styles.emptyText} testID="kb-add-mount-empty-catalog">
         {t("knowledgeBases.emptyCatalog")}
-      </Text>
+      </SheetToneText>
     );
   }
 
   if (available.length === 0) {
     return (
-      <Text style={styles.emptyText} testID="kb-add-mount-none-available">
+      <SheetToneText style={styles.emptyText} testID="kb-add-mount-none-available">
         {t("knowledgeBases.mountsSheet.noAvailable")}
-      </Text>
+      </SheetToneText>
     );
   }
 
@@ -174,9 +178,9 @@ function AddMountForm({
         />
       </Field>
       {previewSlug ? (
-        <Text style={styles.pathHint}>
+        <SheetToneText style={styles.pathHint}>
           {t("knowledgeBases.mountsSheet.agentsSee", { slug: previewSlug })}
-        </Text>
+        </SheetToneText>
       ) : null}
       <View style={styles.footer}>
         <Button
@@ -332,9 +336,9 @@ export function KnowledgeBaseMountsSheet({
     if (catalogLoading || mountsLoading) {
       if (loadError) {
         return (
-          <Text style={styles.emptyText} testID="kb-mounts-load-error">
+          <SheetToneText style={styles.emptyText} testID="kb-mounts-load-error">
             {toErrorMessage(loadError)}
-          </Text>
+          </SheetToneText>
         );
       }
       return (
@@ -346,15 +350,17 @@ export function KnowledgeBaseMountsSheet({
 
     if (mountsQuery.mounts.length === 0) {
       return (
-        <Text style={styles.emptyText} testID="kb-mounts-empty">
+        <SheetToneText style={styles.emptyText} testID="kb-mounts-empty">
           {t("knowledgeBases.mountsSheet.empty")}
-        </Text>
+        </SheetToneText>
       );
     }
 
     return (
       <View style={styles.list}>
-        <Text style={styles.sectionLabel}>{t("knowledgeBases.mountsSheet.mounted")}</Text>
+        <SheetToneText style={styles.sectionLabel}>
+          {t("knowledgeBases.mountsSheet.mounted")}
+        </SheetToneText>
         {mountsQuery.mounts.map((mount) => (
           <MountRow
             key={`${mount.knowledgeBaseId}:${mount.mountSlug}`}
@@ -414,7 +420,9 @@ export function KnowledgeBaseMountsSheet({
           >
             {t("knowledgeBases.mountsSheet.add")}
           </Button>
-          <Text style={styles.immutableHint}>{t("knowledgeBases.mountsSheet.slugImmutable")}</Text>
+          <SheetToneText style={styles.immutableHint}>
+            {t("knowledgeBases.mountsSheet.slugImmutable")}
+          </SheetToneText>
         </>
       ) : (
         <AddMountForm

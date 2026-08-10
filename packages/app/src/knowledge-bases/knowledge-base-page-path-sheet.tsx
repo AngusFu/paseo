@@ -1,8 +1,12 @@
 import { useMemo, type ReactElement } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
-import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
+import {
+  AdaptiveModalSheet,
+  SheetToneText,
+  type SheetHeader,
+} from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 
@@ -114,7 +118,11 @@ export function KnowledgeBasePagePathSheet({
         </Field>
       ) : null}
 
-      {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
+      {formError ? (
+        <SheetToneText tone="destructive" style={styles.errorText}>
+          {formError}
+        </SheetToneText>
+      ) : null}
     </AdaptiveModalSheet>
   );
 }

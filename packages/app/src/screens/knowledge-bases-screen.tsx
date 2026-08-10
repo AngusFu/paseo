@@ -18,7 +18,11 @@ import type {
   KnowledgeBaseUsage,
 } from "@getpaseo/protocol/knowledge-base/types";
 import { BookOpen, ChevronDown, Download, MoreHorizontal, Plus, Trash2 } from "lucide-react-native";
-import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
+import {
+  AdaptiveModalSheet,
+  SheetToneText,
+  type SheetHeader,
+} from "@/components/adaptive-modal-sheet";
 import { MenuHeader } from "@/components/headers/menu-header";
 import { HostPicker, HostStatusDotSlot } from "@/components/hosts/host-picker";
 import { Button } from "@/components/ui/button";
@@ -487,14 +491,14 @@ function NewKnowledgeBaseSheet({
               >
                 {t("settings.hostSections.knowledgeBases.chooseFolder")}
               </Button>
-              <Text style={styles.message} numberOfLines={2}>
+              <SheetToneText style={styles.message} numberOfLines={2}>
                 {fromPath ?? t("settings.hostSections.knowledgeBases.pathOnHost")}
-              </Text>
+              </SheetToneText>
             </View>
           ) : (
-            <Text style={styles.message}>
+            <SheetToneText style={styles.message}>
               {t("settings.hostSections.knowledgeBases.useDesktop")}
-            </Text>
+            </SheetToneText>
           )}
         </>
       ) : null}
@@ -529,19 +533,25 @@ function NewKnowledgeBaseSheet({
       </Field>
 
       {mode === "empty" ? (
-        <Text style={styles.message}>
+        <SheetToneText style={styles.message}>
           {createSupported ? t("knowledgeBases.emptyHint") : t("knowledgeBases.createUnavailable")}
-        </Text>
+        </SheetToneText>
       ) : (
-        <Text style={styles.message}>{t("settings.hostSections.knowledgeBases.importHint")}</Text>
+        <SheetToneText style={styles.message}>
+          {t("settings.hostSections.knowledgeBases.importHint")}
+        </SheetToneText>
       )}
-      {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
+      {formError ? (
+        <SheetToneText tone="destructive" style={styles.errorText}>
+          {formError}
+        </SheetToneText>
+      ) : null}
       {submitting ? (
-        <Text style={styles.message}>
+        <SheetToneText style={styles.message}>
           {mode === "empty"
             ? t("knowledgeBases.creating")
             : t("settings.hostSections.knowledgeBases.importing")}
-        </Text>
+        </SheetToneText>
       ) : null}
     </AdaptiveModalSheet>
   );

@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode, Ref } from "react";
+import type { ComponentProps, ReactNode, Ref } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -111,6 +111,11 @@ const styles = StyleSheet.create((theme) => ({
   title: {
     fontSize: theme.fontSize.lg,
     fontWeight: theme.fontWeight.medium,
+  },
+  // Color is applied inline in SheetHeaderView — same AdaptiveModalSheet
+  // startup-theme gotcha as `title` (see docs/unistyles.md "Hidden Sheet Content").
+  subtitle: {
+    fontSize: theme.fontSize.xs,
   },
   headerActions: {
     flexDirection: "row",
@@ -322,6 +327,34 @@ export const AdaptiveTextInput = forwardRef<TextInput, AdaptiveTextInputProps>(
   },
 );
 
+/**
+ * Text for AdaptiveModalSheet bodies/headers with inline theme color.
+ * Prefer this over StyleSheet-only `color` inside sheets — startup theme can
+ * leave light ink on a dark card (docs/unistyles.md "Hidden Sheet Content").
+ */
+export function SheetToneText({
+  tone = "muted",
+  children,
+  style,
+  ...rest
+}: ComponentProps<typeof Text> & {
+  tone?: "foreground" | "muted" | "destructive";
+}) {
+  const { theme } = useUnistyles();
+  let color = theme.colors.foregroundMuted;
+  if (tone === "foreground") {
+    color = theme.colors.foreground;
+  } else if (tone === "destructive") {
+    color = theme.colors.destructive;
+  }
+  const colorStyle = useMemo(() => [style, { color }], [style, color]);
+  return (
+    <Text style={colorStyle} {...rest}>
+      {children}
+    </Text>
+  );
+}
+
 export function SheetHeaderView({
   header,
   onClose,
@@ -339,6 +372,10 @@ export function SheetHeaderView({
     () => [styles.title, { color: theme.colors.foreground }],
     [theme.colors.foreground],
   );
+  const subtitleStyle = useMemo(
+    () => [styles.subtitle, { color: theme.colors.foregroundMuted }],
+    [theme.colors.foregroundMuted],
+  );
   const back = header.back;
   const handleBackPress = back?.onPress;
   const search = header.search;
@@ -348,6 +385,18 @@ export function SheetHeaderView({
     },
     [search],
   );
+  let subtitleNode: ReactNode = null;
+  if (header.subtitle != null && header.subtitle !== false) {
+    if (typeof header.subtitle === "string" || typeof header.subtitle === "number") {
+      subtitleNode = (
+        <Text style={subtitleStyle} numberOfLines={2}>
+          {header.subtitle}
+        </Text>
+      );
+    } else {
+      subtitleNode = header.subtitle;
+    }
+  }
 
   return (
     <View style={styles.headerContainer} testID={testID}>
@@ -374,7 +423,7 @@ export function SheetHeaderView({
           <Text style={titleStyle} numberOfLines={1}>
             {header.title}
           </Text>
-          {header.subtitle}
+          {subtitleNode}
         </View>
         {header.actions ? <View style={styles.headerActions}>{header.actions}</View> : null}
         {showCloseButton ? (

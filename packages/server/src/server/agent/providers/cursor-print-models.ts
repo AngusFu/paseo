@@ -92,10 +92,15 @@ function stripEffortSuffix(id: string): { baseId: string; effortId: CursorPrintE
  * Cursor CLI `--model` accepts slug wire ids (`cursor-grok-4.5-high-fast`).
  * `system/init` reports human display labels (`Cursor Grok 4.5 High Fast`) —
  * those must never be passed back as `--model`.
+ *
+ * Whitespace alone is not enough: single-word labels like `Auto` or `Composer`
+ * have no space, so they used to pass as wire ids and then got fast/effort
+ * suffixes glued on (`Auto-fast`), which Cursor rejects. Wire ids are lowercase
+ * slugs, so any uppercase letter marks a display label.
  */
 export function isCursorPrintWireModelId(modelId: string | null | undefined): boolean {
   const id = typeof modelId === "string" ? modelId.trim() : "";
-  return id.length > 0 && !/\s/.test(id);
+  return id.length > 0 && !/\s/.test(id) && !/[A-Z]/.test(id);
 }
 
 /**
@@ -493,11 +498,14 @@ export function resolveCursorPrintWireModel(options: {
     parsed,
     modelId,
   });
-  const fast = resolveFastForWireModel({
+  const requestedFast = resolveFastForWireModel({
     fast: options.fast,
     parsed,
     modelId,
   });
+  // A stale fast_mode must never invent a `-fast` variant the catalog denies
+  // (e.g. `auto` has no fast twin, so `auto-fast` is a hard CLI rejection).
+  const fast = requestedFast && (!options.model || cursorPrintModelSupportsFast(options.model));
 
   const composed = composeCursorPrintWireModel({ baseId, effortId, fast });
   const allowList = readWireIdAllowList(options.model);

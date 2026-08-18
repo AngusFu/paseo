@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import {
   CURSOR_PRINT_BARE_EFFORT_ID,
   composeCursorPrintWireModel,
+  cursorPrintModelSupportsFast,
   groupCursorPrintModels,
   isCursorPrintWireModelId,
   matchCursorPrintCatalogFromDisplayLabel,
@@ -47,6 +48,14 @@ describe("parseCursorPrintModelId", () => {
     expect(parseCursorPrintModelId("Cursor Grok 4.5 High Fast")).toBeNull();
     expect(parseCursorPrintModelId("Composer 2.5 Fast")).toBeNull();
     expect(normalizeCursorPrintBaseModelId("Cursor Grok 4.5 High Fast")).toBeNull();
+  });
+
+  test("rejects single-word display labels that carry no whitespace", () => {
+    expect(isCursorPrintWireModelId("Auto")).toBe(false);
+    expect(isCursorPrintWireModelId("Composer")).toBe(false);
+    expect(parseCursorPrintModelId("Auto")).toBeNull();
+    expect(normalizeCursorPrintBaseModelId("Auto")).toBeNull();
+    expect(isCursorPrintWireModelId("auto")).toBe(true);
   });
 });
 
@@ -201,6 +210,24 @@ describe("resolveCursorPrintWireModel", () => {
         fast: true,
       }),
     ).toBeNull();
+  });
+
+  test("never glues -fast onto a single-word display label", () => {
+    // Regression: persisted model "Auto" + stale fast_mode composed "Auto-fast",
+    // which the Cursor CLI rejects outright.
+    expect(resolveCursorPrintWireModel({ modelId: "Auto", fast: true })).toBeNull();
+  });
+
+  test("drops stale fast when the catalog model has no fast variant", () => {
+    const [model] = groupCursorPrintModels([{ id: "auto", label: "Auto" }], "cursor-print");
+    expect(cursorPrintModelSupportsFast(model)).toBe(false);
+    expect(
+      resolveCursorPrintWireModel({
+        modelId: "auto",
+        fast: true,
+        model,
+      }),
+    ).toBe("auto");
   });
 });
 

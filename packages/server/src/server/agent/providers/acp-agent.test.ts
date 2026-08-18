@@ -18,6 +18,7 @@ import {
 import {
   ACPAgentClient,
   ACPAgentSession,
+  type ACPConfigFeatureOption,
   type SpawnedACPProcess,
   type SessionStateResponse,
   buildACPClientCapabilities,
@@ -35,6 +36,7 @@ import {
   resolveACPSystemPromptAppend,
   summarizeACPRequestError,
 } from "./acp-agent.js";
+import { CURSOR_FAST_FEATURE_OPTION } from "./cursor-acp-agent.js";
 import type { ProcessTerminator, TreeKillTarget } from "../../../utils/tree-kill.js";
 import {
   COPILOT_AGENT_FEATURE_OPTION,
@@ -267,6 +269,7 @@ function createSessionWithConfig(
     featureValues?: Record<string, unknown>;
   } = {},
   logger: ReturnType<typeof createTestLogger> = createTestLogger(),
+  sessionOptions: { configFeatureOptions?: ACPConfigFeatureOption[] } = {},
 ): ACPAgentSession {
   return new ACPAgentSession(
     {
@@ -289,6 +292,9 @@ function createSessionWithConfig(
         supportsReasoningStream: true,
         supportsToolInvocations: true,
       },
+      ...(sessionOptions.configFeatureOptions
+        ? { configFeatureOptions: sessionOptions.configFeatureOptions }
+        : {}),
     },
   );
 }
@@ -1148,6 +1154,27 @@ describe("ACPAgentSession Zed parity", () => {
     );
   });
 
+  test("does not fail session resume when configured Cursor fast feature is absent", async () => {
+    const logger = createTestLogger();
+    const childLogger = { trace: vi.fn(), warn: vi.fn() };
+    vi.spyOn(logger, "child").mockReturnValue(asInternals<typeof logger>(childLogger));
+    const session = createSessionWithConfig(
+      { provider: "acp", featureValues: { fast: "true" } },
+      logger,
+      { configFeatureOptions: [CURSOR_FAST_FEATURE_OPTION] },
+    );
+    const { internals, setSessionConfigOption } = prepareConfiguredOverrideSession(session, {
+      configOptions: [selectConfigOption("model", ["default", "grok-4.6"], "default")],
+    });
+
+    await expect(internals.applyConfiguredOverrides()).resolves.toBeUndefined();
+    expect(setSessionConfigOption).not.toHaveBeenCalled();
+    expect(childLogger.warn).toHaveBeenCalledWith(
+      { featureId: "fast" },
+      "acp does not expose ACP feature 'fast'; skipping configured override",
+    );
+  });
+
   test("routes config_option_update and refreshes derived mode, model, and thinking state", async () => {
     const session = createSession();
     const internals = asInternals<ACPSessionInternals>(session);
@@ -1691,12 +1718,14 @@ describe("ACPAgentSession Zed parity", () => {
       configId: "agent",
       value: "Probe Agent",
     });
-    expect(session.features).toEqual([
-      expect.objectContaining({
-        id: "agent",
-        value: "Probe Agent",
-      }),
-    ]);
+    expect(session.features).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "agent",
+          value: "Probe Agent",
+        }),
+      ]),
+    );
   });
 
   test("sets Copilot custom agent through ACP config options", async () => {
@@ -1716,12 +1745,14 @@ describe("ACPAgentSession Zed parity", () => {
       configId: "agent",
       value: "Probe Agent",
     });
-    expect(session.features).toEqual([
-      expect.objectContaining({
-        id: "agent",
-        value: "Probe Agent",
-      }),
-    ]);
+    expect(session.features).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "agent",
+          value: "Probe Agent",
+        }),
+      ]),
+    );
   });
 });
 

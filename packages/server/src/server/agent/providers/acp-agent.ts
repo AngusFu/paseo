@@ -2725,7 +2725,24 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       if (!Object.prototype.hasOwnProperty.call(configuredFeatureValues, featureOption.id)) {
         continue;
       }
-      await this.setFeature(featureOption.id, configuredFeatureValues[featureOption.id]);
+      // Cursor ACP (and peers) sometimes omit select features like `fast` after
+      // resume; a hard throw here aborts ensureLoaded and blocks setModel.
+      const exposed = findSelectConfigFeatureOption(this.configOptions, featureOption);
+      if (!exposed) {
+        this.logger.warn(
+          { featureId: featureOption.id },
+          `${this.provider} does not expose ACP feature '${featureOption.id}'; skipping configured override`,
+        );
+        continue;
+      }
+      try {
+        await this.setFeature(featureOption.id, configuredFeatureValues[featureOption.id]);
+      } catch (error) {
+        this.logger.warn(
+          { err: error, featureId: featureOption.id },
+          `${this.provider} failed to apply configured ACP feature '${featureOption.id}'; skipping`,
+        );
+      }
     }
   }
 

@@ -2242,6 +2242,58 @@ interface DiffOptionsMenuProps {
   onToggleWrapLines: () => void;
 }
 
+interface DiffRefreshButtonProps {
+  brand: string;
+  isMobile: boolean;
+  isRefreshing: boolean;
+  refreshSupported: boolean;
+  refreshToggleStyle: PressableStyleFn;
+  onRefresh: () => void;
+}
+
+function DiffRefreshButton({
+  brand,
+  isMobile,
+  isRefreshing,
+  refreshSupported,
+  refreshToggleStyle,
+  onRefresh,
+}: DiffRefreshButtonProps) {
+  const { t } = useTranslation();
+  const label = isRefreshing
+    ? t("workspace.git.diff.refreshing")
+    : t("workspace.git.diff.refreshState", { brand });
+  if (!refreshSupported) {
+    return null;
+  }
+  return (
+    <Tooltip delayDuration={300}>
+      <TooltipTrigger asChild>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          disabled={isRefreshing}
+          testID="changes-refresh-button"
+          style={refreshToggleStyle}
+          onPress={onRefresh}
+        >
+          {isRefreshing ? (
+            <ThemedLoadingSpinner
+              size={isMobile ? 18 : 14}
+              uniProps={foregroundMutedIconColorMapping}
+            />
+          ) : (
+            <ThemedRotateCw size={isMobile ? 18 : 14} uniProps={foregroundMutedIconColorMapping} />
+          )}
+        </Pressable>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        <Text style={styles.tooltipText}>{label}</Text>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function DiffOptionsMenu({
   brand,
   diffFontSize,
@@ -3926,6 +3978,8 @@ export function GitDiffPane({
 
   const expandAllToggleStyle = useMemo(() => buildExpandAllButtonStyle(), []);
 
+  const refreshToggleStyle = useMemo(() => buildOverflowButtonStyle(), []);
+
   const overflowToggleStyle = useMemo(() => buildOverflowButtonStyle(), []);
 
   const toast = useToast();
@@ -4946,6 +5000,14 @@ export function GitDiffPane({
                   onToggleExpandAll={handleToggleExpandAll}
                 />
               ) : null}
+              <DiffRefreshButton
+                brand={getForgePresentation(forge).brandLabel}
+                isMobile={isMobile}
+                isRefreshing={isRefreshing}
+                refreshSupported={refreshSupported}
+                refreshToggleStyle={refreshToggleStyle}
+                onRefresh={handleRefresh}
+              />
               <DiffOptionsMenu
                 brand={getForgePresentation(forge).brandLabel}
                 diffFontSize={diffFontSizeStep}

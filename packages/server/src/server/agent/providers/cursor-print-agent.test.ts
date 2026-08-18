@@ -545,6 +545,30 @@ describe("CursorPrintAgentClient", () => {
     });
   });
 
+  test("listFeatures hides a stale fast_mode when the model has no fast variant", async () => {
+    // Regression: `auto` has no `-fast` twin, but a persisted fast_mode kept an
+    // inert Fast toggle visible (and composed the rejected wire id `auto-fast`).
+    const client = new CursorPrintAgentClient({
+      logger: createTestLogger(),
+      execModels: async () =>
+        [
+          "Available models",
+          "auto - Auto (current, default)",
+          ...GROK_MODELS_STDOUT.split("\n").slice(1),
+        ].join("\n"),
+    });
+    const features = await client.listFeatures({
+      provider: CURSOR_PRINT_PROVIDER_ID,
+      cwd: "/tmp/project",
+      model: "auto",
+      featureValues: {
+        [ACP_AUTO_ACCEPT_FEATURE_ID]: true,
+        [CURSOR_PRINT_FAST_MODE_FEATURE_ID]: true,
+      },
+    });
+    expect(features.map((feature) => feature.id)).toEqual([ACP_AUTO_ACCEPT_FEATURE_ID]);
+  });
+
   test("startTurn passes the concrete wire model for effort + fast", async () => {
     const { spawn, launches } = createFakeSpawn((child) => {
       child.stdout.write(

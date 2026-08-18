@@ -646,6 +646,26 @@ function recoverCursorPrintModelInput(
 }
 
 /**
+ * Merge persisted fast_mode with what the model id implies, then drop it when
+ * the catalog says the model has no `-fast` twin (e.g. `auto`) — otherwise an
+ * inert Fast toggle survives the model switch.
+ */
+function normalizeCursorPrintFeatureValues(options: {
+  featureValues: Record<string, unknown> | undefined;
+  inferredFast: boolean;
+  catalogModel?: AgentModelDefinition | null;
+}): Record<string, unknown> {
+  const featureValues: Record<string, unknown> = { ...options.featureValues };
+  if (featureValues[CURSOR_PRINT_FAST_MODE_FEATURE_ID] == null && options.inferredFast) {
+    featureValues[CURSOR_PRINT_FAST_MODE_FEATURE_ID] = true;
+  }
+  if (options.catalogModel && !cursorPrintModelSupportsFast(options.catalogModel)) {
+    delete featureValues[CURSOR_PRINT_FAST_MODE_FEATURE_ID];
+  }
+  return featureValues;
+}
+
+/**
  * Collapse legacy wire model ids into catalog base + thinking/fast config.
  * Cursor CLI still receives the concrete wire id at launch time.
  * Display labels (from system/init) are recovered via catalog when possible.
@@ -673,11 +693,11 @@ export function normalizeCursorPrintSessionConfig(
     catalogModel?.defaultThinkingOptionId ??
     undefined;
 
-  const featureValues: Record<string, unknown> = { ...config.featureValues };
-  const inferredFast = parsed?.fast === true || recoveredFromLabel?.fast === true;
-  if (featureValues[CURSOR_PRINT_FAST_MODE_FEATURE_ID] == null && inferredFast) {
-    featureValues[CURSOR_PRINT_FAST_MODE_FEATURE_ID] = true;
-  }
+  const featureValues = normalizeCursorPrintFeatureValues({
+    featureValues: config.featureValues,
+    inferredFast: parsed?.fast === true || recoveredFromLabel?.fast === true,
+    catalogModel,
+  });
 
   // Drop unrecovered display labels so they never become --model.
   return {

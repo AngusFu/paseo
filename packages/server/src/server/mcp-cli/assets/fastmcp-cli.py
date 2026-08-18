@@ -21,7 +21,7 @@ argv[1] = server name (injected by $PASEO_HOME/mcp-cli/bin/<server>).
 Canonical copy: packages/server/src/server/mcp-cli/assets/fastmcp-cli.py
 (copied into $PASEO_HOME/mcp-cli/ on Install / upsert).
 """
-import asyncio, difflib, fcntl, json, os, re, shutil, subprocess, sys, textwrap, time, traceback
+import asyncio, difflib, fcntl, json, os, re, shutil, signal, subprocess, sys, textwrap, time, traceback
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -268,6 +268,81 @@ def _probe_proxy(url: str, timeout: float = 1.0) -> bool:
         return e.code in (400, 404, 405, 406)
     except (URLError, TimeoutError, OSError):
         return False
+
+
+def _stop_local_proxy(server: str) -> bool:
+    pid_path = _proxy_pid_file(server)
+    if not os.path.exists(pid_path):
+        return False
+    try:
+        with open(pid_path, encoding="utf-8") as f:
+            raw = (f.read() or "").strip()
+        pid = int(raw)
+    except Exception:
+        try:
+            os.remove(pid_path)
+        except OSError:
+            pass
+        return False
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    except PermissionError as e:
+        die(f"{server} auth --clear: failed to stop proxy pid {pid}: {e}")
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        except PermissionError:
+            break
+        time.sleep(0.05)
+    try:
+        os.remove(pid_path)
+    except OSError:
+        pass
+    return True
+
+
+def _remove_if_exists(path: str) -> bool:
+    try:
+        os.remove(path)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def _clear_auth_state(server: str) -> dict:
+    stopped_proxy = _stop_local_proxy(server)
+    removed = []
+    for path in (
+        os.path.join(STORE_DIR, "cache.db"),
+        os.path.join(STORE_DIR, "cache.db-shm"),
+        os.path.join(STORE_DIR, "cache.db-wal"),
+        _meta_file(server),
+        f"{_meta_file(server)}.miss",
+        _proxy_log_file(server),
+        _proxy_lock_file(server),
+    ):
+        if _remove_if_exists(path):
+            removed.append(path)
+    return {"stopped_proxy": stopped_proxy, "removed": removed}
+
+
+def _auth_mode(raw: dict) -> str:
+    transport = raw.get("transport") or raw.get("type")
+    if transport == "stdio" or (raw.get("command") and not raw.get("url")):
+        return "stdio"
+    if raw.get("oauth_client_id"):
+        return "oauth-preregistered"
+    auth = raw.get("auth")
+    if isinstance(auth, str) and auth.lower() == "oauth":
+        return "oauth-dcr"
+    if isinstance(auth, str) and auth:
+        return "bearer"
+    return "none"
 
 
 def _ensure_local_proxy(server: str) -> str | None:
@@ -750,6 +825,39 @@ async def run():
     if args and args[0] == "--json":
         as_json = True; args.pop(0)
 
+    if args and args[0] == "auth":
+        rest = args[1:]
+        if rest and rest[0] in ("-h", "--help"):
+            rows = [
+                (f"{server} auth", "trigger/login OAuth (opens browser on host if needed)"),
+                (f"{server} auth --clear", "clear cached OAuth state and force next-login"),
+            ]
+            w = max(len(left) for left, _ in rows)
+            print(f"{server} auth — OAuth helper\n\nusage:")
+            for left, desc in rows:
+                print(f"  {left:<{w}}   {desc}")
+            print("\nnotes: OAuth cache is shared under $PASEO_HOME/mcp-cli/cache/oauth/cache.db.")
+            return
+        unknown = [x for x in rest if x != "--clear"]
+        if unknown:
+            die(f"{server} auth: unknown argument(s): {' '.join(unknown)}  (try `{server} auth --help`)")
+        raw = load_raw(server)
+        if "--clear" in rest:
+            changed = _clear_auth_state(server)
+            removed = changed["removed"]
+            print(f"{server}: cleared auth state")
+            print(f"- oauth db: {STORE_DIR}/cache.db (+ -shm/-wal) removed if present")
+            print(f"- server metadata/proxy files removed: {len(removed)}")
+            print(f"- proxy stopped: {'yes' if changed['stopped_proxy'] else 'no'}")
+            return
+        mode = _auth_mode(raw)
+        if mode not in ("oauth-preregistered", "oauth-dcr"):
+            print(f"{server}: no OAuth flow configured (mode={mode}); nothing to log in.")
+            return
+        await fetch_tools(server)  # establishes/refreshes OAuth by opening a real MCP session
+        print(f"{server}: OAuth session ready ({mode})")
+        return
+
     if args and args[0] in ("--list", "-l"):
         meta = await fetch_tools(server)  # live, refreshes cache
         for name, m in meta.items():
@@ -782,6 +890,7 @@ async def run():
     if not args or args[0] in ("-h", "--help"):
         rows = [
             (f"{server} [--json] <tool> [--flag val ...]", "call a tool"),
+            (f"{server} auth [--clear]", "OAuth login/reset helper"),
             (f"{server} --list", "list all tools"),
             (f"{server} --search <keyword>", "find tools by keyword"),
             (f"{server} <tool> --args '<json>'", "pass the whole payload as one JSON object"),

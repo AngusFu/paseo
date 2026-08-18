@@ -12,6 +12,15 @@ Paseo-managed per-server shell CLIs for MCP servers. Host Settings → FastMCP c
 
 Do not invent extra concepts for open HTTP — registry row is just `{ "url": "…" }`.
 
+### Auth helper commands
+
+Per-server launchers now include explicit auth helpers:
+
+- `<server> auth` — triggers OAuth login/session bootstrap (may open browser on daemon host).
+- `<server> auth --clear` — clears local OAuth cache + server auth metadata/proxy state so next OAuth call re-authenticates.
+
+OAuth cache is shared in `$PASEO_HOME/mcp-cli/cache/oauth/cache.db` (plus `-shm`/`-wal`), so clearing from one server affects all OAuth-backed FastMCP servers on that host.
+
 ## Supports
 
 - **HTTP open / no-auth** (`url` only)

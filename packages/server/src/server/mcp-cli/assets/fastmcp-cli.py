@@ -22,6 +22,8 @@ Canonical copy: packages/server/src/server/mcp-cli/assets/fastmcp-cli.py
 (copied into $PASEO_HOME/mcp-cli/ on Install / upsert).
 """
 import asyncio, difflib, fcntl, json, os, re, shutil, subprocess, sys, textwrap, time, traceback
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 # Paseo layout: $PASEO_HOME/mcp-cli/{mcp-servers.json,cache/,...}
 # Launchers pass PASEO_MCP_CLI_ROOT; fall back to ~/.paseo/mcp-cli for manual runs.
@@ -31,6 +33,12 @@ _CONFIG_NEW = os.path.join(_ROOT, "mcp-servers.json")
 _CONFIG_LEGACY = os.path.join(_ROOT, "oauth-clients.json")
 STORE_DIR = os.path.join(_ROOT, "cache", "oauth")
 SCHEMA_DIR = os.path.join(_ROOT, "cache", "schema")
+PROXY_DIR = os.path.join(_ROOT, "cache", "proxy")
+PROXY_HOST = "127.0.0.1"
+PROXY_PATH = "/mcp"
+PROXY_BASE_PORT = 47000
+PROXY_PORT_SPAN = 1000
+PROXY_BOOT_TIMEOUT = 12.0
 
 
 def _config_path() -> str:
@@ -222,6 +230,103 @@ def term_score(term: str, name: str, name_words, desc: str) -> int:
     if best:                                             return best
     if len(term) >= 2 and term in (desc or "").lower():  return 20
     return 0
+
+
+def _proxy_port(server: str) -> int:
+    # Stable per-server localhost port (FNV-1a-ish hash) so separate CLIs can rendezvous.
+    h = 2166136261
+    for b in server.encode("utf-8"):
+        h ^= b
+        h = (h * 16777619) & 0xFFFFFFFF
+    return PROXY_BASE_PORT + (h % PROXY_PORT_SPAN)
+
+
+def _proxy_url(server: str) -> str:
+    return f"http://{PROXY_HOST}:{_proxy_port(server)}{PROXY_PATH}"
+
+
+def _proxy_pid_file(server: str) -> str:
+    return os.path.join(PROXY_DIR, f"{server}.pid")
+
+
+def _proxy_log_file(server: str) -> str:
+    return os.path.join(PROXY_DIR, f"{server}.log")
+
+
+def _proxy_lock_file(server: str) -> str:
+    return os.path.join(PROXY_DIR, f"{server}.start.lock")
+
+
+def _probe_proxy(url: str, timeout: float = 1.0) -> bool:
+    # Streamable HTTP endpoints usually return 406 to a plain GET without MCP headers; that still
+    # proves the local proxy process is alive and bound.
+    try:
+        req = Request(url, method="GET")
+        with urlopen(req, timeout=timeout):
+            return True
+    except HTTPError as e:
+        return e.code in (400, 404, 405, 406)
+    except (URLError, TimeoutError, OSError):
+        return False
+
+
+def _ensure_local_proxy(server: str) -> str | None:
+    if os.environ.get("FASTMCP_DISABLE_LOCAL_PROXY") == "1":
+        return None
+    if os.environ.get("FASTMCP_PROXY_CHILD") == "1":
+        return None
+
+    os.makedirs(PROXY_DIR, exist_ok=True)
+    url = _proxy_url(server)
+    if _probe_proxy(url):
+        return url
+
+    lock_path = _proxy_lock_file(server)
+    with open(lock_path, "a+") as lockf:
+        start = time.time()
+        while True:
+            try:
+                fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.time() - start > LOCK_TIMEOUT:
+                    _auth_log(server, "proxy start lock timeout; falling back to direct upstream")
+                    return None
+                time.sleep(0.1)
+
+        if _probe_proxy(url):
+            return url
+
+        log_path = _proxy_log_file(server)
+        env = dict(os.environ)
+        env["PASEO_MCP_CLI_ROOT"] = _ROOT
+        env["FASTMCP_PROXY_CHILD"] = "1"
+        env["PYTHONUNBUFFERED"] = "1"
+        cmd = [sys.executable, __file__, "__serve-proxy", server, str(_proxy_port(server))]
+        try:
+            with open(log_path, "a", encoding="utf-8") as logf:
+                child = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.DEVNULL,
+                    stdout=logf,
+                    stderr=logf,
+                    env=env,
+                    start_new_session=True,
+                )
+            with open(_proxy_pid_file(server), "w", encoding="utf-8") as f:
+                f.write(f"{child.pid}\n")
+        except Exception as e:
+            _auth_log(server, f"proxy spawn failed; falling back to direct upstream: {e}")
+            return None
+
+        deadline = time.time() + PROXY_BOOT_TIMEOUT
+        while time.time() < deadline:
+            if _probe_proxy(url):
+                _auth_log(server, f"local proxy ready at {url}")
+                return url
+            time.sleep(0.2)
+        _auth_log(server, f"local proxy did not become ready in {PROXY_BOOT_TIMEOUT:.1f}s; direct fallback")
+        return None
 
 
 def _load_registry() -> dict:
@@ -480,6 +585,20 @@ def _make_preregistered_oauth_client(server: str, c: dict):
     return Client(StreamableHttpTransport(c["url"], auth=oauth))
 
 
+def _run_stateful_proxy(server: str, port: int):
+    from fastmcp.server.providers.proxy import FastMCPProxy, StatefulProxyClient
+
+    # The proxy process owns exactly one upstream session for this server and serves many local calls.
+    upstream = _make_preregistered_oauth_client(server, load_cfg(server))
+    stateful = StatefulProxyClient(upstream.transport)
+    proxy = FastMCPProxy(
+        client_factory=lambda: stateful,
+        provider_error_strategy="raise",
+        name=f"paseo-{server}-proxy",
+    )
+    proxy.run(transport="streamable-http", host=PROXY_HOST, port=port, path=PROXY_PATH)
+
+
 def make_client(server: str):
     import os as _os
     # macOS can raise PermissionError from os.getcwd() for directories guarded by TCC.
@@ -500,6 +619,9 @@ def make_client(server: str):
 
     # Pre-registered OAuth only — stock FastMCP cannot express client_id in MCPConfig JSON.
     if raw.get("oauth_client_id"):
+        proxy_url = _ensure_local_proxy(server)
+        if proxy_url:
+            return _make_remote_stock_client({"transport": "http", "url": proxy_url})
         return _make_preregistered_oauth_client(server, load_cfg(server))
 
     return _make_remote_stock_client(raw)
@@ -822,6 +944,23 @@ Keep edits surgical — this is a shared tool script used by many workflows."""
 
 
 if __name__ == "__main__":
+    if len(sys.argv) >= 4 and sys.argv[1] == "__serve-proxy":
+        server = sys.argv[2]
+        try:
+            port = int(sys.argv[3])
+        except ValueError:
+            die(f"invalid proxy port: {sys.argv[3]!r}")
+        try:
+            _run_stateful_proxy(server, port)
+        except KeyboardInterrupt:
+            sys.exit(130)
+        except SystemExit:
+            raise
+        except Exception as e:
+            _auth_log(server, f"proxy process exited with error: {e}")
+            raise
+        sys.exit(0)
+
     try:
         asyncio.run(run())
     except KeyboardInterrupt:

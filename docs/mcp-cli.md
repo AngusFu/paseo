@@ -8,6 +8,7 @@ Paseo-managed per-server shell CLIs for MCP servers. Host Settings → FastMCP c
 
 1. **CLI shell** over stock FastMCP (`Client` + `StdioMCPServer` / `RemoteMCPServer.to_transport()`): open HTTP, bearer, headers, `auth: "oauth"` (DCR), stdio.
 2. **OAuth polyfill** only when `oauth_client_id` is set (Atlassian / Figma): pre-registered client + AS metadata pre-seed / refresh guard / lock, because those providers block DCR and their metadata/token endpoints diverge from the stock mcp-SDK path.
+3. **Local stateful proxy** for pre-registered OAuth servers: auto-start a localhost FastMCP proxy once, reuse the upstream session across one-shot CLI invocations.
 
 Do not invent extra concepts for open HTTP — registry row is just `{ "url": "…" }`.
 
@@ -32,6 +33,7 @@ $PASEO_HOME/mcp-cli/
   servers/{name}.json     # Paseo server rows (enabled, preset, structured auth)
   bin/{name}              # sh launchers only — never ~/.local/bin
   cache/                  # schema + OAuth DiskStore
+    proxy/                # local stateful proxy pid/log per OAuth server
 ```
 
 `COMPAT(mcpServersRegistryRename)`: older homes used `oauth-clients.json`. Runner still reads it if `mcp-servers.json` is missing; the next upsert/install writes the new file and removes the legacy one. External import still scans `~/.config/sciforum/oauth-clients.json` (third-party path, unchanged).
@@ -85,7 +87,7 @@ Legacy rows with `source` instead of `url` are still accepted by the runner (`CO
 - **HTTP open**: no `auth` → FastMCP `RemoteMCPServer.to_transport()` (Streamable HTTP).
 - **HTTP bearer/headers**: FastMCP `auth` string and/or `headers`.
 - **HTTP OAuth DCR**: `auth: "oauth"` without `oauth_client_id` → stock FastMCP OAuth.
-- **HTTP pre-registered OAuth (polyfill)**: `oauth_client_id` present → FastMCP `OAuth(client_id=…)` plus AS metadata pre-seed / refresh guard / lock. First Test / CLI call may open a **browser on the daemon host**. Tokens land in `$PASEO_HOME/mcp-cli/cache/`.
+- **HTTP pre-registered OAuth (polyfill)**: `oauth_client_id` present → launcher auto-starts a localhost stateful FastMCP proxy (`cache/proxy`) and CLIs call that proxy; the proxy owns the upstream OAuth session (handshake cost paid once) and still uses FastMCP `OAuth(client_id=…)` plus AS metadata pre-seed / refresh guard / lock. Set `FASTMCP_DISABLE_LOCAL_PROXY=1` to force direct one-shot behavior. First call may open a **browser on the daemon host**. Tokens land in `$PASEO_HOME/mcp-cli/cache/`.
 - **Stdio**: FastMCP `StdioMCPServer.to_transport()` with `keep_alive=false`. Env is MCP SDK default allowlist plus optional config `env` overlay (not a full `os.environ` copy).
 - Phone configures only; OAuth callback runs on the host. Headless / Docker hosts are unsupported for browser OAuth.
 - Secrets are plaintext JSON (same trust model as schedule env). Do not log secrets; Test responses must not echo them; UI masks secret fields. Never commit `$PASEO_HOME` / `.dev/paseo-home` secrets into git.

@@ -9159,7 +9159,8 @@ test("askAgentQuestion rewrites opaque ACP MCP: tool timeline calls to AskUserQu
       response: { behavior: "allow" },
     });
 
-    // Provider completion for the same callId must keep the AskUserQuestion disguise.
+    // Provider completion for the same callId must keep the AskUserQuestion disguise
+    // and must not replace answered labels with opaque `{success:true}`.
     await manager.appendTimelineItem(agentId, {
       type: "tool_call",
       callId: "opaque-mcp-call",
@@ -9176,7 +9177,7 @@ test("askAgentQuestion rewrites opaque ACP MCP: tool timeline calls to AskUserQu
       detail: {
         type: "unknown",
         input: { questions: expectedQuestions },
-        output: { success: true },
+        output: { Env: "staging" },
       },
     });
   } finally {

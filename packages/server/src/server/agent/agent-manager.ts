@@ -148,6 +148,119 @@ function disguiseAskQuestionAsClaudeAskUserQuestion(questions: unknown[]): Agent
   };
 }
 
+function stringRecordFromUnknown(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry === "string") {
+      out[key] = entry;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/** Flatten permission / MCP ask_question payloads into header→answer labels. */
+function extractAskQuestionAnswers(
+  response: AgentPermissionResponse | null,
+): Record<string, string> | null {
+  if (response?.behavior !== "allow" || !response.updatedInput) {
+    return null;
+  }
+  return stringRecordFromUnknown(response.updatedInput.answers);
+}
+
+function isAskQuestionSuccessOnlyOutput(output: unknown): boolean {
+  if (!output || typeof output !== "object" || Array.isArray(output)) {
+    return false;
+  }
+  const record = output as Record<string, unknown>;
+  const keys = Object.keys(record);
+  return keys.length > 0 && keys.every((key) => key === "success" || key === "ok");
+}
+
+/**
+ * Prefer real answers over opaque ACP `{success:true}` completions, and unwrap
+ * MCP structured `{answers}` so AskQuestionCard can key by header.
+ */
+function resolveAskQuestionTimelineOutput(
+  output: unknown,
+  settledAnswers: Record<string, string> | null | undefined,
+): unknown {
+  if (output && typeof output === "object" && !Array.isArray(output)) {
+    const nested = stringRecordFromUnknown((output as { answers?: unknown }).answers);
+    if (nested) {
+      return nested;
+    }
+  }
+  const flat = stringRecordFromUnknown(output);
+  if (flat && !isAskQuestionSuccessOnlyOutput(output)) {
+    return flat;
+  }
+  if (settledAnswers && Object.keys(settledAnswers).length > 0) {
+    return settledAnswers;
+  }
+  return output;
+}
+
+function readAskQuestionQuestionsFromToolCall(
+  item: Extract<AgentTimelineItem, { type: "tool_call" }> | null | undefined,
+): unknown[] | null {
+  if (!item || item.detail.type !== "unknown") {
+    return null;
+  }
+  const input = item.detail.input;
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return null;
+  }
+  const questions = (input as { questions?: unknown }).questions;
+  return Array.isArray(questions) ? questions : null;
+}
+
+function readUnknownToolCallOutput(
+  item: Extract<AgentTimelineItem, { type: "tool_call" }> | null | undefined,
+): unknown {
+  if (!item || item.detail.type !== "unknown") {
+    return null;
+  }
+  return item.detail.output;
+}
+
+function settledAnswersFromExistingOutput(existingOutput: unknown): Record<string, string> | null {
+  return (
+    stringRecordFromUnknown(existingOutput) ??
+    stringRecordFromUnknown(
+      existingOutput && typeof existingOutput === "object" && !Array.isArray(existingOutput)
+        ? (existingOutput as { answers?: unknown }).answers
+        : null,
+    )
+  );
+}
+
+function isAskQuestionTimelineRelated(params: {
+  bound: unknown;
+  existingName: string | undefined;
+  item: Extract<AgentTimelineItem, { type: "tool_call" }>;
+  questions: unknown[] | null;
+  hasSettledAnswers: boolean;
+}): boolean {
+  const { bound, existingName, item, questions, hasSettledAnswers } = params;
+  if (bound != null) {
+    return true;
+  }
+  if (existingName === CLAUDE_ASK_USER_QUESTION_TOOL_NAME) {
+    return true;
+  }
+  if (item.name === CLAUDE_ASK_USER_QUESTION_TOOL_NAME) {
+    return true;
+  }
+  if (isPaseoAskQuestionToolCall(item)) {
+    return true;
+  }
+  return isOpaqueAcpMcpToolCall(item) && (questions != null || hasSettledAnswers);
+}
+
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
 const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
@@ -701,11 +814,22 @@ export class AgentManager {
   // COMPAT(askQuestionAskUserQuestionDisguise): bind opaque ACP "MCP: tool"
   // callIds to the ask_question payload so later running/completed updates keep
   // the AskUserQuestion name + questions on the timeline.
+  // settledAnswers: header→label map from the user response. Opaque ACP often
+  // completes the same callId with `{success:true}` and would otherwise wipe
+  // the answer the AskQuestionCard needs to render.
   private readonly mcpAskQuestionToolCalls = new Map<
     string,
-    { agentId: string; requestId: string; questions: unknown[]; synthetic: boolean }
+    {
+      agentId: string;
+      requestId: string;
+      questions: unknown[];
+      synthetic: boolean;
+      settledAnswers?: Record<string, string> | null;
+    }
   >();
   private readonly mcpAskQuestionCallIdByRequest = new Map<string, string>();
+  /** Survives binding clear so opaque ACP `{success:true}` completions keep answers. */
+  private readonly mcpAskQuestionSettledAnswers = new Map<string, Record<string, string>>();
   /** mcp/inbox permission request id → inbox question id */
   private readonly inboxQuestionIdByMcpRequest = new Map<string, string>();
   /** Waiters for `question.wait` / skill fallback (keyed by inbox question id). */
@@ -3175,25 +3299,76 @@ export class AgentManager {
       return item;
     }
     const bound = this.mcpAskQuestionToolCalls.get(item.callId);
-    if (!bound || bound.agentId !== agentId) {
+    const existing = this.findTimelineToolCall(agentId, item.callId);
+    const questions =
+      bound?.questions ??
+      readAskQuestionQuestionsFromToolCall(existing) ??
+      readAskQuestionQuestionsFromToolCall(item);
+    const isAskRelated = isAskQuestionTimelineRelated({
+      bound,
+      existingName: existing?.name,
+      item,
+      questions,
+      hasSettledAnswers: this.mcpAskQuestionSettledAnswers.has(item.callId),
+    });
+    if (!isAskRelated || questions == null) {
       return item;
     }
-    const disguisedQuestions = disguiseAskQuestionAsClaudeAskUserQuestion(bound.questions)
+
+    const disguisedQuestions = disguiseAskQuestionAsClaudeAskUserQuestion(questions)
       .questions as unknown[];
-    const output = item.detail.type === "unknown" ? item.detail.output : null;
+    const rawOutput = readUnknownToolCallOutput(item);
+    const existingOutput = readUnknownToolCallOutput(existing);
+    const output = resolveAskQuestionTimelineOutput(
+      rawOutput,
+      bound?.settledAnswers ??
+        this.mcpAskQuestionSettledAnswers.get(item.callId) ??
+        settledAnswersFromExistingOutput(existingOutput),
+    );
+    const metadata = item.metadata ?? existing?.metadata;
     const projected = buildAskUserQuestionToolCall({
       callId: item.callId,
       questions: disguisedQuestions,
       status: item.status,
       output,
       error: item.status === "failed" ? item.error : undefined,
-      ...(item.metadata ? { metadata: item.metadata } : {}),
+      ...(metadata ? { metadata } : {}),
     });
     if (item.status !== "running") {
-      this.mcpAskQuestionToolCalls.delete(item.callId);
-      this.mcpAskQuestionCallIdByRequest.delete(bound.requestId);
+      this.clearAskQuestionDisguiseBinding(item.callId, bound?.requestId);
+      // Keep settledAnswers until an opaque ACP `{success:true}` follow-up has
+      // been remapped onto real labels — deleting earlier lets a later opaque
+      // completion wipe the card back to "→ —" if existingOutput is missing.
+      if (
+        isAskQuestionSuccessOnlyOutput(rawOutput) &&
+        stringRecordFromUnknown(output) &&
+        !isAskQuestionSuccessOnlyOutput(output)
+      ) {
+        this.mcpAskQuestionSettledAnswers.delete(item.callId);
+      }
     }
     return projected;
+  }
+
+  private clearAskQuestionDisguiseBinding(callId: string, requestId: string | undefined): void {
+    this.mcpAskQuestionToolCalls.delete(callId);
+    if (requestId) {
+      this.mcpAskQuestionCallIdByRequest.delete(requestId);
+    }
+  }
+
+  private findTimelineToolCall(
+    agentId: string,
+    callId: string,
+  ): Extract<AgentTimelineItem, { type: "tool_call" }> | null {
+    const items = this.timelineStore.getItems(agentId);
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index];
+      if (item?.type === "tool_call" && item.callId === callId) {
+        return item;
+      }
+    }
+    return null;
   }
 
   private clearMcpAskQuestionTimelineBinding(requestId: string): {
@@ -3253,6 +3428,17 @@ export class AgentManager {
         behavior: "deny",
         message: "Question expired",
       } satisfies AgentPermissionResponse);
+    const settledAnswers = extractAskQuestionAnswers(resolution);
+    const callIdBeforeClear = this.mcpAskQuestionCallIdByRequest.get(requestId);
+    if (callIdBeforeClear) {
+      const bound = this.mcpAskQuestionToolCalls.get(callIdBeforeClear);
+      if (bound) {
+        bound.settledAnswers = settledAnswers;
+      }
+      if (settledAnswers) {
+        this.mcpAskQuestionSettledAnswers.set(callIdBeforeClear, settledAnswers);
+      }
+    }
     const timelineBinding = this.clearMcpAskQuestionTimelineBinding(requestId);
     if (agent?.pendingPermissions.delete(requestId)) {
       this.dispatchStream(agentId, {
@@ -3261,12 +3447,10 @@ export class AgentManager {
         requestId,
         resolution,
       });
-      this.completeSyntheticAskQuestionTimeline(
-        agentId,
-        agent.provider,
-        timelineBinding,
-        resolution,
-      );
+      // Always project the answered/dismissed card — opaque ACP completions often
+      // arrive later as `{success:true}` and would otherwise leave AskQuestionCard
+      // with a bare "→ —".
+      this.completeAskQuestionTimeline(agentId, agent.provider, timelineBinding, resolution);
       this.touchUpdatedAt(agent);
       this.emitState(agent);
     }
@@ -3276,23 +3460,18 @@ export class AgentManager {
     return true;
   }
 
-  private completeSyntheticAskQuestionTimeline(
+  private completeAskQuestionTimeline(
     agentId: string,
     provider: AgentProvider,
     timelineBinding: { callId: string; synthetic: boolean; questions: unknown[] } | null,
     response: AgentPermissionResponse | null,
   ): void {
-    if (!timelineBinding?.synthetic) {
+    if (!timelineBinding) {
       return;
     }
     const disguisedQuestions = disguiseAskQuestionAsClaudeAskUserQuestion(timelineBinding.questions)
       .questions as unknown[];
-    const answers =
-      response?.behavior === "allow" &&
-      response.updatedInput &&
-      typeof response.updatedInput.answers === "object"
-        ? response.updatedInput.answers
-        : null;
+    const answers = extractAskQuestionAnswers(response);
     this.recordAndDispatchTimelineItem(
       agentId,
       buildAskUserQuestionToolCall({

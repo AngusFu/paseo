@@ -33,12 +33,13 @@ function extractOutput(result: unknown): unknown {
   return result;
 }
 
-function parseAnswerPairs(output: unknown): Record<string, string> | null {
+/** Exported for unit tests — maps tool output into header/question → answer labels. */
+export function parseAnswerPairs(output: unknown): Record<string, string> | null {
   if (typeof output === "string") {
     try {
       const parsed: unknown = JSON.parse(output);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, string>;
+        return parseAnswerPairs(parsed);
       }
     } catch {
       // not JSON — fall through to "question"="answer" pair parsing
@@ -53,7 +54,24 @@ function parseAnswerPairs(output: unknown): Record<string, string> | null {
     return Object.keys(pairs).length > 0 ? pairs : null;
   }
   if (output && typeof output === "object" && !Array.isArray(output)) {
-    return output as Record<string, string>;
+    const record = output as Record<string, unknown>;
+    // MCP ask_question structured content: { answers, dismissed, ... }
+    if (record.answers && typeof record.answers === "object" && !Array.isArray(record.answers)) {
+      return parseAnswerPairs(record.answers);
+    }
+    // Opaque ACP often completes with `{success:true}` and no labels — do not
+    // treat that as an answers map (AskQuestionCard would render "→ —").
+    const keys = Object.keys(record);
+    if (keys.length > 0 && keys.every((key) => key === "success" || key === "ok")) {
+      return null;
+    }
+    const pairs: Record<string, string> = {};
+    for (const [key, value] of Object.entries(record)) {
+      if (typeof value === "string") {
+        pairs[key] = value;
+      }
+    }
+    return Object.keys(pairs).length > 0 ? pairs : null;
   }
   return null;
 }

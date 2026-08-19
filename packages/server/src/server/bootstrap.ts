@@ -9,6 +9,7 @@ import { Readable } from "node:stream";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Logger } from "pino";
 import { z } from "zod";
+import { syncMcpCliRunner } from "./mcp-cli/launchers.js";
 import { createBranchChangeRouteHandler } from "./script-route-branch-handler.js";
 
 export type ListenTarget =
@@ -570,6 +571,13 @@ export async function createPaseoDaemon(
   const serverId = getOrCreateServerId(config.paseoHome, { logger });
   const daemonKeyPair = await loadOrCreateDaemonKeyPair(config.paseoHome, logger);
   const managedProcesses = createBootstrapManagedProcessRegistry(config, logger);
+  // Keep the on-disk fastmcp-cli runner synced with the bundled asset so CLI
+  // upgrades (new commands, changed help) reach running daemons without waiting
+  // for an install/upsert/delete. Best-effort, non-blocking — a failure here must
+  // not block daemon startup.
+  void syncMcpCliRunner(config.paseoHome).catch((error) => {
+    logger.warn({ err: error }, "Failed to sync mcp-cli runner asset");
+  });
   // Reconcile the helper-process ledger in the background so it never blocks the
   // daemon from coming up; terminating a live leftover can take a few seconds.
   // Best-effort, so a failure is logged here rather than crashing startup.

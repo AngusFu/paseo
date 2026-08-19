@@ -10,6 +10,9 @@ export function formatMcpCliToolListSummary(
   const tools: string[] = [];
   for (const line of stdout.split("\n")) {
     const trimmed = line.trim();
+    // COMPAT(mcpCliListHint): added in v0.1.106, remove after 2027-02-19. Pre-0.1.106
+    // daemons print `full catalog + rules: .claude/knowledge/cli/<server>.md` after the
+    // `--list` tool lines; filter it so it can't be parsed as a tool name.
     if (!trimmed || trimmed.startsWith("full catalog") || trimmed.startsWith("-")) {
       continue;
     }

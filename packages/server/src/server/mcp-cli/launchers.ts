@@ -6,6 +6,18 @@ import { mcpCliBinDir, mcpCliPythonPath, mcpCliRoot, mcpCliRunnerPath } from "./
 
 const BUNDLED_RUNNER = join(dirname(fileURLToPath(import.meta.url)), "assets", "fastmcp-cli.py");
 
+/**
+ * Best-effort copy of the bundled runner asset to the on-disk runner path.
+ * Does not touch launchers (those need the enabled-server registry, which may
+ * not be populated yet at daemon boot). Callers should catch — failure must
+ * never block daemon startup.
+ */
+export async function syncMcpCliRunner(paseoHome: string): Promise<void> {
+  const root = mcpCliRoot(paseoHome);
+  await mkdir(root, { recursive: true });
+  await copyFile(BUNDLED_RUNNER, mcpCliRunnerPath(paseoHome));
+}
+
 export async function syncMcpCliLaunchers(
   paseoHome: string,
   servers: readonly McpCliServerConfig[],

@@ -7,12 +7,22 @@ describe("formatMcpCliToolListSummary", () => {
       [
         "get_screenshot                           Generate a screenshot  [req: nodeId]",
         "whoami                                   Returns the user",
+      ].join("\n"),
+      { emptyMessage: "none" },
+    );
+    expect(summary).toBe("2 tools: get_screenshot, whoami");
+  });
+
+  it("filters the legacy full-catalog hint from old daemons", () => {
+    const summary = formatMcpCliToolListSummary(
+      [
+        "get_screenshot Generate a screenshot",
         "",
         "full catalog + rules: .claude/knowledge/cli/figma.md",
       ].join("\n"),
       { emptyMessage: "none" },
     );
-    expect(summary).toBe("2 tools: get_screenshot, whoami");
+    expect(summary).toBe("1 tools: get_screenshot");
   });
 
   it("truncates long lists", () => {

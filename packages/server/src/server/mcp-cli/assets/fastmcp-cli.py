@@ -863,7 +863,6 @@ async def run():
         for name, m in meta.items():
             req = ",".join(m["inputSchema"].get("required", []))
             print(f"{name:40} {desc1(m['description'])}".rstrip() + (f"  [req: {req}]" if req else ""))
-        print(f"\nfull catalog + rules: .claude/knowledge/cli/{server}.md   (per-tool flags: {server} <tool> --help)")
         return
 
     if args and args[0] == "--search":
@@ -905,7 +904,6 @@ async def run():
         print("\nplain output = the tool's payload — pipe to jq directly: `... | jq '.fields.status.name'`.")
         print("--json wraps it in the CallToolResult envelope (.content[0].text) — use only to inspect an")
         print("error (isError) or non-text blocks.")
-        print(f"\nfull command catalog + project rules: .claude/knowledge/cli/{server}.md")
         return
     tool_in = args.pop(0)
 

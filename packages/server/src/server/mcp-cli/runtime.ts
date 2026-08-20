@@ -178,9 +178,13 @@ export async function installMcpCliRuntime(paseoHome: string): Promise<McpCliRun
   const pip = await runCommand(uvPath, [
     "pip",
     "install",
+    "--upgrade",
     "--python",
     mcpCliPythonPath(paseoHome),
-    "fastmcp",
+    // Pin a floor: 3.4.7 fixes a fastmcp client bug where a cancelled session
+    // left nesting_counter non-zero, crashing the next session with
+    // "Internal error: nesting counter should be 0 when starting new session".
+    "fastmcp>=3.4.7",
     "py-key-value-aio[disk]",
   ]);
   if (pip.code !== 0) {

@@ -1739,11 +1739,13 @@ describe("PiRpcAgentClient", () => {
           url: "http://127.0.0.1:6767/mcp/agents?callerAgentId=agent-1",
           auth: false,
           oauth: false,
+          lifecycle: "eager",
         },
         localSecret: {
           command: "node",
           args: ["secret-server.js"],
           env: { SECRET_NUMBER: "314159" },
+          lifecycle: "eager",
         },
       },
     });

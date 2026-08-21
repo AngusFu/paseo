@@ -241,6 +241,8 @@ interface PiMcpServerConfig {
   headers?: Record<string, string>;
   auth?: false;
   oauth?: false;
+  /** pi-mcp-adapter lifecycle; eager indexes tools for mcp({ search }) at startup. */
+  lifecycle?: "eager";
 }
 
 interface PiMcpConfigFile {
@@ -541,6 +543,10 @@ function toPiMcpConfig(config: McpServerConfig): PiMcpServerConfig {
       command: config.command,
       ...(config.args ? { args: config.args } : {}),
       ...(config.env ? { env: config.env } : {}),
+      // Eager so pi-mcp-adapter connects at session start and indexes tools for
+      // mcp({ search }). Lazy + a callerAgentId URL (unique cache key) leaves
+      // toolMetadata empty, so search returns zero matches until a manual connect.
+      lifecycle: "eager",
     };
   }
 
@@ -549,6 +555,8 @@ function toPiMcpConfig(config: McpServerConfig): PiMcpServerConfig {
     ...(config.headers ? { headers: config.headers } : {}),
     auth: false,
     oauth: false,
+    // See stdio branch — same search/metadata gotcha for HTTP/SSE servers.
+    lifecycle: "eager",
   };
 }
 

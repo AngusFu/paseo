@@ -674,6 +674,34 @@ def _run_stateful_proxy(server: str, port: int):
     proxy.run(transport="streamable-http", host=PROXY_HOST, port=port, path=PROXY_PATH)
 
 
+
+# --- self-heal: fastmcp StatefulProxyClient nesting_counter race (upstream bug, fastmcp<=3.4.7) -----
+# The long-lived per-server proxy process reuses one upstream session. When a session exit callback
+# is cancelled before _disconnect(force=True) resets nesting_counter, a stale non-zero counter makes
+# the next "start new session" assert fail with:
+#   Internal error: nesting counter should be 0 when starting new session, got N
+# There is no released fix. Detect that specific error, kill the poisoned local proxy so the next
+# call spawns a clean process, and retry once.
+_NESTING_COUNTER_MARKER = "nesting counter should be 0 when starting new session"
+
+def _is_nesting_counter_error(exc: object) -> bool:
+    return _NESTING_COUNTER_MARKER in str(exc)
+
+async def _with_proxy_reset(server, coro_factory):
+    """Run an async client operation; on the nesting_counter race, reset the local proxy and retry once."""
+    try:
+        return await coro_factory()
+    except Exception as exc:
+        if not _is_nesting_counter_error(exc):
+            raise
+        _auth_log(server, "detected poisoned proxy (nesting_counter race); restarting local proxy and retrying")
+        try:
+            _stop_local_proxy(server)
+        except Exception as stop_exc:
+            _auth_log(server, f"proxy stop during self-heal failed: {stop_exc}")
+        return await coro_factory()
+
+
 def make_client(server: str):
     import os as _os
     # macOS can raise PermissionError from os.getcwd() for directories guarded by TCC.
@@ -720,8 +748,10 @@ def load_cache(server):
 
 async def fetch_tools(server):
     cli = make_client(server)
-    async with cli:
-        tools = await cli.list_tools()
+    async def _do_list():
+        async with cli:
+            return await cli.list_tools()
+    tools = await _with_proxy_reset(server, _do_list)
     capture_auth_metadata(server, cli)
     meta = {t.name: {"description": t.description, "inputSchema": t.inputSchema} for t in tools}
     os.makedirs(SCHEMA_DIR, exist_ok=True)
@@ -955,8 +985,10 @@ async def run():
         die(f"{tool}: missing required flag(s): " + ", ".join("--" + m for m in missing)
             + f"  (see `{server} {tool} --help`)", 2)
     cli = make_client(server)
-    async with cli:
-        result = await cli.call_tool(tool, payload, raise_on_error=False)
+    async def _do_call():
+        async with cli:
+            return await cli.call_tool(tool, payload, raise_on_error=False)
+    result = await _with_proxy_reset(server, _do_call)
     capture_auth_metadata(server, cli)
 
     if as_json:

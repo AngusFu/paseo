@@ -50,4 +50,23 @@ describe("InMemoryAgentTimelineStore", () => {
       ],
     });
   });
+
+  it("replaces the last row in place", () => {
+    const store = new InMemoryAgentTimelineStore();
+    store.initialize("agent-1");
+    store.append("agent-1", { type: "assistant_message", text: "Hel", messageId: "a" });
+    const replaced = store.replaceLastItem("agent-1", {
+      type: "assistant_message",
+      text: "Hello",
+      messageId: "a",
+    });
+
+    expect(replaced.seq).toBe(1);
+    expect(store.getLastRow("agent-1")?.item).toEqual({
+      type: "assistant_message",
+      text: "Hello",
+      messageId: "a",
+    });
+    expect(store.getRows("agent-1")).toHaveLength(1);
+  });
 });

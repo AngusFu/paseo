@@ -249,18 +249,38 @@ export class InMemoryAgentTimelineStore {
   }
 
   getLastItem(agentId: string): AgentTimelineItem | null {
+    return this.getLastRow(agentId)?.item ?? null;
+  }
+
+  getLastRow(agentId: string): AgentTimelineRow | null {
     const state = this.requireState(agentId);
-    return state.rows[state.rows.length - 1]?.item ?? null;
+    const lastRow = state.rows.at(-1);
+    return lastRow ? cloneRow(lastRow) : null;
+  }
+
+  replaceLastItem(
+    agentId: string,
+    item: AgentTimelineItem,
+    options?: { timestamp?: string },
+  ): AgentTimelineRow {
+    const state = this.requireState(agentId);
+    const lastRow = state.rows.at(-1);
+    if (!lastRow) {
+      throw new Error(`Agent '${agentId}' has no timeline row to replace`);
+    }
+    lastRow.item = item;
+    if (options?.timestamp) {
+      lastRow.timestamp = options.timestamp;
+    }
+    return cloneRow(lastRow);
   }
 
   updateLastAssistantMessage(agentId: string, text: string): AgentTimelineRow {
-    const state = this.requireState(agentId);
-    const lastRow = state.rows[state.rows.length - 1];
+    const lastRow = this.getLastRow(agentId);
     if (!lastRow || lastRow.item.type !== "assistant_message") {
       throw new Error(`Agent '${agentId}' has no assistant_message row to update`);
     }
-    lastRow.item = { ...lastRow.item, text };
-    return cloneRow(lastRow);
+    return this.replaceLastItem(agentId, { ...lastRow.item, text });
   }
 
   getLastAssistantMessage(agentId: string): string | null {

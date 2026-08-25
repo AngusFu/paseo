@@ -1318,4 +1318,49 @@ describe("target coalesced behavior", () => {
       harness.cleanup();
     }
   });
+
+  test("extends a persisted same-messageId assistant across coalesce windows", async () => {
+    vi.useFakeTimers();
+    const harness = createHarness();
+    try {
+      const { agentId, session } = await createManagedSession(harness);
+
+      session.pushEvent(
+        timelineEvent(
+          { type: "assistant_message", text: "Hel", messageId: "msg-1" },
+          "codex",
+          "turn-1",
+        ),
+      );
+      await waitForSessionEventQueue();
+      await vi.advanceTimersByTimeAsync(COALESCE_WINDOW_MS);
+
+      session.pushEvent(
+        timelineEvent(
+          { type: "assistant_message", text: "lo", messageId: "msg-1" },
+          "codex",
+          "turn-1",
+        ),
+      );
+      await waitForSessionEventQueue();
+      await vi.advanceTimersByTimeAsync(COALESCE_WINDOW_MS);
+
+      const rows = await harness.manager.getTimelineRows(agentId);
+      expect(getTimelineItems(rows)).toEqual([
+        { type: "assistant_message", text: "Hello", messageId: "msg-1" },
+      ]);
+      expectContiguousRowSeqs(rows, [1]);
+
+      const timelineEvents = getTimelineStreamEvents(harness.events, agentId);
+      expect(
+        timelineEvents.map((event) => (event.type === "agent_stream" ? event.event.item : null)),
+      ).toEqual([
+        { type: "assistant_message", text: "Hel", messageId: "msg-1" },
+        { type: "assistant_message", text: "lo", messageId: "msg-1" },
+      ]);
+      expectContiguousLiveSeqs(timelineEvents, [1, 1]);
+    } finally {
+      harness.cleanup();
+    }
+  });
 });

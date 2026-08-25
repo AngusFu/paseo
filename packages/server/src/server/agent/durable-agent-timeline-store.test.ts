@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -70,5 +70,50 @@ describe("FileAgentTimelineStore", () => {
     await store.deleteAgent("agent-2");
     expect(await store.getCommittedRows("agent-2")).toEqual([]);
     expect(await store.getLatestCommittedSeq("agent-2")).toBe(0);
+  });
+
+  it("collapses fragmented same-messageId assistant rows on load", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "paseo-timeline-"));
+    await writeFile(
+      join(rootDir, "agent-3.json"),
+      JSON.stringify({
+        epoch: "epoch-1",
+        nextSeq: 4,
+        rows: [
+          {
+            seq: 1,
+            timestamp: "2026-01-01T00:00:00.000Z",
+            item: { type: "user_message", text: "hi" },
+          },
+          {
+            seq: 2,
+            timestamp: "2026-01-01T00:00:01.000Z",
+            item: { type: "assistant_message", text: "Hel", messageId: "a" },
+          },
+          {
+            seq: 3,
+            timestamp: "2026-01-01T00:00:02.000Z",
+            item: { type: "assistant_message", text: "lo", messageId: "a" },
+          },
+        ],
+      }),
+    );
+
+    const store = new FileAgentTimelineStore(rootDir);
+    const rows = await store.getCommittedRows("agent-3");
+    expect(rows).toEqual([
+      {
+        seq: 1,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        item: { type: "user_message", text: "hi" },
+      },
+      {
+        seq: 3,
+        timestamp: "2026-01-01T00:00:01.000Z",
+        item: { type: "assistant_message", text: "Hello", messageId: "a" },
+      },
+    ]);
+    expect(await store.getLatestCommittedSeq("agent-3")).toBe(3);
+    expect(await store.getLastAssistantMessage("agent-3")).toBe("Hello");
   });
 });

@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { writeJsonFileAtomic } from "../atomic-file.js";
 import type { AgentTimelineItem } from "./agent-sdk-types.js";
+import { collapseConsecutiveTextRows } from "./agent-timeline-text-merge.js";
 import { InMemoryAgentTimelineStore } from "./agent-timeline-store.js";
 import type {
   AgentTimelineFetchOptions,
@@ -58,7 +59,7 @@ function parseDurableTimelineFile(raw: string): DurableTimelineFile | null {
     });
   }
   rows.sort((a, b) => a.seq - b.seq);
-  return { epoch, nextSeq, rows };
+  return { epoch, nextSeq, rows: collapseConsecutiveTextRows(rows) };
 }
 
 /**
@@ -217,7 +218,7 @@ export class FileAgentTimelineStore implements AgentTimelineStore {
       const payload: DurableTimelineFile = {
         epoch: fetched.epoch,
         nextSeq: fetched.window.nextSeq,
-        rows: fetched.rows,
+        rows: collapseConsecutiveTextRows(fetched.rows),
       };
       await writeJsonFileAtomic(this.filePath(agentId), payload);
       this.loaded.add(agentId);

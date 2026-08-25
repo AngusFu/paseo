@@ -62,6 +62,7 @@ import {
   AgentStreamCoalescer,
 } from "./agent-stream-coalescer.js";
 import { limitAgentTimelineItemContent } from "./agent-timeline-content.js";
+import { isSamePersistedTextStream, mergeTimelineTextItems } from "./agent-timeline-text-merge.js";
 import { AgentRunState, type ForegroundTurnWaiter } from "./agent-run-state.js";
 import { getAgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
 import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
@@ -4559,11 +4560,10 @@ export class AgentManager {
       }
     }
     for (const event of historyEvents) {
-      const { row, item: projectedItem } = this.recordTimeline(
-        agent.id,
-        event.item,
-        event.timestamp ? { timestamp: event.timestamp } : undefined,
-      );
+      const { row, item: projectedItem } = this.recordTimeline(agent.id, event.item, {
+        extend: false,
+        ...(event.timestamp ? { timestamp: event.timestamp } : {}),
+      });
       if (broadcast) {
         this.dispatchStream(
           agent.id,
@@ -4609,11 +4609,10 @@ export class AgentManager {
         if (event.item.type === "user_message" && isSystemInjectedEnvelope(event.item.text)) {
           continue;
         }
-        const { row, item: projectedItem } = this.recordTimeline(
-          agent.id,
-          event.item,
-          event.timestamp ? { timestamp: event.timestamp } : undefined,
-        );
+        const { row, item: projectedItem } = this.recordTimeline(agent.id, event.item, {
+          extend: false,
+          ...(event.timestamp ? { timestamp: event.timestamp } : {}),
+        });
         const projectedEvent = { ...event, item: projectedItem };
         if (deferredBroadcast) {
           timelineEvents.push({ event: projectedEvent, row });
@@ -4909,11 +4908,10 @@ export class AgentManager {
     }
 
     if (options?.fromHistory) {
-      this.recordTimeline(
-        agent.id,
-        event.item,
-        event.timestamp ? { timestamp: event.timestamp } : undefined,
-      );
+      this.recordTimeline(agent.id, event.item, {
+        extend: false,
+        ...(event.timestamp ? { timestamp: event.timestamp } : {}),
+      });
       flags.shouldDispatchEvent = false;
       flags.shouldNotifyWaiters = false;
       return;
@@ -5666,10 +5664,23 @@ export class AgentManager {
   private recordTimeline(
     agentId: string,
     item: AgentTimelineItem,
-    options?: { timestamp?: string },
+    options?: { timestamp?: string; extend?: boolean },
   ): { row: AgentTimelineRow; item: AgentTimelineItem } {
     let projected = limitAgentTimelineItemContent(item);
     projected = this.applyMcpAskQuestionTimelineDisguise(agentId, projected);
+    const lastRow = this.timelineStore.getLastRow(agentId);
+    if (
+      options?.extend !== false &&
+      lastRow &&
+      isSamePersistedTextStream(lastRow.item, projected)
+    ) {
+      const row = this.timelineStore.replaceLastItem(
+        agentId,
+        mergeTimelineTextItems(lastRow.item, projected),
+      );
+      this.enqueueDurableTimelineAppend(agentId, row);
+      return { row, item: projected };
+    }
     const row = this.timelineStore.append(agentId, projected, options);
     this.enqueueDurableTimelineAppend(agentId, row);
     return { row, item: projected };

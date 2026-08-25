@@ -82,7 +82,9 @@ The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` b
 Projected timeline rows written by the daemon as the live stream commits. On daemon restart,
 `AgentManager` reseeds the in-memory timeline from this file when present so clients do not fall
 back to a sparse provider-history rebuild (important for `cursor-print`, whose Cursor `store.db`
-history is often summarized and tool-incomplete).
+history is often summarized and tool-incomplete). Consecutive `assistant_message` chunks that
+share a `messageId`, and consecutive `reasoning` chunks, collapse into one row on persist and
+again when an older fragmented file is loaded. Live clients still receive incremental deltas.
 
 | Field     | Type                 | Description                                       |
 | --------- | -------------------- | ------------------------------------------------- |

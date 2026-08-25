@@ -341,23 +341,6 @@ export const PersistedConfigSchema = z
       .strict()
       .optional(),
 
-    // Used by `paseo kb` (embeddings + SQLite corpus / Chroma). CLI reads this key loosely;
-    // keep it on the strict persisted schema so dogfood configs do not fail load.
-    localTools: z
-      .object({
-        embeddings: z
-          .object({
-            enabled: z.boolean().optional(),
-            baseUrl: z.string().optional(),
-            apiKey: z.string().optional(),
-            model: z.string().optional(),
-          })
-          .strict()
-          .optional(),
-      })
-      .strict()
-      .optional(),
-
     log: LogConfigSchema.optional(),
   })
   .strict();

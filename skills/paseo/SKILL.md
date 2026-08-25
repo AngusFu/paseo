@@ -153,10 +153,6 @@ For agent-scoped `create_agent` and background `send_agent_prompt`, leave `notif
 
 Don't poll `list_agents` or `get_agent_status` to "check on" a running agent. The notification will tell you.
 
-## Knowledge bases (read-only)
-
-Mounted trees appear under `/paseo-vfs/<mountSlug>/…`. Use `ls` / `paseo kb ls`, `cat` / `paseo kb cat`, `grep` / `paseo kb grep`. Writes are denied. Empty `/paseo-vfs` means this workspace has no Knowledge base mounts — ask the host to **Mount knowledge bases**. These are mounted Knowledge bases, not the live repo `docs/` tree.
-
 ## CLI semantics
 
 The CLI and tools use the same ownership semantics even where their syntax differs:

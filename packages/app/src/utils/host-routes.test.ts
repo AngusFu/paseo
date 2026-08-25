@@ -7,7 +7,6 @@ import {
   buildNewWorkspaceRoute,
   buildOpenProjectRoute,
   resolveKnownHostRoute,
-  buildKnowledgeBasesRoute,
   buildSessionsRoute,
   buildSettingsAddHostRoute,
   buildProjectSettingsRoute,
@@ -222,15 +221,6 @@ describe("global routes", () => {
     expect(buildNewWorkspaceRoute({ serverId: "local" })).toBe("/new?serverId=local");
   });
 
-  it("buildKnowledgeBasesRoute returns the hub route", () => {
-    expect(buildKnowledgeBasesRoute()).toBe("/knowledge-bases");
-  });
-
-  it("buildKnowledgeBasesRoute accepts an initial host", () => {
-    expect(buildKnowledgeBasesRoute("host-b")).toBe("/knowledge-bases?serverId=host-b");
-    expect(buildKnowledgeBasesRoute("host a")).toBe("/knowledge-bases?serverId=host%20a");
-  });
-
   it("buildNewWorkspaceRoute accepts initial project context", () => {
     expect(
       buildNewWorkspaceRoute({
@@ -258,7 +248,6 @@ describe("host settings section slugs", () => {
     expect(normalizeHostSectionSlug("connections")).toBe("connections");
     expect(normalizeHostSectionSlug("agents")).toBe("agents");
     expect(normalizeHostSectionSlug("workspaces")).toBe("workspaces");
-    expect(normalizeHostSectionSlug("knowledge-bases")).toBe("knowledge-bases");
     expect(normalizeHostSectionSlug("providers")).toBe("providers");
     expect(normalizeHostSectionSlug("usage")).toBe("usage");
     expect(normalizeHostSectionSlug("host")).toBe("host");

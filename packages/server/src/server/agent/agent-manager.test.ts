@@ -45,7 +45,6 @@ import type {
 } from "./agent-sdk-types.js";
 import type { PaseoToolCatalog } from "./tools/types.js";
 import type { ProviderDefinition } from "./provider-registry.js";
-import { KNOWLEDGE_BASES_AGENT_GUIDANCE } from "./knowledge-bases-guidance.js";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -1327,9 +1326,7 @@ test("createAgent injects daemon append system prompt at runtime only", async ()
   const record = await storage.get(snapshot.id);
 
   expect(client.createdConfigs[0]?.systemPrompt).toBe("Agent instructions.");
-  expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe(
-    ["Daemon instructions.", KNOWLEDGE_BASES_AGENT_GUIDANCE.trim()].join("\n\n"),
-  );
+  expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe("Daemon instructions.");
   expect(snapshot.config).not.toHaveProperty("daemonAppendSystemPrompt");
   expect(record?.config?.systemPrompt).toBe("Agent instructions.");
   expect(record?.config).not.toHaveProperty("daemonAppendSystemPrompt");
@@ -1363,9 +1360,7 @@ test("daemon append system prompt is injected into Pi configs", async () => {
     { workspaceId: undefined },
   );
 
-  expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe(
-    ["Daemon instructions.", KNOWLEDGE_BASES_AGENT_GUIDANCE.trim()].join("\n\n"),
-  );
+  expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe("Daemon instructions.");
 });
 
 test("setAgentMode persists the selected mode across session reload", async () => {

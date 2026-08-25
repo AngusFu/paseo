@@ -14,8 +14,3 @@ export function deriveSidebarStateBucket(input: AgentStateBucketInput): SidebarS
 export function isSidebarActiveAgent(input: AgentStateBucketInput): boolean {
   return deriveSidebarStateBucket(input) !== "done";
 }
-
-/** Workspace may still have agents using /paseo-vfs when not fully idle. */
-export function isSidebarActiveWorkspaceBucket(bucket: SidebarStateBucket): boolean {
-  return bucket !== "done";
-}

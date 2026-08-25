@@ -296,14 +296,6 @@ function mergeMutableConfigIntoPersistedConfig(params: {
     } as PersistedConfig["agents"];
   }
 
-  const nextLocalTools =
-    mutable.embeddings !== undefined
-      ? {
-          ...persisted.localTools,
-          embeddings: mutable.embeddings,
-        }
-      : persisted.localTools;
-
   return {
     ...persisted,
     daemon: {
@@ -325,7 +317,6 @@ function mergeMutableConfigIntoPersistedConfig(params: {
         ? { terminalProfiles: mutable.terminalProfiles }
         : {}),
     },
-    ...(nextLocalTools !== undefined ? { localTools: nextLocalTools } : {}),
     agents: nextAgents,
   } as PersistedConfig;
 }

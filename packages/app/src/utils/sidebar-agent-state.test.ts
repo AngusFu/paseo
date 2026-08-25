@@ -1,15 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveSidebarStateBucket, isSidebarActiveWorkspaceBucket } from "./sidebar-agent-state";
-
-describe("isSidebarActiveWorkspaceBucket", () => {
-  it("treats every non-done bucket as active for VFS-sensitive confirms", () => {
-    expect(isSidebarActiveWorkspaceBucket("running")).toBe(true);
-    expect(isSidebarActiveWorkspaceBucket("needs_input")).toBe(true);
-    expect(isSidebarActiveWorkspaceBucket("attention")).toBe(true);
-    expect(isSidebarActiveWorkspaceBucket("failed")).toBe(true);
-    expect(isSidebarActiveWorkspaceBucket("done")).toBe(false);
-  });
-});
+import { deriveSidebarStateBucket } from "./sidebar-agent-state";
 
 describe("deriveSidebarStateBucket", () => {
   it("prioritizes pending permissions as needs_input", () => {

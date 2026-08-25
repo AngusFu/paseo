@@ -436,22 +436,6 @@ export function buildWorkflowsRoute() {
   return "/workflows" as const;
 }
 
-export function buildKnowledgeBasesRoute(serverId?: string) {
-  const normalized = trimNonEmpty(serverId);
-  if (!normalized) {
-    return "/knowledge-bases" as const;
-  }
-  return `/knowledge-bases?serverId=${encodeURIComponent(normalized)}` as const;
-}
-
-export function buildKnowledgeBaseDetailRoute(idOrSlug: string) {
-  const normalized = trimNonEmpty(idOrSlug);
-  if (!normalized) {
-    return buildKnowledgeBasesRoute();
-  }
-  return `/knowledge-bases/${encodeSegment(normalized)}` as const;
-}
-
 export function buildApprovalsRoute() {
   return "/approvals" as const;
 }
@@ -538,7 +522,6 @@ export const HOST_SECTION_SLUGS = [
   "connections",
   "agents",
   "workspaces",
-  "knowledge-bases",
   "providers",
   "integrations",
   "fastmcp",

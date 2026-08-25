@@ -8,42 +8,7 @@ describe("canonical CLI surface", () => {
     expect(help).toContain("workspace");
     expect(help).toContain("heartbeat");
     expect(help).toContain("markdown");
-    expect(help).toContain("kb");
-    // COMPAT(worktreeCli): hidden from top-level help
     expect(help).not.toContain("worktree");
-    expect(help).not.toMatch(/(^|\n)\s*docs\b/);
-  });
-
-  it("exposes kb explore + manage subcommands", () => {
-    const kb = createCli().commands.find((command) => command.name() === "kb");
-    const names = kb?.commands.map((command) => command.name()) ?? [];
-    expect(names).toEqual(
-      expect.arrayContaining([
-        "ls",
-        "cat",
-        "grep",
-        "index",
-        "search",
-        "import",
-        "export",
-        "list",
-        "delete",
-        "mounts",
-        "mount",
-        "unmount",
-      ]),
-    );
-    expect(names).not.toContain("create");
-    expect(names).not.toContain("kbs");
-    const help = kb?.helpInformation() ?? "";
-    expect(help).toContain("import");
-    expect(help).toContain("list");
-    expect(help).toContain("mount");
-  });
-
-  it("does not register a top-level docs command", () => {
-    const docs = createCli().commands.find((command) => command.name() === "docs");
-    expect(docs).toBeUndefined();
   });
 
   it("exposes markdown render options", () => {

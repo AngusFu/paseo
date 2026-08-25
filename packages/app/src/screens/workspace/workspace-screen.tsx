@@ -67,6 +67,7 @@ import { RetainedPanel } from "@/components/retained-panel";
 import { WindowChromeRegion } from "@/utils/desktop-window";
 import { SourceControlPanelIcon } from "@/components/icons/source-control-panel-icon";
 import { WorkspaceActions } from "@/git/workspace-actions";
+import { WorkspaceCodeServerButton } from "@/screens/workspace/workspace-code-server-button";
 import { WorkspaceOpenInEditorButton } from "@/screens/workspace/workspace-open-in-editor-button";
 import { WorkspaceOpenWebUiButton } from "@/screens/workspace/workspace-open-web-ui-button";
 import { WorkspaceScriptsButton } from "@/screens/workspace/workspace-scripts-button";
@@ -3533,7 +3534,10 @@ function WorkspaceScreenContent({
             hideLabels
           />
         ) : null}
-        {!isMobile && workspaceDirectory ? (
+        {workspaceDirectory && getIsElectron() ? (
+          <WorkspaceCodeServerButton cwd={workspaceDirectory} />
+        ) : null}
+        {(getIsElectron() || !isMobile) && workspaceDirectory ? (
           <WorkspaceOpenInEditorButton
             serverId={normalizedServerId}
             cwd={workspaceDirectory}

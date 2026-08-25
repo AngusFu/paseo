@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { useFetchQuery } from "@/data/query";
 import {
   type DesktopCodeServerBridge,
   type DesktopCodeServerStatus,
@@ -41,8 +42,20 @@ function buildCodeServerFolderUrl(baseUrl: string, cwd: string): string {
   return `${baseUrl}/?folder=${encodeURIComponent(cwd)}`;
 }
 
+const CODE_SERVER_STATUS_QUERY_KEY = ["code-server-status"];
+
 export function useCodeServer(input: { isLocalExecution: boolean }) {
   const isAvailable = hasCodeServerBridge() && input.isLocalExecution;
+
+  const statusQuery = useFetchQuery<DesktopCodeServerStatus>({
+    queryKey: CODE_SERVER_STATUS_QUERY_KEY,
+    dataShape: "value",
+    staleTimeMs: 5_000,
+    enabled: isAvailable,
+    refetchInterval: 10_000,
+    retry: false,
+    queryFn: () => requireCodeServerBridge().getStatus(),
+  });
 
   const openWorkspace = useCallback(async (cwd: string): Promise<void> => {
     const bridge = requireCodeServerBridge();
@@ -58,6 +71,7 @@ export function useCodeServer(input: { isLocalExecution: boolean }) {
 
   return {
     isAvailable,
+    isRunning: statusQuery.data?.running === true,
     openWorkspace,
   };
 }

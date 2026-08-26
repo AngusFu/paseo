@@ -123,6 +123,7 @@ export interface DesktopDeepseekHarnessBridge {
     cwd: string;
     title?: string | null;
   }) => Promise<DesktopDeepseekHarnessOpenResult>;
+  onInstallLog?: (handler: (payload: { chunk: string }) => void) => () => void;
 }
 
 export interface DesktopWebUtilsBridge {

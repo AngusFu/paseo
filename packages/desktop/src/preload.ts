@@ -106,6 +106,22 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
     stop: () => ipcRenderer.invoke("paseo:deepseek-harness:stop"),
     openWorkspace: (input: { cwd: string; title?: string | null }) =>
       ipcRenderer.invoke("paseo:deepseek-harness:openWorkspace", input),
+    onInstallLog: (handler: (payload: { chunk: string }) => void): (() => void) => {
+      const listener = (_ipcEvent: Electron.IpcRendererEvent, payload: unknown) => {
+        if (!payload || typeof payload !== "object") {
+          return;
+        }
+        const chunk = (payload as { chunk?: unknown }).chunk;
+        if (typeof chunk !== "string") {
+          return;
+        }
+        handler({ chunk });
+      };
+      ipcRenderer.on("paseo:deepseek-harness:install-log", listener);
+      return () => {
+        ipcRenderer.removeListener("paseo:deepseek-harness:install-log", listener);
+      };
+    },
   },
   webUtils: {
     getPathForFile: (file: File) => webUtils.getPathForFile(file),

@@ -2114,13 +2114,18 @@ export const ru: TranslationResources = {
         running: "Running",
         installed: "Installed",
         notInstalled: "Not installed",
+        installing: "Installing…",
       },
       actions: {
         install: "Install",
+        installing: "Installing…",
         upgrade: "Upgrade",
+        upgrading: "Upgrading…",
         start: "Start",
         stop: "Stop",
       },
+      installLogTitle: "Install log",
+      installLogWaiting: "Waiting for npm output…",
       toast: {
         installed: "DeepSeek Harness {{version}} installed",
         installFailed: "Failed to install DeepSeek Harness",

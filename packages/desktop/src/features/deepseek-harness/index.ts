@@ -1,7 +1,7 @@
 import { execFileSync, spawn as nodeSpawn, type ChildProcess } from "node:child_process";
 import { existsSync as nodeExistsSync } from "node:fs";
 import { connect as netConnect, createServer } from "node:net";
-import { app, ipcMain } from "electron";
+import { app, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { createElectronNodeEnv } from "../../daemon/node-entrypoint-launcher.js";
 import { getDesktopSettingsStore } from "../../settings/desktop-settings-electron.js";
 import { createExternalProcessEnv } from "../editor-targets/runtime.js";
@@ -37,7 +37,10 @@ interface RuntimeDependencies extends DeepseekHarnessInstallDependencies {
 }
 
 interface IpcHandlerRegistry {
-  handle(channel: string, listener: (event: unknown, ...args: unknown[]) => unknown): void;
+  handle(
+    channel: string,
+    listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+  ): void;
 }
 
 let spawnedByUs = false;
@@ -338,7 +341,18 @@ export function registerDeepseekHarnessHandlers(
   const dependencies = options.dependencies ?? {};
 
   ipc.handle("paseo:deepseek-harness:getStatus", () => getDeepseekHarnessStatus(dependencies));
-  ipc.handle("paseo:deepseek-harness:install", () => installOrUpgradeDeepseekHarness(dependencies));
+  ipc.handle("paseo:deepseek-harness:install", async (event) => {
+    await installOrUpgradeDeepseekHarness({
+      ...dependencies,
+      onLog: (chunk) => {
+        if (event.sender.isDestroyed()) {
+          return;
+        }
+        event.sender.send("paseo:deepseek-harness:install-log", { chunk });
+      },
+    });
+    return getDeepseekHarnessStatus(dependencies);
+  });
   ipc.handle("paseo:deepseek-harness:start", () => startDeepseekHarness(dependencies));
   ipc.handle("paseo:deepseek-harness:stop", () => stopDeepseekHarness(dependencies));
   ipc.handle("paseo:deepseek-harness:openWorkspace", (_event, rawInput: unknown) => {

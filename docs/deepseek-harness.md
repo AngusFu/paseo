@@ -13,6 +13,8 @@ Desktop-managed integration for the DeepSeek Harness (`@deepseek-ai/dsh`) Web UI
 Desktop-only Settings section `deepseek-harness`:
 
 - Install / Upgrade (`npm install @deepseek-ai/dsh@latest --prefix <userData>/toolchains/deepseek-harness`)
+  - Button shows a loading state while npm runs
+  - Live stdout/stderr streams into an install-log panel via `paseo:deepseek-harness:install-log`
 - Start / Stop
 - **Start with Desktop** (`desktop-settings.deepseekHarness.startWithDesktop`)
 - Persisted listen port (`deepseekHarness.port`); first start allocates a free loopback port and keeps it
@@ -25,4 +27,5 @@ Desktop-only Settings section `deepseek-harness`:
 
 ## IPC
 
-`paseo:deepseek-harness:{getStatus,install,start,stop,openWorkspace}` exposed on `window.paseoDesktop.deepseekHarness`.
+`paseo:deepseek-harness:{getStatus,install,start,stop,openWorkspace}` plus `onInstallLog` on `window.paseoDesktop.deepseekHarness`.
+`install` returns full runtime status after the npm install completes.

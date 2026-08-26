@@ -23,6 +23,8 @@ export interface DeepseekHarnessInstallDependencies {
   existsSync?: (filePath: string) => boolean;
   spawn?: typeof nodeSpawn;
   isPackaged?: boolean;
+  /** Optional live stdout/stderr chunks from `npm install`. */
+  onLog?: (chunk: string) => void;
 }
 
 function resolveInstallRoot(userDataPath: string): string {
@@ -108,12 +110,17 @@ function resolveNpmCliPath(input: {
   return resolved;
 }
 
+function chunkToString(chunk: Buffer | string): string {
+  return typeof chunk === "string" ? chunk : chunk.toString("utf8");
+}
+
 function runCommand(input: {
   command: string;
   args: string[];
   env: NodeJS.ProcessEnv;
   cwd: string;
   spawn: typeof nodeSpawn;
+  onLog?: (chunk: string) => void;
 }): Promise<void> {
   return new Promise((resolve, reject) => {
     const child: ChildProcess = input.spawn(input.command, input.args, {
@@ -122,8 +129,14 @@ function runCommand(input: {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stderr = "";
+    child.stdout?.on("data", (chunk: Buffer | string) => {
+      const text = chunkToString(chunk);
+      input.onLog?.(text);
+    });
     child.stderr?.on("data", (chunk: Buffer | string) => {
-      stderr += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      const text = chunkToString(chunk);
+      stderr += text;
+      input.onLog?.(text);
     });
     child.once("error", reject);
     child.once("exit", (code) => {
@@ -152,6 +165,8 @@ export async function installOrUpgradeDeepseekHarness(
 
   const npmCli = resolveNpmCliPath({ env, platform, existsSync });
   const electronEnv = createElectronNodeEnv(createExternalProcessEnv(env), { isPackaged });
+  const onLog = dependencies.onLog;
+  onLog?.(`Installing ${DSH_PACKAGE_NAME}@latest into ${installRoot}\n`);
 
   await runCommand({
     command: execPath,
@@ -167,6 +182,7 @@ export async function installOrUpgradeDeepseekHarness(
     env: electronEnv,
     cwd: installRoot,
     spawn,
+    onLog,
   });
 
   const status = await getDeepseekHarnessInstallStatus(dependencies);

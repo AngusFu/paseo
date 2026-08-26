@@ -2052,13 +2052,18 @@ export const zhCN: TranslationResources = {
         running: "运行中",
         installed: "已安装",
         notInstalled: "未安装",
+        installing: "安装中…",
       },
       actions: {
         install: "安装",
+        installing: "安装中…",
         upgrade: "升级",
+        upgrading: "升级中…",
         start: "启动",
         stop: "停止",
       },
+      installLogTitle: "安装日志",
+      installLogWaiting: "等待 npm 输出…",
       toast: {
         installed: "已安装 DeepSeek Harness {{version}}",
         installFailed: "安装 DeepSeek Harness 失败",

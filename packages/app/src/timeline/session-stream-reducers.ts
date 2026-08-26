@@ -53,7 +53,13 @@ type SessionTimelineSeqCursor =
   | null
   | undefined;
 
-type SessionTimelineSeqDecision = "accept" | "drop_stale" | "drop_epoch" | "gap" | "init";
+type SessionTimelineSeqDecision =
+  | "accept"
+  | "extend"
+  | "drop_stale"
+  | "drop_epoch"
+  | "gap"
+  | "init";
 
 interface TimelineSeqRange {
   startSeq: number;
@@ -133,7 +139,12 @@ function classifySessionTimelineSeq({
   if (cursor.epoch !== epoch) {
     return "drop_epoch";
   }
-  if (seq <= cursor.endSeq) {
+  // Persist-extend (same row, delta-only live dispatch) reuses seq. Apply the
+  // chunk without advancing endSeq so later deltas are not drop_stale'd.
+  if (seq === cursor.endSeq) {
+    return "extend";
+  }
+  if (seq < cursor.endSeq) {
     return "drop_stale";
   }
   if (seq === cursor.endSeq + 1) {
@@ -1170,6 +1181,11 @@ function processTimelineSequencingGate(input: {
       },
       cursorChanged: true,
     };
+  }
+  if (decision === "extend") {
+    // Same seq as the live cursor: still paint the delta (append by messageId),
+    // but leave endSeq unchanged.
+    return base;
   }
   if (decision === "gap") {
     return {

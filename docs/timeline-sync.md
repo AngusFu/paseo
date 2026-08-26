@@ -78,6 +78,14 @@ The app chooses one delivery policy from `server_info.features.selectiveAgentTim
 This policy is owned by `viewed-timeline-sync.ts`; downstream reducers do not branch on daemon
 version.
 
+## Live persist-extend reuses seq
+
+When the daemon coalesces assistant text into one durable timeline row (`replaceLastItem`), live
+`agent_stream` can emit **multiple delta chunks at the same `seq`**. The client must still apply
+those chunks (append by `messageId`) without advancing `endSeq`. Treating `seq === endSeq` as
+`drop_stale` paints only the first chunk of each merged row and truncates the live UI until a
+fetch/reopen loads the full projected item.
+
 ## Projected pages reconcile with live presentation
 
 A projected page is canonical state, not a sequence of live deltas. One projected item can overlap

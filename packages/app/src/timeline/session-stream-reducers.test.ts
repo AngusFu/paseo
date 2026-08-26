@@ -2448,6 +2448,61 @@ describe("processAgentStreamEvents", () => {
     });
   });
 
+  it("appends persist-extend deltas that reuse the same timeline seq", () => {
+    const first = processAgentStreamEvent({
+      event: makeAssistantTimelineEvent("Hel", "assistant-one"),
+      seq: 1,
+      epoch: "epoch-1",
+      timestamp: new Date(1000),
+      currentTail: [],
+      currentHead: [],
+      currentCursor: undefined,
+      currentAgent: null,
+    });
+    const second = processAgentStreamEvent({
+      event: makeAssistantTimelineEvent("lo", "assistant-one"),
+      seq: 1,
+      epoch: "epoch-1",
+      timestamp: new Date(1001),
+      currentTail: first.tail,
+      currentHead: first.head,
+      currentCursor: first.cursor ?? undefined,
+      currentAgent: null,
+    });
+
+    expect(second.changedHead).toBe(true);
+    expect(getAssistantTexts(second.head)).toEqual(["Hello"]);
+    expect(second.cursorChanged).toBe(false);
+    expect(second.cursor).toBeNull();
+  });
+
+  it("still drops strictly older seqs as stale", () => {
+    const first = processAgentStreamEvent({
+      event: makeAssistantTimelineEvent("Newer", "assistant-one"),
+      seq: 2,
+      epoch: "epoch-1",
+      timestamp: new Date(1000),
+      currentTail: [],
+      currentHead: [],
+      currentCursor: undefined,
+      currentAgent: null,
+    });
+    const stale = processAgentStreamEvent({
+      event: makeAssistantTimelineEvent("Older", "assistant-one"),
+      seq: 1,
+      epoch: "epoch-1",
+      timestamp: new Date(999),
+      currentTail: first.tail,
+      currentHead: first.head,
+      currentCursor: first.cursor ?? undefined,
+      currentAgent: null,
+    });
+
+    expect(stale.changedHead).toBe(false);
+    expect(getAssistantTexts(stale.head)).toEqual(["Newer"]);
+    expect(stale.cursorChanged).toBe(false);
+  });
+
   it("flushes the live assistant head before starting a different assistant message id", () => {
     const result = processAgentStreamEvents({
       events: [

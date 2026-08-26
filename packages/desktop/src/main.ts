@@ -15,6 +15,7 @@ import {
   autoUpdater as electronAutoUpdater,
   BrowserWindow,
   clipboard,
+  ClipboardItem,
   Menu,
   ipcMain,
   nativeImage,
@@ -797,7 +798,7 @@ ipcMain.handle(
   },
 );
 
-ipcMain.handle("paseo:browser:copy-element", (_event, payload: unknown): boolean => {
+ipcMain.handle("paseo:browser:copy-element", async (_event, payload: unknown): Promise<boolean> => {
   if (!payload || typeof payload !== "object") {
     return false;
   }
@@ -822,16 +823,29 @@ ipcMain.handle("paseo:browser:copy-element", (_event, payload: unknown): boolean
 
   // Writing from the main process avoids the renderer's navigator.clipboard
   // NotAllowedError, which fires when focus is inside the guest <webview>.
+  // Electron 44 clipboard is W3C-aligned: write()/writeText() are async and
+  // images go through ClipboardItem + image/png Blob (writeImage removed).
+  const pngBlob = (native: Electron.NativeImage) =>
+    new Blob([new Uint8Array(native.toPNG())], { type: "image/png" });
   if (copyText && image) {
-    clipboard.write({ text: copyText, image });
+    await clipboard.write([
+      new ClipboardItem({
+        "text/plain": copyText,
+        "image/png": pngBlob(image),
+      }),
+    ]);
     return true;
   }
   if (image) {
-    clipboard.writeImage(image);
+    await clipboard.write([
+      new ClipboardItem({
+        "image/png": pngBlob(image),
+      }),
+    ]);
     return true;
   }
   if (copyText) {
-    clipboard.writeText(copyText);
+    await clipboard.writeText(copyText);
     return true;
   }
   return false;

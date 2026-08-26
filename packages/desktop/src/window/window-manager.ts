@@ -463,7 +463,9 @@ export function buildStandardContextMenuItems(
     });
     items.push({
       label: "Copy Link Address",
-      click: () => clipboard.writeText(params.linkURL),
+      click: () => {
+        void clipboard.writeText(params.linkURL);
+      },
     });
     items.push({ type: "separator" });
   }

@@ -10,11 +10,17 @@ export interface DesktopSettings {
     manageBuiltInDaemon: boolean;
     keepRunningAfterQuit: boolean;
   };
+  deepseekHarness: {
+    startWithDesktop: boolean;
+    /** Persisted listen port; null until the first successful start allocates one. */
+    port: number | null;
+  };
 }
 
 interface DesktopSettingsPatch {
   releaseChannel?: AppReleaseChannel;
   daemon?: Partial<DesktopSettings["daemon"]>;
+  deepseekHarness?: Partial<DesktopSettings["deepseekHarness"]>;
 }
 
 interface PersistedDesktopSettingsDocument {
@@ -41,6 +47,10 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   daemon: {
     manageBuiltInDaemon: true,
     keepRunningAfterQuit: false,
+  },
+  deepseekHarness: {
+    startWithDesktop: false,
+    port: null,
   },
 };
 
@@ -74,6 +84,7 @@ function buildDefaultDocument(): PersistedDesktopSettingsDocument {
     settings: {
       releaseChannel: DEFAULT_DESKTOP_SETTINGS.releaseChannel,
       daemon: { ...DEFAULT_DESKTOP_SETTINGS.daemon },
+      deepseekHarness: { ...DEFAULT_DESKTOP_SETTINGS.deepseekHarness },
     },
     migrations: {
       legacyRendererSettingsImported: false,
@@ -82,10 +93,21 @@ function buildDefaultDocument(): PersistedDesktopSettingsDocument {
   };
 }
 
+function coercePort(value: unknown): number | null | undefined {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0 || value > 65535) {
+    return undefined;
+  }
+  return value;
+}
+
 function coerceDesktopSettings(input: unknown): DesktopSettings {
   const result: DesktopSettings = {
     releaseChannel: DEFAULT_DESKTOP_SETTINGS.releaseChannel,
     daemon: { ...DEFAULT_DESKTOP_SETTINGS.daemon },
+    deepseekHarness: { ...DEFAULT_DESKTOP_SETTINGS.deepseekHarness },
   };
 
   if (!isRecord(input)) {
@@ -106,6 +128,17 @@ function coerceDesktopSettings(input: unknown): DesktopSettings {
     const keepRunningAfterQuit = coerceBoolean(input.daemon.keepRunningAfterQuit);
     if (keepRunningAfterQuit !== null) {
       result.daemon.keepRunningAfterQuit = keepRunningAfterQuit;
+    }
+  }
+
+  if (isRecord(input.deepseekHarness)) {
+    const startWithDesktop = coerceBoolean(input.deepseekHarness.startWithDesktop);
+    if (startWithDesktop !== null) {
+      result.deepseekHarness.startWithDesktop = startWithDesktop;
+    }
+    const port = coercePort(input.deepseekHarness.port);
+    if (port !== undefined) {
+      result.deepseekHarness.port = port;
     }
   }
 
@@ -136,6 +169,21 @@ function coerceDesktopSettingsPatch(input: unknown): DesktopSettingsPatch {
     }
     if (Object.keys(daemonPatch).length > 0) {
       patch.daemon = daemonPatch;
+    }
+  }
+
+  if (isRecord(input.deepseekHarness)) {
+    const harnessPatch: Partial<DesktopSettings["deepseekHarness"]> = {};
+    const startWithDesktop = coerceBoolean(input.deepseekHarness.startWithDesktop);
+    if (startWithDesktop !== null) {
+      harnessPatch.startWithDesktop = startWithDesktop;
+    }
+    const port = coercePort(input.deepseekHarness.port);
+    if (port !== undefined) {
+      harnessPatch.port = port;
+    }
+    if (Object.keys(harnessPatch).length > 0) {
+      patch.deepseekHarness = harnessPatch;
     }
   }
 
@@ -170,6 +218,7 @@ function mergeDesktopSettings(
   return {
     releaseChannel: patch.releaseChannel ?? current.releaseChannel,
     daemon: { ...current.daemon, ...patch.daemon },
+    deepseekHarness: { ...current.deepseekHarness, ...patch.deepseekHarness },
   };
 }
 

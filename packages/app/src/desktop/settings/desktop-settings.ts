@@ -17,11 +17,16 @@ export interface DesktopSettings {
     manageBuiltInDaemon: boolean;
     keepRunningAfterQuit: boolean;
   };
+  deepseekHarness: {
+    startWithDesktop: boolean;
+    port: number | null;
+  };
 }
 
 export interface DesktopSettingsPatch {
   releaseChannel?: ReleaseChannel;
   daemon?: Partial<DesktopSettings["daemon"]>;
+  deepseekHarness?: Partial<DesktopSettings["deepseekHarness"]>;
 }
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
@@ -29,6 +34,10 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   daemon: {
     manageBuiltInDaemon: true,
     keepRunningAfterQuit: false,
+  },
+  deepseekHarness: {
+    startWithDesktop: false,
+    port: null,
   },
 };
 
@@ -145,6 +154,20 @@ export async function migrateLegacyDesktopSettings(input: {
 function parseDesktopSettings(raw: unknown): DesktopSettings {
   const record = isRecord(raw) ? raw : {};
   const daemon = isRecord(record.daemon) ? record.daemon : {};
+  const deepseekHarness = isRecord(record.deepseekHarness) ? record.deepseekHarness : {};
+  const portValue = deepseekHarness.port;
+
+  let port = DEFAULT_DESKTOP_SETTINGS.deepseekHarness.port;
+  if (
+    typeof portValue === "number" &&
+    Number.isInteger(portValue) &&
+    portValue > 0 &&
+    portValue <= 65535
+  ) {
+    port = portValue;
+  } else if (portValue === null) {
+    port = null;
+  }
 
   return {
     releaseChannel: record.releaseChannel === "beta" ? "beta" : "stable",
@@ -157,6 +180,13 @@ function parseDesktopSettings(raw: unknown): DesktopSettings {
         typeof daemon.keepRunningAfterQuit === "boolean"
           ? daemon.keepRunningAfterQuit
           : DEFAULT_DESKTOP_SETTINGS.daemon.keepRunningAfterQuit,
+    },
+    deepseekHarness: {
+      startWithDesktop:
+        typeof deepseekHarness.startWithDesktop === "boolean"
+          ? deepseekHarness.startWithDesktop
+          : DEFAULT_DESKTOP_SETTINGS.deepseekHarness.startWithDesktop,
+      port,
     },
   };
 }
@@ -171,6 +201,10 @@ function mergeDesktopSettings(
       ...current.daemon,
       ...updates.daemon,
     },
+    deepseekHarness: {
+      ...current.deepseekHarness,
+      ...updates.deepseekHarness,
+    },
   };
 }
 
@@ -178,6 +212,7 @@ function normalizePatch(updates: DesktopSettingsPatch): Record<string, unknown> 
   return {
     ...(updates.releaseChannel ? { releaseChannel: updates.releaseChannel } : {}),
     ...(updates.daemon ? { daemon: updates.daemon } : {}),
+    ...(updates.deepseekHarness ? { deepseekHarness: updates.deepseekHarness } : {}),
   };
 }
 

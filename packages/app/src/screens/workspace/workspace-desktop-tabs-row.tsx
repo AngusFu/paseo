@@ -32,6 +32,7 @@ import {
   Rows2,
   Globe,
   Plus,
+  Sparkles,
   SquarePen,
   SquareTerminal,
   Workflow,
@@ -116,6 +117,7 @@ const ThemedSquarePen = withUnistyles(SquarePen);
 const ThemedSquareTerminal = withUnistyles(SquareTerminal);
 const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedGlobe = withUnistyles(Globe);
+const ThemedSparkles = withUnistyles(Sparkles);
 const ThemedColumns2 = withUnistyles(Columns2);
 const ThemedRows2 = withUnistyles(Rows2);
 const ThemedPlus = withUnistyles(Plus);
@@ -126,6 +128,7 @@ const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMut
 const AGENT_ICON = <ThemedSquarePen size={14} uniProps={mutedColorMapping} />;
 const TERMINAL_ICON = <ThemedSquareTerminal size={14} uniProps={mutedColorMapping} />;
 const BROWSER_ICON = <ThemedGlobe size={14} uniProps={mutedColorMapping} />;
+const DEEPSEEK_HARNESS_ICON = <ThemedSparkles size={14} uniProps={mutedColorMapping} />;
 
 const DRAFT_TARGET: PinnedTabTarget = { kind: "draft" };
 const TERMINAL_TARGET: PinnedTabTarget = { kind: "terminal" };
@@ -236,11 +239,13 @@ interface WorkspaceTabRowExtrasProps {
   onCreateAgentTab: () => void;
   onCreateTerminal: () => void;
   onCreateBrowser: () => void;
+  onCreateDeepseekHarness: () => void;
   onCreateTerminalWithProfile: (profile: TerminalProfileInput) => void;
   onCreateWorkflowDraft: (definitionId: string) => void;
   onEditProfiles: () => void;
   normalizedServerId: string;
   showCreateBrowserTab: boolean;
+  showCreateDeepseekHarnessTab: boolean;
   terminalDisabled: boolean;
 }
 
@@ -248,11 +253,13 @@ function WorkspaceTabRowExtras({
   onCreateAgentTab,
   onCreateTerminal,
   onCreateBrowser,
+  onCreateDeepseekHarness,
   onCreateTerminalWithProfile,
   onCreateWorkflowDraft,
   onEditProfiles,
   normalizedServerId,
   showCreateBrowserTab,
+  showCreateDeepseekHarnessTab,
   terminalDisabled,
 }: WorkspaceTabRowExtrasProps) {
   const { t } = useTranslation();
@@ -330,6 +337,15 @@ function WorkspaceTabRowExtras({
               leading={BROWSER_ICON}
               onSelect={onCreateBrowser}
             />
+          ) : null}
+          {showCreateDeepseekHarnessTab ? (
+            <DropdownMenuItem
+              testID="workspace-new-tab-menu-deepseek-harness"
+              leading={DEEPSEEK_HARNESS_ICON}
+              onSelect={onCreateDeepseekHarness}
+            >
+              {t("workspace.tabs.actions.deepseekHarness")}
+            </DropdownMenuItem>
           ) : null}
           <DropdownMenuSeparator />
           <DropdownMenuLabel>{t("workspace.tabs.actions.terminalProfilesMenu")}</DropdownMenuLabel>
@@ -489,7 +505,9 @@ interface WorkspaceDesktopTabsRowProps {
   onCreateDraftTab: (input: { paneId?: string }) => void;
   onCreateTerminalTab: (input: { paneId?: string; profile?: TerminalProfileInput }) => void;
   onCreateBrowserTab: (input: { paneId?: string }) => void;
+  onCreateDeepseekHarnessTab?: (input: { paneId?: string }) => void;
   showCreateBrowserTab?: boolean;
+  showCreateDeepseekHarnessTab?: boolean;
   disableCreateTerminal?: boolean;
   isWaitingOnTerminalReadiness?: boolean;
   onReorderTabs: (nextTabs: WorkspaceTabDescriptor[]) => void;
@@ -505,7 +523,14 @@ interface WorkspaceDesktopTabsRowProps {
 
 function getFallbackTabLabel(
   tab: WorkspaceTabDescriptor,
-  labels: { newAgent: string; setup: string; terminal: string; agent: string; changes: string },
+  labels: {
+    newAgent: string;
+    setup: string;
+    terminal: string;
+    deepseekHarness: string;
+    agent: string;
+    changes: string;
+  },
 ): string {
   if (tab.target.kind === "draft") {
     return labels.newAgent;
@@ -515,6 +540,9 @@ function getFallbackTabLabel(
   }
   if (tab.target.kind === "terminal") {
     return labels.terminal;
+  }
+  if (tab.target.kind === "deepseek_harness") {
+    return labels.deepseekHarness;
   }
   if (tab.target.kind === "file") {
     return tab.target.path.split("/").findLast(Boolean) ?? tab.target.path;
@@ -886,7 +914,9 @@ export function WorkspaceDesktopTabsRow({
   onCreateDraftTab,
   onCreateTerminalTab,
   onCreateBrowserTab,
+  onCreateDeepseekHarnessTab,
   showCreateBrowserTab = false,
+  showCreateDeepseekHarnessTab = false,
   disableCreateTerminal = false,
   isWaitingOnTerminalReadiness = false,
   onReorderTabs,
@@ -951,6 +981,7 @@ export function WorkspaceDesktopTabsRow({
       newAgent: t("workspace.tabs.fallback.newAgent"),
       setup: t("workspace.tabs.fallback.setup"),
       terminal: t("workspace.tabs.fallback.terminal"),
+      deepseekHarness: t("workspace.tabs.fallback.deepseekHarness"),
       agent: t("workspace.tabs.fallback.agent"),
       changes: t("panels.diff.changesLabel"),
     }),
@@ -1062,6 +1093,10 @@ export function WorkspaceDesktopTabsRow({
   const handleCreateBrowser = useCallback(() => {
     onCreateBrowserTab({ paneId });
   }, [onCreateBrowserTab, paneId]);
+
+  const handleCreateDeepseekHarness = useCallback(() => {
+    onCreateDeepseekHarnessTab?.({ paneId });
+  }, [onCreateDeepseekHarnessTab, paneId]);
 
   const terminalDisabled = disableCreateTerminal || isWaitingOnTerminalReadiness;
 
@@ -1218,11 +1253,13 @@ export function WorkspaceDesktopTabsRow({
           onCreateAgentTab={handleCreateAgentTab}
           onCreateTerminal={handleCreateTerminal}
           onCreateBrowser={handleCreateBrowser}
+          onCreateDeepseekHarness={handleCreateDeepseekHarness}
           onCreateTerminalWithProfile={handleCreateTerminalWithProfile}
           onCreateWorkflowDraft={handleCreateWorkflowDraft}
           onEditProfiles={handleEditProfiles}
           normalizedServerId={normalizedServerId}
           showCreateBrowserTab={showCreateBrowserTab}
+          showCreateDeepseekHarnessTab={showCreateDeepseekHarnessTab}
           terminalDisabled={terminalDisabled}
         />
         <WorkflowActionButton onPress={handleOpenWorkflowDraft} />

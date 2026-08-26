@@ -216,6 +216,7 @@ describe("loadSettingsFromStorage", () => {
       settings: {
         releaseChannel: "beta",
         daemon: { manageBuiltInDaemon: false, keepRunningAfterQuit: true },
+        deepseekHarness: { startWithDesktop: false, port: null },
       },
     });
     const deps = makeDeps({

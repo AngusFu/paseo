@@ -51,6 +51,11 @@ import {
 import { registerOpenerHandlers } from "./features/opener.js";
 import { registerEditorTargetHandlers } from "./features/editor-targets/ipc.js";
 import { registerCodeServerHandlers, shutdownCodeServer } from "./features/code-server.js";
+import {
+  maybeAutoStartDeepseekHarness,
+  registerDeepseekHarnessHandlers,
+  shutdownDeepseekHarness,
+} from "./features/deepseek-harness/index.js";
 import { setupApplicationMenu } from "./features/menu.js";
 import {
   BROWSER_NEW_TAB_REQUEST_EVENT,
@@ -1253,6 +1258,7 @@ async function bootstrap(): Promise<void> {
   registerOpenerHandlers();
   registerEditorTargetHandlers();
   registerCodeServerHandlers();
+  registerDeepseekHarnessHandlers();
   registerBrowserAutomationIpc();
 
   // In-app "Open in new window": opens a window that lands on the given project
@@ -1292,6 +1298,10 @@ async function bootstrap(): Promise<void> {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createWindow({ restoreWindowState: true });
     }
+  });
+
+  void maybeAutoStartDeepseekHarness().catch((error) => {
+    log.error("[deepseek-harness] auto-start failed", error);
   });
 }
 
@@ -1351,6 +1361,7 @@ app.on("before-quit", quitLifecycle.handleBeforeQuit);
 // Do not leak the machine-global `code serve-web` we may have spawned.
 app.on("will-quit", () => {
   shutdownCodeServer();
+  shutdownDeepseekHarness();
 });
 
 app.on("window-all-closed", () => {

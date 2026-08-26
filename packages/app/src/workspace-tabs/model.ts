@@ -25,6 +25,12 @@ export type WorkspaceTabTarget =
   | { kind: "workflow_run"; runId: string }
   | { kind: "terminal"; terminalId: string }
   | { kind: "browser"; browserId: string }
+  | {
+      kind: "deepseek_harness";
+      paneId: string;
+      browserId: string;
+      dshWorkspaceId?: string;
+    }
   | WorkspaceFileTabTarget
   | WorkspaceWorkingDiffTabTarget
   | { kind: "setup"; workspaceId: string }

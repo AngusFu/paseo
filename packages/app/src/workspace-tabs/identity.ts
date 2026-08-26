@@ -57,6 +57,17 @@ function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): Workspace
       const browserId = trimNonEmpty(value.browserId);
       return browserId ? { kind: "browser", browserId } : null;
     }
+    case "deepseek_harness": {
+      const paneId = trimNonEmpty(value.paneId);
+      const browserId = trimNonEmpty(value.browserId);
+      if (!paneId || !browserId) {
+        return null;
+      }
+      const dshWorkspaceId = trimNonEmpty(value.dshWorkspaceId);
+      return dshWorkspaceId
+        ? { kind: "deepseek_harness", paneId, browserId, dshWorkspaceId }
+        : { kind: "deepseek_harness", paneId, browserId };
+    }
     case "setup": {
       const workspaceId = trimNonEmpty(value.workspaceId);
       return workspaceId ? { kind: "setup", workspaceId } : null;
@@ -137,6 +148,10 @@ export function workspaceTabTargetsEqual(
       return left.terminalId === (right as Same<"terminal">).terminalId;
     case "browser":
       return left.browserId === (right as Same<"browser">).browserId;
+    case "deepseek_harness": {
+      const other = right as Same<"deepseek_harness">;
+      return left.paneId === other.paneId && left.browserId === other.browserId;
+    }
     case "file":
       return workspaceFileLocationsEqual(left, right as Same<"file">);
     case "setup":
@@ -206,6 +221,9 @@ export function buildDeterministicWorkspaceTabId(target: WorkspaceTabTarget): st
   }
   if (target.kind === "browser") {
     return `browser_${target.browserId}`;
+  }
+  if (target.kind === "deepseek_harness") {
+    return `deepseek_harness_${target.paneId}`;
   }
   if (target.kind === "setup") {
     return `setup_${target.workspaceId}`;

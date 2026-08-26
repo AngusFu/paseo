@@ -99,6 +99,14 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
     openWindow: (input: { url: string; cwd: string }) =>
       ipcRenderer.invoke("paseo:code-server:openWindow", input),
   },
+  deepseekHarness: {
+    getStatus: () => ipcRenderer.invoke("paseo:deepseek-harness:getStatus"),
+    install: () => ipcRenderer.invoke("paseo:deepseek-harness:install"),
+    start: () => ipcRenderer.invoke("paseo:deepseek-harness:start"),
+    stop: () => ipcRenderer.invoke("paseo:deepseek-harness:stop"),
+    openWorkspace: (input: { cwd: string; title?: string | null }) =>
+      ipcRenderer.invoke("paseo:deepseek-harness:openWorkspace", input),
+  },
   webUtils: {
     getPathForFile: (file: File) => webUtils.getPathForFile(file),
   },

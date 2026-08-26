@@ -96,6 +96,35 @@ export interface DesktopCodeServerBridge {
   openWindow?: (input: { url: string; cwd: string }) => Promise<void>;
 }
 
+export interface DesktopDeepseekHarnessStatus {
+  installed: boolean;
+  version: string | null;
+  installRoot: string;
+  entryPath: string | null;
+  running: boolean;
+  url: string | null;
+  port: number | null;
+  startWithDesktop: boolean;
+  spawnedByUs: boolean;
+}
+
+export interface DesktopDeepseekHarnessOpenResult {
+  status: DesktopDeepseekHarnessStatus;
+  dshWorkspaceId: string;
+  url: string;
+}
+
+export interface DesktopDeepseekHarnessBridge {
+  getStatus?: () => Promise<DesktopDeepseekHarnessStatus>;
+  install?: () => Promise<DesktopDeepseekHarnessStatus>;
+  start?: () => Promise<DesktopDeepseekHarnessStatus>;
+  stop?: () => Promise<DesktopDeepseekHarnessStatus>;
+  openWorkspace?: (input: {
+    cwd: string;
+    title?: string | null;
+  }) => Promise<DesktopDeepseekHarnessOpenResult>;
+}
+
 export interface DesktopWebUtilsBridge {
   getPathForFile?: (file: File) => string;
 }
@@ -233,6 +262,7 @@ export interface DesktopHostBridge {
   opener?: DesktopOpenerBridge;
   editor?: DesktopEditorBridge;
   codeServer?: DesktopCodeServerBridge;
+  deepseekHarness?: DesktopDeepseekHarnessBridge;
   webUtils?: DesktopWebUtilsBridge;
   menu?: DesktopMenuBridge;
   browser?: DesktopBrowserBridge;

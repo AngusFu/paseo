@@ -503,6 +503,7 @@ export const SETTINGS_SECTION_SLUGS = [
   "editor",
   "shortcuts",
   "integrations",
+  "deepseek-harness",
   "permissions",
   "diagnostics",
   "about",

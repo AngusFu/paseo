@@ -1,5 +1,6 @@
 import { agentPanelRegistration } from "@/panels/agent-panel";
 import { browserPanelRegistration } from "@/panels/browser-panel";
+import { deepseekHarnessPanelRegistration } from "@/panels/deepseek-harness-panel";
 import { commitDiffPanelRegistration, workingDiffPanelRegistration } from "@/panels/diff-panel";
 import { draftPanelRegistration } from "@/panels/draft-panel";
 import { filePanelRegistration } from "@/panels/file-panel";
@@ -24,6 +25,7 @@ export function ensurePanelsRegistered(): void {
   registerPanel(setupPanelRegistration);
   registerPanel(terminalPanelRegistration);
   registerPanel(browserPanelRegistration);
+  registerPanel(deepseekHarnessPanelRegistration);
   registerPanel(filePanelRegistration);
   registerPanel(commitDiffPanelRegistration);
   registerPanel(workingDiffPanelRegistration);

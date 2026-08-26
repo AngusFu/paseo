@@ -33,6 +33,10 @@ const DEFAULT_DESKTOP: DesktopSettings = {
     manageBuiltInDaemon: true,
     keepRunningAfterQuit: false,
   },
+  deepseekHarness: {
+    startWithDesktop: false,
+    port: null,
+  },
 };
 
 export function createFakeDesktopBridge(

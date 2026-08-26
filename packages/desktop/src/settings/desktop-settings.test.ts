@@ -85,6 +85,10 @@ describe("desktop-settings", () => {
         manageBuiltInDaemon: true,
         keepRunningAfterQuit: false,
       },
+      deepseekHarness: {
+        startWithDesktop: false,
+        port: null,
+      },
     });
   });
 
@@ -105,6 +109,10 @@ describe("desktop-settings", () => {
       daemon: {
         manageBuiltInDaemon: true,
         keepRunningAfterQuit: false,
+      },
+      deepseekHarness: {
+        startWithDesktop: false,
+        port: null,
       },
     });
     expect(files).toEqual(["desktop-settings.json"]);
@@ -232,6 +240,10 @@ describe("desktop-settings", () => {
       daemon: {
         manageBuiltInDaemon: false,
         keepRunningAfterQuit: false,
+      },
+      deepseekHarness: {
+        startWithDesktop: false,
+        port: null,
       },
     });
     expect(ignoredSecondMigration).toEqual(migrated);

@@ -36,6 +36,7 @@ import {
   Code2,
   Terminal,
   MessageSquareWarning,
+  Sparkles,
 } from "lucide-react-native";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
@@ -80,6 +81,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/component
 import { DesktopPermissionsSection } from "@/desktop/components/desktop-permissions-section";
 import { BrowserDataSection } from "@/desktop/components/browser-data-section";
 import { IntegrationsSection } from "@/desktop/components/integrations-section";
+import { DeepseekHarnessSection } from "@/desktop/components/deepseek-harness-section";
 import { isElectronRuntime } from "@/desktop/host";
 import { useDesktopAppUpdater } from "@/desktop/updates/use-desktop-app-updater";
 import { formatVersionWithPrefix } from "@/desktop/updates/desktop-updates";
@@ -153,6 +155,12 @@ const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
     id: "integrations",
     labelKey: "settings.sections.integrations",
     icon: Puzzle,
+    desktopOnly: true,
+  },
+  {
+    id: "deepseek-harness",
+    labelKey: "settings.sections.deepseekHarness",
+    icon: Sparkles,
     desktopOnly: true,
   },
   {
@@ -1483,6 +1491,8 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
           return isDesktopApp ? <KeyboardShortcutsSection /> : null;
         case "integrations":
           return isDesktopApp ? <IntegrationsSection /> : null;
+        case "deepseek-harness":
+          return isDesktopApp ? <DeepseekHarnessSection /> : null;
         case "permissions":
           return isDesktopApp ? <DesktopPermissionsSection /> : null;
         case "diagnostics":

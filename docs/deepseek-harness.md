@@ -11,6 +11,24 @@ Desktop-managed integration for the DeepSeek Harness (`@deepseek-ai/dsh`) Web UI
 - Desktop keeps the user’s normal `$DSH_HOME` (typically `~/.dsh`). It does not isolate a separate harness home.
 - Spawn captures stdout/stderr. On readiness failure the status exposes `lastError` with that log tail so Settings can show **Starting… / Running / Stopped / Start failed** instead of only “Installed”.
 
+## Built-in `dsh-paseo` plugin
+
+Monorepo package [`packages/dsh-paseo`](../packages/dsh-paseo) ships with Desktop (`extraResources/dsh-paseo`).
+
+On managed start, Desktop:
+
+1. `npm install file:<pluginRoot> --prefix $DSH_HOME/profiles/web`
+2. Writes a host-only overlay patch and passes `--patch <overlay>` to `dsh web`
+
+The embed **client** (`dsh.client`) reads the open URL:
+
+| Query                           | Behavior                                                          |
+| ------------------------------- | ----------------------------------------------------------------- |
+| `paseoEmbed=1&workspaceId=<id>` | Hide sidebar; **create** a new session in that workspace; open it |
+| `paseoEmbed=1&sessionId=<id>`   | Hide sidebar; open that session                                   |
+
+Each open from a Paseo workspace rebuilds the tab URL (always a new session). An already-running DSH from before this plugin was installed needs one Stop/Start (or Desktop restart) to load the client.
+
 ## Settings
 
 Desktop-only Settings section `deepseek-harness`:
@@ -26,7 +44,7 @@ Desktop-only Settings section `deepseek-harness`:
 
 - New tab kind `deepseek_harness` (Electron `<webview>` via `BrowserPane`)
 - Header menu + tab `+` menu: **DeepSeek Harness**
-- Opening ensures the process is running, then calls DSH `workspace.create` / `workspace.list` (same envelope as `tools/dsh-paseo`) so the current Paseo workspace cwd is registered, then loads the Web UI URL
+- Opening ensures the process is running, registers the cwd via `workspace.create` / `workspace.list`, then loads the embed URL above
 
 ## IPC
 

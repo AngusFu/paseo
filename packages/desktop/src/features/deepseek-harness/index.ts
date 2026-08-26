@@ -12,6 +12,11 @@ import {
   type DeepseekHarnessInstallDependencies,
   type DeepseekHarnessInstallStatus,
 } from "./install.js";
+import {
+  buildDeepseekHarnessEmbedUrl,
+  ensureDshPaseoInstalledInWebProfile,
+  writeDshPaseoOverlayPatch,
+} from "./plugin.js";
 
 const HOST = "127.0.0.1";
 const READY_TIMEOUT_MS = 45_000;
@@ -60,9 +65,23 @@ function buildUrl(port: number): string {
 export function buildDeepseekHarnessSpawnArgs(input: {
   entryPath: string;
   port: number;
+  patchPath?: string | null;
 }): string[] {
-  return [...DSH_NODE_EXEC_ARGV, input.entryPath, "web", "--port", String(input.port), "--no-open"];
+  const args = [
+    ...DSH_NODE_EXEC_ARGV,
+    input.entryPath,
+    "web",
+    "--port",
+    String(input.port),
+    "--no-open",
+  ];
+  if (input.patchPath) {
+    args.push("--patch", input.patchPath);
+  }
+  return args;
 }
+
+export { buildDeepseekHarnessEmbedUrl } from "./plugin.js";
 
 function chunkToString(chunk: Buffer | string): string {
   return typeof chunk === "string" ? chunk : chunk.toString("utf8");
@@ -286,6 +305,11 @@ export async function startDeepseekHarness(
   const current = await getDeepseekHarnessStatus(dependencies);
   if (current.running && current.port != null) {
     managedPort = current.port;
+    try {
+      await ensureDshPaseoInstalledInWebProfile(dependencies);
+    } catch (error) {
+      console.warn("[deepseek-harness] dsh-paseo install deferred", error);
+    }
     return current;
   }
 
@@ -309,14 +333,28 @@ export async function startDeepseekHarness(
 
   // Another process may already be serving our persisted port.
   if (await probeDshApi(buildUrl(port))) {
+    try {
+      await ensureDshPaseoInstalledInWebProfile(dependencies);
+    } catch (error) {
+      // Already-running instance will pick up the plugin on next start.
+      console.warn("[deepseek-harness] dsh-paseo install deferred", error);
+    }
     return await getDeepseekHarnessStatus(dependencies);
   }
+
+  // Mount built-in dsh-paseo (host + embed client) into the user's web profile.
+  await ensureDshPaseoInstalledInWebProfile(dependencies);
+  const patchPath = await writeDshPaseoOverlayPatch(dependencies);
 
   const childEnv = createElectronNodeEnv(createExternalProcessEnv(env), { isPackaged });
   lastError = null;
   const child = spawn(
     execPath,
-    buildDeepseekHarnessSpawnArgs({ entryPath: installStatus.entryPath, port }),
+    buildDeepseekHarnessSpawnArgs({
+      entryPath: installStatus.entryPath,
+      port,
+      patchPath,
+    }),
     {
       detached: platform !== "win32",
       env: childEnv,
@@ -406,7 +444,9 @@ export async function openDeepseekHarnessWorkspace(input: {
   return {
     status,
     dshWorkspaceId: workspace.workspaceId,
-    url: normalizeBaseUrl(status.url),
+    url: buildDeepseekHarnessEmbedUrl(normalizeBaseUrl(status.url), {
+      workspaceId: workspace.workspaceId,
+    }),
   };
 }
 

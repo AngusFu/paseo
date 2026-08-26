@@ -29,6 +29,13 @@ extraResources:
     to: skills
   - from: assets/editor-targets
     to: editor-target-icons
+  - from: ../dsh-paseo
+    to: dsh-paseo
+    filter:
+      - "**/*"
+      - "!node_modules/**/*"
+      - "!**/*.test.*"
+      - "!**/smoke*"
 publish:
   provider: github
   owner: getpaseo

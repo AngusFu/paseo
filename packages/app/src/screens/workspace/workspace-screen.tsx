@@ -2667,19 +2667,20 @@ function WorkspaceScreenContent({
         focusWorkspacePane(persistenceKey, input.paneId);
       }
 
-      const existing = uiTabs.find((tab) => tab.target.kind === "deepseek_harness");
-      if (existing) {
-        openWorkspaceTabFocused(persistenceKey, existing.target);
-        return;
-      }
-
       void (async () => {
         try {
           const opened = await openDeepseekHarnessWorkspace({
             cwd: workspaceDirectory,
             title: workspaceDescriptor?.title ?? null,
           });
-          const paneId = `deepseek_harness_${normalizedWorkspaceId}`;
+          const existing = uiTabs.find((tab) => tab.target.kind === "deepseek_harness");
+          const paneId =
+            existing?.target.kind === "deepseek_harness"
+              ? existing.target.paneId
+              : (input?.paneId ?? `deepseek_harness_${normalizedWorkspaceId}`);
+          if (existing?.target.kind === "deepseek_harness") {
+            useBrowserStore.getState().removeBrowser(existing.target.browserId);
+          }
           const { browserId } = createWorkspaceBrowser({ initialUrl: opened.url });
           openWorkspaceTabFocused(persistenceKey, {
             kind: "deepseek_harness",

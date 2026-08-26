@@ -1,0 +1,9 @@
+# dsh-paseo bundle patch — host RPC plugin only.
+#
+# Desktop generates a runtime overlay that may also mount MCP with an absolute
+# server path. The client half is declared via package.json `dsh.client` and is
+# discovered when this package is installed into the web profile.
+
+- insert:
+    - id: paseo-host
+      name: dsh-paseo

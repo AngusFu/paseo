@@ -1023,7 +1023,6 @@ export const zhCN: TranslationResources = {
       schedules: "计划",
       kanban: "看板",
       workflows: "Workflows",
-      approvals: "审批",
       pinned: "已置顶",
     },
     worktreeSetup: {
@@ -3088,38 +3087,6 @@ export const zhCN: TranslationResources = {
     confirmDelete: {
       message: "删除“{{title}}”？此操作无法撤销。",
       confirm: "删除",
-    },
-  },
-  approvals: {
-    title: "审批",
-    filter: {
-      pending: "待处理",
-      answered: "已回答",
-      closed: "已关闭",
-    },
-    list: {
-      loadError: "无法加载审批",
-      tryAgain: "重试",
-      hostError: "{{serverName}}：无法加载问题",
-      answerError: "无法提交回答",
-    },
-    empty: {
-      pendingTitle: "暂无待处理问题",
-      pendingDescription: "当 agent 需要你做决定时，会出现在这里。",
-      answeredTitle: "暂无已回答问题",
-      answeredDescription: "你回答过的问题会出现在这里。",
-      closedTitle: "暂无已关闭问题",
-      closedDescription: "已忽略或已过期的问题会出现在这里。",
-    },
-    row: {
-      meta: "{{agent}} · {{host}} · {{source}}",
-      openAgent: "打开 agent",
-    },
-    status: {
-      pending: "待处理",
-      answered: "已回答",
-      dismissed: "已忽略",
-      expired: "已过期",
     },
   },
 };

@@ -1054,7 +1054,6 @@ export const ru: TranslationResources = {
       schedules: "Расписания",
       kanban: "Канбан",
       workflows: "Workflows",
-      approvals: "Approvals",
       pinned: "Закреплённые",
     },
     worktreeSetup: {
@@ -3168,38 +3167,6 @@ export const ru: TranslationResources = {
     confirmDelete: {
       message: "Удалить «{{title}}»? Это действие нельзя отменить.",
       confirm: "Удалить",
-    },
-  },
-  approvals: {
-    title: "Approvals",
-    filter: {
-      pending: "Pending",
-      answered: "Answered",
-      closed: "Closed",
-    },
-    list: {
-      loadError: "Unable to load approvals",
-      tryAgain: "Try again",
-      hostError: "{{serverName}}: Could not load questions",
-      answerError: "Could not submit answer",
-    },
-    empty: {
-      pendingTitle: "No pending questions",
-      pendingDescription: "When agents ask for a decision, it shows up here.",
-      answeredTitle: "No answered questions",
-      answeredDescription: "Questions you answer show up here.",
-      closedTitle: "No closed questions",
-      closedDescription: "Dismissed and expired questions appear here.",
-    },
-    row: {
-      meta: "{{agent}} · {{host}} · {{source}}",
-      openAgent: "Open agent",
-    },
-    status: {
-      pending: "Pending",
-      answered: "Answered",
-      dismissed: "Dismissed",
-      expired: "Expired",
     },
   },
 };

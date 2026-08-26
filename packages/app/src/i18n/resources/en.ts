@@ -1042,7 +1042,6 @@ export const en = {
       schedules: "Schedules",
       kanban: "Kanban",
       workflows: "Workflows",
-      approvals: "Approvals",
       pinned: "Pinned",
     },
     worktreeSetup: {
@@ -3136,38 +3135,6 @@ export const en = {
     confirmDelete: {
       message: 'Delete "{{title}}"? This cannot be undone.',
       confirm: "Delete",
-    },
-  },
-  approvals: {
-    title: "Approvals",
-    filter: {
-      pending: "Pending",
-      answered: "Answered",
-      closed: "Closed",
-    },
-    list: {
-      loadError: "Unable to load approvals",
-      tryAgain: "Try again",
-      hostError: "{{serverName}}: Could not load questions",
-      answerError: "Could not submit answer",
-    },
-    empty: {
-      pendingTitle: "No pending questions",
-      pendingDescription: "When agents ask for a decision, it shows up here.",
-      answeredTitle: "No answered questions",
-      answeredDescription: "Questions you answer show up here.",
-      closedTitle: "No closed questions",
-      closedDescription: "Dismissed and expired questions appear here.",
-    },
-    row: {
-      meta: "{{agent}} · {{host}} · {{source}}",
-      openAgent: "Open agent",
-    },
-    status: {
-      pending: "Pending",
-      answered: "Answered",
-      dismissed: "Dismissed",
-      expired: "Expired",
     },
   },
 } as const;

@@ -4,7 +4,6 @@ import {
   FolderPlus,
   History,
   Home,
-  Inbox,
   Plus,
   Search,
   Server,
@@ -61,7 +60,6 @@ import { MobilePanelOverlay } from "@/mobile-panels/presentation";
 import {
   buildOpenProjectRoute,
   buildNewWorkspaceRoute,
-  buildApprovalsRoute,
   buildKanbanRoute,
   buildWorkflowsRoute,
   buildSchedulesRoute,
@@ -110,7 +108,6 @@ interface SidebarLabels {
   schedules: string;
   kanban: string;
   workflows: string;
-  approvals: string;
   closeSidebar: string;
 }
 
@@ -121,7 +118,6 @@ interface MobileSidebarProps extends SidebarSharedProps {
   handleViewSchedulesNavigate: () => void;
   handleViewKanbanNavigate: () => void;
   handleViewWorkflowsNavigate: () => void;
-  handleViewApprovalsNavigate: () => void;
 }
 
 interface DesktopSidebarProps extends SidebarSharedProps {
@@ -130,7 +126,6 @@ interface DesktopSidebarProps extends SidebarSharedProps {
   handleViewSchedules: () => void;
   handleViewKanban: () => void;
   handleViewWorkflows: () => void;
-  handleViewApprovals: () => void;
 }
 
 export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boolean }) {
@@ -230,10 +225,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     router.push(buildWorkflowsRoute());
   }, []);
 
-  const handleViewApprovalsNavigate = useCallback(() => {
-    router.push(buildApprovalsRoute());
-  }, []);
-
   const labels = useMemo(
     (): SidebarLabels => ({
       addProject: t("sidebar.actions.addProject"),
@@ -246,7 +237,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
       schedules: t("sidebar.sections.schedules"),
       kanban: t("sidebar.sections.kanban"),
       workflows: t("sidebar.sections.workflows"),
-      approvals: t("sidebar.sections.approvals"),
       closeSidebar: t("sidebar.actions.closeSidebar"),
     }),
     [t],
@@ -286,7 +276,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
           handleViewSchedulesNavigate={handleViewSchedulesNavigate}
           handleViewKanbanNavigate={handleViewKanbanNavigate}
           handleViewWorkflowsNavigate={handleViewWorkflowsNavigate}
-          handleViewApprovalsNavigate={handleViewApprovalsNavigate}
         />
       </RetainedPanelActivity>
     );
@@ -306,7 +295,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
         handleViewSchedules={handleViewSchedulesNavigate}
         handleViewKanban={handleViewKanbanNavigate}
         handleViewWorkflows={handleViewWorkflowsNavigate}
-        handleViewApprovals={handleViewApprovalsNavigate}
       />
     </RetainedPanelActivity>
   );
@@ -616,7 +604,6 @@ function MobileSidebar({
   handleViewSchedulesNavigate,
   handleViewKanbanNavigate,
   handleViewWorkflowsNavigate,
-  handleViewApprovalsNavigate,
 }: MobileSidebarProps) {
   const pathname = usePathname();
   const isHomeActive = pathname.includes("/open-project");
@@ -624,7 +611,6 @@ function MobileSidebar({
   const isSchedulesActive = pathname.includes("/schedules");
   const isKanbanActive = pathname.includes("/kanban");
   const isWorkflowsActive = pathname.includes("/workflows");
-  const isApprovalsActive = pathname.includes("/approvals");
   const { gesture: closeGesture, gestureRef: closeGestureRef } = useCloseAgentListGesture();
 
   const handleViewSchedules = useCallback(() => {
@@ -640,11 +626,6 @@ function MobileSidebar({
     closeSidebar();
     handleViewWorkflowsNavigate();
   }, [closeSidebar, handleViewWorkflowsNavigate]);
-  const handleViewApprovals = useCallback(() => {
-    closeSidebar();
-    handleViewApprovalsNavigate();
-  }, [closeSidebar, handleViewApprovalsNavigate]);
-
   const handleWorkspacePress = useCallback(() => {
     closeSidebar();
   }, [closeSidebar]);
@@ -702,14 +683,6 @@ function MobileSidebar({
             onPress={handleViewSchedules}
             isActive={isSchedulesActive}
             testID="sidebar-schedules"
-            variant="compact"
-          />
-          <SidebarHeaderRow
-            icon={Inbox}
-            label={labels.approvals}
-            onPress={handleViewApprovals}
-            isActive={isApprovalsActive}
-            testID="sidebar-approvals"
             variant="compact"
           />
         </View>
@@ -795,7 +768,6 @@ function DesktopSidebar({
   handleViewSchedules,
   handleViewKanban,
   handleViewWorkflows,
-  handleViewApprovals,
 }: DesktopSidebarProps) {
   const ownsTopLeft = useOwnsWindowChromeCorner("top-left");
   const pathname = usePathname();
@@ -804,7 +776,6 @@ function DesktopSidebar({
   const isSchedulesActive = pathname.includes("/schedules");
   const isKanbanActive = pathname.includes("/kanban");
   const isWorkflowsActive = pathname.includes("/workflows");
-  const isApprovalsActive = pathname.includes("/approvals");
   const sidebarWidth = usePanelStore((state) => state.sidebarWidth);
   const setSidebarWidth = usePanelStore((state) => state.setSidebarWidth);
   const { width: viewportWidth } = useWindowDimensions();
@@ -909,14 +880,6 @@ function DesktopSidebar({
               onPress={handleViewSchedules}
               isActive={isSchedulesActive}
               testID="sidebar-schedules"
-              variant="compact"
-            />
-            <SidebarHeaderRow
-              icon={Inbox}
-              label={labels.approvals}
-              onPress={handleViewApprovals}
-              isActive={isApprovalsActive}
-              testID="sidebar-approvals"
               variant="compact"
             />
           </View>

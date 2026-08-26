@@ -1046,7 +1046,6 @@ export const ja: TranslationResources = {
       schedules: "スケジュール",
       kanban: "カンバン",
       workflows: "ワークフロー",
-      approvals: "Approvals",
       pinned: "ピン留め",
     },
     worktreeSetup: {
@@ -3148,38 +3147,6 @@ export const ja: TranslationResources = {
     confirmDelete: {
       message: "「{{title}}」を削除しますか？この操作は取り消せません。",
       confirm: "削除",
-    },
-  },
-  approvals: {
-    title: "Approvals",
-    filter: {
-      pending: "Pending",
-      answered: "Answered",
-      closed: "Closed",
-    },
-    list: {
-      loadError: "Unable to load approvals",
-      tryAgain: "Try again",
-      hostError: "{{serverName}}: Could not load questions",
-      answerError: "Could not submit answer",
-    },
-    empty: {
-      pendingTitle: "No pending questions",
-      pendingDescription: "When agents ask for a decision, it shows up here.",
-      answeredTitle: "No answered questions",
-      answeredDescription: "Questions you answer show up here.",
-      closedTitle: "No closed questions",
-      closedDescription: "Dismissed and expired questions appear here.",
-    },
-    row: {
-      meta: "{{agent}} · {{host}} · {{source}}",
-      openAgent: "Open agent",
-    },
-    status: {
-      pending: "Pending",
-      answered: "Answered",
-      dismissed: "Dismissed",
-      expired: "Expired",
     },
   },
 } as const;

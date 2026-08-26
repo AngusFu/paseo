@@ -1,13 +1,13 @@
 # Question Inbox
 
-How Paseo-managed agents ask the user for decisions — MCP first, skill fallback on timeout — and how those questions become a durable, centrally managed inbox (future Approvals page).
+How Paseo-managed agents ask the user for decisions — MCP first, skill fallback on timeout — and how those questions become a durable inbox. Questions are answered from the agent timeline or via CLI; there is no global Approvals page.
 
 ## Goals
 
 - Keep **`ask_question` MCP** as the primary path for managed agents (blocking tool call → Paseo UI → answers).
 - When MCP **times out or is unavailable**, fall back to a **skill-driven inbox wait** so the decision is not lost to chat prose.
 - Prefer **provider-native question UI** when the session already has one (e.g. Claude / Cursor `AskUserQuestion`) and it is reliable in that environment.
-- Persist every inbox-bound question so a later **Approvals** surface can list and answer them without opening each agent tab.
+- Persist every inbox-bound question so it can be answered from the agent timeline or via CLI.
 
 ## Policy (priority order)
 
@@ -58,13 +58,12 @@ sequenceDiagram
 | CLI `paseo question ls \| answer`                                                                               | Debug / scripting over the same inbox                                                                                                                                |
 | Timeline disguise [`ask-question-timeline.ts`](../packages/server/src/server/agent/ask-question-timeline.ts)    | Project MCP calls as Claude `AskUserQuestion` for consistent cards                                                                                                   |
 | UI [`ask-question-card.tsx`](../packages/app/src/components/ask-question-card.tsx)                              | Renders question + answers on the timeline                                                                                                                           |
-| Approvals page [`approvals-screen.tsx`](../packages/app/src/screens/approvals-screen.tsx)                       | Global inbox UI at `/approvals` — list/answer/dismiss without opening each agent tab                                                                                 |
 | Wait socket [`wait-socket.ts`](../packages/server/src/server/question/wait-socket.ts)                           | Local NDJSON waiter at `$PASEO_HOME/question-wait.sock`                                                                                                              |
 | Native mirror [`native-mirror.ts`](../packages/server/src/server/question/native-mirror.ts)                     | Audit-write settled native AskUserQuestion into inbox (`source: native_mirror`)                                                                                      |
 | Prose-stop nudge [`nudge-prompt.ts`](../packages/server/src/server/agent/prose-stop/nudge-prompt.ts)            | Turn-end backstop: pushes agents away from prose and toward ask_question (skipped for orchestrated background agents — see [agent-lifecycle.md](agent-lifecycle.md)) |
 | Prevention prompt [`prevention-prompt.ts`](../packages/server/src/server/agent/prose-stop/prevention-prompt.ts) | `proseStop.preventionPrompt` (default on): short `daemonAppendSystemPrompt` so agents avoid prose waits up front (same orchestrated skip)                            |
 
-**P1–P3 landed:** durable inbox + MCP persistence + `question.list/answer/create/wait` + CLI + `paseo-ask` skill + Approvals page + wait socket + native_mirror audit.
+**P1–P3 landed:** durable inbox + MCP persistence + `question.list/answer/create/wait` + CLI + `paseo-ask` skill + wait socket + native_mirror audit. The global Approvals page was removed; the inbox remains available through agent cards and CLI.
 
 ## Target shape
 
@@ -79,7 +78,7 @@ Persist under `$PASEO_HOME/questions/<id>.json` (Zod + atomic write; see [data-m
 - `source`: `mcp | skill | cli | native_mirror`
 - `mcpRequestId?` — link back to the permission / tool call when created via MCP
 
-MCP `ask_question` and skill/CLI create **the same records**. Answering from the agent card or a future Approvals page settles the same waiter.
+MCP `ask_question` and skill/CLI create **the same records**. Answering from the agent card or CLI settles the same waiter.
 
 ### Channels
 
@@ -123,9 +122,8 @@ Architecture and policy only.
 - Timeout classifier in `packages/server/src/server/question/timeout.ts`; prose-stop nudge teaches the ladder.
 - User dismiss stays `dismissed=true` and must not trigger fallback.
 
-### P3 — Approvals page + extras ✅
+### P3 — Inbox extras ✅
 
-- Global Approvals UI at `/approvals` (sidebar entry) over inbox questions: pending / answered / closed filters, answer/dismiss via `question.answer`, open agent.
 - Unix socket waiter at `$PASEO_HOME/question-wait.sock` (NDJSON wait; advertised as `features.questionWaitSocket` on non-Windows).
 - Native AskUserQuestion settlements are mirrored into the inbox as `source: native_mirror` **after settle** (audit only — no second answerable UI).
 

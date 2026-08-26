@@ -106,6 +106,7 @@ export interface DesktopDeepseekHarnessStatus {
   port: number | null;
   startWithDesktop: boolean;
   spawnedByUs: boolean;
+  lastError: string | null;
 }
 
 export interface DesktopDeepseekHarnessOpenResult {

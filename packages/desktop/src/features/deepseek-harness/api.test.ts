@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allocateFreePort } from "./index.js";
+import { allocateFreePort, buildDeepseekHarnessSpawnArgs } from "./index.js";
 import { normalizeBaseUrl, unwrapDshResult } from "./api.js";
 
 describe("deepseek-harness api helpers", () => {
@@ -29,6 +29,17 @@ describe("deepseek-harness api helpers", () => {
         "workspace.create",
       ),
     ).toThrow(/workspace\.create failed: boom/);
+  });
+});
+
+describe("buildDeepseekHarnessSpawnArgs", () => {
+  it("puts --expose-internals before the dsh entry for HMR", () => {
+    expect(
+      buildDeepseekHarnessSpawnArgs({
+        entryPath: "/tmp/dsh/lib/bin.js",
+        port: 4123,
+      }),
+    ).toEqual(["--expose-internals", "/tmp/dsh/lib/bin.js", "web", "--port", "4123", "--no-open"]);
   });
 });
 

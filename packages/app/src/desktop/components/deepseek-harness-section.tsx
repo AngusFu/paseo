@@ -14,10 +14,12 @@ import { settingsStyles } from "@/styles/settings";
 function statusBadgeVariant(
   status: DesktopDeepseekHarnessStatus | null,
   isInstalling: boolean,
+  isStarting: boolean,
 ): "success" | "error" | "muted" {
-  if (isInstalling) return "muted";
+  if (isInstalling || isStarting) return "muted";
   if (!status) return "muted";
   if (status.running) return "success";
+  if (status.lastError) return "error";
   if (status.installed) return "muted";
   return "error";
 }
@@ -26,15 +28,22 @@ function resolveStatusLabel(
   t: ReturnType<typeof useTranslation>["t"],
   status: DesktopDeepseekHarnessStatus | null,
   isInstalling: boolean,
+  isStarting: boolean,
 ): string {
   if (isInstalling) {
     return t("settings.deepseekHarness.status.installing");
   }
+  if (isStarting) {
+    return t("settings.deepseekHarness.status.starting");
+  }
   if (status?.running) {
     return t("settings.deepseekHarness.status.running");
   }
+  if (status?.lastError) {
+    return t("settings.deepseekHarness.status.failed");
+  }
   if (status?.installed) {
-    return t("settings.deepseekHarness.status.installed");
+    return t("settings.deepseekHarness.status.stopped");
   }
   return t("settings.deepseekHarness.status.notInstalled");
 }
@@ -95,6 +104,7 @@ function DeepseekHarnessRuntimeCard({
   const { t } = useTranslation();
   const logScrollRef = useRef<ScrollView>(null);
   const showInstallLog = isInstalling || installLog.length > 0;
+  const showLastError = Boolean(status?.lastError) && !isStarting;
   const runtimeDetail = resolveRuntimeDetail(t, status);
   const installed = Boolean(status?.installed);
 
@@ -116,8 +126,8 @@ function DeepseekHarnessRuntimeCard({
           {runtimeDetail ? <Text style={settingsStyles.rowHint}>{runtimeDetail}</Text> : null}
         </View>
         <StatusBadge
-          variant={statusBadgeVariant(status, isInstalling)}
-          label={resolveStatusLabel(t, status, isInstalling)}
+          variant={statusBadgeVariant(status, isInstalling, isStarting)}
+          label={resolveStatusLabel(t, status, isInstalling, isStarting)}
         />
       </View>
 
@@ -155,6 +165,24 @@ function DeepseekHarnessRuntimeCard({
           </Button>
         )}
       </View>
+
+      {showLastError ? (
+        <View
+          style={[styles.logPanel, settingsStyles.rowBorder]}
+          testID="settings-deepseek-harness-last-error"
+        >
+          <Text style={styles.logTitle}>{t("settings.deepseekHarness.lastErrorTitle")}</Text>
+          <ScrollView
+            style={styles.logScroll}
+            contentContainerStyle={styles.logScrollContent}
+            nestedScrollEnabled
+          >
+            <Text style={styles.logText} selectable>
+              {status?.lastError}
+            </Text>
+          </ScrollView>
+        </View>
+      ) : null}
 
       {showInstallLog ? (
         <View

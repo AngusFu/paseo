@@ -2050,9 +2050,12 @@ export const zhCN: TranslationResources = {
       startWithDesktopDescription: "打开 Paseo Desktop 时自动启动 DeepSeek Harness。",
       status: {
         running: "运行中",
+        stopped: "已停止",
+        failed: "启动失败",
         installed: "已安装",
         notInstalled: "未安装",
         installing: "安装中…",
+        starting: "启动中…",
       },
       actions: {
         install: "安装",
@@ -2064,6 +2067,7 @@ export const zhCN: TranslationResources = {
       },
       installLogTitle: "安装日志",
       installLogWaiting: "等待 npm 输出…",
+      lastErrorTitle: "启动错误",
       toast: {
         installed: "已安装 DeepSeek Harness {{version}}",
         installFailed: "安装 DeepSeek Harness 失败",

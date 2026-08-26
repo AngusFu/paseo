@@ -17,6 +17,9 @@ const HOST = "127.0.0.1";
 const READY_TIMEOUT_MS = 45_000;
 const READY_POLL_INTERVAL_MS = 250;
 const STOP_TIMEOUT_MS = 3_000;
+/** dsh HMR requires Node's --expose-internals; ELECTRON_RUN_AS_NODE rejects it via NODE_OPTIONS. */
+const DSH_NODE_EXEC_ARGV = ["--expose-internals"] as const;
+const MAX_PROCESS_LOG_CHARS = 16_000;
 
 export interface DeepseekHarnessStatus extends DeepseekHarnessInstallStatus {
   running: boolean;
@@ -24,6 +27,8 @@ export interface DeepseekHarnessStatus extends DeepseekHarnessInstallStatus {
   port: number | null;
   startWithDesktop: boolean;
   spawnedByUs: boolean;
+  /** Last start failure detail (stderr / timeout), cleared on successful start/stop. */
+  lastError: string | null;
 }
 
 export interface DeepseekHarnessOpenWorkspaceResult {
@@ -46,9 +51,55 @@ interface IpcHandlerRegistry {
 let spawnedByUs = false;
 let managedChild: ChildProcess | null = null;
 let managedPort: number | null = null;
+let lastError: string | null = null;
 
 function buildUrl(port: number): string {
   return `http://${HOST}:${port}`;
+}
+
+export function buildDeepseekHarnessSpawnArgs(input: {
+  entryPath: string;
+  port: number;
+}): string[] {
+  return [...DSH_NODE_EXEC_ARGV, input.entryPath, "web", "--port", String(input.port), "--no-open"];
+}
+
+function chunkToString(chunk: Buffer | string): string {
+  return typeof chunk === "string" ? chunk : chunk.toString("utf8");
+}
+
+function appendProcessLog(previous: string, chunk: string): string {
+  const next = previous + chunk;
+  if (next.length <= MAX_PROCESS_LOG_CHARS) {
+    return next;
+  }
+  return next.slice(next.length - MAX_PROCESS_LOG_CHARS);
+}
+
+function attachProcessLogCapture(child: ChildProcess): { getLog: () => string } {
+  let log = "";
+  const onChunk = (chunk: Buffer | string) => {
+    log = appendProcessLog(log, chunkToString(chunk));
+  };
+  child.stdout?.on("data", onChunk);
+  child.stderr?.on("data", onChunk);
+  return {
+    getLog: () => log,
+  };
+}
+
+function formatStartFailure(input: {
+  reason: "exited" | "timeout";
+  processLog: string;
+  exitCode?: number | null;
+}): string {
+  const log = input.processLog.trim();
+  if (input.reason === "exited") {
+    const detail = log || `exit code ${input.exitCode ?? "unknown"}`;
+    return `DeepSeek Harness exited before it became ready:\n${detail}`;
+  }
+  const detail = log ? `\n${log}` : "";
+  return `DeepSeek Harness did not become ready in time${detail}`;
 }
 
 function isPortListening(port: number): Promise<boolean> {
@@ -127,23 +178,40 @@ function killPids(pids: readonly number[], platform: NodeJS.Platform, force: boo
   }
 }
 
-async function waitForReady(input: { port: number; child: ChildProcess }): Promise<void> {
+async function waitForReady(input: {
+  port: number;
+  child: ChildProcess;
+  getProcessLog: () => string;
+}): Promise<void> {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   let exited = false;
-  input.child.once("exit", () => {
+  let exitCode: number | null = null;
+  input.child.once("exit", (code) => {
     exited = true;
+    exitCode = code;
   });
   const baseUrl = buildUrl(input.port);
   while (Date.now() < deadline) {
     if (exited) {
-      throw new Error("DeepSeek Harness exited before it became ready");
+      throw new Error(
+        formatStartFailure({
+          reason: "exited",
+          processLog: input.getProcessLog(),
+          exitCode,
+        }),
+      );
     }
     if (await probeDshApi(baseUrl)) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, READY_POLL_INTERVAL_MS));
   }
-  throw new Error("DeepSeek Harness did not become ready in time");
+  throw new Error(
+    formatStartFailure({
+      reason: "timeout",
+      processLog: input.getProcessLog(),
+    }),
+  );
 }
 
 async function readSettingsSlice(): Promise<{
@@ -175,6 +243,7 @@ export async function getDeepseekHarnessStatus(
       port: null,
       startWithDesktop: settings.startWithDesktop,
       spawnedByUs,
+      lastError,
     };
   }
 
@@ -187,6 +256,7 @@ export async function getDeepseekHarnessStatus(
     port,
     startWithDesktop: settings.startWithDesktop,
     spawnedByUs,
+    lastError: running ? null : lastError,
   };
 }
 
@@ -243,15 +313,17 @@ export async function startDeepseekHarness(
   }
 
   const childEnv = createElectronNodeEnv(createExternalProcessEnv(env), { isPackaged });
+  lastError = null;
   const child = spawn(
     execPath,
-    [installStatus.entryPath, "web", "--port", String(port), "--no-open"],
+    buildDeepseekHarnessSpawnArgs({ entryPath: installStatus.entryPath, port }),
     {
       detached: platform !== "win32",
       env: childEnv,
-      stdio: "ignore",
+      stdio: ["ignore", "pipe", "pipe"],
     },
   );
+  const processLog = attachProcessLogCapture(child);
   managedChild = child;
   spawnedByUs = true;
   child.once("exit", () => {
@@ -261,10 +333,13 @@ export async function startDeepseekHarness(
   });
 
   try {
-    await waitForReady({ port, child });
+    await waitForReady({ port, child, getProcessLog: processLog.getLog });
+    lastError = null;
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     await stopDeepseekHarness({ ...dependencies, platform });
-    throw error;
+    lastError = message;
+    throw error instanceof Error ? error : new Error(message);
   }
 
   return await getDeepseekHarnessStatus(dependencies);
@@ -306,6 +381,7 @@ export async function stopDeepseekHarness(
     await stopByPort(port, platform);
   }
   spawnedByUs = false;
+  lastError = null;
   return await getDeepseekHarnessStatus(dependencies);
 }
 

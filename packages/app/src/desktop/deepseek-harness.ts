@@ -129,6 +129,7 @@ export function useDeepseekHarness() {
       queryClient.setQueryData(STATUS_QUERY_KEY, status);
     },
     onError: (error) => {
+      void queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
       show(
         error instanceof Error
           ? error.message

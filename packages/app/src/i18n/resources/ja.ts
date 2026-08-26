@@ -2094,9 +2094,12 @@ export const ja: TranslationResources = {
       startWithDesktopDescription: "Start DeepSeek Harness automatically when Paseo Desktop opens.",
       status: {
         running: "Running",
+        stopped: "Stopped",
+        failed: "Start failed",
         installed: "Installed",
         notInstalled: "Not installed",
         installing: "Installing…",
+        starting: "Starting…",
       },
       actions: {
         install: "Install",
@@ -2108,6 +2111,7 @@ export const ja: TranslationResources = {
       },
       installLogTitle: "Install log",
       installLogWaiting: "Waiting for npm output…",
+      lastErrorTitle: "Start error",
       toast: {
         installed: "DeepSeek Harness {{version}} installed",
         installFailed: "Failed to install DeepSeek Harness",

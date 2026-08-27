@@ -96,6 +96,14 @@ describe("dsh-paseo plugin helpers", () => {
     ).toBe("http://127.0.0.1:3080/?paseoEmbed=1&sessionId=sess_1");
   });
 
+  it("builds a session-only embed URL when workspaceId is omitted", () => {
+    expect(
+      buildDeepseekHarnessEmbedUrl("http://127.0.0.1:3080/", {
+        sessionId: "session-abc",
+      }),
+    ).toBe("http://127.0.0.1:3080/?paseoEmbed=1&sessionId=session-abc");
+  });
+
   it("resolves DSH_HOME from env", () => {
     expect(resolveDshHome({ env: { DSH_HOME: "/tmp/custom-dsh" }, homedir: () => "/home/x" })).toBe(
       "/tmp/custom-dsh",

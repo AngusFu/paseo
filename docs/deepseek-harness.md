@@ -29,12 +29,12 @@ The Cordis **host** entry is dependency-free (no `@deepseek-ai/dsh-home-paths` /
 
 The embed **client** (`dsh.client`) reads the open URL:
 
-| Query                           | Behavior                                                          |
-| ------------------------------- | ----------------------------------------------------------------- |
-| `paseoEmbed=1&workspaceId=<id>` | Hide sidebar; **create** a new session in that workspace; open it |
-| `paseoEmbed=1&sessionId=<id>`   | Hide sidebar; open that session                                   |
+| Query                           | Behavior                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `paseoEmbed=1&sessionId=<id>`   | Hide sidebar; **open** that session (preferred — reload stays on the same session)                |
+| `paseoEmbed=1&workspaceId=<id>` | Hide sidebar; **create** a new session; rewrite the URL to `sessionId` via `history.replaceState` |
 
-Each open from a Paseo workspace rebuilds the tab URL (always a new session). An already-running DSH from before this plugin was installed needs one Stop/Start (or Desktop restart) to load the client.
+Desktop `openWorkspace` calls `session.create` after ensuring the DSH workspace, then loads a `?sessionId=` URL. Each workspace **DeepSeek Harness** action opens a **new** Paseo tab (unique `paneId`) with its own session. An already-running DSH from before this plugin was installed needs one Stop/Start (or Desktop restart) to load the client.
 
 ## Settings
 

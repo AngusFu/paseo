@@ -135,3 +135,36 @@ export async function ensureDshWorkspace(input: {
   }
   return createdRow;
 }
+
+export interface DshSessionCreateResult {
+  sessionId: string;
+}
+
+/**
+ * Create a blank DSH session attached to a workspace. Used so Desktop can
+ * open a stable `?sessionId=` embed URL (pin on reload) instead of
+ * `?workspaceId=` (which always creates another session on each load).
+ */
+export async function createDshSession(input: {
+  baseUrl: string;
+  workspaceId: string;
+  sessionId?: string | null;
+}): Promise<DshSessionCreateResult> {
+  const workspaceId = input.workspaceId.trim();
+  if (!workspaceId) {
+    throw new Error("DeepSeek Harness session.create requires workspaceId");
+  }
+  const payload: Record<string, unknown> = { workspaceId };
+  const sessionId = input.sessionId?.trim();
+  if (sessionId) {
+    payload.sessionId = sessionId;
+  }
+  const created = unwrapDshResult(
+    await dshRpc(input.baseUrl, "session.create", payload),
+    "session.create",
+  );
+  if (!isRecord(created) || typeof created.sessionId !== "string" || !created.sessionId.trim()) {
+    throw new Error("session.create returned an unexpected payload");
+  }
+  return { sessionId: created.sessionId.trim() };
+}

@@ -5,7 +5,7 @@ import { app, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { createElectronNodeEnv } from "../../daemon/node-entrypoint-launcher.js";
 import { getDesktopSettingsStore } from "../../settings/desktop-settings-electron.js";
 import { createExternalProcessEnv } from "../editor-targets/runtime.js";
-import { ensureDshWorkspace, normalizeBaseUrl, probeDshApi } from "./api.js";
+import { createDshSession, ensureDshWorkspace, normalizeBaseUrl, probeDshApi } from "./api.js";
 import {
   getDeepseekHarnessInstallStatus,
   installOrUpgradeDeepseekHarness,
@@ -35,6 +35,7 @@ export interface DeepseekHarnessStatus extends DeepseekHarnessInstallStatus {
 export interface DeepseekHarnessOpenWorkspaceResult {
   status: DeepseekHarnessStatus;
   dshWorkspaceId: string;
+  dshSessionId: string;
   url: string;
 }
 
@@ -445,11 +446,17 @@ export async function openDeepseekHarnessWorkspace(input: {
     cwd: input.cwd,
     title: input.title,
   });
+  const session = await createDshSession({
+    baseUrl: status.url,
+    workspaceId: workspace.workspaceId,
+  });
   return {
     status,
     dshWorkspaceId: workspace.workspaceId,
+    dshSessionId: session.sessionId,
     url: buildDeepseekHarnessEmbedUrl(normalizeBaseUrl(status.url), {
       workspaceId: workspace.workspaceId,
+      sessionId: session.sessionId,
     }),
   };
 }

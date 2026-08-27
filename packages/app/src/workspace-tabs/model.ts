@@ -30,6 +30,7 @@ export type WorkspaceTabTarget =
       paneId: string;
       browserId: string;
       dshWorkspaceId?: string;
+      dshSessionId?: string;
     }
   | WorkspaceFileTabTarget
   | WorkspaceWorkingDiffTabTarget

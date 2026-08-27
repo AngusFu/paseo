@@ -11,6 +11,7 @@ function useDeepseekHarnessPanelDescriptor(_target: {
   paneId: string;
   browserId: string;
   dshWorkspaceId?: string;
+  dshSessionId?: string;
 }): PanelDescriptor {
   const label = i18n.t("workspace.tabs.deepseekHarness");
   return {

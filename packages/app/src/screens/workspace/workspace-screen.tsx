@@ -2673,20 +2673,22 @@ function WorkspaceScreenContent({
             cwd: workspaceDirectory,
             title: workspaceDescriptor?.title ?? null,
           });
-          const existing = uiTabs.find((tab) => tab.target.kind === "deepseek_harness");
+          // Always open a new tab/session. Reusing one pane made every click
+          // replace the previous webview and prevented parallel sessions.
           const paneId =
-            existing?.target.kind === "deepseek_harness"
-              ? existing.target.paneId
-              : (input?.paneId ?? `deepseek_harness_${normalizedWorkspaceId}`);
-          if (existing?.target.kind === "deepseek_harness") {
-            useBrowserStore.getState().removeBrowser(existing.target.browserId);
-          }
+            input?.paneId ??
+            `deepseek_harness_${
+              typeof globalThis.crypto?.randomUUID === "function"
+                ? globalThis.crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+            }`;
           const { browserId } = createWorkspaceBrowser({ initialUrl: opened.url });
           openWorkspaceTabFocused(persistenceKey, {
             kind: "deepseek_harness",
             paneId,
             browserId,
             dshWorkspaceId: opened.dshWorkspaceId,
+            dshSessionId: opened.dshSessionId,
           });
         } catch (error) {
           toast.show(error instanceof Error ? error.message : String(error));
@@ -2695,12 +2697,10 @@ function WorkspaceScreenContent({
     },
     [
       focusWorkspacePane,
-      normalizedWorkspaceId,
       openDeepseekHarnessWorkspace,
       openWorkspaceTabFocused,
       persistenceKey,
       toast,
-      uiTabs,
       workspaceDescriptor?.title,
       workspaceDirectory,
     ],

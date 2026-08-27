@@ -2,8 +2,8 @@
  * dsh-paseo Desktop embed client.
  *
  * Query contract (set by Paseo Desktop when opening a DSH tab):
- *   ?paseoEmbed=1&workspaceId=<id>  → hide sidebar, create a new session, open it
- *   ?paseoEmbed=1&sessionId=<id>    → hide sidebar, open that session
+ *   ?paseoEmbed=1&sessionId=<id>    → hide sidebar, open that session (preferred; pin on reload)
+ *   ?paseoEmbed=1&workspaceId=<id>  → hide sidebar, create a new session, open it, rewrite URL
  *
  * Non-embed loads are a no-op so normal `dsh web` keeps full chrome.
  */
@@ -25,6 +25,21 @@ window.__ModuleLoader__.load({
         workspaceId: (query.get("workspaceId") ?? "").trim() || null,
         sessionId: (query.get("sessionId") ?? "").trim() || null,
       };
+    }
+
+    function pinSessionInUrl(sessionId) {
+      try {
+        if (typeof location === "undefined" || typeof history === "undefined") {
+          return;
+        }
+        const url = new URL(location.href);
+        url.searchParams.set("paseoEmbed", "1");
+        url.searchParams.set("sessionId", sessionId);
+        url.searchParams.delete("workspaceId");
+        history.replaceState(history.state, "", url.toString());
+      } catch {
+        // ignore — pin is best-effort
+      }
     }
 
     function installEmbedChrome() {
@@ -129,6 +144,7 @@ html[data-paseo-embed] [class*="_handle"] {
           if (cancelled) return;
           const createdId = await ctx.sessions.create({ workspaceId });
           if (cancelled) return;
+          pinSessionInUrl(createdId);
           ctx.sessions.open(createdId);
           forceSidebarClosed(ctx.layout);
         } catch (error) {

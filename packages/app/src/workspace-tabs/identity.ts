@@ -57,17 +57,8 @@ function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): Workspace
       const browserId = trimNonEmpty(value.browserId);
       return browserId ? { kind: "browser", browserId } : null;
     }
-    case "deepseek_harness": {
-      const paneId = trimNonEmpty(value.paneId);
-      const browserId = trimNonEmpty(value.browserId);
-      if (!paneId || !browserId) {
-        return null;
-      }
-      const dshWorkspaceId = trimNonEmpty(value.dshWorkspaceId);
-      return dshWorkspaceId
-        ? { kind: "deepseek_harness", paneId, browserId, dshWorkspaceId }
-        : { kind: "deepseek_harness", paneId, browserId };
-    }
+    case "deepseek_harness":
+      return normalizeDeepseekHarnessTabTarget(value);
     case "setup": {
       const workspaceId = trimNonEmpty(value.workspaceId);
       return workspaceId ? { kind: "setup", workspaceId } : null;
@@ -79,6 +70,25 @@ function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): Workspace
     default:
       return null;
   }
+}
+
+function normalizeDeepseekHarnessTabTarget(
+  value: Extract<WorkspaceTabTarget, { kind: "deepseek_harness" }>,
+): WorkspaceTabTarget | null {
+  const paneId = trimNonEmpty(value.paneId);
+  const browserId = trimNonEmpty(value.browserId);
+  if (!paneId || !browserId) {
+    return null;
+  }
+  const dshWorkspaceId = trimNonEmpty(value.dshWorkspaceId);
+  const dshSessionId = trimNonEmpty(value.dshSessionId);
+  return {
+    kind: "deepseek_harness",
+    paneId,
+    browserId,
+    ...(dshWorkspaceId ? { dshWorkspaceId } : {}),
+    ...(dshSessionId ? { dshSessionId } : {}),
+  };
 }
 
 function normalizeDraftTarget(

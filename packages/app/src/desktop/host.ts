@@ -112,6 +112,7 @@ export interface DesktopDeepseekHarnessStatus {
 export interface DesktopDeepseekHarnessOpenResult {
   status: DesktopDeepseekHarnessStatus;
   dshWorkspaceId: string;
+  dshSessionId: string;
   url: string;
 }
 

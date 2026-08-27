@@ -10,6 +10,7 @@ Desktop-managed integration for the DeepSeek Harness (`@deepseek-ai/dsh`) Web UI
 - Start argv must include Node’s `--expose-internals` **before** the dsh entry script. Cordis HMR requires it; putting the flag in `NODE_OPTIONS` is rejected under Electron.
 - Desktop keeps the user’s normal `$DSH_HOME` (typically `~/.dsh`). It does not isolate a separate harness home.
 - Spawn captures stdout/stderr. On readiness failure the status exposes `lastError` with that log tail so Settings can show **Starting… / Running / Stopped / Start failed** instead of only “Installed”.
+- Stop kills whatever holds the persisted loopback port (`lsof` / `netstat`), not a saved child handle — same as code-server. Detached dsh can outlive a Paseo restart; `spawnedByUs` only gates quit cleanup, not the Settings **Stop** button.
 
 ## Settings
 

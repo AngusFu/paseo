@@ -48,6 +48,11 @@ interface IpcHandlerRegistry {
   ): void;
 }
 
+// Whether we started dsh this session — gates kill-on-quit cleanup so we never
+// tear down a harness the user launched independently of the app. Explicit Stop
+// always kills whatever holds the persisted port (see stopByPort), never by a
+// saved child handle: detached spawn can reparent the listener, and an orphan
+// can outlive a desktop restart while spawnedByUs resets to false.
 let spawnedByUs = false;
 let managedChild: ChildProcess | null = null;
 let managedPort: number | null = null;
@@ -387,11 +392,11 @@ export async function stopDeepseekHarness(
     }
   }
   managedChild = null;
+  spawnedByUs = false;
 
-  if (spawnedByUs && port != null) {
+  if (port != null) {
     await stopByPort(port, platform);
   }
-  spawnedByUs = false;
   lastError = null;
   return await getDeepseekHarnessStatus(dependencies);
 }

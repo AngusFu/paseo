@@ -17,7 +17,7 @@
 
 import { readFile, writeFile, mkdir, rename, realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { dshHomePath } from "@deepseek-ai/dsh-home-paths";
+import { dshHomePath } from "./dsh-home.js";
 import { createWorktree, listWorktrees, archiveWorktree } from "./worktree-core.js";
 
 export const name = "paseo-host";

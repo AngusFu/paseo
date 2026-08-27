@@ -2,15 +2,14 @@
 // Mirrors paseo's layout (packages/server/src/utils/worktree.ts):
 //   <worktreesRoot>/<8-char deterministic hash>/<slug>/
 // hash = base36(sha256(git-common-dir))[:8]  (stable per repository)
-// slug = slugified branch name, or a mnemonic-id two-word name.
+// slug = slugified branch name, or a short random id.
 // This module has no cordis deps so it can be unit-tested standalone.
 
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { promisify } from "node:util";
 import { readdir, mkdir, rm } from "node:fs/promises";
 import { join, isAbsolute } from "node:path";
-import { createNameId } from "mnemonic-id";
 
 const execFileP = promisify(execFile);
 
@@ -71,7 +70,7 @@ export async function createWorktree({
   let normalizedSlug;
   if (slug) normalizedSlug = slugify(slug);
   else if (branchName) normalizedSlug = slugify(branchName);
-  else normalizedSlug = slugify(createNameId());
+  else normalizedSlug = slugify(`wt-${randomBytes(4).toString("hex")}`);
   if (!normalizedSlug) throw new Error("worktree slug is empty after normalization");
   const dir = join(root, hash, normalizedSlug);
   await mkdir(join(root, hash), { recursive: true });

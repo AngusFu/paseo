@@ -5,6 +5,7 @@ import {
   buildDeepseekHarnessEmbedUrl,
   buildDshPaseoOverlayPatchYaml,
   resolveDshHome,
+  resolveDshPaseoInstallTarget,
   resolveDshPaseoPluginRoot,
 } from "./plugin.js";
 
@@ -109,6 +110,15 @@ describe("dsh-paseo plugin helpers", () => {
         existsSync: (filePath) => filePath.endsWith("/dsh-paseo/package.json"),
       }),
     ).toBe("/App/Contents/Resources/dsh-paseo");
+  });
+
+  it("installs under $DSH_HOME/packages, not the app bundle", () => {
+    expect(
+      resolveDshPaseoInstallTarget({
+        env: { DSH_HOME: "/tmp/custom-dsh" },
+        homedir: () => "/home/x",
+      }),
+    ).toBe("/tmp/custom-dsh/packages/dsh-paseo");
   });
 
   it("emits a host-only overlay patch", () => {

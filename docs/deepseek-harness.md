@@ -17,10 +17,13 @@ Monorepo package [`packages/dsh-paseo`](../packages/dsh-paseo) ships with Deskto
 
 On managed start, Desktop:
 
-1. `dsh plugin --profile web add <pluginRoot>` (pnpm under the hood — do **not** use `npm install --prefix` on the web profile; that corrupts the tree and breaks `GET /`)
-2. Starts with `dsh --profile web --port <n> --no-open`
+1. Syncs packaged/monorepo sources to `$DSH_HOME/packages/dsh-paseo` (never links the profile at the app-bundle `extraResources` path — that tree has no `node_modules`, and Node resolves imports from the package realpath)
+2. `dsh plugin --profile web add $DSH_HOME/packages/dsh-paseo` (pnpm under the hood — do **not** use `npm install --prefix` on the web profile; that corrupts the tree and breaks `GET /`)
+3. Starts with `dsh --profile web --port <n> --no-open`
 
 `dsh plugin add` puts the package in profile **bundles**, which applies [`packages/dsh-paseo/cordis.patch.yml`](../packages/dsh-paseo/cordis.patch.yml) (`paseo-host`). Do **not** also pass a Desktop `--patch` overlay with the same insert — Cordis rejects duplicate loader ids.
+
+The Cordis **host** entry is dependency-free (no `@deepseek-ai/dsh-home-paths` / `mnemonic-id`) so a missing install-tree `node_modules` cannot break `dsh web` boot. CLI/MCP still declare those deps in `package.json` for standalone use.
 
 `writeDshPaseoOverlayPatch` remains available for future optional overlays (e.g. MCP), but the default start path does not use it.
 

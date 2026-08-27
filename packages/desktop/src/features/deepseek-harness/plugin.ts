@@ -1,6 +1,6 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import { existsSync as nodeExistsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { app } from "electron";
@@ -28,6 +28,10 @@ export interface DshPaseoPluginDependencies {
   dshHome?: string;
   homedir?: () => string;
   userDataPath?: string;
+  /** Override install target under $DSH_HOME/packages (tests). */
+  installTarget?: string;
+  cp?: typeof cp;
+  rm?: typeof rm;
 }
 
 export function resolveDshHome(dependencies: DshPaseoPluginDependencies = {}): string {
@@ -41,6 +45,16 @@ export function resolveDshHome(dependencies: DshPaseoPluginDependencies = {}): s
 
 export function resolveDshWebProfileDir(dependencies: DshPaseoPluginDependencies = {}): string {
   return path.join(resolveDshHome(dependencies), "profiles", "web");
+}
+
+/** Writable install target — never link the web profile at the app bundle. */
+export function resolveDshPaseoInstallTarget(
+  dependencies: DshPaseoPluginDependencies = {},
+): string {
+  if (dependencies.installTarget) {
+    return dependencies.installTarget;
+  }
+  return path.join(resolveDshHome(dependencies), "packages", DSH_PASEO_PACKAGE_NAME);
 }
 
 /**
@@ -75,6 +89,7 @@ function runCommand(input: {
   env: NodeJS.ProcessEnv;
   cwd: string;
   spawn: typeof nodeSpawn;
+  label: string;
 }): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = input.spawn(input.command, input.args, {
@@ -92,29 +107,54 @@ function runCommand(input: {
         resolve();
         return;
       }
-      reject(
-        new Error(
-          `dsh plugin add ${DSH_PASEO_PACKAGE_NAME} failed: ${stderr.trim() || `exit ${code}`}`,
-        ),
-      );
+      reject(new Error(`${input.label} failed: ${stderr.trim() || `exit ${code}`}`));
     });
   });
 }
 
 /**
- * Install the monorepo/packaged plugin into the user's web profile via
+ * Sync packaged/monorepo sources into $DSH_HOME/packages/dsh-paseo.
+ *
+ * Cordis loads the package from this realpath. Linking the profile at the
+ * app-bundle extraResources path fails because that tree has no node_modules
+ * and Node will not walk into the web profile to resolve imports.
+ */
+export async function syncDshPaseoInstallTree(
+  dependencies: DshPaseoPluginDependencies = {},
+): Promise<{ sourceRoot: string; installTarget: string }> {
+  const sourceRoot = resolveDshPaseoPluginRoot(dependencies);
+  if (!sourceRoot) {
+    throw new Error("dsh-paseo plugin root was not found (dev package or packaged resource)");
+  }
+  const installTarget = resolveDshPaseoInstallTarget(dependencies);
+  const copy = dependencies.cp ?? cp;
+  const remove = dependencies.rm ?? rm;
+  await mkdir(path.dirname(installTarget), { recursive: true });
+  await remove(installTarget, { recursive: true, force: true });
+  await copy(sourceRoot, installTarget, {
+    recursive: true,
+    filter: (src) => {
+      const base = path.basename(src);
+      return base !== "node_modules" && !base.endsWith(".test.js") && !base.startsWith("smoke");
+    },
+  });
+  return { sourceRoot, installTarget };
+}
+
+/**
+ * Install the built-in plugin into the user's web profile via
  * `dsh plugin --profile web add <dir>` (pnpm under the hood).
  *
- * Do not use `npm install --prefix` here — DSH web profiles are pnpm-managed
- * and npm rewrites the tree enough to break index.html serving.
+ * Sources are first synced to $DSH_HOME/packages/dsh-paseo so the profile
+ * never links into the read-only app bundle.
+ *
+ * Do not use `npm install --prefix` on the web profile — it corrupts the
+ * pnpm-managed tree and breaks index.html serving.
  */
 export async function ensureDshPaseoInstalledInWebProfile(
   dependencies: DshPaseoPluginDependencies = {},
-): Promise<{ pluginRoot: string; profileDir: string }> {
-  const pluginRoot = resolveDshPaseoPluginRoot(dependencies);
-  if (!pluginRoot) {
-    throw new Error("dsh-paseo plugin root was not found (dev package or packaged resource)");
-  }
+): Promise<{ pluginRoot: string; profileDir: string; installTarget: string }> {
+  const { installTarget } = await syncDshPaseoInstallTree(dependencies);
   const entryPath = dependencies.entryPath?.trim();
   if (!entryPath) {
     throw new Error("dsh entryPath is required to install dsh-paseo into the web profile");
@@ -134,13 +174,14 @@ export async function ensureDshPaseoInstalledInWebProfile(
 
   await runCommand({
     command: execPath,
-    args: [...DSH_NODE_EXEC_ARGV, entryPath, "plugin", "--profile", "web", "add", pluginRoot],
+    args: [...DSH_NODE_EXEC_ARGV, entryPath, "plugin", "--profile", "web", "add", installTarget],
     env: electronEnv,
     cwd: profileDir,
     spawn,
+    label: `dsh plugin add ${DSH_PASEO_PACKAGE_NAME}`,
   });
 
-  return { pluginRoot, profileDir };
+  return { pluginRoot: installTarget, profileDir, installTarget };
 }
 
 /**

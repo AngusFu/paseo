@@ -972,6 +972,7 @@ export const ptBR: TranslationResources = {
         openFileIn: "Abrir {{fileName}} em {{target}}",
         failedOpen: "Falha ao abrir workspace",
         vscodeWeb: "VS Code Web",
+        deepseekHarness: "DeepSeek Harness",
         codeServerStart: "Iniciar VS Code Web",
         codeServerStop: "Parar VS Code Web",
       },

@@ -963,6 +963,7 @@ export const ja: TranslationResources = {
         openFileIn: "{{target}}で{{fileName}}を開く",
         failedOpen: "ワークスペースを開けませんでした",
         vscodeWeb: "VS Code Web",
+        deepseekHarness: "DeepSeek Harness",
         codeServerStart: "VS Code Web を起動",
         codeServerStop: "VS Code Web を停止",
       },

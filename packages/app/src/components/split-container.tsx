@@ -106,9 +106,7 @@ interface SplitContainerProps {
   onCreateDraftTab: (input: { paneId?: string }) => void;
   onCreateTerminalTab: (input: { paneId?: string; profile?: TerminalProfileInput }) => void;
   onCreateBrowserTab: (input: { paneId?: string }) => void;
-  onCreateDeepseekHarnessTab?: (input: { paneId?: string }) => void;
   showCreateBrowserTab?: boolean;
-  showCreateDeepseekHarnessTab?: boolean;
   buildPaneContentModel: (input: {
     paneId: string;
     tab: WorkspaceTabDescriptor;
@@ -388,9 +386,7 @@ export function SplitContainer({
   onCreateDraftTab,
   onCreateTerminalTab,
   onCreateBrowserTab,
-  onCreateDeepseekHarnessTab,
   showCreateBrowserTab,
-  showCreateDeepseekHarnessTab,
   buildPaneContentModel,
   onFocusPane,
   onSplitPane,
@@ -611,9 +607,7 @@ export function SplitContainer({
           onCreateDraftTab={onCreateDraftTab}
           onCreateTerminalTab={onCreateTerminalTab}
           onCreateBrowserTab={onCreateBrowserTab}
-          onCreateDeepseekHarnessTab={onCreateDeepseekHarnessTab}
           showCreateBrowserTab={showCreateBrowserTab}
-          showCreateDeepseekHarnessTab={showCreateDeepseekHarnessTab}
           buildPaneContentModel={buildPaneContentModel}
           onFocusPane={onFocusPane}
           onSplitPane={onSplitPane}
@@ -761,9 +755,7 @@ function SplitNodeView({
   onCreateDraftTab,
   onCreateTerminalTab,
   onCreateBrowserTab,
-  onCreateDeepseekHarnessTab,
   showCreateBrowserTab,
-  showCreateDeepseekHarnessTab,
   buildPaneContentModel,
   onFocusPane,
   onSplitPane,
@@ -822,9 +814,7 @@ function SplitNodeView({
           onCreateDraftTab={onCreateDraftTab}
           onCreateTerminalTab={onCreateTerminalTab}
           onCreateBrowserTab={onCreateBrowserTab}
-          onCreateDeepseekHarnessTab={onCreateDeepseekHarnessTab}
           showCreateBrowserTab={showCreateBrowserTab}
-          showCreateDeepseekHarnessTab={showCreateDeepseekHarnessTab}
           buildPaneContentModel={buildPaneContentModel}
           onFocusPane={onFocusPane}
           onSplitPane={onSplitPane}
@@ -875,9 +865,7 @@ function SplitNodeView({
               onCreateDraftTab={onCreateDraftTab}
               onCreateTerminalTab={onCreateTerminalTab}
               onCreateBrowserTab={onCreateBrowserTab}
-              onCreateDeepseekHarnessTab={onCreateDeepseekHarnessTab}
               showCreateBrowserTab={showCreateBrowserTab}
-              showCreateDeepseekHarnessTab={showCreateDeepseekHarnessTab}
               buildPaneContentModel={buildPaneContentModel}
               onFocusPane={onFocusPane}
               onSplitPane={onSplitPane}
@@ -934,9 +922,7 @@ function SplitPaneView({
   onCreateDraftTab,
   onCreateTerminalTab,
   onCreateBrowserTab,
-  onCreateDeepseekHarnessTab,
   showCreateBrowserTab,
-  showCreateDeepseekHarnessTab,
   buildPaneContentModel,
   onFocusPane,
   onSplitPane: _onSplitPane,
@@ -1083,9 +1069,7 @@ function SplitPaneView({
             onCreateDraftTab={onCreateDraftTab}
             onCreateTerminalTab={onCreateTerminalTab}
             onCreateBrowserTab={onCreateBrowserTab}
-            onCreateDeepseekHarnessTab={onCreateDeepseekHarnessTab}
             showCreateBrowserTab={showCreateBrowserTab}
-            showCreateDeepseekHarnessTab={showCreateDeepseekHarnessTab}
             onReorderTabs={handleReorderTabs}
             onSplitRight={handleSplitRight}
             onSplitDown={handleSplitDown}

@@ -959,6 +959,7 @@ export const en = {
         openFileIn: "Open {{fileName}} in {{target}}",
         failedOpen: "Failed to open workspace",
         vscodeWeb: "VS Code Web",
+        deepseekHarness: "DeepSeek Harness",
         codeServerStart: "Start VS Code Web",
         codeServerStop: "Stop VS Code Web",
       },

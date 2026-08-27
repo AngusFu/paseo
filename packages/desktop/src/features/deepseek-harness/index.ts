@@ -1,10 +1,11 @@
 import { execFileSync, spawn as nodeSpawn, type ChildProcess } from "node:child_process";
 import { existsSync as nodeExistsSync } from "node:fs";
 import { connect as netConnect, createServer } from "node:net";
-import { app, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { app, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { createElectronNodeEnv } from "../../daemon/node-entrypoint-launcher.js";
 import { getDesktopSettingsStore } from "../../settings/desktop-settings-electron.js";
 import { createExternalProcessEnv } from "../editor-targets/runtime.js";
+import { isAllowedExternalUrl } from "../opener.js";
 import { normalizeBaseUrl, probeDshApi } from "./api.js";
 import {
   getDeepseekHarnessInstallStatus,
@@ -395,7 +396,7 @@ export async function stopDeepseekHarness(
   return await getDeepseekHarnessStatus(dependencies);
 }
 
-/** Ensure DSH is running and return the native Web origin for a workspace tab. */
+/** Ensure DSH is running and open its native Web origin in the system browser. */
 export async function openDeepseekHarnessWorkspace(input: {
   cwd?: string;
   title?: string | null;
@@ -411,10 +412,12 @@ export async function openDeepseekHarnessWorkspace(input: {
   if (!status.url || status.port == null) {
     throw new Error("DeepSeek Harness is not running");
   }
-  return {
-    status,
-    url: normalizeBaseUrl(status.url),
-  };
+  const url = normalizeBaseUrl(status.url);
+  if (!isAllowedExternalUrl(url)) {
+    throw new Error("DeepSeek Harness URL is not allowed");
+  }
+  await shell.openExternal(url);
+  return { status, url };
 }
 
 export function registerDeepseekHarnessHandlers(

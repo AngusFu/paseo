@@ -940,6 +940,7 @@ export const zhCN: TranslationResources = {
         openFileIn: "在 {{target}} 中打开 {{fileName}}",
         failedOpen: "打开 workspace 失败",
         vscodeWeb: "VS Code Web",
+        deepseekHarness: "DeepSeek Harness",
         codeServerStart: "启动 VS Code Web",
         codeServerStop: "停止 VS Code Web",
       },

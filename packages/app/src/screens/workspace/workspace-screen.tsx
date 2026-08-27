@@ -35,7 +35,6 @@ import {
   Settings,
   SquarePen,
   SquareTerminal,
-  Sparkles,
   X,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -69,7 +68,7 @@ import { WindowChromeRegion } from "@/utils/desktop-window";
 import { SourceControlPanelIcon } from "@/components/icons/source-control-panel-icon";
 import { WorkspaceActions } from "@/git/workspace-actions";
 import { WorkspaceCodeServerButton } from "@/screens/workspace/workspace-code-server-button";
-import { hasDeepseekHarnessBridge, useDeepseekHarness } from "@/desktop/deepseek-harness";
+import { WorkspaceDeepseekHarnessButton } from "@/screens/workspace/workspace-deepseek-harness-button";
 import { WorkspaceOpenInEditorButton } from "@/screens/workspace/workspace-open-in-editor-button";
 import { WorkspaceOpenWebUiButton } from "@/screens/workspace/workspace-open-web-ui-button";
 import { WorkspaceScriptsButton } from "@/screens/workspace/workspace-scripts-button";
@@ -263,7 +262,6 @@ const ThemedX = withUnistyles(X);
 const ThemedSquarePen = withUnistyles(SquarePen);
 const ThemedSquareTerminal = withUnistyles(SquareTerminal);
 const ThemedGlobe = withUnistyles(Globe);
-const ThemedSparkles = withUnistyles(Sparkles);
 const ThemedImport = withUnistyles(ImportIcon);
 const ThemedSettings = withUnistyles(Settings);
 const ThemedPanelRight = withUnistyles(PanelRight);
@@ -293,7 +291,6 @@ const sourceControlPanelStrokeWidth15 = { strokeWidth: 1.5 };
 const MENU_NEW_AGENT_ICON = <ThemedSquarePen size={16} uniProps={mutedColorMapping} />;
 const MENU_NEW_TERMINAL_ICON = <ThemedSquareTerminal size={16} uniProps={mutedColorMapping} />;
 const MENU_NEW_BROWSER_ICON = <ThemedGlobe size={16} uniProps={mutedColorMapping} />;
-const MENU_DEEPSEEK_HARNESS_ICON = <ThemedSparkles size={16} uniProps={mutedColorMapping} />;
 const MENU_IMPORT_ICON = <ThemedImport size={16} uniProps={mutedColorMapping} />;
 const MENU_COPY_ICON = <ThemedCopy size={16} uniProps={mutedColorMapping} />;
 const MENU_SETTINGS_ICON = <ThemedSettings size={16} uniProps={mutedColorMapping} />;
@@ -1020,7 +1017,6 @@ interface WorkspaceHeaderMenuProps {
   currentBranchName: string | null;
   showWorkspaceSetup: boolean;
   showCreateBrowserTab: boolean;
-  showCreateDeepseekHarnessTab: boolean;
   isMobile: boolean;
   createTerminalDisabled: boolean;
   importAgentDisabled: boolean;
@@ -1028,7 +1024,6 @@ interface WorkspaceHeaderMenuProps {
   menuNewAgentIcon: ReactElement;
   menuNewTerminalIcon: ReactElement;
   menuNewBrowserIcon: ReactElement;
-  menuDeepseekHarnessIcon: ReactElement;
   menuImportIcon: ReactElement;
   menuCopyIcon: ReactElement;
   menuSettingsIcon: ReactElement;
@@ -1036,7 +1031,6 @@ interface WorkspaceHeaderMenuProps {
   onCreateTerminal: () => void;
   onCreateTerminalWithProfile: (profile: TerminalProfileInput) => void;
   onCreateBrowser: () => void;
-  onCreateDeepseekHarness: () => void;
   onOpenImportSheet: () => void;
   onCopyWorkspacePath: () => void;
   onCopyBranchName: () => void;
@@ -1104,7 +1098,6 @@ function WorkspaceHeaderMenu({
   currentBranchName,
   showWorkspaceSetup,
   showCreateBrowserTab,
-  showCreateDeepseekHarnessTab,
   isMobile,
   createTerminalDisabled,
   importAgentDisabled,
@@ -1112,7 +1105,6 @@ function WorkspaceHeaderMenu({
   menuNewAgentIcon,
   menuNewTerminalIcon,
   menuNewBrowserIcon,
-  menuDeepseekHarnessIcon,
   menuImportIcon,
   menuCopyIcon,
   menuSettingsIcon,
@@ -1120,7 +1112,6 @@ function WorkspaceHeaderMenu({
   onCreateTerminal,
   onCreateTerminalWithProfile,
   onCreateBrowser,
-  onCreateDeepseekHarness,
   onOpenImportSheet,
   onCopyWorkspacePath,
   onCopyBranchName,
@@ -1170,15 +1161,6 @@ function WorkspaceHeaderMenu({
             onSelect={onCreateBrowser}
           >
             {t("workspace.header.actions.newBrowser")}
-          </DropdownMenuItem>
-        ) : null}
-        {showCreateDeepseekHarnessTab ? (
-          <DropdownMenuItem
-            testID="workspace-header-new-deepseek-harness"
-            leading={menuDeepseekHarnessIcon}
-            onSelect={onCreateDeepseekHarness}
-          >
-            {t("workspace.header.actions.deepseekHarness")}
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuItem
@@ -1260,7 +1242,6 @@ interface WorkspaceHeaderTitleBarProps {
   liveTerminalIds: string[];
   showWorkspaceSetup: boolean;
   showCreateBrowserTab: boolean;
-  showCreateDeepseekHarnessTab: boolean;
   isMobile: boolean;
   createTerminalDisabled: boolean;
   importAgentDisabled: boolean;
@@ -1268,7 +1249,6 @@ interface WorkspaceHeaderTitleBarProps {
   menuNewAgentIcon: ReactElement;
   menuNewTerminalIcon: ReactElement;
   menuNewBrowserIcon: ReactElement;
-  menuDeepseekHarnessIcon: ReactElement;
   menuImportIcon: ReactElement;
   menuCopyIcon: ReactElement;
   menuSettingsIcon: ReactElement;
@@ -1276,7 +1256,6 @@ interface WorkspaceHeaderTitleBarProps {
   onCreateTerminal: () => void;
   onCreateTerminalWithProfile: (profile: TerminalProfileInput) => void;
   onCreateBrowser: () => void;
-  onCreateDeepseekHarness: () => void;
   onOpenImportSheet: () => void;
   onCopyWorkspacePath: () => void;
   onCopyBranchName: () => void;
@@ -1298,7 +1277,6 @@ function WorkspaceHeaderTitleBar({
   liveTerminalIds,
   showWorkspaceSetup,
   showCreateBrowserTab,
-  showCreateDeepseekHarnessTab,
   isMobile,
   createTerminalDisabled,
   importAgentDisabled,
@@ -1306,7 +1284,6 @@ function WorkspaceHeaderTitleBar({
   menuNewAgentIcon,
   menuNewTerminalIcon,
   menuNewBrowserIcon,
-  menuDeepseekHarnessIcon,
   menuImportIcon,
   menuCopyIcon,
   menuSettingsIcon,
@@ -1314,7 +1291,6 @@ function WorkspaceHeaderTitleBar({
   onCreateTerminal,
   onCreateTerminalWithProfile,
   onCreateBrowser,
-  onCreateDeepseekHarness,
   onOpenImportSheet,
   onCopyWorkspacePath,
   onCopyBranchName,
@@ -1349,7 +1325,6 @@ function WorkspaceHeaderTitleBar({
           currentBranchName={currentBranchName}
           showWorkspaceSetup={showWorkspaceSetup}
           showCreateBrowserTab={showCreateBrowserTab}
-          showCreateDeepseekHarnessTab={showCreateDeepseekHarnessTab}
           isMobile={isMobile}
           createTerminalDisabled={createTerminalDisabled}
           importAgentDisabled={importAgentDisabled}
@@ -1357,7 +1332,6 @@ function WorkspaceHeaderTitleBar({
           menuNewAgentIcon={menuNewAgentIcon}
           menuNewTerminalIcon={menuNewTerminalIcon}
           menuNewBrowserIcon={menuNewBrowserIcon}
-          menuDeepseekHarnessIcon={menuDeepseekHarnessIcon}
           menuImportIcon={menuImportIcon}
           menuCopyIcon={menuCopyIcon}
           menuSettingsIcon={menuSettingsIcon}
@@ -1365,7 +1339,6 @@ function WorkspaceHeaderTitleBar({
           onCreateTerminal={onCreateTerminal}
           onCreateTerminalWithProfile={onCreateTerminalWithProfile}
           onCreateBrowser={onCreateBrowser}
-          onCreateDeepseekHarness={onCreateDeepseekHarness}
           onOpenImportSheet={onOpenImportSheet}
           onCopyWorkspacePath={onCopyWorkspacePath}
           onCopyBranchName={onCopyBranchName}
@@ -2656,58 +2629,6 @@ function WorkspaceScreenContent({
     [browserDefaultUrl, focusWorkspacePane, openWorkspaceTabFocused, persistenceKey],
   );
 
-  const { openWorkspace: openDeepseekHarnessWorkspace } = useDeepseekHarness();
-
-  const handleCreateDeepseekHarnessTab = useCallback(
-    (input?: { paneId?: string }) => {
-      if (!persistenceKey || !workspaceDirectory || !hasDeepseekHarnessBridge()) {
-        return;
-      }
-      if (input?.paneId) {
-        focusWorkspacePane(persistenceKey, input.paneId);
-      }
-
-      void (async () => {
-        try {
-          const opened = await openDeepseekHarnessWorkspace({
-            cwd: workspaceDirectory,
-            title: workspaceDescriptor?.title ?? null,
-          });
-          // Always open a new tab. Reusing one pane made every click replace
-          // the previous webview and prevented parallel views.
-          const paneId =
-            input?.paneId ??
-            `deepseek_harness_${
-              typeof globalThis.crypto?.randomUUID === "function"
-                ? globalThis.crypto.randomUUID()
-                : `${Date.now()}-${Math.random().toString(16).slice(2)}`
-            }`;
-          const { browserId } = createWorkspaceBrowser({ initialUrl: opened.url });
-          openWorkspaceTabFocused(persistenceKey, {
-            kind: "deepseek_harness",
-            paneId,
-            browserId,
-          });
-        } catch (error) {
-          toast.show(error instanceof Error ? error.message : String(error));
-        }
-      })();
-    },
-    [
-      focusWorkspacePane,
-      openDeepseekHarnessWorkspace,
-      openWorkspaceTabFocused,
-      persistenceKey,
-      toast,
-      workspaceDescriptor?.title,
-      workspaceDirectory,
-    ],
-  );
-
-  const handleCreateDeepseekHarnessFromHeader = useCallback(() => {
-    handleCreateDeepseekHarnessTab();
-  }, [handleCreateDeepseekHarnessTab]);
-
   const handleOpenUrlInBrowserTab = useCallback(
     (url: string) => {
       if (!persistenceKey || !getIsElectron()) {
@@ -3633,6 +3554,9 @@ function WorkspaceScreenContent({
         {workspaceDirectory && getIsElectron() ? (
           <WorkspaceCodeServerButton cwd={workspaceDirectory} />
         ) : null}
+        {workspaceDirectory && getIsElectron() ? (
+          <WorkspaceDeepseekHarnessButton cwd={workspaceDirectory} />
+        ) : null}
         {(getIsElectron() || !isMobile) && workspaceDirectory ? (
           <WorkspaceOpenInEditorButton
             serverId={normalizedServerId}
@@ -3778,7 +3702,6 @@ function WorkspaceScreenContent({
     [createTerminalMutation.isPending, pendingTerminalCreateInput],
   );
   const showCreateBrowserTab = getIsElectron();
-  const showCreateDeepseekHarnessTab = hasDeepseekHarnessBridge();
   const focusedPaneIdOrUndefined = useMemo(() => focusedPaneId ?? undefined, [focusedPaneId]);
   const desktopFocusModeEnabled = useMemo(
     () => isFocusModeEnabled && !isMobile,
@@ -3821,9 +3744,7 @@ function WorkspaceScreenContent({
         onCreateDraftTab={handleCreateDraftTab}
         onCreateTerminalTab={handleCreateTerminal}
         onCreateBrowserTab={handleCreateBrowserTab}
-        onCreateDeepseekHarnessTab={handleCreateDeepseekHarnessTab}
         showCreateBrowserTab={showCreateBrowserTab}
-        showCreateDeepseekHarnessTab={showCreateDeepseekHarnessTab}
         buildPaneContentModel={buildDesktopPaneContentModel}
         onFocusPane={handleFocusPane}
         onSplitPane={handleSplitPane}
@@ -3861,9 +3782,7 @@ function WorkspaceScreenContent({
     handleCreateDraftTab,
     handleCreateTerminal,
     handleCreateBrowserTab,
-    handleCreateDeepseekHarnessTab,
     showCreateBrowserTab,
-    showCreateDeepseekHarnessTab,
     buildDesktopPaneContentModel,
     handleFocusPane,
     handleSplitPane,
@@ -3895,7 +3814,6 @@ function WorkspaceScreenContent({
                 liveTerminalIds={liveTerminalIds}
                 showWorkspaceSetup={showWorkspaceSetup}
                 showCreateBrowserTab={showCreateBrowserTab}
-                showCreateDeepseekHarnessTab={showCreateDeepseekHarnessTab}
                 isMobile={isMobile}
                 createTerminalDisabled={createTerminalDisabled}
                 importAgentDisabled={!canOpenImportSheet}
@@ -3903,7 +3821,6 @@ function WorkspaceScreenContent({
                 menuNewAgentIcon={menuNewAgentIcon}
                 menuNewTerminalIcon={menuNewTerminalIcon}
                 menuNewBrowserIcon={MENU_NEW_BROWSER_ICON}
-                menuDeepseekHarnessIcon={MENU_DEEPSEEK_HARNESS_ICON}
                 menuImportIcon={MENU_IMPORT_ICON}
                 menuCopyIcon={menuCopyIcon}
                 menuSettingsIcon={menuSettingsIcon}
@@ -3911,7 +3828,6 @@ function WorkspaceScreenContent({
                 onCreateTerminal={handleCreateTerminal}
                 onCreateTerminalWithProfile={handleCreateTerminalWithProfile}
                 onCreateBrowser={handleCreateBrowserTab}
-                onCreateDeepseekHarness={handleCreateDeepseekHarnessFromHeader}
                 onOpenImportSheet={openImportSheet}
                 onCopyWorkspacePath={handleCopyWorkspacePath}
                 onCopyBranchName={handleCopyBranchName}
@@ -3973,9 +3889,7 @@ function WorkspaceScreenContent({
           onCreateDraftTab={handleCreateDraftTab}
           onCreateTerminalTab={handleCreateTerminal}
           onCreateBrowserTab={handleCreateBrowserTab}
-          onCreateDeepseekHarnessTab={handleCreateDeepseekHarnessTab}
           showCreateBrowserTab={showCreateBrowserTab}
-          showCreateDeepseekHarnessTab={showCreateDeepseekHarnessTab}
           disableCreateTerminal={createTerminalMutation.isPending}
           isWaitingOnTerminalReadiness={pendingTerminalCreateInput !== null}
           onReorderTabs={handleReorderTabsInFocusedPane}

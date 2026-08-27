@@ -180,6 +180,7 @@ export function useDeepseekHarness() {
   return {
     isAvailable,
     status: statusQuery.data ?? null,
+    isRunning: statusQuery.data?.running === true,
     isLoading: statusQuery.isPending,
     isInstalling: installMutation.isPending,
     isStarting: startMutation.isPending,

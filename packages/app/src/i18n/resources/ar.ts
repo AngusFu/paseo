@@ -949,6 +949,7 @@ export const ar: TranslationResources = {
         openFileIn: "Open {{fileName}} in {{target}}",
         failedOpen: "فشل في فتح مساحة العمل",
         vscodeWeb: "VS Code Web",
+        deepseekHarness: "DeepSeek Harness",
         codeServerStart: "بدء VS Code Web",
         codeServerStop: "إيقاف VS Code Web",
       },

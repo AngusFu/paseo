@@ -24,12 +24,11 @@ Desktop-only Settings section `deepseek-harness`:
 
 ## Workspace UI
 
-- New tab kind `deepseek_harness` (Electron `<webview>` via `BrowserPane`)
-- Header menu + tab `+` menu: **DeepSeek Harness**
-- Opening ensures the process is running, then loads the native DSH Web base URL (no embed plugin / query contract)
+- Header action button next to **VS Code Web** (always shown when the Desktop bridge is available)
+- Click starts DSH if needed, then opens the native Web origin in the **system default browser** via `shell.openExternal` (not an Electron tab/webview)
 
 ## IPC
 
 `paseo:deepseek-harness:{getStatus,install,start,stop,openWorkspace}` plus `onInstallLog` on `window.paseoDesktop.deepseekHarness`.
 `install` returns full runtime status after the npm install completes.
-`openWorkspace` returns `{ status, url }` where `url` is the running harness origin.
+`openWorkspace` ensures the process is running and opens `{ status, url }` in the default browser.

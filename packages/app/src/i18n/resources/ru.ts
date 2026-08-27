@@ -971,6 +971,7 @@ export const ru: TranslationResources = {
         openFileIn: "Open {{fileName}} in {{target}}",
         failedOpen: "Не удалось открыть рабочую область",
         vscodeWeb: "VS Code Web",
+        deepseekHarness: "DeepSeek Harness",
         codeServerStart: "Запустить VS Code Web",
         codeServerStop: "Остановить VS Code Web",
       },

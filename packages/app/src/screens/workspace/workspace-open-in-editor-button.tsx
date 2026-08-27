@@ -123,8 +123,7 @@ export function WorkspaceOpenInEditorButton({
   });
 
   const targets = useMemo<OpenTarget[]>(() => {
-    // VS Code Web lives on the dedicated header button (`WorkspaceCodeServerButton`),
-    // not in this menu — avoid a second identical entry.
+    // VS Code Web / DeepSeek Harness live on dedicated header buttons, not in this menu.
     return planWorkspaceOpenTargets({
       workspaceDirectory: cwd,
       activeFile,

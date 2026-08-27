@@ -980,6 +980,7 @@ export const fr: TranslationResources = {
         openFileIn: "Open {{fileName}} in {{target}}",
         failedOpen: "Échec de l'ouverture de l'espace de travail",
         vscodeWeb: "VS Code Web",
+        deepseekHarness: "DeepSeek Harness",
         codeServerStart: "Démarrer VS Code Web",
         codeServerStop: "Arrêter VS Code Web",
       },

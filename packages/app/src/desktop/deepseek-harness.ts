@@ -156,6 +156,8 @@ export function useDeepseekHarness() {
     async (input: {
       cwd: string;
       title?: string | null;
+      permission?: string | null;
+      agentPreset?: string | null;
     }): Promise<DesktopDeepseekHarnessOpenResult> => {
       const result = await requireDeepseekHarnessBridge().openWorkspace(input);
       queryClient.setQueryData(STATUS_QUERY_KEY, result.status);

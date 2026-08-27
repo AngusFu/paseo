@@ -140,6 +140,39 @@ export interface DshSessionCreateResult {
   sessionId: string;
 }
 
+/** Known DSH permission presets (from `/permission` with empty input). */
+export const DSH_PERMISSION_PRESETS = [
+  "read-only",
+  "workspace-write",
+  "danger-full-access",
+] as const;
+
+export type DshPermissionPreset = (typeof DSH_PERMISSION_PRESETS)[number];
+
+export function normalizeDshPermissionPreset(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const lowered = trimmed.toLowerCase().replace(/[_\s]+/g, "-");
+  const aliases: Record<string, string> = {
+    readonly: "read-only",
+    "read-only": "read-only",
+    read: "read-only",
+    "workspace-write": "workspace-write",
+    workspacewrite: "workspace-write",
+    write: "workspace-write",
+    "danger-full-access": "danger-full-access",
+    dangerfullaccess: "danger-full-access",
+    full: "danger-full-access",
+    yolo: "danger-full-access",
+  };
+  return aliases[lowered] ?? (trimmed.includes("/") ? null : trimmed);
+}
+
 /**
  * Create a blank DSH session attached to a workspace. Used so Desktop can
  * open a stable `?sessionId=` embed URL (pin on reload) instead of
@@ -149,6 +182,7 @@ export async function createDshSession(input: {
   baseUrl: string;
   workspaceId: string;
   sessionId?: string | null;
+  agentPreset?: string | null;
 }): Promise<DshSessionCreateResult> {
   const workspaceId = input.workspaceId.trim();
   if (!workspaceId) {
@@ -159,6 +193,10 @@ export async function createDshSession(input: {
   if (sessionId) {
     payload.sessionId = sessionId;
   }
+  const agentPreset = input.agentPreset?.trim();
+  if (agentPreset) {
+    payload.agentPreset = agentPreset;
+  }
   const created = unwrapDshResult(
     await dshRpc(input.baseUrl, "session.create", payload),
     "session.create",
@@ -167,4 +205,43 @@ export async function createDshSession(input: {
     throw new Error("session.create returned an unexpected payload");
   }
   return { sessionId: created.sessionId.trim() };
+}
+
+/**
+ * Switch a session's permission preset via the host `/permission` command
+ * (`commands/execute`). Available: read-only, workspace-write, danger-full-access.
+ */
+export async function setDshPermissionPreset(input: {
+  baseUrl: string;
+  sessionId: string;
+  permission: string;
+}): Promise<{ preset: string; text: string }> {
+  const sessionId = input.sessionId.trim();
+  const permission = normalizeDshPermissionPreset(input.permission);
+  if (!sessionId) {
+    throw new Error("DeepSeek Harness permission requires sessionId");
+  }
+  if (!permission) {
+    throw new Error("DeepSeek Harness permission requires a preset name");
+  }
+  const executed = unwrapDshResult(
+    await dshRpc(input.baseUrl, "commands/execute", {
+      args: {
+        agentId: sessionId,
+        line: `/permission ${permission}`,
+        images: [],
+      },
+    }),
+    "commands/execute",
+  );
+  if (!isRecord(executed)) {
+    throw new Error("commands/execute returned an unexpected payload");
+  }
+  const result = isRecord(executed.result) ? executed.result : null;
+  const kind = result && typeof result.kind === "string" ? result.kind : null;
+  const text = result && typeof result.text === "string" ? result.text : "";
+  if (kind === "error") {
+    throw new Error(text || `permission preset failed: ${permission}`);
+  }
+  return { preset: permission, text };
 }

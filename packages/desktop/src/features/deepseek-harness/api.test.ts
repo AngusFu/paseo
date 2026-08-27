@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { allocateFreePort, buildDeepseekHarnessSpawnArgs } from "./index.js";
-import { normalizeBaseUrl, unwrapDshResult } from "./api.js";
+import { normalizeBaseUrl, normalizeDshPermissionPreset, unwrapDshResult } from "./api.js";
 import {
   buildDeepseekHarnessEmbedUrl,
   buildDshPaseoOverlayPatchYaml,
@@ -12,6 +12,13 @@ import {
 describe("deepseek-harness api helpers", () => {
   it("normalizes trailing slashes on base urls", () => {
     expect(normalizeBaseUrl("http://127.0.0.1:3080/")).toBe("http://127.0.0.1:3080");
+  });
+
+  it("normalizes permission preset aliases", () => {
+    expect(normalizeDshPermissionPreset("Workspace Write")).toBe("workspace-write");
+    expect(normalizeDshPermissionPreset("yolo")).toBe("danger-full-access");
+    expect(normalizeDshPermissionPreset("read-only")).toBe("read-only");
+    expect(normalizeDshPermissionPreset("")).toBeNull();
   });
 
   it("unwraps successful envelopes", () => {
@@ -102,6 +109,19 @@ describe("dsh-paseo plugin helpers", () => {
         sessionId: "session-abc",
       }),
     ).toBe("http://127.0.0.1:3080/?paseoEmbed=1&sessionId=session-abc");
+  });
+
+  it("includes permission, agentPreset, and sidebar query params", () => {
+    expect(
+      buildDeepseekHarnessEmbedUrl("http://127.0.0.1:3080", {
+        sessionId: "sess_1",
+        permission: "danger-full-access",
+        agentPreset: "code",
+        sidebar: "collapsed",
+      }),
+    ).toBe(
+      "http://127.0.0.1:3080/?paseoEmbed=1&sessionId=sess_1&permission=danger-full-access&agentPreset=code&sidebar=collapsed",
+    );
   });
 
   it("resolves DSH_HOME from env", () => {

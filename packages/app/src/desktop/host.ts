@@ -124,6 +124,8 @@ export interface DesktopDeepseekHarnessBridge {
   openWorkspace?: (input: {
     cwd: string;
     title?: string | null;
+    permission?: string | null;
+    agentPreset?: string | null;
   }) => Promise<DesktopDeepseekHarnessOpenResult>;
   onInstallLog?: (handler: (payload: { chunk: string }) => void) => () => void;
 }

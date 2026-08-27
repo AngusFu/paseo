@@ -147,14 +147,25 @@ addGlobalOptions(
       "--cwd <path>",
       "working directory (default: current directory; ignored with --workspace)",
     )
+    .option("--agent-preset <id>", "agent preset id (standard/code/minimal/cordis)")
+    .option(
+      "--permission <preset>",
+      "permission preset: read-only | workspace-write | danger-full-access",
+    )
     .option("-d, --background", "do not wait for the session to finish"),
 ).action(async (prompt, opts) => {
   const base = await getBase(opts.host);
   const payload = {};
   if (opts.workspace) payload.workspaceId = opts.workspace;
   else payload.cwd = opts.cwd ?? process.cwd();
+  if (opts.agentPreset) payload.agentPreset = opts.agentPreset;
   const created = unwrap(await rpc(base, "session.create", payload), "session.create");
   const sessionId = created.sessionId;
+
+  if (opts.permission) {
+    const { setPermissionPreset } = await import("../api/permission.js");
+    await setPermissionPreset(base, sessionId, opts.permission);
+  }
 
   if (opts.title) {
     try {
@@ -200,6 +211,22 @@ addGlobalOptions(
     }),
     "session.prompt",
   );
+  printValue({ sessionId: target.sessionId, ...value }, opts);
+});
+
+addGlobalOptions(
+  program
+    .command("permission")
+    .description(
+      "Set a session permission preset (read-only | workspace-write | danger-full-access)",
+    )
+    .argument("<session-id>", "session id or short prefix")
+    .argument("<preset>", "permission preset name"),
+).action(async (sessionId, preset, opts) => {
+  const base = await getBase(opts.host);
+  const target = await resolveSessionId(base, sessionId);
+  const { setPermissionPreset } = await import("../api/permission.js");
+  const value = await setPermissionPreset(base, target.sessionId, preset);
   printValue({ sessionId: target.sessionId, ...value }, opts);
 });
 

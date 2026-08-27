@@ -8,6 +8,7 @@
 import { z } from "zod";
 import { resolveBaseUrl, rpc, unwrap, textResult, errorResult } from "../api/transport.js";
 import { toAgentView, toWorkspaceView, resolveSessionId } from "../api/session-view.js";
+import { setPermissionPreset } from "../api/permission.js";
 
 async function withBase(baseUrl, fn) {
   const base = await resolveBaseUrl(baseUrl);
@@ -67,6 +68,12 @@ export function registerPaseoTools(server) {
           .string()
           .optional()
           .describe("Optional agent preset id (standard/minimal/code/...)"),
+        permission: z
+          .string()
+          .optional()
+          .describe(
+            "Permission preset: read-only | workspace-write | danger-full-access (aliases: write, full, yolo)",
+          ),
         initialPrompt: z.string().optional().describe("First user message; flips blank→visible"),
         baseUrl: baseUrlField.baseUrl,
       },
@@ -84,6 +91,11 @@ export function registerPaseoTools(server) {
           if (args.agentPreset) payload.agentPreset = args.agentPreset;
           const created = unwrap(await rpc(base, "session.create", payload), "session.create");
 
+          let permission = null;
+          if (args.permission) {
+            permission = await setPermissionPreset(base, created.sessionId, args.permission);
+          }
+
           let prompt = null;
           if (args.initialPrompt && args.initialPrompt.trim()) {
             prompt = unwrap(
@@ -98,12 +110,40 @@ export function registerPaseoTools(server) {
           return textResult({
             baseUrl: base,
             ...created,
+            permission,
             blank: !(args.initialPrompt && args.initialPrompt.trim()),
             prompt,
             note: args.initialPrompt?.trim()
               ? "First prompt accepted; session should appear in the GUI."
               : "Session is blank and may be hidden in the GUI until the first prompt.",
           });
+        });
+      } catch (err) {
+        return errorResult(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "set_agent_permission",
+    {
+      title: "Set agent permission preset",
+      description:
+        "Switch a session permission preset via /permission (read-only | workspace-write | danger-full-access).",
+      inputSchema: {
+        sessionId: z.string().describe("Target session id or its short prefix"),
+        permission: z
+          .string()
+          .describe("Permission preset (read-only | workspace-write | danger-full-access)"),
+        baseUrl: baseUrlField.baseUrl,
+      },
+    },
+    async ({ sessionId, permission, baseUrl }) => {
+      try {
+        return await withBase(baseUrl, async (base) => {
+          const target = await resolveSessionId(base, sessionId);
+          const value = await setPermissionPreset(base, target.sessionId, permission);
+          return textResult({ baseUrl: base, sessionId: target.sessionId, ...value });
         });
       } catch (err) {
         return errorResult(err);

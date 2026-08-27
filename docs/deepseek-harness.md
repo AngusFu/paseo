@@ -29,12 +29,31 @@ The Cordis **host** entry is dependency-free (no `@deepseek-ai/dsh-home-paths` /
 
 The embed **client** (`dsh.client`) reads the open URL:
 
-| Query                           | Behavior                                                                                          |
-| ------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `paseoEmbed=1&sessionId=<id>`   | Hide sidebar; **open** that session (preferred — reload stays on the same session)                |
-| `paseoEmbed=1&workspaceId=<id>` | Hide sidebar; **create** a new session; rewrite the URL to `sessionId` via `history.replaceState` |
+| Query                           | Behavior                                                                                            |
+| ------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `paseoEmbed=1&sessionId=<id>`   | **Open** that session (preferred — reload stays on the same session)                                |
+| `paseoEmbed=1&workspaceId=<id>` | **Create** a new session; rewrite the URL to `sessionId` via `history.replaceState`                 |
+| `&permission=<preset>`          | After open, run `/permission <preset>` (`read-only` \| `workspace-write` \| `danger-full-access`)   |
+| `&agentPreset=<id>`             | On create path, pass through to `session.create` (`standard` \| `code` \| `minimal` \| `cordis`, …) |
+| `&sidebar=collapsed` (default)  | Collapse sidebar via layout toggle (rail remains; user can expand)                                  |
+| `&sidebar=hidden`               | Hard-hide sidebar/details columns (legacy)                                                          |
+| `&sidebar=open`                 | Leave sidebar open                                                                                  |
 
-Desktop `openWorkspace` calls `session.create` after ensuring the DSH workspace, then loads a `?sessionId=` URL. Each workspace **DeepSeek Harness** action opens a **new** Paseo tab (unique `paneId`) with its own session. An already-running DSH from before this plugin was installed needs one Stop/Start (or Desktop restart) to load the client.
+Desktop `openWorkspace` calls `session.create` (optional `agentPreset` / `permission`), then loads a `?sessionId=` URL with `sidebar=collapsed`. Each workspace **DeepSeek Harness** action opens a **new** Paseo tab (unique `paneId`) with its own session.
+
+### CLI / MCP (concurrent messaging)
+
+`dsh-paseo` talks to the live DSH Web API (auto-discovers loopback or `DSH_WEB_URL`):
+
+```bash
+dsh-paseo run "fix the blank page" --workspace <id> --permission workspace-write -d
+dsh-paseo send <sessionId> "follow-up"
+dsh-paseo permission <sessionId> danger-full-access
+```
+
+MCP tools: `create_agent` (`permission`, `agentPreset`, `initialPrompt`), `send_agent_prompt`, `set_agent_permission`, …
+
+An already-running DSH from before this plugin was installed needs one Stop/Start (or Desktop restart) to load the client.
 
 ## Settings
 

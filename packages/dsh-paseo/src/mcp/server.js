@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { resolveBaseUrl, rpc, unwrap, textResult, errorResult } from "../api/transport.js";
+import { setPermissionPreset } from "../api/permission.js";
 import { registerPaseoTools } from "./tools.js";
 
 const server = new McpServer({
@@ -73,6 +74,10 @@ server.registerTool(
       cwd: z.string().optional().describe("Working directory; mutually exclusive with workspaceId"),
       sessionId: z.string().optional().describe("Optional preallocated session id"),
       agentPreset: z.string().optional().describe("Optional agent preset id"),
+      permission: z
+        .string()
+        .optional()
+        .describe("Permission preset: read-only | workspace-write | danger-full-access"),
       prompt: z
         .string()
         .optional()
@@ -94,6 +99,11 @@ server.registerTool(
 
         const created = unwrap(await rpc(base, "session.create", payload), "session.create");
 
+        let permission = null;
+        if (args.permission) {
+          permission = await setPermissionPreset(base, created.sessionId, args.permission);
+        }
+
         let prompt = null;
         if (args.prompt && args.prompt.trim()) {
           prompt = unwrap(
@@ -109,6 +119,7 @@ server.registerTool(
         return textResult({
           baseUrl: base,
           ...created,
+          permission,
           blank: !(args.prompt && args.prompt.trim()),
           prompt,
           note: args.prompt?.trim()

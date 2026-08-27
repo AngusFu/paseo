@@ -209,7 +209,13 @@ export async function writeDshPaseoOverlayPatch(
 
 export function buildDeepseekHarnessEmbedUrl(
   baseUrl: string,
-  input: { workspaceId?: string | null; sessionId?: string | null },
+  input: {
+    workspaceId?: string | null;
+    sessionId?: string | null;
+    permission?: string | null;
+    agentPreset?: string | null;
+    sidebar?: "collapsed" | "hidden" | "open" | null;
+  },
 ): string {
   const url = new URL(String(baseUrl).replace(/\/$/, ""));
   url.searchParams.set("paseoEmbed", "1");
@@ -219,6 +225,18 @@ export function buildDeepseekHarnessEmbedUrl(
     url.searchParams.set("sessionId", sessionId);
   } else if (workspaceId) {
     url.searchParams.set("workspaceId", workspaceId);
+  }
+  const permission = input.permission?.trim();
+  if (permission) {
+    url.searchParams.set("permission", permission);
+  }
+  const agentPreset = input.agentPreset?.trim();
+  if (agentPreset) {
+    url.searchParams.set("agentPreset", agentPreset);
+  }
+  const sidebar = input.sidebar?.trim();
+  if (sidebar === "collapsed" || sidebar === "hidden" || sidebar === "open") {
+    url.searchParams.set("sidebar", sidebar);
   }
   return url.toString();
 }

@@ -5,7 +5,14 @@ import { app, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { createElectronNodeEnv } from "../../daemon/node-entrypoint-launcher.js";
 import { getDesktopSettingsStore } from "../../settings/desktop-settings-electron.js";
 import { createExternalProcessEnv } from "../editor-targets/runtime.js";
-import { createDshSession, ensureDshWorkspace, normalizeBaseUrl, probeDshApi } from "./api.js";
+import {
+  createDshSession,
+  ensureDshWorkspace,
+  normalizeBaseUrl,
+  normalizeDshPermissionPreset,
+  probeDshApi,
+  setDshPermissionPreset,
+} from "./api.js";
 import {
   getDeepseekHarnessInstallStatus,
   installOrUpgradeDeepseekHarness,
@@ -431,6 +438,8 @@ export async function stopDeepseekHarness(
 export async function openDeepseekHarnessWorkspace(input: {
   cwd: string;
   title?: string | null;
+  permission?: string | null;
+  agentPreset?: string | null;
   dependencies?: RuntimeDependencies;
 }): Promise<DeepseekHarnessOpenWorkspaceResult> {
   const dependencies = input.dependencies ?? {};
@@ -446,10 +455,20 @@ export async function openDeepseekHarnessWorkspace(input: {
     cwd: input.cwd,
     title: input.title,
   });
+  const agentPreset = input.agentPreset?.trim() || null;
   const session = await createDshSession({
     baseUrl: status.url,
     workspaceId: workspace.workspaceId,
+    agentPreset,
   });
+  const permission = normalizeDshPermissionPreset(input.permission);
+  if (permission) {
+    await setDshPermissionPreset({
+      baseUrl: status.url,
+      sessionId: session.sessionId,
+      permission,
+    });
+  }
   return {
     status,
     dshWorkspaceId: workspace.workspaceId,
@@ -457,6 +476,9 @@ export async function openDeepseekHarnessWorkspace(input: {
     url: buildDeepseekHarnessEmbedUrl(normalizeBaseUrl(status.url), {
       workspaceId: workspace.workspaceId,
       sessionId: session.sessionId,
+      permission,
+      agentPreset,
+      sidebar: "collapsed",
     }),
   };
 }
@@ -492,7 +514,9 @@ export function registerDeepseekHarnessHandlers(
       throw new Error("DeepSeek Harness openWorkspace requires cwd");
     }
     const title = typeof record.title === "string" ? record.title : null;
-    return openDeepseekHarnessWorkspace({ cwd, title, dependencies });
+    const permission = typeof record.permission === "string" ? record.permission : null;
+    const agentPreset = typeof record.agentPreset === "string" ? record.agentPreset : null;
+    return openDeepseekHarnessWorkspace({ cwd, title, permission, agentPreset, dependencies });
   });
 }
 

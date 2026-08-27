@@ -16,7 +16,11 @@ const VERSION = JSON.parse(
 
 function die(message, hint = true) {
   console.error(`dsh-paseo: ${message}`);
-  if (hint) console.error("Cannot reach DSH Web. Start it with: dsh web --port 3080");
+  if (hint) {
+    console.error(
+      "Cannot reach DSH Web. Start DeepSeek Harness in Paseo Desktop, or pass --host http://127.0.0.1:<port> (after the subcommand).",
+    );
+  }
   process.exit(1);
 }
 
@@ -52,7 +56,10 @@ function addGlobalOptions(cmd) {
     .option("-o, --format <format>", 'output format: table, json, yaml (default: "table")')
     .option("--json", "output in JSON format (alias for --format json)")
     .option("-q, --quiet", "minimal output (IDs only)")
-    .option("--host <baseUrl>", "DSH Web base URL override, e.g. http://127.0.0.1:3080");
+    .option(
+      "--host <baseUrl>",
+      "DSH Web base URL, e.g. http://127.0.0.1:64167 (place after the subcommand)",
+    );
 }
 
 function formatOf(opts) {

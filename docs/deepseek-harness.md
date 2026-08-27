@@ -43,9 +43,11 @@ Desktop `openWorkspace` calls `session.create` (optional `agentPreset` / `permis
 
 ### CLI / MCP (concurrent messaging)
 
-`dsh-paseo` talks to the live DSH Web API (auto-discovers loopback or `DSH_WEB_URL`):
+`dsh-paseo` talks to the live DSH Web API. Discovery order: `--host` (after the subcommand) → `DSH_WEB_URL` → Paseo Desktop’s persisted port in `desktop-settings.json` → short parallel loopback probe.
 
 ```bash
+node packages/dsh-paseo/src/cli/index.js ls
+node packages/dsh-paseo/src/cli/index.js ls --host http://127.0.0.1:64167
 dsh-paseo run "fix the blank page" --workspace <id> --permission workspace-write -d
 dsh-paseo send <sessionId> "follow-up"
 dsh-paseo permission <sessionId> danger-full-access

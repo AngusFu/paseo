@@ -45,10 +45,18 @@ describe("buildDeepseekHarnessSpawnArgs", () => {
         entryPath: "/tmp/dsh/lib/bin.js",
         port: 4123,
       }),
-    ).toEqual(["--expose-internals", "/tmp/dsh/lib/bin.js", "web", "--port", "4123", "--no-open"]);
+    ).toEqual([
+      "--expose-internals",
+      "/tmp/dsh/lib/bin.js",
+      "--profile",
+      "web",
+      "--port",
+      "4123",
+      "--no-open",
+    ]);
   });
 
-  it("appends --patch when an overlay path is provided", () => {
+  it("places --patch with launcher flags before port options", () => {
     expect(
       buildDeepseekHarnessSpawnArgs({
         entryPath: "/tmp/dsh/lib/bin.js",
@@ -58,12 +66,13 @@ describe("buildDeepseekHarnessSpawnArgs", () => {
     ).toEqual([
       "--expose-internals",
       "/tmp/dsh/lib/bin.js",
+      "--profile",
       "web",
+      "--patch",
+      "/tmp/dsh-paseo.overlay.yml",
       "--port",
       "4123",
       "--no-open",
-      "--patch",
-      "/tmp/dsh-paseo.overlay.yml",
     ]);
   });
 });

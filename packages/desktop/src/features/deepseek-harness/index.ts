@@ -12,11 +12,7 @@ import {
   type DeepseekHarnessInstallDependencies,
   type DeepseekHarnessInstallStatus,
 } from "./install.js";
-import {
-  buildDeepseekHarnessEmbedUrl,
-  ensureDshPaseoInstalledInWebProfile,
-  writeDshPaseoOverlayPatch,
-} from "./plugin.js";
+import { buildDeepseekHarnessEmbedUrl, ensureDshPaseoInstalledInWebProfile } from "./plugin.js";
 
 const HOST = "127.0.0.1";
 const READY_TIMEOUT_MS = 45_000;
@@ -67,17 +63,16 @@ export function buildDeepseekHarnessSpawnArgs(input: {
   port: number;
   patchPath?: string | null;
 }): string[] {
-  const args = [
-    ...DSH_NODE_EXEC_ARGV,
-    input.entryPath,
-    "web",
-    "--port",
-    String(input.port),
-    "--no-open",
-  ];
+  // Prefer --profile web so optional launcher --patch is valid. The `web`
+  // subcommand rejects parent --patch; trailing --patch after `web` is also invalid.
+  const args = [...DSH_NODE_EXEC_ARGV, input.entryPath, "--profile", "web"];
+  // Only apply when the caller opts in. `dsh plugin add` already puts the
+  // package in profile bundles (which applies packages/dsh-paseo/cordis.patch.yml);
+  // stacking the same paseo-host insert via --patch duplicates the loader id.
   if (input.patchPath) {
     args.push("--patch", input.patchPath);
   }
+  args.push("--port", String(input.port), "--no-open");
   return args;
 }
 
@@ -292,6 +287,21 @@ async function resolveLaunchPort(preferred: number | null): Promise<number> {
   return await allocateFreePort();
 }
 
+async function tryEnsureDshPaseoInstalled(
+  dependencies: RuntimeDependencies,
+  entryPath: string | null | undefined,
+): Promise<void> {
+  try {
+    await ensureDshPaseoInstalledInWebProfile({
+      ...dependencies,
+      entryPath: entryPath ?? undefined,
+    });
+  } catch (error) {
+    // Already-running instance will pick up the plugin on next start.
+    console.warn("[deepseek-harness] dsh-paseo install deferred", error);
+  }
+}
+
 export async function startDeepseekHarness(
   dependencies: RuntimeDependencies = {},
 ): Promise<DeepseekHarnessStatus> {
@@ -305,11 +315,7 @@ export async function startDeepseekHarness(
   const current = await getDeepseekHarnessStatus(dependencies);
   if (current.running && current.port != null) {
     managedPort = current.port;
-    try {
-      await ensureDshPaseoInstalledInWebProfile(dependencies);
-    } catch (error) {
-      console.warn("[deepseek-harness] dsh-paseo install deferred", error);
-    }
+    await tryEnsureDshPaseoInstalled(dependencies, current.entryPath);
     return current;
   }
 
@@ -333,18 +339,17 @@ export async function startDeepseekHarness(
 
   // Another process may already be serving our persisted port.
   if (await probeDshApi(buildUrl(port))) {
-    try {
-      await ensureDshPaseoInstalledInWebProfile(dependencies);
-    } catch (error) {
-      // Already-running instance will pick up the plugin on next start.
-      console.warn("[deepseek-harness] dsh-paseo install deferred", error);
-    }
+    await tryEnsureDshPaseoInstalled(dependencies, installStatus.entryPath);
     return await getDeepseekHarnessStatus(dependencies);
   }
 
   // Mount built-in dsh-paseo (host + embed client) into the user's web profile.
-  await ensureDshPaseoInstalledInWebProfile(dependencies);
-  const patchPath = await writeDshPaseoOverlayPatch(dependencies);
+  // `dsh plugin add` registers the package as a bundle, which applies its
+  // cordis.patch.yml (paseo-host). Do not also pass --patch with the same insert.
+  await ensureDshPaseoInstalledInWebProfile({
+    ...dependencies,
+    entryPath: installStatus.entryPath,
+  });
 
   const childEnv = createElectronNodeEnv(createExternalProcessEnv(env), { isPackaged });
   lastError = null;
@@ -353,7 +358,6 @@ export async function startDeepseekHarness(
     buildDeepseekHarnessSpawnArgs({
       entryPath: installStatus.entryPath,
       port,
-      patchPath,
     }),
     {
       detached: platform !== "win32",

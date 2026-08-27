@@ -5,9 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { app } from "electron";
 import { createElectronNodeEnv } from "../../daemon/node-entrypoint-launcher.js";
-import { createExternalProcessEnv, resolveExecutable } from "../editor-targets/runtime.js";
+import { createExternalProcessEnv } from "../editor-targets/runtime.js";
 
 export const DSH_PASEO_PACKAGE_NAME = "dsh-paseo";
+
+/** Same Node exec argv Desktop uses when spawning `dsh` under Electron. */
+const DSH_NODE_EXEC_ARGV = ["--expose-internals"] as const;
 
 export interface DshPaseoPluginDependencies {
   platform?: NodeJS.Platform;
@@ -19,6 +22,8 @@ export interface DshPaseoPluginDependencies {
   resourcesPath?: string;
   /** Absolute path to packages/dsh-paseo (tests). */
   pluginRoot?: string;
+  /** Absolute path to @deepseek-ai/dsh lib/bin.js (required for install). */
+  entryPath?: string;
   /** Override $DSH_HOME (tests). */
   dshHome?: string;
   homedir?: () => string;
@@ -64,26 +69,6 @@ export function resolveDshPaseoPluginRoot(
   return null;
 }
 
-function resolveNpmCliPath(input: {
-  env: NodeJS.ProcessEnv;
-  platform: NodeJS.Platform;
-  existsSync: (filePath: string) => boolean;
-}): string {
-  const npmExecutable = resolveExecutable(["npm"], {
-    env: input.env,
-    pathExists: input.existsSync,
-    platform: input.platform,
-  });
-  if (!npmExecutable) {
-    throw new Error("npm was not found on PATH (required to install dsh-paseo)");
-  }
-  const siblingCli = path.join(path.dirname(npmExecutable), "npm-cli.js");
-  if (input.existsSync(siblingCli)) {
-    return siblingCli;
-  }
-  return npmExecutable;
-}
-
 function runCommand(input: {
   command: string;
   args: string[];
@@ -109,14 +94,20 @@ function runCommand(input: {
       }
       reject(
         new Error(
-          `npm install ${DSH_PASEO_PACKAGE_NAME} failed: ${stderr.trim() || `exit ${code}`}`,
+          `dsh plugin add ${DSH_PASEO_PACKAGE_NAME} failed: ${stderr.trim() || `exit ${code}`}`,
         ),
       );
     });
   });
 }
 
-/** Install the monorepo/packaged plugin into the user's web profile so DSH can resolve it. */
+/**
+ * Install the monorepo/packaged plugin into the user's web profile via
+ * `dsh plugin --profile web add <dir>` (pnpm under the hood).
+ *
+ * Do not use `npm install --prefix` here — DSH web profiles are pnpm-managed
+ * and npm rewrites the tree enough to break index.html serving.
+ */
 export async function ensureDshPaseoInstalledInWebProfile(
   dependencies: DshPaseoPluginDependencies = {},
 ): Promise<{ pluginRoot: string; profileDir: string }> {
@@ -124,29 +115,26 @@ export async function ensureDshPaseoInstalledInWebProfile(
   if (!pluginRoot) {
     throw new Error("dsh-paseo plugin root was not found (dev package or packaged resource)");
   }
+  const entryPath = dependencies.entryPath?.trim();
+  if (!entryPath) {
+    throw new Error("dsh entryPath is required to install dsh-paseo into the web profile");
+  }
   const profileDir = resolveDshWebProfileDir(dependencies);
   const existsSync = dependencies.existsSync ?? nodeExistsSync;
   await mkdir(profileDir, { recursive: true });
+  if (!existsSync(entryPath)) {
+    throw new Error(`DeepSeek Harness entry was not found: ${entryPath}`);
+  }
 
-  const platform = dependencies.platform ?? process.platform;
   const env = dependencies.env ?? process.env;
   const execPath = dependencies.execPath ?? process.execPath;
   const spawn = dependencies.spawn ?? nodeSpawn;
   const isPackaged = dependencies.isPackaged ?? app.isPackaged;
-  const npmCli = resolveNpmCliPath({ env, platform, existsSync });
   const electronEnv = createElectronNodeEnv(createExternalProcessEnv(env), { isPackaged });
 
   await runCommand({
     command: execPath,
-    args: [
-      npmCli,
-      "install",
-      `file:${pluginRoot}`,
-      "--prefix",
-      profileDir,
-      "--no-fund",
-      "--no-audit",
-    ],
+    args: [...DSH_NODE_EXEC_ARGV, entryPath, "plugin", "--profile", "web", "add", pluginRoot],
     env: electronEnv,
     cwd: profileDir,
     spawn,

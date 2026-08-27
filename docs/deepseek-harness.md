@@ -17,8 +17,12 @@ Monorepo package [`packages/dsh-paseo`](../packages/dsh-paseo) ships with Deskto
 
 On managed start, Desktop:
 
-1. `npm install file:<pluginRoot> --prefix $DSH_HOME/profiles/web`
-2. Writes a host-only overlay patch and passes `--patch <overlay>` to `dsh web`
+1. `dsh plugin --profile web add <pluginRoot>` (pnpm under the hood — do **not** use `npm install --prefix` on the web profile; that corrupts the tree and breaks `GET /`)
+2. Starts with `dsh --profile web --port <n> --no-open`
+
+`dsh plugin add` puts the package in profile **bundles**, which applies [`packages/dsh-paseo/cordis.patch.yml`](../packages/dsh-paseo/cordis.patch.yml) (`paseo-host`). Do **not** also pass a Desktop `--patch` overlay with the same insert — Cordis rejects duplicate loader ids.
+
+`writeDshPaseoOverlayPatch` remains available for future optional overlays (e.g. MCP), but the default start path does not use it.
 
 The embed **client** (`dsh.client`) reads the open URL:
 

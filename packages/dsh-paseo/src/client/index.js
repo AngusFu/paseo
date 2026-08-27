@@ -31,12 +31,22 @@ window.__ModuleLoader__.load({
       document.documentElement.dataset.paseoEmbed = "1";
       const style = document.createElement("style");
       style.setAttribute("data-paseo-embed-style", "1");
+      // Collapse chrome via grid track sizes only. Do NOT `display:none` the
+      // sidebar/details columns — that removes them from the grid so the
+      // center column falls into the first (0px) track and the UI goes blank.
       style.textContent = `
 html[data-paseo-embed] [class*="_frame"] {
   grid-template-columns: 0px minmax(0, 1fr) 0px !important;
 }
+html[data-paseo-embed] [class*="_centerCol"] {
+  grid-column: 2 / 3 !important;
+}
 html[data-paseo-embed] [class*="_sidebarCol"],
-html[data-paseo-embed] [class*="_detailsCol"],
+html[data-paseo-embed] [class*="_detailsCol"] {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
 html[data-paseo-embed] [class*="_handle"] {
   display: none !important;
 }

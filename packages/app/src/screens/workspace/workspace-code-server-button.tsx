@@ -1,20 +1,14 @@
 import { useCallback } from "react";
-import { View } from "react-native";
+import { Image, View } from "react-native";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { StyleSheet } from "react-native-unistyles";
 import { HeaderToggleButton } from "@/components/headers/header-toggle-button";
-import { EditorTargetIcon } from "@/components/icons/editor-target-icon";
 import { isWeb } from "@/constants/platform";
 import { useToast } from "@/contexts/toast-context";
 import { hasCodeServerBridge, useCodeServer } from "@/workspace/code-server";
-import type { Theme } from "@/styles/theme";
 
-const ThemedEditorTargetIcon = withUnistyles(EditorTargetIcon);
-
-const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
-const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
-const VSCODE_WEB_ICON = { kind: "symbol", name: "terminal" } as const;
+const VSCODE_WEB_ICON = require("../../../assets/images/editor-apps/vscode.png");
 
 interface WorkspaceCodeServerButtonProps {
   cwd: string;
@@ -60,18 +54,11 @@ export function WorkspaceCodeServerButton({ cwd }: WorkspaceCodeServerButtonProp
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      {({ hovered, pressed }) => {
-        const active = hovered || pressed || isRunning || openMutation.isPending;
-        return (
-          <View style={!isRunning && !openMutation.isPending ? styles.inactive : undefined}>
-            <ThemedEditorTargetIcon
-              icon={VSCODE_WEB_ICON}
-              size={16}
-              uniProps={active ? foregroundColorMapping : mutedColorMapping}
-            />
-          </View>
-        );
-      }}
+      {() => (
+        <View style={!isRunning && !openMutation.isPending ? styles.inactive : undefined}>
+          <Image source={VSCODE_WEB_ICON} style={styles.icon} resizeMode="contain" />
+        </View>
+      )}
     </HeaderToggleButton>
   );
 }
@@ -84,6 +71,10 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.borderRadius.lg,
     alignItems: "center",
     justifyContent: "center",
+  },
+  icon: {
+    width: 16,
+    height: 16,
   },
   inactive: isWeb
     ? {

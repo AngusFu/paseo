@@ -21,7 +21,6 @@ import { resolvePreferredEditorId, usePreferredEditor } from "@/hooks/use-prefer
 import { openExternalUrl } from "@/utils/open-external-url";
 import { isAbsolutePath } from "@/utils/path";
 import { isWeb } from "@/constants/platform";
-import { useCodeServer } from "@/workspace/code-server";
 import { openDesktopTarget, useDesktopOpenTargets } from "@/workspace/desktop-open-targets";
 import { resolveWorkspaceFilePaths, type WorkspaceFileLocation } from "@/workspace/file-open";
 import { planWorkspaceOpenTargets } from "@/workspace/open-target-planner";
@@ -100,9 +99,6 @@ export function WorkspaceOpenInEditorButton({
     useDesktopOpenTargets({
       isLocalExecution: isLocalDaemon,
     });
-  const { isAvailable: isCodeServerAvailable, openWorkspace: openInCodeServer } = useCodeServer({
-    isLocalExecution: isLocalDaemon,
-  });
 
   const resolvedFile = useMemo(
     () =>
@@ -126,16 +122,10 @@ export function WorkspaceOpenInEditorButton({
     cwd: shouldQueryCheckout ? cwd : "",
   });
 
-  const vscodeWebIcon = useMemo(() => {
-    const vscodeTarget = desktopOpenTargets.find((target) => target.id === "vscode");
-    if (vscodeTarget) {
-      return vscodeTarget.icon;
-    }
-    return { kind: "symbol", name: "terminal" } as const;
-  }, [desktopOpenTargets]);
-
   const targets = useMemo<OpenTarget[]>(() => {
-    const planned = planWorkspaceOpenTargets({
+    // VS Code Web lives on the dedicated header button (`WorkspaceCodeServerButton`),
+    // not in this menu — avoid a second identical entry.
+    return planWorkspaceOpenTargets({
       workspaceDirectory: cwd,
       activeFile,
       resolvedActiveFile: resolvedFile,
@@ -161,31 +151,15 @@ export function WorkspaceOpenInEditorButton({
         onOpen: () => openDesktopTarget(target.openInput),
       };
     });
-    // `code serve-web` opens the workspace in a browser tab rather than spawning
-    // an editor, so it is not a desktop editor target — append it here. It runs
-    // on this machine, hence the same local-only gate as the editor targets.
-    if (isCodeServerAvailable) {
-      planned.push({
-        id: "code-server",
-        label: t("workspace.git.openInEditor.vscodeWeb"),
-        icon: renderEditorOpenTargetIcon(vscodeWebIcon),
-        onOpen: () => openInCodeServer(cwd),
-      });
-    }
-    return planned;
   }, [
     activeFile,
     checkoutStatus,
-    isCodeServerAvailable,
-    openInCodeServer,
     cwd,
     desktopOpenTargets,
     resolvedForge,
     isDesktopOpenAvailable,
     isLocalDaemon,
     resolvedFile,
-    t,
-    vscodeWebIcon,
   ]);
 
   const targetIds = useMemo(() => targets.map((target) => target.id), [targets]);

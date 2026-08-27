@@ -31,6 +31,7 @@ export const archiveSchema: OutputSchema<WorktreeArchiveResult> = {
 
 export interface WorktreeArchiveOptions extends CommandOptions {
   host?: string;
+  cwd?: string;
 }
 
 export type WorktreeArchiveCommandResult = SingleResult<WorktreeArchiveResult>;
@@ -48,6 +49,7 @@ export async function runArchiveCommandWithDeps(
   options: WorktreeArchiveOptions,
   deps: { connectToDaemon: typeof connectToDaemon },
 ): Promise<WorktreeArchiveCommandResult> {
+  const cwd = options.cwd ?? process.cwd();
   const host = getDaemonHost({ host: options.host });
 
   // Validate arguments
@@ -75,7 +77,7 @@ export async function runArchiveCommandWithDeps(
 
   try {
     // Get the list of worktrees first to resolve the name
-    const listResponse = await client.getPaseoWorktreeList({});
+    const listResponse = await client.getPaseoWorktreeList({ cwd });
 
     if (listResponse.error) {
       const error: CommandError = {

@@ -5,7 +5,7 @@ Desktop-managed integration for the DeepSeek Harness (`@deepseek-ai/dsh`) Web UI
 ## Ownership
 
 - Process lifecycle lives in **Electron main** (`packages/desktop/src/features/deepseek-harness/`), same shape as code-server: install / start / stop / quit cleanup.
-- Not a daemon/host feature — no `server_info.features` gate. Mobile and plain browser clients do not expose the UI.
+- Daemon advertises `server_info.features.dshProxy` and proxies session RPCs for `paseo dsh …`; it does not manage the DSH process. Mobile and plain browser clients do not expose the Desktop embed UI.
 - Node runtime for install + `dsh web` is Electron’s own binary via `ELECTRON_RUN_AS_NODE=1`.
 - Start argv must include Node’s `--expose-internals` **before** the dsh entry script. Cordis HMR requires it; putting the flag in `NODE_OPTIONS` is rejected under Electron.
 - Desktop keeps the user’s normal `$DSH_HOME` (typically `~/.dsh`). It does not isolate a separate harness home.
@@ -43,17 +43,28 @@ Desktop `openWorkspace` calls `session.create` (optional `agentPreset` / `permis
 
 ### CLI / MCP (concurrent messaging)
 
-`dsh-paseo` talks to the live DSH Web API. Discovery order: `--host` (after the subcommand) → `DSH_WEB_URL` → Paseo Desktop’s persisted port in `desktop-settings.json` → short parallel loopback probe.
+Preferred path: **`paseo dsh …`** → daemon WebSocket RPCs → daemon HTTP-proxies to the live DSH Web API. Desktop still owns start/stop; the daemon does not spawn DSH.
+
+Feature gate: `server_info.features.dshProxy` (`COMPAT(dshProxy)`).
+
+Discovery on the daemon (same order as `dsh-paseo`): `--dsh-host` / RPC `baseUrl` → `DSH_WEB_URL` / `DSH_WS_URL` → Desktop `desktop-settings.json` port → `:3080` → short parallel loopback probe.
 
 ```bash
-node packages/dsh-paseo/src/cli/index.js ls
-node packages/dsh-paseo/src/cli/index.js ls --host http://127.0.0.1:64167
-dsh-paseo run "fix the blank page" --workspace <id> --permission workspace-write -d
-dsh-paseo send <sessionId> "follow-up"
-dsh-paseo permission <sessionId> danger-full-access
+paseo dsh status
+paseo dsh ls
+paseo dsh ls --all --dsh-host http://127.0.0.1:64167
+paseo dsh run "fix the blank page" --permission workspace-write
+paseo dsh send <sessionId> "follow-up"
+paseo dsh permission <sessionId> danger-full-access
 ```
 
-MCP tools: `create_agent` (`permission`, `agentPreset`, `initialPrompt`), `send_agent_prompt`, `set_agent_permission`, …
+Standalone `dsh-paseo` (direct HTTP, no daemon) still works for debugging:
+
+```bash
+node packages/dsh-paseo/src/cli/index.js ls --host http://127.0.0.1:64167
+```
+
+MCP tools (via `dsh-paseo`): `create_agent` (`permission`, `agentPreset`, `initialPrompt`), `send_agent_prompt`, `set_agent_permission`, …
 
 An already-running DSH from before this plugin was installed needs one Stop/Start (or Desktop restart) to load the client.
 

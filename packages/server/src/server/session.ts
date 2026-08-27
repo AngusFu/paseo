@@ -131,6 +131,7 @@ import {
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
 import { McpCliService } from "./mcp-cli/index.js";
+import { DshProxyService } from "./dsh/index.js";
 import {
   ImportSessionsRequestError,
   importProviderSession,
@@ -579,6 +580,7 @@ export class Session {
   private readonly paseoHome: string;
   private readonly worktreesRoot: string | undefined;
   private mcpCliService: McpCliService | null = null;
+  private dshProxyService: DshProxyService | null = null;
 
   private agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
@@ -3032,6 +3034,23 @@ export class Session {
       case "mcp_cli.servers.import_local.request":
         return this.handleMcpCliServersImportLocalRequest(msg);
       default:
+        return this.dispatchDshMessage(msg);
+    }
+  }
+
+  private dispatchDshMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "dsh.status.request":
+        return this.handleDshStatusRequest(msg);
+      case "dsh.session.list.request":
+        return this.handleDshSessionListRequest(msg);
+      case "dsh.session.create.request":
+        return this.handleDshSessionCreateRequest(msg);
+      case "dsh.session.prompt.request":
+        return this.handleDshSessionPromptRequest(msg);
+      case "dsh.session.set_permission.request":
+        return this.handleDshSessionSetPermissionRequest(msg);
+      default:
         return undefined;
     }
   }
@@ -3325,6 +3344,173 @@ export class Session {
           servers: [],
           sources: [],
           warnings: [],
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private getDshProxyService(): DshProxyService {
+    if (!this.dshProxyService) {
+      this.dshProxyService = new DshProxyService();
+    }
+    return this.dshProxyService;
+  }
+
+  private async handleDshStatusRequest(
+    msg: Extract<SessionInboundMessage, { type: "dsh.status.request" }>,
+  ): Promise<void> {
+    try {
+      const status = await this.getDshProxyService().status(msg.baseUrl);
+      this.emit({
+        type: "dsh.status.response",
+        payload: { requestId: msg.requestId, status, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "dsh.status.response",
+        payload: {
+          requestId: msg.requestId,
+          status: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleDshSessionListRequest(
+    msg: Extract<SessionInboundMessage, { type: "dsh.session.list.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.getDshProxyService().listSessions({
+        ...(msg.baseUrl !== undefined ? { baseUrl: msg.baseUrl } : {}),
+        ...(msg.includeAll !== undefined ? { includeAll: msg.includeAll } : {}),
+      });
+      this.emit({
+        type: "dsh.session.list.response",
+        payload: {
+          requestId: msg.requestId,
+          baseUrl: result.baseUrl,
+          sessions: result.sessions,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "dsh.session.list.response",
+        payload: {
+          requestId: msg.requestId,
+          baseUrl: null,
+          sessions: [],
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleDshSessionCreateRequest(
+    msg: Extract<SessionInboundMessage, { type: "dsh.session.create.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.getDshProxyService().createSession({
+        ...(msg.baseUrl !== undefined ? { baseUrl: msg.baseUrl } : {}),
+        ...(msg.workspaceId !== undefined ? { workspaceId: msg.workspaceId } : {}),
+        ...(msg.cwd !== undefined ? { cwd: msg.cwd } : {}),
+        ...(msg.agentPreset !== undefined ? { agentPreset: msg.agentPreset } : {}),
+        ...(msg.permission !== undefined ? { permission: msg.permission } : {}),
+        ...(msg.prompt !== undefined ? { prompt: msg.prompt } : {}),
+      });
+      this.emit({
+        type: "dsh.session.create.response",
+        payload: {
+          requestId: msg.requestId,
+          baseUrl: result.baseUrl,
+          sessionId: result.sessionId,
+          agentPreset: result.agentPreset,
+          permission: result.permission,
+          accepted: result.accepted,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "dsh.session.create.response",
+        payload: {
+          requestId: msg.requestId,
+          baseUrl: null,
+          sessionId: null,
+          agentPreset: null,
+          permission: null,
+          accepted: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleDshSessionPromptRequest(
+    msg: Extract<SessionInboundMessage, { type: "dsh.session.prompt.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.getDshProxyService().prompt({
+        ...(msg.baseUrl !== undefined ? { baseUrl: msg.baseUrl } : {}),
+        sessionId: msg.sessionId,
+        text: msg.text,
+        ...(msg.mode !== undefined ? { mode: msg.mode } : {}),
+      });
+      this.emit({
+        type: "dsh.session.prompt.response",
+        payload: {
+          requestId: msg.requestId,
+          baseUrl: result.baseUrl,
+          sessionId: result.sessionId,
+          accepted: result.accepted,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "dsh.session.prompt.response",
+        payload: {
+          requestId: msg.requestId,
+          baseUrl: null,
+          sessionId: null,
+          accepted: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleDshSessionSetPermissionRequest(
+    msg: Extract<SessionInboundMessage, { type: "dsh.session.set_permission.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.getDshProxyService().setPermission({
+        ...(msg.baseUrl !== undefined ? { baseUrl: msg.baseUrl } : {}),
+        sessionId: msg.sessionId,
+        permission: msg.permission,
+      });
+      this.emit({
+        type: "dsh.session.set_permission.response",
+        payload: {
+          requestId: msg.requestId,
+          baseUrl: result.baseUrl,
+          sessionId: result.sessionId,
+          permission: result.permission,
+          text: result.text,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "dsh.session.set_permission.response",
+        payload: {
+          requestId: msg.requestId,
+          baseUrl: null,
+          sessionId: null,
+          permission: null,
+          text: null,
           error: error instanceof Error ? error.message : String(error),
         },
       });

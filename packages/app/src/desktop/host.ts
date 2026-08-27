@@ -111,8 +111,6 @@ export interface DesktopDeepseekHarnessStatus {
 
 export interface DesktopDeepseekHarnessOpenResult {
   status: DesktopDeepseekHarnessStatus;
-  dshWorkspaceId: string;
-  dshSessionId: string;
   url: string;
 }
 
@@ -122,10 +120,8 @@ export interface DesktopDeepseekHarnessBridge {
   start?: () => Promise<DesktopDeepseekHarnessStatus>;
   stop?: () => Promise<DesktopDeepseekHarnessStatus>;
   openWorkspace?: (input: {
-    cwd: string;
+    cwd?: string;
     title?: string | null;
-    permission?: string | null;
-    agentPreset?: string | null;
   }) => Promise<DesktopDeepseekHarnessOpenResult>;
   onInstallLog?: (handler: (payload: { chunk: string }) => void) => () => void;
 }

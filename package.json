@@ -31,8 +31,7 @@
     "packages/relay",
     "packages/website",
     "packages/desktop",
-    "packages/cli",
-    "packages/dsh-paseo"
+    "packages/cli"
   ],
   "scripts": {
     "dev": "npm run dev:server",

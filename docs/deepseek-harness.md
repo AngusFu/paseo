@@ -5,68 +5,11 @@ Desktop-managed integration for the DeepSeek Harness (`@deepseek-ai/dsh`) Web UI
 ## Ownership
 
 - Process lifecycle lives in **Electron main** (`packages/desktop/src/features/deepseek-harness/`), same shape as code-server: install / start / stop / quit cleanup.
-- Daemon advertises `server_info.features.dshProxy` and proxies session RPCs for `paseo dsh …`; it does not manage the DSH process. Mobile and plain browser clients do not expose the Desktop embed UI.
+- Daemon does not manage DSH. Mobile and plain browser clients do not expose the UI.
 - Node runtime for install + `dsh web` is Electron’s own binary via `ELECTRON_RUN_AS_NODE=1`.
 - Start argv must include Node’s `--expose-internals` **before** the dsh entry script. Cordis HMR requires it; putting the flag in `NODE_OPTIONS` is rejected under Electron.
 - Desktop keeps the user’s normal `$DSH_HOME` (typically `~/.dsh`). It does not isolate a separate harness home.
 - Spawn captures stdout/stderr. On readiness failure the status exposes `lastError` with that log tail so Settings can show **Starting… / Running / Stopped / Start failed** instead of only “Installed”.
-
-## Built-in `dsh-paseo` plugin
-
-Monorepo package [`packages/dsh-paseo`](../packages/dsh-paseo) ships with Desktop (`extraResources/dsh-paseo`).
-
-On managed start, Desktop:
-
-1. Syncs packaged/monorepo sources to `$DSH_HOME/packages/dsh-paseo` (never links the profile at the app-bundle `extraResources` path — that tree has no `node_modules`, and Node resolves imports from the package realpath)
-2. `dsh plugin --profile web add $DSH_HOME/packages/dsh-paseo` (pnpm under the hood — do **not** use `npm install --prefix` on the web profile; that corrupts the tree and breaks `GET /`)
-3. Starts with `dsh --profile web --port <n> --no-open`
-
-`dsh plugin add` puts the package in profile **bundles**, which applies [`packages/dsh-paseo/cordis.patch.yml`](../packages/dsh-paseo/cordis.patch.yml) (`paseo-host`). Do **not** also pass a Desktop `--patch` overlay with the same insert — Cordis rejects duplicate loader ids.
-
-The Cordis **host** entry is dependency-free (no `@deepseek-ai/dsh-home-paths` / `mnemonic-id`) so a missing install-tree `node_modules` cannot break `dsh web` boot. CLI/MCP still declare those deps in `package.json` for standalone use.
-
-`writeDshPaseoOverlayPatch` remains available for future optional overlays (e.g. MCP), but the default start path does not use it.
-
-The embed **client** (`dsh.client`) reads the open URL:
-
-| Query                           | Behavior                                                                                            |
-| ------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `paseoEmbed=1&sessionId=<id>`   | **Open** that session (preferred — reload stays on the same session)                                |
-| `paseoEmbed=1&workspaceId=<id>` | **Create** a new session; rewrite the URL to `sessionId` via `history.replaceState`                 |
-| `&permission=<preset>`          | After open, run `/permission <preset>` (`read-only` \| `workspace-write` \| `danger-full-access`)   |
-| `&agentPreset=<id>`             | On create path, pass through to `session.create` (`standard` \| `code` \| `minimal` \| `cordis`, …) |
-| `&sidebar=collapsed` (default)  | Collapse sidebar via layout toggle (rail remains; user can expand)                                  |
-| `&sidebar=hidden`               | Hard-hide sidebar/details columns (legacy)                                                          |
-| `&sidebar=open`                 | Leave sidebar open                                                                                  |
-
-Desktop `openWorkspace` calls `session.create` (optional `agentPreset` / `permission`), then loads a `?sessionId=` URL with `sidebar=collapsed`. Each workspace **DeepSeek Harness** action opens a **new** Paseo tab (unique `paneId`) with its own session.
-
-### CLI / MCP (concurrent messaging)
-
-Preferred path: **`paseo dsh …`** → daemon WebSocket RPCs → daemon HTTP-proxies to the live DSH Web API. Desktop still owns start/stop; the daemon does not spawn DSH.
-
-Feature gate: `server_info.features.dshProxy` (`COMPAT(dshProxy)`).
-
-Discovery on the daemon (same order as `dsh-paseo`): `--dsh-host` / RPC `baseUrl` → `DSH_WEB_URL` / `DSH_WS_URL` → Desktop `desktop-settings.json` port → `:3080` → short parallel loopback probe.
-
-```bash
-paseo dsh status
-paseo dsh ls
-paseo dsh ls --all --dsh-host http://127.0.0.1:64167
-paseo dsh run "fix the blank page" --permission workspace-write
-paseo dsh send <sessionId> "follow-up"
-paseo dsh permission <sessionId> danger-full-access
-```
-
-Standalone `dsh-paseo` (direct HTTP, no daemon) still works for debugging:
-
-```bash
-node packages/dsh-paseo/src/cli/index.js ls --host http://127.0.0.1:64167
-```
-
-MCP tools (via `dsh-paseo`): `create_agent` (`permission`, `agentPreset`, `initialPrompt`), `send_agent_prompt`, `set_agent_permission`, …
-
-An already-running DSH from before this plugin was installed needs one Stop/Start (or Desktop restart) to load the client.
 
 ## Settings
 
@@ -83,9 +26,10 @@ Desktop-only Settings section `deepseek-harness`:
 
 - New tab kind `deepseek_harness` (Electron `<webview>` via `BrowserPane`)
 - Header menu + tab `+` menu: **DeepSeek Harness**
-- Opening ensures the process is running, registers the cwd via `workspace.create` / `workspace.list`, then loads the embed URL above
+- Opening ensures the process is running, then loads the native DSH Web base URL (no embed plugin / query contract)
 
 ## IPC
 
 `paseo:deepseek-harness:{getStatus,install,start,stop,openWorkspace}` plus `onInstallLog` on `window.paseoDesktop.deepseekHarness`.
 `install` returns full runtime status after the npm install completes.
+`openWorkspace` returns `{ status, url }` where `url` is the running harness origin.

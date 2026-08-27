@@ -68,18 +68,4 @@ describe("canonical CLI surface", () => {
     expect(open?.helpInformation()).toContain("<agent-id>");
     expect(open?.helpInformation()).toContain("--server <server-id>");
   });
-
-  it("exposes dsh proxy subcommands", () => {
-    const help = createCli().helpInformation();
-    expect(help).toContain("dsh");
-    const dsh = createCli().commands.find((command) => command.name() === "dsh");
-    const dshHelp = dsh?.helpInformation() ?? "";
-    expect(dshHelp).toContain("status");
-    expect(dshHelp).toContain("ls");
-    expect(dshHelp).toContain("run");
-    expect(dshHelp).toContain("send");
-    expect(dshHelp).toContain("permission");
-    const ls = dsh?.commands.find((command) => command.name() === "ls");
-    expect(ls?.helpInformation()).toContain("--dsh-host");
-  });
 });

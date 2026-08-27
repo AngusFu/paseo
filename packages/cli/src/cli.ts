@@ -8,7 +8,6 @@ import { createProviderCommand } from "./commands/provider/index.js";
 import { createScheduleCommand } from "./commands/schedule/index.js";
 import { createKanbanCommand } from "./commands/kanban/index.js";
 import { createQuestionCommand } from "./commands/question/index.js";
-import { createDshCommand } from "./commands/dsh/index.js";
 import { createSpeechCommand } from "./commands/speech/index.js";
 import { createScriptCommand } from "./commands/script/index.js";
 import { createTerminalCommand } from "./commands/terminal/index.js";
@@ -190,9 +189,6 @@ export function createCli(): Command {
 
   // Question Inbox commands
   program.addCommand(createQuestionCommand());
-
-  // DeepSeek Harness (daemon → Desktop DSH HTTP proxy)
-  program.addCommand(createDshCommand());
 
   // Workflow commands
   program.addCommand(createWorkflowCommand());

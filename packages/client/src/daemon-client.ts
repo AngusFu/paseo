@@ -675,23 +675,6 @@ type McpCliServersImportLocalPayload = Extract<
   SessionOutboundMessage,
   { type: "mcp_cli.servers.import_local.response" }
 >["payload"];
-type DshStatusPayload = Extract<SessionOutboundMessage, { type: "dsh.status.response" }>["payload"];
-type DshSessionListPayload = Extract<
-  SessionOutboundMessage,
-  { type: "dsh.session.list.response" }
->["payload"];
-type DshSessionCreatePayload = Extract<
-  SessionOutboundMessage,
-  { type: "dsh.session.create.response" }
->["payload"];
-type DshSessionPromptPayload = Extract<
-  SessionOutboundMessage,
-  { type: "dsh.session.prompt.response" }
->["payload"];
-type DshSessionSetPermissionPayload = Extract<
-  SessionOutboundMessage,
-  { type: "dsh.session.set_permission.response" }
->["payload"];
 const MCP_CLI_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 type QuestionListPayload = Extract<
   SessionOutboundMessage,
@@ -5778,90 +5761,6 @@ export class DaemonClient {
       requestId,
       timeout: MCP_CLI_INSTALL_TIMEOUT_MS,
       message: { type: "mcp_cli.servers.import_local.request" },
-    });
-  }
-
-  async dshStatus(
-    options: { baseUrl?: string; requestId?: string } = {},
-  ): Promise<DshStatusPayload> {
-    return this.sendNamespacedCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "dsh.status.request",
-        ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
-      },
-    });
-  }
-
-  async dshSessionList(
-    options: { baseUrl?: string; includeAll?: boolean; requestId?: string } = {},
-  ): Promise<DshSessionListPayload> {
-    return this.sendNamespacedCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "dsh.session.list.request",
-        ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
-        ...(options.includeAll !== undefined ? { includeAll: options.includeAll } : {}),
-      },
-    });
-  }
-
-  async dshSessionCreate(options: {
-    baseUrl?: string;
-    workspaceId?: string;
-    cwd?: string;
-    agentPreset?: string;
-    permission?: string;
-    prompt?: string;
-    requestId?: string;
-  }): Promise<DshSessionCreatePayload> {
-    return this.sendNamespacedCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "dsh.session.create.request",
-        ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
-        ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
-        ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
-        ...(options.agentPreset !== undefined ? { agentPreset: options.agentPreset } : {}),
-        ...(options.permission !== undefined ? { permission: options.permission } : {}),
-        ...(options.prompt !== undefined ? { prompt: options.prompt } : {}),
-      },
-    });
-  }
-
-  async dshSessionPrompt(options: {
-    baseUrl?: string;
-    sessionId: string;
-    text: string;
-    mode?: "queue" | "steer";
-    requestId?: string;
-  }): Promise<DshSessionPromptPayload> {
-    return this.sendNamespacedCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "dsh.session.prompt.request",
-        sessionId: options.sessionId,
-        text: options.text,
-        ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
-        ...(options.mode !== undefined ? { mode: options.mode } : {}),
-      },
-    });
-  }
-
-  async dshSessionSetPermission(options: {
-    baseUrl?: string;
-    sessionId: string;
-    permission: string;
-    requestId?: string;
-  }): Promise<DshSessionSetPermissionPayload> {
-    return this.sendNamespacedCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "dsh.session.set_permission.request",
-        sessionId: options.sessionId,
-        permission: options.permission,
-        ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
-      },
     });
   }
 

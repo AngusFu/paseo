@@ -154,10 +154,8 @@ export function useDeepseekHarness() {
 
   const openWorkspace = useCallback(
     async (input: {
-      cwd: string;
+      cwd?: string;
       title?: string | null;
-      permission?: string | null;
-      agentPreset?: string | null;
     }): Promise<DesktopDeepseekHarnessOpenResult> => {
       const result = await requireDeepseekHarnessBridge().openWorkspace(input);
       queryClient.setQueryData(STATUS_QUERY_KEY, result.status);

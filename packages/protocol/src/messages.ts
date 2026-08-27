@@ -208,18 +208,6 @@ import {
   McpCliServersTestResponseSchema,
   McpCliServersImportLocalResponseSchema,
 } from "./mcp-cli/rpc-schemas.js";
-import {
-  DshStatusRequestSchema,
-  DshSessionListRequestSchema,
-  DshSessionCreateRequestSchema,
-  DshSessionPromptRequestSchema,
-  DshSessionSetPermissionRequestSchema,
-  DshStatusResponseSchema,
-  DshSessionListResponseSchema,
-  DshSessionCreateResponseSchema,
-  DshSessionPromptResponseSchema,
-  DshSessionSetPermissionResponseSchema,
-} from "./dsh/rpc-schemas.js";
 import { BrowserAutomationHostCapabilitySchema } from "./browser-automation/capabilities.js";
 import {
   PaseoConfigRawSchema,
@@ -2976,11 +2964,6 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   McpCliServersDeleteRequestSchema,
   McpCliServersTestRequestSchema,
   McpCliServersImportLocalRequestSchema,
-  DshStatusRequestSchema,
-  DshSessionListRequestSchema,
-  DshSessionCreateRequestSchema,
-  DshSessionPromptRequestSchema,
-  DshSessionSetPermissionRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -3279,9 +3262,6 @@ export const ServerInfoStatusPayloadSchema = z
         questionWaitSocket: z.boolean().optional(),
         // COMPAT(mcpCli): added in v0.1.115, remove gate after 2027-01-25.
         mcpCli: z.boolean().optional(),
-        // COMPAT(dshProxy): added in v0.1.106, remove gate after 2027-02-27.
-        // Daemon HTTP proxy to Desktop-managed DeepSeek Harness (`paseo dsh …`).
-        dshProxy: z.boolean().optional(),
         // COMPAT(workspaceScriptManagement): added in v0.1.105, remove gate after 2027-01-10.
         workspaceScriptManagement: z.boolean().optional(),
       })
@@ -5885,11 +5865,6 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   McpCliServersDeleteResponseSchema,
   McpCliServersTestResponseSchema,
   McpCliServersImportLocalResponseSchema,
-  DshStatusResponseSchema,
-  DshSessionListResponseSchema,
-  DshSessionCreateResponseSchema,
-  DshSessionPromptResponseSchema,
-  DshSessionSetPermissionResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
   InstallDifftasticProgressMessageSchema,
@@ -6119,16 +6094,6 @@ export type McpCliServersTestResponse = z.infer<typeof McpCliServersTestResponse
 export type McpCliServersImportLocalResponse = z.infer<
   typeof McpCliServersImportLocalResponseSchema
 >;
-export type DshStatusRequest = z.infer<typeof DshStatusRequestSchema>;
-export type DshSessionListRequest = z.infer<typeof DshSessionListRequestSchema>;
-export type DshSessionCreateRequest = z.infer<typeof DshSessionCreateRequestSchema>;
-export type DshSessionPromptRequest = z.infer<typeof DshSessionPromptRequestSchema>;
-export type DshSessionSetPermissionRequest = z.infer<typeof DshSessionSetPermissionRequestSchema>;
-export type DshStatusResponse = z.infer<typeof DshStatusResponseSchema>;
-export type DshSessionListResponse = z.infer<typeof DshSessionListResponseSchema>;
-export type DshSessionCreateResponse = z.infer<typeof DshSessionCreateResponseSchema>;
-export type DshSessionPromptResponse = z.infer<typeof DshSessionPromptResponseSchema>;
-export type DshSessionSetPermissionResponse = z.infer<typeof DshSessionSetPermissionResponseSchema>;
 
 // Type exports for payload types
 export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;

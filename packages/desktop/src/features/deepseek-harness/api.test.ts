@@ -1,24 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { allocateFreePort, buildDeepseekHarnessSpawnArgs } from "./index.js";
-import { normalizeBaseUrl, normalizeDshPermissionPreset, unwrapDshResult } from "./api.js";
-import {
-  buildDeepseekHarnessEmbedUrl,
-  buildDshPaseoOverlayPatchYaml,
-  resolveDshHome,
-  resolveDshPaseoInstallTarget,
-  resolveDshPaseoPluginRoot,
-} from "./plugin.js";
+import { normalizeBaseUrl, unwrapDshResult } from "./api.js";
 
 describe("deepseek-harness api helpers", () => {
   it("normalizes trailing slashes on base urls", () => {
     expect(normalizeBaseUrl("http://127.0.0.1:3080/")).toBe("http://127.0.0.1:3080");
-  });
-
-  it("normalizes permission preset aliases", () => {
-    expect(normalizeDshPermissionPreset("Workspace Write")).toBe("workspace-write");
-    expect(normalizeDshPermissionPreset("yolo")).toBe("danger-full-access");
-    expect(normalizeDshPermissionPreset("read-only")).toBe("read-only");
-    expect(normalizeDshPermissionPreset("")).toBeNull();
   });
 
   it("unwraps successful envelopes", () => {
@@ -69,7 +55,7 @@ describe("buildDeepseekHarnessSpawnArgs", () => {
       buildDeepseekHarnessSpawnArgs({
         entryPath: "/tmp/dsh/lib/bin.js",
         port: 4123,
-        patchPath: "/tmp/dsh-paseo.overlay.yml",
+        patchPath: "/tmp/optional.overlay.yml",
       }),
     ).toEqual([
       "--expose-internals",
@@ -77,81 +63,11 @@ describe("buildDeepseekHarnessSpawnArgs", () => {
       "--profile",
       "web",
       "--patch",
-      "/tmp/dsh-paseo.overlay.yml",
+      "/tmp/optional.overlay.yml",
       "--port",
       "4123",
       "--no-open",
     ]);
-  });
-});
-
-describe("dsh-paseo plugin helpers", () => {
-  it("builds embed URLs with workspaceId", () => {
-    expect(
-      buildDeepseekHarnessEmbedUrl("http://127.0.0.1:3080/", {
-        workspaceId: "ws_abc",
-      }),
-    ).toBe("http://127.0.0.1:3080/?paseoEmbed=1&workspaceId=ws_abc");
-  });
-
-  it("prefers sessionId over workspaceId for agent deep links", () => {
-    expect(
-      buildDeepseekHarnessEmbedUrl("http://127.0.0.1:3080", {
-        workspaceId: "ws_abc",
-        sessionId: "sess_1",
-      }),
-    ).toBe("http://127.0.0.1:3080/?paseoEmbed=1&sessionId=sess_1");
-  });
-
-  it("builds a session-only embed URL when workspaceId is omitted", () => {
-    expect(
-      buildDeepseekHarnessEmbedUrl("http://127.0.0.1:3080/", {
-        sessionId: "session-abc",
-      }),
-    ).toBe("http://127.0.0.1:3080/?paseoEmbed=1&sessionId=session-abc");
-  });
-
-  it("includes permission, agentPreset, and sidebar query params", () => {
-    expect(
-      buildDeepseekHarnessEmbedUrl("http://127.0.0.1:3080", {
-        sessionId: "sess_1",
-        permission: "danger-full-access",
-        agentPreset: "code",
-        sidebar: "collapsed",
-      }),
-    ).toBe(
-      "http://127.0.0.1:3080/?paseoEmbed=1&sessionId=sess_1&permission=danger-full-access&agentPreset=code&sidebar=collapsed",
-    );
-  });
-
-  it("resolves DSH_HOME from env", () => {
-    expect(resolveDshHome({ env: { DSH_HOME: "/tmp/custom-dsh" }, homedir: () => "/home/x" })).toBe(
-      "/tmp/custom-dsh",
-    );
-  });
-
-  it("resolves packaged plugin root from resourcesPath", () => {
-    expect(
-      resolveDshPaseoPluginRoot({
-        isPackaged: true,
-        resourcesPath: "/App/Contents/Resources",
-        existsSync: (filePath) => filePath.endsWith("/dsh-paseo/package.json"),
-      }),
-    ).toBe("/App/Contents/Resources/dsh-paseo");
-  });
-
-  it("installs under $DSH_HOME/packages, not the app bundle", () => {
-    expect(
-      resolveDshPaseoInstallTarget({
-        env: { DSH_HOME: "/tmp/custom-dsh" },
-        homedir: () => "/home/x",
-      }),
-    ).toBe("/tmp/custom-dsh/packages/dsh-paseo");
-  });
-
-  it("emits a host-only overlay patch", () => {
-    expect(buildDshPaseoOverlayPatchYaml()).toContain("name: dsh-paseo");
-    expect(buildDshPaseoOverlayPatchYaml()).not.toContain("mcp-dsh-paseo");
   });
 });
 

@@ -1605,9 +1605,6 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(mcpCli): added in v0.1.115, remove gate after 2027-01-25.
         // Host FastMCP CLI runtime + per-server launchers under $PASEO_HOME/mcp-cli.
         mcpCli: process.platform === "darwin" || process.platform === "linux",
-        // COMPAT(dshProxy): added in v0.1.106, remove gate after 2027-02-27.
-        // Daemon HTTP proxy to Desktop-managed DeepSeek Harness (`paseo dsh …`).
-        dshProxy: true,
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: true,
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.

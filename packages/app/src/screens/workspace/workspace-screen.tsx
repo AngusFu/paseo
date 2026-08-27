@@ -2673,8 +2673,8 @@ function WorkspaceScreenContent({
             cwd: workspaceDirectory,
             title: workspaceDescriptor?.title ?? null,
           });
-          // Always open a new tab/session. Reusing one pane made every click
-          // replace the previous webview and prevented parallel sessions.
+          // Always open a new tab. Reusing one pane made every click replace
+          // the previous webview and prevented parallel views.
           const paneId =
             input?.paneId ??
             `deepseek_harness_${
@@ -2687,8 +2687,6 @@ function WorkspaceScreenContent({
             kind: "deepseek_harness",
             paneId,
             browserId,
-            dshWorkspaceId: opened.dshWorkspaceId,
-            dshSessionId: opened.dshSessionId,
           });
         } catch (error) {
           toast.show(error instanceof Error ? error.message : String(error));

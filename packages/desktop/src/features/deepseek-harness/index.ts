@@ -5,21 +5,13 @@ import { app, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { createElectronNodeEnv } from "../../daemon/node-entrypoint-launcher.js";
 import { getDesktopSettingsStore } from "../../settings/desktop-settings-electron.js";
 import { createExternalProcessEnv } from "../editor-targets/runtime.js";
-import {
-  createDshSession,
-  ensureDshWorkspace,
-  normalizeBaseUrl,
-  normalizeDshPermissionPreset,
-  probeDshApi,
-  setDshPermissionPreset,
-} from "./api.js";
+import { normalizeBaseUrl, probeDshApi } from "./api.js";
 import {
   getDeepseekHarnessInstallStatus,
   installOrUpgradeDeepseekHarness,
   type DeepseekHarnessInstallDependencies,
   type DeepseekHarnessInstallStatus,
 } from "./install.js";
-import { buildDeepseekHarnessEmbedUrl, ensureDshPaseoInstalledInWebProfile } from "./plugin.js";
 
 const HOST = "127.0.0.1";
 const READY_TIMEOUT_MS = 45_000;
@@ -41,8 +33,6 @@ export interface DeepseekHarnessStatus extends DeepseekHarnessInstallStatus {
 
 export interface DeepseekHarnessOpenWorkspaceResult {
   status: DeepseekHarnessStatus;
-  dshWorkspaceId: string;
-  dshSessionId: string;
   url: string;
 }
 
@@ -74,17 +64,12 @@ export function buildDeepseekHarnessSpawnArgs(input: {
   // Prefer --profile web so optional launcher --patch is valid. The `web`
   // subcommand rejects parent --patch; trailing --patch after `web` is also invalid.
   const args = [...DSH_NODE_EXEC_ARGV, input.entryPath, "--profile", "web"];
-  // Only apply when the caller opts in. `dsh plugin add` already puts the
-  // package in profile bundles (which applies packages/dsh-paseo/cordis.patch.yml);
-  // stacking the same paseo-host insert via --patch duplicates the loader id.
   if (input.patchPath) {
     args.push("--patch", input.patchPath);
   }
   args.push("--port", String(input.port), "--no-open");
   return args;
 }
-
-export { buildDeepseekHarnessEmbedUrl } from "./plugin.js";
 
 function chunkToString(chunk: Buffer | string): string {
   return typeof chunk === "string" ? chunk : chunk.toString("utf8");
@@ -295,21 +280,6 @@ async function resolveLaunchPort(preferred: number | null): Promise<number> {
   return await allocateFreePort();
 }
 
-async function tryEnsureDshPaseoInstalled(
-  dependencies: RuntimeDependencies,
-  entryPath: string | null | undefined,
-): Promise<void> {
-  try {
-    await ensureDshPaseoInstalledInWebProfile({
-      ...dependencies,
-      entryPath: entryPath ?? undefined,
-    });
-  } catch (error) {
-    // Already-running instance will pick up the plugin on next start.
-    console.warn("[deepseek-harness] dsh-paseo install deferred", error);
-  }
-}
-
 export async function startDeepseekHarness(
   dependencies: RuntimeDependencies = {},
 ): Promise<DeepseekHarnessStatus> {
@@ -323,7 +293,6 @@ export async function startDeepseekHarness(
   const current = await getDeepseekHarnessStatus(dependencies);
   if (current.running && current.port != null) {
     managedPort = current.port;
-    await tryEnsureDshPaseoInstalled(dependencies, current.entryPath);
     return current;
   }
 
@@ -347,17 +316,8 @@ export async function startDeepseekHarness(
 
   // Another process may already be serving our persisted port.
   if (await probeDshApi(buildUrl(port))) {
-    await tryEnsureDshPaseoInstalled(dependencies, installStatus.entryPath);
     return await getDeepseekHarnessStatus(dependencies);
   }
-
-  // Mount built-in dsh-paseo (host + embed client) into the user's web profile.
-  // `dsh plugin add` registers the package as a bundle, which applies its
-  // cordis.patch.yml (paseo-host). Do not also pass --patch with the same insert.
-  await ensureDshPaseoInstalledInWebProfile({
-    ...dependencies,
-    entryPath: installStatus.entryPath,
-  });
 
   const childEnv = createElectronNodeEnv(createExternalProcessEnv(env), { isPackaged });
   lastError = null;
@@ -435,13 +395,14 @@ export async function stopDeepseekHarness(
   return await getDeepseekHarnessStatus(dependencies);
 }
 
+/** Ensure DSH is running and return the native Web origin for a workspace tab. */
 export async function openDeepseekHarnessWorkspace(input: {
-  cwd: string;
+  cwd?: string;
   title?: string | null;
-  permission?: string | null;
-  agentPreset?: string | null;
   dependencies?: RuntimeDependencies;
 }): Promise<DeepseekHarnessOpenWorkspaceResult> {
+  void input.cwd;
+  void input.title;
   const dependencies = input.dependencies ?? {};
   let status = await getDeepseekHarnessStatus(dependencies);
   if (!status.running) {
@@ -450,36 +411,9 @@ export async function openDeepseekHarnessWorkspace(input: {
   if (!status.url || status.port == null) {
     throw new Error("DeepSeek Harness is not running");
   }
-  const workspace = await ensureDshWorkspace({
-    baseUrl: status.url,
-    cwd: input.cwd,
-    title: input.title,
-  });
-  const agentPreset = input.agentPreset?.trim() || null;
-  const session = await createDshSession({
-    baseUrl: status.url,
-    workspaceId: workspace.workspaceId,
-    agentPreset,
-  });
-  const permission = normalizeDshPermissionPreset(input.permission);
-  if (permission) {
-    await setDshPermissionPreset({
-      baseUrl: status.url,
-      sessionId: session.sessionId,
-      permission,
-    });
-  }
   return {
     status,
-    dshWorkspaceId: workspace.workspaceId,
-    dshSessionId: session.sessionId,
-    url: buildDeepseekHarnessEmbedUrl(normalizeBaseUrl(status.url), {
-      workspaceId: workspace.workspaceId,
-      sessionId: session.sessionId,
-      permission,
-      agentPreset,
-      sidebar: "collapsed",
-    }),
+    url: normalizeBaseUrl(status.url),
   };
 }
 
@@ -510,13 +444,12 @@ export function registerDeepseekHarnessHandlers(
     }
     const record = rawInput as Record<string, unknown>;
     const cwd = typeof record.cwd === "string" ? record.cwd.trim() : "";
-    if (!cwd) {
-      throw new Error("DeepSeek Harness openWorkspace requires cwd");
-    }
     const title = typeof record.title === "string" ? record.title : null;
-    const permission = typeof record.permission === "string" ? record.permission : null;
-    const agentPreset = typeof record.agentPreset === "string" ? record.agentPreset : null;
-    return openDeepseekHarnessWorkspace({ cwd, title, permission, agentPreset, dependencies });
+    return openDeepseekHarnessWorkspace({
+      ...(cwd ? { cwd } : {}),
+      title,
+      dependencies,
+    });
   });
 }
 

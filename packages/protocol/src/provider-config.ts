@@ -64,6 +64,7 @@ const BUILTIN_PROVIDER_IDS = [
   "opencode",
   "pi",
   "omp",
+  "dsh",
   "cursor-print",
 ] as const;
 const PROVIDER_ID_PATTERN = /^[a-z][a-z0-9-]*$/;

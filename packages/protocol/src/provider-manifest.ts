@@ -290,6 +290,15 @@ export const AGENT_PROVIDER_DEFINITIONS: AgentProviderDefinition[] = [
     modes: OMP_MODES,
   },
   {
+    id: "dsh",
+    label: "DeepSeek Harness",
+    description:
+      "DeepSeek Harness via SDK JSON-RPC (dsh-jsonrpc-agent); disabled by default until the runtime is installed",
+    enabledByDefault: false,
+    defaultModeId: null,
+    modes: [],
+  },
+  {
     id: "cursor-print",
     label: "Cursor (Print)",
     description:

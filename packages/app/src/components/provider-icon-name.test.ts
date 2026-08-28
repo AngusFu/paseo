@@ -12,7 +12,6 @@ describe("resolveProviderIconName", () => {
     expect(resolveProviderIconName("kiro")).toEqual({ kind: "builtin", id: "kiro" });
     expect(resolveProviderIconName("claude")).toEqual({ kind: "builtin", id: "claude" });
     expect(resolveProviderIconName("omp")).toEqual({ kind: "builtin", id: "omp" });
-    expect(resolveProviderIconName("dsh")).toEqual({ kind: "builtin", id: "dsh" });
     expect(resolveProviderIconName("minimax")).toEqual({ kind: "builtin", id: "minimax" });
   });
 

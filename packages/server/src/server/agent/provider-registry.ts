@@ -39,7 +39,6 @@ import { KiroACPAgentClient } from "./providers/kiro-acp-agent.js";
 import { OpenCodeAgentClient } from "./providers/opencode-agent.js";
 import { OmpAgentClient } from "./providers/omp/agent.js";
 import type { OmpRuntime } from "./providers/omp/runtime.js";
-import { DshAgentClient } from "./providers/dsh/agent.js";
 import { PiRpcAgentClient } from "./providers/pi/agent.js";
 import { TraeACPAgentClient } from "./providers/trae-acp-agent.js";
 import { MockLoadTestAgentClient } from "./providers/mock-load-test-agent.js";
@@ -160,12 +159,6 @@ const PROVIDER_CLIENT_FACTORIES: Record<string, ProviderClientFactory> = {
       runtimeSettings,
       providerParams: options?.providerParams,
       runtime: options?.ompRuntime,
-    }),
-  dsh: (logger, runtimeSettings, options) =>
-    new DshAgentClient({
-      logger,
-      runtimeSettings,
-      providerParams: options?.providerParams,
     }),
   mock: (logger) => new MockLoadTestAgentClient(logger),
   "mock-slow": () => new MockSlowProviderClient(),

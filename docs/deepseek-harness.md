@@ -1,167 +1,136 @@
 # DeepSeek Harness
 
-Two separate surfaces — do not conflate them:
+Paseo integrates DeepSeek Harness through two independent surfaces:
 
-| Surface                      | Where                      | Role                                             |
-| ---------------------------- | -------------------------- | ------------------------------------------------ |
-| **Web UI sidecar**           | Desktop Electron only      | Install/start `dsh web`, open in system browser  |
-| **Agent provider (planned)** | Daemon (`packages/server`) | Run DSH as a Paseo agent, like `pi` / `opencode` |
+| Surface    | Owner              | Role                                           |
+| ---------- | ------------------ | ---------------------------------------------- |
+| DSH Web UI | Desktop Electron   | Install/start `dsh web` and open its native UI |
+| `dsh-acp`  | `packages/dsh-acp` | Run DSH sessions through standard ACP          |
 
----
+There is no built-in Direct `dsh` provider. Agent integration uses the standalone `dsh-acp` CLI as
+a custom `extends: "acp"` provider.
 
 ## Desktop Web UI
 
-Desktop-managed integration for the DeepSeek Harness (`@deepseek-ai/dsh`) Web UI.
+Process lifecycle lives in `packages/desktop/src/features/deepseek-harness/`, independently of the
+Agent provider:
 
-### Ownership
+- Install/upgrade under the Desktop user-data toolchain.
+- Start and stop the DSH Web process.
+- Keep the user's normal `$DSH_HOME`, normally `~/.dsh`.
+- Open the native DSH Web origin in the system browser.
+- Optionally start DSH Web with Desktop.
 
-- Process lifecycle lives in **Electron main** (`packages/desktop/src/features/deepseek-harness/`), same shape as code-server: install / start / stop / quit cleanup.
-- Daemon does not manage DSH. Mobile and plain browser clients do not expose the UI.
-- Node runtime for install + `dsh web` is Electron’s own binary via `ELECTRON_RUN_AS_NODE=1`.
-- Start argv must include Node’s `--expose-internals` **before** the dsh entry script. Cordis HMR requires it; putting the flag in `NODE_OPTIONS` is rejected under Electron.
-- Desktop keeps the user’s normal `$DSH_HOME` (typically `~/.dsh`). It does not isolate a separate harness home.
-- Spawn captures stdout/stderr. On readiness failure the status exposes `lastError` with that log tail so Settings can show **Starting… / Running / Stopped / Start failed** instead of only “Installed”.
-- Stop kills whatever holds the persisted loopback port (`lsof` / `netstat`), not a saved child handle — same as code-server. Detached dsh can outlive a Paseo restart; `spawnedByUs` only gates quit cleanup, not the Settings **Stop** button.
+Desktop IPC is `paseo:deepseek-harness:{getStatus,install,start,stop,openWorkspace}` plus install-log
+streaming. The daemon does not own this Web process.
 
-### Settings
+## ACP CLI
 
-Desktop-only Settings section `deepseek-harness`:
+`packages/dsh-acp` translates ACP JSON-RPC on stdio into DSH SDK JSON-RPC while retaining DSH's rich
+event stream. It is independently publishable as `@getpaseo/dsh-acp` with binary `dsh-acp`.
 
-- Install / Upgrade (`npm install @deepseek-ai/dsh@latest --prefix <userData>/toolchains/deepseek-harness`)
-  - Button shows a loading state while npm runs
-  - Live stdout/stderr streams into an install-log panel via `paseo:deepseek-harness:install-log`
-- Start / Stop (status badge reflects starting / running / stopped / failed; `lastError` panel after a failed start)
-- **Start with Desktop** (`desktop-settings.deepseekHarness.startWithDesktop`)
-- Persisted listen port (`deepseekHarness.port`); first start allocates a free loopback port and keeps it
+Development Custom Provider configuration:
 
-### Workspace UI
-
-- Header action button next to **VS Code Web** (always shown when the Desktop bridge is available)
-- Click starts DSH if needed, then opens the native Web origin in the **system default browser** via `shell.openExternal` (not an Electron tab/webview)
-
-### IPC
-
-`paseo:deepseek-harness:{getStatus,install,start,stop,openWorkspace}` plus `onInstallLog` on `window.paseoDesktop.deepseekHarness`.
-`install` returns full runtime status after the npm install completes.
-`openWorkspace` ensures the process is running and opens `{ status, url }` in the default browser.
-
----
-
-## Agent provider (MVP) — SDK JSON-RPC, not ACP
-
-Direct provider id: `dsh` (label: DeepSeek Harness), disabled by default (`enabledByDefault: false`).
-
-Implementation: `packages/server/src/server/agent/providers/dsh/` (hand-rolled newline JSON-RPC; no `@deepseek-ai/dsh-sdk-client`).
-
-### Why not ACP / why not Python inside the daemon
-
-DSH exposes three programmatic surfaces:
-
-1. **ACP** (`@deepseek-ai/dsh-acp` / `dsh-acp-demo`) — standards-compliant but automation-thin: committed assistant text only, no tool/reasoning stream on the wire, rejects non-empty `mcpServers`, fresh sessions only.
-2. **SDK JSON-RPC** (Python `deepseek-harness-sdk` ≡ TS `@deepseek-ai/dsh-sdk-client`) — full `session.event` log (`assistant/chunk`, `tool/call`, `tool/result`, `turn/*`, subagent notifications). This is the right fidelity for a Paseo timeline.
-3. **Headless** (`dsh --profile headless`) — one-shot; not a multi-turn session.
-
-Paseo’s daemon is Node/TS. Prefer a **Direct** provider (same pattern as `pi`) that spawns the bundled `dsh-jsonrpc-agent` runtime and speaks the SDK wire from TypeScript. Use the Python SDK for smoke tests and protocol reference only — do not put a Python bridge in the daemon hot path.
-
-Verified locally (2026-08-27):
-
-- Python `deepseek-harness-sdk==0.1.1rc1` + `minimal.cordis.yml` completed a text turn and a bash tool turn (`assistant/chunk`, `tool/call`, `tool/result`, `turn/end`).
-- Paseo `DshAgentClient` against the same bundled `dsh-jsonrpc-agent` + runtime `cordis.yml` streamed `PASEO_DSH_PROVIDER_OK` through the provider timeline (`turn_started` → assistant chunks → `turn_completed`). Auth from `~/.dsh/.credentials.yaml` / `DEEPSEEK_API_KEY`.
-
-### Wire contract (SDK)
-
-Transport: newline-delimited JSON-RPC 2.0 on stdio. Stdout is protocol-only; diagnostics on stderr.
-
-| Direction | Method                                   | Notes                                                    |
-| --------- | ---------------------------------------- | -------------------------------------------------------- |
-| C→S       | `initialize`                             | `cwd`, `provider`, `model`, optional `maxTokens`         |
-| C→S       | `session/prompt`                         | Queues user message; returns `{ messageId }` immediately |
-| C→S       | `shutdown`                               | Quiesce then exit 0                                      |
-| S→C       | `session.event`                          | Full session-log envelope (unfiltered)                   |
-| S→C       | `session.status`                         | Whole-agent `running` / `idle`                           |
-| S→C       | `subagent.started` / `subagent.finished` | In-process children                                      |
-
-Known SDK limits (pre-release): no protocol-version negotiation; **no cancel / session-close** — abandon a turn by killing the runtime process; server→client requests are unused (future approvals).
-
-### Mapping onto Paseo (Direct provider sketch)
-
-Closest existing reference: `providers/pi/` (process-backed RPC + JSONL sessions).
-
-| Paseo                                 | DSH SDK                                                                                                                   |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `createSession`                       | Spawn runtime once (reuse across turns); `initialize` with workspace `cwd`; allocate `sessionId`                          |
-| `run` / turn ownership                | `session/prompt` → wait for inbox receipt of `messageId` → collect `session.event` until `session.status=idle`            |
-| Timeline `assistant_message` / chunks | `assistant/chunk` + committed `assistant/message`                                                                         |
-| Timeline `tool_call`                  | `tool/call` (`data.callId`, `name`, `arguments`) + `tool/result`                                                          |
-| Subagents track                       | `subagent.started` / `subagent.finished`                                                                                  |
-| `interrupt`                           | Kill / restart runtime (no cancel RPC yet) — document UX gap                                                              |
-| `resumeSession` / import              | Read `DSH_SESSION_ROOT` JSONL; SDK itself is get-or-create by `sessionId`                                                 |
-| Auth                                  | Inherit `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` (or load from `~/.dsh/.credentials.yaml` refs)                           |
-| Models                                | `$PASEO_HOME/dsh-provider/settings.yaml` (`llm-pi-ai.providers`) + static defaults; catalog via `fetchCatalog`            |
-| MCP / Paseo tools                     | Session-scoped Cordis materialization from `config.mcpServers` + profile patch; `supportsMcpServers` when servers present |
-| Permissions                           | Default `minimal` / danger compositions auto-run tools; richer compositions may grow approval requests later              |
-
-### Runtime packaging options
-
-1. **Ship / resolve `dsh-jsonrpc-agent`** from `deepseek-harness-runtime-bin` (Python wheel) or a future npm carrier; require user install.
-2. **Depend on `@deepseek-ai/dsh-sdk-client`** and pass an explicit launch `{ command, args, cordis }` (TS client does not yet bundle the runtime the way Python does).
-3. Reuse Desktop toolchain’s `@deepseek-ai/dsh` install only for Web UI — it is **not** the JSON-RPC agent binary.
-
-Recommended MVP: user installs runtime (document `pip install deepseek-harness-sdk` or a dedicated npm bin once published); Paseo provider resolves `dsh-jsonrpc-agent` on `PATH` (or `params.runtimeBin`) and a Cordis file (`params.cordis` or bundled `minimal.cordis.yml`).
-
-### Try it (dev checkout)
-
-Packaged Desktop (`Paseo.app` on `:6767`) does **not** include this provider until a release ships the new server code. Use the checkout daemon on `:6768`:
-
-1. Runtime toolchain (already under `.dev/toolchains/dsh-runtime/` in this checkout): `uv venv` + `uv pip install deepseek-harness-sdk`, symlink `dsh-jsonrpc-agent`.
-2. Enable in `.dev/paseo-home/config.json` (`agents.providers.dsh.enabled: true` + `params.runtimeBin` / `params.cordis`).
-   **Auth / credentials:** Paseo sets `DSH_HOME` and injects refs from `~/.dsh/.credentials.yaml` into the `dsh-jsonrpc-agent` process environment (same keys the Web Models page writes). Custom `llm-pi-ai` routes such as `x-9router/...` need their `apiKeyEnv` stored there, or exported in the daemon environment. `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` still pass through from the daemon env when unset in the credentials file.
-3. Restart **only** the checkout `npm run dev:server` (port **6768**). Do not restart production `:6767`.
-4. Point the web/desktop client at the dev daemon, create an agent with provider `dsh` / model `deepseek-v4-flash`.
-
-### MCP injection
-
-**Current state:** On session open, the provider merges base Cordis (`params.cordis`), profile `llm-pi-ai` providers, persistent `cordis.patch.yml`, and per-agent `config.mcpServers` into a temp `cordis.yml` (`DSH_CORDIS_CONFIG`). Session capabilities set `supportsMcpServers: true` when MCP servers are present. Plugin deps live under `$PASEO_HOME/dsh-provider/node_modules` and are exposed via `NODE_PATH`.
-
-**DSH side:** MCP is a Cordis plugin (`@deepseek-ai/dsh-mcp-client`), one instance per external server. Tools surface as `mcp__<serverName>__<rawName>` on `ctx.tools`. Transports: `stdio` or `streamable-http` (Paseo's Agent MCP endpoint fits the latter).
-
-Example overlay (materialized per session when Paseo injects MCP):
-
-```yaml
-- id: mcp-paseo
-  name: "@deepseek-ai/dsh-mcp-client"
-  config:
-    serverName: paseo
-    transport: streamable-http
-    url: http://127.0.0.1:6768/mcp/agents?callerAgentId=<agentId>
-    headers:
-      Authorization: Bearer <mcpAuthToken>
+```json
+{
+  "agents": {
+    "providers": {
+      "dsh-acp": {
+        "extends": "acp",
+        "label": "DeepSeek Harness (ACP)",
+        "command": ["node", "/absolute/path/to/packages/dsh-acp/dist/cli.js"],
+        "params": {
+          "supportsMcpServers": true
+        }
+      }
+    }
+  }
+}
 ```
 
-**Provider profile:** defaults to `DSH_HOME` (`~/.dsh`) — same `settings.yaml` as the Desktop Web UI. Paseo-specific Cordis patch + plugin `package.json` live under `~/.dsh/paseo/`. Override with `agents.providers.dsh.params.profileHome` / `sessionRoot` if needed.
+Do not configure a static `models` array: generic provider profiles intentionally replace runtime
+model discovery when that field exists.
 
-**Sessions:** default `~/.dsh/sessions` with Web-compatible `session-<uuid>` IDs. Paseo can import/resume Web sessions when the Web runtime is idle (`listImportableSessions` / `importSession`). Hot dual-writer sharing is not supported.
+### Setup
 
-**Cordis overlay:** custom `llm-pi-ai` routes are materialized into the temp `cordis.yml` alongside the Python runtime base. Do **not** mount `dsh-credentials-local` / `dsh-settings-file` there — the SDK `dsh-jsonrpc-agent` SEA binary cannot load those plugins from `NODE_PATH`. Credentials for pi-ai routes are injected via `applyDshRuntimeEnv()` (`DSH_HOME` + `~/.dsh/.credentials.yaml` refs → process env).
+`dsh-acp setup` is the explicit, idempotent install path. It uses `uv` to provision
+`deepseek-harness-sdk` under `$DSH_HOME/toolchains/dsh-runtime/.venv`, and installs the managed DSH Web
+workspace bridge. Ordinary provider probing and session startup perform local discovery only and do
+not access the network.
 
-**Dependency note:** `dsh-llm-pi-ai` and `dsh-mcp-client` resolve from `NODE_PATH` (Desktop toolchain `node_modules` or `~/.dsh/paseo/node_modules`). The auto `pnpm install` in `~/.dsh/paseo/` may fail on private packages; Desktop fallback covers local dev.
+If the DSH Web profile is installed after the runtime, run `dsh-acp setup` again so the live
+workspace-registry bridge is added to that profile.
 
-**Settings UI:** model routes, MCP plugins, and Cordis composition are managed in the Desktop **DSH Web** UI (`~/.dsh`). Paseo's provider settings sheet stays the standard model/diagnostic panel only.
+Runtime discovery checks the managed `$DSH_HOME` toolchain, known Paseo Desktop toolchain locations,
+and `dsh-jsonrpc-agent` on `PATH`. `--runtime-bin` and `--cordis` remain explicit overrides.
 
-### Follow-ups (TODO)
+### Models And Thinking
 
-- [x] MCP: materialize `dsh-mcp-client` Cordis entries from `config.mcpServers`
-- [x] Share Web profile (`~/.dsh/settings.yaml`) and cold session import (`~/.dsh/sessions`)
-- [ ] Session `streamHistory` / import from `$PASEO_HOME/dsh-sessions` JSONL
-- [ ] Bridge `subagent.started` / `subagent.finished` into the Paseo subagents track
-- [ ] Tool-call polish (`callId` → name map, bash/edit detail)
-- [ ] Stronger interrupt UX (rebuild runtime after kill; clearer diagnostics)
-- [ ] Settings / catalog install path for the runtime binary (not only manual `params.runtimeBin`)
-- [ ] Optional: auto-load richer Cordis compositions (not only bundled default)
+The static base consists only of the official DeepSeek models and models declared in
+`$DSH_HOME/settings.yaml` under `llm-pi-ai.providers`. The runtime-side `catalog/list` extension then
+uses DSH's generic `ctx.llm.listProviders()`, `listModels()`, and `resolveModelInfo()` APIs to merge
+dynamic adapter catalogs and model-specific reasoning levels. GitHub Copilot and other dynamic
+providers receive no special-case model table or aliases.
 
-### Explicit non-goals for v1
+ACP model and thinking changes restart the private DSH runtime while retaining the native session
+ID. The restarted runtime receives the selected provider/model route and reasoning effort.
 
-- Bridging the Desktop Web UI process into the daemon agent list.
-- ACP `extends: "acp"` catalog entry (usable as a thin experiment, wrong UX for first-class).
-- Windows (persistent PTY / minimal composition is POSIX-only).
-- Full Web-UI feature parity (skills market, Cordis HMR, interactive questions) — those stay in the Desktop sidecar.
+### Timeline
+
+DSH events map to ACP updates:
+
+| DSH                               | ACP                       |
+| --------------------------------- | ------------------------- |
+| `assistant/chunk` text delta      | `agent_message_chunk`     |
+| `assistant/chunk` reasoning delta | `agent_thought_chunk`     |
+| `tool/call`                       | `tool_call`               |
+| `tool/result`                     | `tool_call_update`        |
+| `session.status=idle`             | Complete `session/prompt` |
+
+The prompt request remains pending until the matching inbox receipt and idle transition have both
+arrived. Idle-before-receipt is retained rather than dropped.
+
+### Permissions
+
+The published SDK protocol does not expose Cordis `approval/request`. `dsh-acp` appends a small
+Cordis plugin and uses inherited fd 3 as a private permission channel while stdout remains the SDK
+JSON-RPC wire. Requests become ACP `session/request_permission`; allow-once, reject, cancel, and
+unavailable outcomes return to the original DSH tool invocation.
+
+Modes are Ask Before Tools, Read Only, and Full Access. Ask produces visible permission cards when
+Paseo Auto Approve is disabled.
+
+### MCP
+
+ACP MCP descriptors are converted into per-session `@deepseek-ai/dsh-mcp-client` Cordis entries.
+This includes Paseo's authenticated Agent MCP endpoint, so Paseo tools use the normal Generic ACP
+injection path. MCP configuration is retained across model, thinking, permission, and interrupt
+runtime restarts.
+
+### Resume
+
+The adapter advertises ACP `session/resume`, not `session/load`. A runtime-side SDK server extension
+handles `session/resume` with DSH `ctx.agents.resume()`, loading the compressed JSONL session before
+accepting another prompt. Conversation context survives daemon/ACP-process restarts without replaying
+old timeline rows. Full historical timeline hydration remains future `session/load` work.
+
+### DSH Workspace Grouping
+
+DSH Web keeps `ctx.workspaceRegistry` in memory. Editing `~/.dsh/storages/workspace.json` while Web is
+running does not update the UI and can be overwritten by its next registry write.
+
+`dsh-acp setup` installs a managed Web host bridge. New sessions:
+
+1. Ensure the canonical cwd through the live DSH Web workspace registry.
+2. Start the private DSH runtime.
+3. After the first turn materializes the session header, call DSH's validated
+   `Workspace.attachSession()` through the bridge.
+
+Resumed sessions attach immediately because their stored header already exists. If DSH Web is
+offline, the adapter falls back to atomic workspace-file updates.
+
+## Current Gaps
+
+- ACP `session/load` history replay.
+- Richer tool presentation beyond the current execute/read/edit/search categories.
+- First-class projection of DSH-native subagent lifecycle into Paseo's subagents track.

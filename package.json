@@ -26,6 +26,7 @@
     "packages/protocol",
     "packages/client",
     "packages/agents-workflow",
+    "packages/dsh-acp",
     "packages/server",
     "packages/app",
     "packages/relay",

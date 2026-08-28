@@ -4,6 +4,7 @@ import {
   compileEveryPresetToCron,
   parseScheduleCreateInput,
   parseScheduleUpdateInput,
+  toScheduleRow,
 } from "./shared.js";
 
 const baseOptions = {
@@ -405,5 +406,50 @@ describe("compileEveryPresetToCron", () => {
 
   test.each(["15minutes", "junk15m", "1h-nope"])("rejects malformed preset %s", (value) => {
     expect(() => compileEveryPresetToCron(value)).toThrow("Invalid duration format");
+  });
+});
+
+describe("toScheduleRow and formatTarget", () => {
+  test("formats new-agent target", () => {
+    const row = toScheduleRow({
+      id: "s-1",
+      name: "test-agent-schedule",
+      cadence: { type: "cron", expression: "0 * * * *" },
+      target: {
+        type: "new-agent",
+        config: { provider: "claude", model: "claude-3-7-sonnet", cwd: "/repo" },
+      },
+      status: "active",
+      nextRunAt: "2026-08-28T05:00:00.000Z",
+      lastRunAt: null,
+      createdAt: "2026-08-28T04:00:00.000Z",
+      updatedAt: "2026-08-28T04:00:00.000Z",
+      pausedAt: null,
+      expiresAt: null,
+      maxRuns: null,
+    });
+    expect(row.target).toBe("new-agent:claude/claude-3-7-sonnet");
+  });
+
+  test("formats command target", () => {
+    const row = toScheduleRow({
+      id: "s-2",
+      name: "test-command-schedule",
+      cadence: { type: "cron", expression: "*/5 * * * *" },
+      target: {
+        type: "command",
+        command: "npm test",
+        cwd: "/repo",
+      },
+      status: "active",
+      nextRunAt: "2026-08-28T05:00:00.000Z",
+      lastRunAt: null,
+      createdAt: "2026-08-28T04:00:00.000Z",
+      updatedAt: "2026-08-28T04:00:00.000Z",
+      pausedAt: null,
+      expiresAt: null,
+      maxRuns: null,
+    });
+    expect(row.target).toBe("command:npm test");
   });
 });
